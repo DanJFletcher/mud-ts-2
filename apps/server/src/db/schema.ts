@@ -1,5 +1,6 @@
 import {
   integer,
+  index,
   jsonb,
   pgTable,
   primaryKey,
@@ -12,6 +13,7 @@ import {
 export const players = pgTable('players', {
   id: uuid('id').primaryKey(),
   displayName: text('display_name').notNull(),
+  clerkUserId: text('clerk_user_id').unique(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -28,9 +30,21 @@ export const characters = pgTable('characters', {
   playerId: uuid('player_id').notNull().references(() => players.id, { onDelete: 'cascade' }),
   worldInstanceId: text('world_instance_id').notNull(),
   name: text('name').notNull(),
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
-  uniqueIndex('characters_owner_instance_idx').on(table.playerId, table.worldInstanceId),
+  index('characters_owner_instance_idx').on(table.playerId, table.worldInstanceId),
+]);
+
+export const worldSessions = pgTable('world_sessions', {
+  id: uuid('id').primaryKey(),
+  playerId: uuid('player_id').notNull().references(() => players.id, { onDelete: 'cascade' }),
+  worldInstanceId: text('world_instance_id').notNull(),
+  characterId: uuid('character_id').notNull().references(() => characters.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('world_sessions_owner_instance_idx').on(table.playerId, table.worldInstanceId),
+  index('world_sessions_character_idx').on(table.characterId),
 ]);
 
 export const gameEvents = pgTable('game_events', {

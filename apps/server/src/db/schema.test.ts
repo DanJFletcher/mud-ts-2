@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { characters, commandReceipts, gameEvents, players, sessions } from './schema.js';
+import { characters, commandReceipts, gameEvents, players, sessions, worldSessions } from './schema.js';
 
 describe('PostgreSQL schema definitions', () => {
   it('declares durable identity, character, event and idempotency tables', () => {
@@ -8,5 +8,8 @@ describe('PostgreSQL schema definitions', () => {
     expect(characters).toBeDefined();
     expect(gameEvents).toBeDefined();
     expect(commandReceipts).toBeDefined();
+    expect(worldSessions).toBeDefined();
+    expect(players.clerkUserId).toBeDefined();
+    expect(characters.archivedAt).toBeDefined();
   });
 });

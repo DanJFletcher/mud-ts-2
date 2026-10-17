@@ -16,14 +16,63 @@ export const CharacterCreatedEventSchema = DomainEventBaseSchema.extend({
   payload: z.object({ characterId: IdSchema, playerId: IdSchema, name: NonEmptyNameSchema, startingLocationId: IdSchema }).strict(),
 }).strict();
 
+export const RenameCharacterCommandSchema = z.object({
+  type: z.literal('character.rename'),
+  version: ContractVersionSchema,
+  commandId: IdSchema,
+  worldInstanceId: IdSchema,
+  characterId: IdSchema,
+  expectedVersion: NonNegativeIntSchema,
+  payload: z.object({ name: NonEmptyNameSchema }).strict(),
+}).strict();
+
+export const CharacterRenamedEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('character.renamed'),
+  payload: z.object({ characterId: IdSchema, name: NonEmptyNameSchema }).strict(),
+}).strict();
+
+export const ArchiveCharacterCommandSchema = z.object({
+  type: z.literal('character.archive'),
+  version: ContractVersionSchema,
+  commandId: IdSchema,
+  worldInstanceId: IdSchema,
+  characterId: IdSchema,
+  expectedVersion: NonNegativeIntSchema,
+  payload: z.object({}).strict(),
+}).strict();
+
+export const CharacterArchivedEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('character.archived'),
+  payload: z.object({ characterId: IdSchema }).strict(),
+}).strict();
+
+export const RestoreCharacterCommandSchema = z.object({
+  type: z.literal('character.restore'),
+  version: ContractVersionSchema,
+  commandId: IdSchema,
+  worldInstanceId: IdSchema,
+  characterId: IdSchema,
+  expectedVersion: NonNegativeIntSchema,
+  payload: z.object({}).strict(),
+}).strict();
+
+export const CharacterRestoredEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('character.restored'),
+  payload: z.object({ characterId: IdSchema }).strict(),
+}).strict();
+
 export const CharacterProjectionSchema = z.object({
   worldInstanceId: IdSchema,
   characterId: IdSchema,
   name: NonEmptyNameSchema,
   locationId: IdSchema,
   revision: NonNegativeIntSchema,
+  archived: z.boolean().default(false),
 }).strict();
 
 export type CreateCharacterCommand = z.infer<typeof CreateCharacterCommandSchema>;
 export type CharacterCreatedEvent = z.infer<typeof CharacterCreatedEventSchema>;
+export type RenameCharacterCommand = z.infer<typeof RenameCharacterCommandSchema>;
+export type ArchiveCharacterCommand = z.infer<typeof ArchiveCharacterCommandSchema>;
+export type RestoreCharacterCommand = z.infer<typeof RestoreCharacterCommandSchema>;
 export type CharacterProjection = z.infer<typeof CharacterProjectionSchema>;

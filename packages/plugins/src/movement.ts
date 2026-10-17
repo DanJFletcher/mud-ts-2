@@ -24,7 +24,7 @@ export const movementPlugin: EnginePlugin = {
     const characterState = requireCapability<CharacterStateCapability>('mudd.character.state.v1');
     registerCommand('character.move', MoveCharacterCommandSchema, async (command, context) => {
       const character = await characterState.load(context, command.characterId);
-      if (!character) throw new Error('Create a character before moving.');
+      if (!character || character.archived) throw new Error('That character is no longer available.');
       const exit = context.world.locations
         .find((location) => location.id === character.locationId)
         ?.exits.find((candidate) => candidate.id === command.payload.exitId);

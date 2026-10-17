@@ -1,5 +1,11 @@
 import {
   CharacterCreatedEventSchema,
+  CharacterRenamedEventSchema,
+  CharacterArchivedEventSchema,
+  CharacterRestoredEventSchema,
+  RenameCharacterCommandSchema,
+  ArchiveCharacterCommandSchema,
+  RestoreCharacterCommandSchema,
   CreateCharacterCommandSchema,
   LocationDescribeQuerySchema,
   LocationProjectionSchema,
@@ -48,9 +54,44 @@ export const characterPlugin: EnginePlugin = {
       };
     });
 
+    registerCommand('character.rename', RenameCharacterCommandSchema, async (command, context) => {
+      const character = await state.load(context, command.characterId);
+      if (!character || character.archived) throw new Error('That character is no longer available.');
+      const name = command.payload.name.trim();
+      if (!name || name.length > 48) throw new Error('Choose a character name between 1 and 48 characters.');
+      CharacterRenamedEventSchema.shape.payload.parse({ characterId: character.characterId, name });
+      return {
+        streamId: command.characterId,
+        expectedVersion: command.expectedVersion,
+        events: [{ type: 'character.renamed', version: 1, payload: { characterId: command.characterId, name } }],
+      };
+    });
+
+    registerCommand('character.archive', ArchiveCharacterCommandSchema, async (command, context) => {
+      const character = await state.load(context, command.characterId);
+      if (!character || character.archived) throw new Error('That character is no longer available.');
+      CharacterArchivedEventSchema.shape.payload.parse({ characterId: character.characterId });
+      return {
+        streamId: command.characterId,
+        expectedVersion: command.expectedVersion,
+        events: [{ type: 'character.archived', version: 1, payload: { characterId: command.characterId } }],
+      };
+    });
+
+    registerCommand('character.restore', RestoreCharacterCommandSchema, async (command, context) => {
+      const character = await state.load(context, command.characterId);
+      if (!character || !character.archived) throw new Error('That archived character is no longer available.');
+      CharacterRestoredEventSchema.shape.payload.parse({ characterId: character.characterId });
+      return {
+        streamId: command.characterId,
+        expectedVersion: command.expectedVersion,
+        events: [{ type: 'character.restored', version: 1, payload: { characterId: command.characterId } }],
+      };
+    });
+
     registerQuery('location.describe', LocationDescribeQuerySchema, async (query, context) => {
       const character = await state.load(context, query.characterId);
-      if (!character) throw new Error('Create a character before exploring.');
+      if (!character || character.archived) throw new Error('That character is no longer available.');
       const requestedLocationId = query.payload.locationId;
       if (requestedLocationId && requestedLocationId !== character.locationId) {
         throw new Error('You can only inspect your current location.');

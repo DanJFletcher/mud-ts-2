@@ -26,6 +26,27 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         locationId: moved.payload.toLocationId,
         revision: event.aggregateVersion,
       });
+    } else if (event.type === 'character.renamed') {
+      if (!state) throw new Error('Rename event encountered before character creation.');
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        name: String(event.payload.name),
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.archived') {
+      if (!state) throw new Error('Archive event encountered before character creation.');
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        archived: true,
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.restored') {
+      if (!state) throw new Error('Restore event encountered before character creation.');
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        archived: false,
+        revision: event.aggregateVersion,
+      });
     }
   }
   return state;

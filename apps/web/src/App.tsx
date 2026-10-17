@@ -10,10 +10,11 @@ import {
   TextInput,
   type ActivityEntry,
 } from "@mudd/ui";
-import { Compass, Moon, NotebookText, Sun, UserRound } from "lucide-react";
+import { Compass, Moon, NotebookText, Sun, UserRound, Users } from "lucide-react";
 
 const client = new MuddHttpClient({ worldInstanceId: "mudd-demo-instance" });
 type Screen = "play" | "traveler" | "notes";
+type WorldClientProps = { onLeaveWorld: () => Promise<void> };
 
 function currentScreen(): Screen {
   const route = window.location.hash.slice(2);
@@ -24,15 +25,15 @@ function makeEntry(kind: ActivityEntry["kind"], text: string): ActivityEntry {
   return { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, kind, text };
 }
 
-export default function App() {
+export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"create" | "look" | "move" | null>(null);
+  const [pending, setPending] = useState<"look" | "move" | null>(null);
   const [pendingExitId, setPendingExitId] = useState<string>();
-  const [name, setName] = useState("");
   const [command, setCommand] = useState("");
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [connectionError, setConnectionError] = useState("");
+  const [leaving, setLeaving] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(() =>
     window.localStorage.getItem("mudd-theme") === "dark" ? "dark" : "light"
   );
@@ -81,22 +82,6 @@ export default function App() {
     setSnapshot(await client.getGame());
     setConnectionError("");
   }, [addEntry]);
-
-  const createCharacter = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const requestedName = name.trim();
-    if (!requestedName || pending) return;
-    setPending("create");
-    try {
-      await client.createCharacter(requestedName);
-      await refreshAfterMutation(`${requestedName} joined the path.`);
-      setName("");
-    } catch (error) {
-      addEntry("error", error instanceof Error ? error.message : "Character creation failed.");
-    } finally {
-      setPending(null);
-    }
-  };
 
   const inspect = useCallback(async () => {
     if (!snapshot?.character || pending) return;
@@ -167,6 +152,17 @@ export default function App() {
     setTheme(next);
   };
 
+  const handleLeaveWorld = async () => {
+    setLeaving(true);
+    try {
+      await onLeaveWorld();
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "Could not leave the world.");
+    } finally {
+      setLeaving(false);
+    }
+  };
+
   const exits = useMemo(() => snapshot?.location?.exits ?? [], [snapshot?.location?.exits]);
   const latestEntry = entries[entries.length - 1];
 
@@ -175,6 +171,9 @@ export default function App() {
       <header className="focused-topbar">
         <div className="focused-brand"><span className="focused-brand-mark" aria-hidden="true" /> MUDD</div>
         <div className="focused-top-actions">
+          <Button type="button" variant="quiet" className="focused-leave-world" onClick={() => void handleLeaveWorld()} disabled={leaving}>
+            <Users size={16} /><span>Characters</span>
+          </Button>
           <Button
             type="button"
             variant="quiet"
@@ -208,7 +207,10 @@ export default function App() {
             ) : connectionError && !snapshot ? (
               <Panel className="focused-room focused-connection" eyebrow="Connection" title="World unavailable">
                 <Text variant="muted">{connectionError}</Text>
-                <Button type="button" onClick={() => void loadGame()}>Retry</Button>
+                <div className="focused-session-recovery-actions">
+                  <Button type="button" onClick={() => void loadGame()}>Retry</Button>
+                  <Button type="button" variant="quiet" onClick={() => void handleLeaveWorld()} disabled={leaving}>Characters</Button>
+                </div>
               </Panel>
             ) : snapshot?.location ? (
               <>
@@ -251,12 +253,12 @@ export default function App() {
                 </section>
               </>
             ) : (
-              <Panel className="focused-room focused-arrival" eyebrow="Traveler" title="Choose a name">
-                <p className="focused-arrival-copy">A name to carry through the world.</p>
-                <form className="focused-arrival-form" onSubmit={createCharacter}>
-                  <TextInput id="focused-traveler-name" label="Name" placeholder="Name" maxLength={48} value={name} onChange={(event) => setName(event.target.value)} disabled={pending === "create"} />
-                  <Button type="submit" disabled={!name.trim() || pending === "create"}>{pending === "create" ? "Joining…" : "Begin"}</Button>
-                </form>
+              <Panel className="focused-room focused-connection" eyebrow="World session" title="Character unavailable">
+                <Text variant="muted">This character can’t be loaded in the current world session.</Text>
+                <div className="focused-session-recovery-actions">
+                  <Button type="button" onClick={() => void loadGame()}>Retry</Button>
+                  <Button type="button" variant="quiet" onClick={() => void handleLeaveWorld()} disabled={leaving}>Characters</Button>
+                </div>
               </Panel>
             )}
 
@@ -284,7 +286,7 @@ export default function App() {
                   <span className="focused-avatar" aria-hidden="true">{(snapshot.character?.name || snapshot.player.displayName).trim().charAt(0).toUpperCase() || "G"}</span>
                   <div>
                     <h2 className="focused-identity-name">{snapshot.character?.name || "Guest"}</h2>
-                    <p className="focused-identity-label">{snapshot.player.displayName} · Guest identity</p>
+                    <p className="focused-identity-label">{snapshot.player.displayName} · Account</p>
                   </div>
                 </div>
                 <div className="focused-details">

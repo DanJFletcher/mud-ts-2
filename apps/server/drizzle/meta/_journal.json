@@ -8,6 +8,13 @@
       "when": 1792263592017,
       "tag": "0000_blue_mad_thinker",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792269590218,
+      "tag": "0001_woozy_selene",
+      "breakpoints": true
     }
   ]
 }

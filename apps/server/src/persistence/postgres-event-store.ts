@@ -2,7 +2,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import type { CommandReceipt } from '@mudd/contracts';
 import type { AppendOutcome, AppendRequest, EventStorePort, StoredGameEvent } from '@mudd/engine-core';
-import { characters, commandReceipts, gameEvents } from '../db/schema.js';
+import { characters, commandReceipts, gameEvents, worldSessions } from '../db/schema.js';
 import { db } from '../db/client.js';
 
 function conflict(
@@ -141,6 +141,31 @@ export class PostgresEventStore implements EventStorePort {
             worldInstanceId: event.worldInstanceId,
             name: String(event.payload.name),
           }).onConflictDoNothing();
+        } else if (event.type === 'character.renamed') {
+          await tx.update(characters)
+            .set({ name: String(event.payload.name) })
+            .where(and(
+              eq(characters.id, String(event.payload.characterId)),
+              eq(characters.worldInstanceId, event.worldInstanceId),
+            ));
+        } else if (event.type === 'character.archived') {
+          await tx.execute(sql`SELECT id FROM characters WHERE id = ${String(event.payload.characterId)} FOR UPDATE`);
+          const [activeSession] = await tx.select({ id: worldSessions.id }).from(worldSessions)
+            .where(eq(worldSessions.characterId, String(event.payload.characterId))).limit(1);
+          if (activeSession) throw new Error('Leave the world before archiving this character.');
+          await tx.update(characters)
+            .set({ archivedAt: new Date(event.occurredAt) })
+            .where(and(
+              eq(characters.id, String(event.payload.characterId)),
+              eq(characters.worldInstanceId, event.worldInstanceId),
+            ));
+        } else if (event.type === 'character.restored') {
+          await tx.update(characters)
+            .set({ archivedAt: null })
+            .where(and(
+              eq(characters.id, String(event.payload.characterId)),
+              eq(characters.worldInstanceId, event.worldInstanceId),
+            ));
         }
       }
 

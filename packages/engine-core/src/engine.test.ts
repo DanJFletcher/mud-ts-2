@@ -139,6 +139,90 @@ describe('MUDD engine host', () => {
     await engine.stop();
   });
 
+  it('keeps multiple characters under one account and supports versioned rename and archive events', async () => {
+    const { engine, store } = makeEngine();
+    await engine.start();
+    const first = await engine.dispatch({
+      type: 'character.create',
+      version: 1,
+      commandId: 'create-first',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      payload: { name: 'Rill' },
+    }, session);
+    const second = await engine.dispatch({
+      type: 'character.create',
+      version: 1,
+      commandId: 'create-second',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      payload: { name: 'Sedge' },
+    }, session);
+    expect(first.receipt.ok).toBe(true);
+    expect(second.receipt.ok).toBe(true);
+    expect(second.streamId).not.toBe(first.streamId);
+
+    const renamed = await engine.dispatch({
+      type: 'character.rename',
+      version: 1,
+      commandId: 'rename-first',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: first.streamId,
+      expectedVersion: 1,
+      payload: { name: 'Fern' },
+    }, session);
+    expect(renamed.receipt).toMatchObject({ ok: true, newAggregateVersion: 2 });
+
+    const archived = await engine.dispatch({
+      type: 'character.archive',
+      version: 1,
+      commandId: 'archive-first',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: first.streamId,
+      expectedVersion: 2,
+      payload: {},
+    }, session);
+    expect(archived.receipt).toMatchObject({ ok: true, newAggregateVersion: 3 });
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, first.streamId!)))
+      .toMatchObject({ name: 'Fern', archived: true, revision: 3 });
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, second.streamId!)))
+      .toMatchObject({ name: 'Sedge', archived: false, revision: 1 });
+
+    const moveArchived = await engine.dispatch({
+      type: 'character.move',
+      version: 1,
+      commandId: 'move-archived',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: first.streamId,
+      expectedVersion: 3,
+      payload: { exitId: 'clearing-to-bridge' },
+    }, session);
+    expect(moveArchived.receipt).toMatchObject({ ok: false, code: 'RULE_VIOLATION' });
+
+    const restored = await engine.dispatch({
+      type: 'character.restore',
+      version: 1,
+      commandId: 'restore-first',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: first.streamId,
+      expectedVersion: 3,
+      payload: {},
+    }, session);
+    expect(restored.receipt).toMatchObject({ ok: true, newAggregateVersion: 4 });
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, first.streamId!)))
+      .toMatchObject({ name: 'Fern', archived: false, revision: 4 });
+
+    const movedAfterRestore = await engine.dispatch({
+      type: 'character.move',
+      version: 1,
+      commandId: 'move-restored',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: first.streamId,
+      expectedVersion: 4,
+      payload: { exitId: 'clearing-to-bridge' },
+    }, session);
+    expect(movedAfterRestore.receipt.ok).toBe(true);
+    await engine.stop();
+  });
+
   it('prevents stale concurrent writes and makes command retries idempotent', async () => {
     const { engine, store } = makeEngine();
     await engine.start();

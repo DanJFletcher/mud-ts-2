@@ -1,5 +1,8 @@
 import {
   CreateCharacterCommandSchema,
+  RenameCharacterCommandSchema,
+  ArchiveCharacterCommandSchema,
+  RestoreCharacterCommandSchema,
   LocationDescribeQuerySchema,
   MoveCharacterCommandSchema,
   type CharacterProjection,
@@ -11,6 +14,12 @@ export interface GameSnapshot {
   player: { id: string; displayName: string };
   character?: CharacterProjection;
   location?: LocationProjection;
+}
+
+export interface CharacterRosterSnapshot {
+  player: { id: string; displayName: string };
+  characters: Array<CharacterProjection & { locationTitle: string }>;
+  activeWorldSession: { id: string; characterId: string } | null;
 }
 
 export interface CommandResponse {
@@ -34,6 +43,29 @@ export class MuddHttpClient {
     return this.request<GameSnapshot>('/api/game');
   }
 
+  async getCharacters(): Promise<CharacterRosterSnapshot> {
+    return this.request<CharacterRosterSnapshot>('/api/characters');
+  }
+
+  async joinWorld(characterId: string): Promise<{ sessionId: string; characterId: string }> {
+    return this.request('/api/world-session', {
+      method: 'POST',
+      body: JSON.stringify({ characterId }),
+    });
+  }
+
+  async leaveWorld(): Promise<void> {
+    const response = await this.fetcher('/api/world-session', {
+      method: 'DELETE',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+    });
+    if (!response.ok) {
+      const body = await response.json() as { message?: string };
+      throw new Error(body.message ?? `Request failed (${response.status}).`);
+    }
+  }
+
   async createCharacter(name: string, commandId = crypto.randomUUID()): Promise<CommandResponse> {
     const command = CreateCharacterCommandSchema.parse({
       type: 'character.create',
@@ -41,6 +73,58 @@ export class MuddHttpClient {
       commandId,
       worldInstanceId: this.options.worldInstanceId,
       payload: { name },
+    });
+    return this.send(command);
+  }
+
+  async renameCharacter(
+    characterId: string,
+    name: string,
+    expectedVersion: number,
+    commandId = crypto.randomUUID(),
+  ): Promise<CommandResponse> {
+    const command = RenameCharacterCommandSchema.parse({
+      type: 'character.rename',
+      version: 1,
+      commandId,
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      expectedVersion,
+      payload: { name },
+    });
+    return this.send(command);
+  }
+
+  async archiveCharacter(
+    characterId: string,
+    expectedVersion: number,
+    commandId = crypto.randomUUID(),
+  ): Promise<CommandResponse> {
+    const command = ArchiveCharacterCommandSchema.parse({
+      type: 'character.archive',
+      version: 1,
+      commandId,
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      expectedVersion,
+      payload: {},
+    });
+    return this.send(command);
+  }
+
+  async restoreCharacter(
+    characterId: string,
+    expectedVersion: number,
+    commandId = crypto.randomUUID(),
+  ): Promise<CommandResponse> {
+    const command = RestoreCharacterCommandSchema.parse({
+      type: 'character.restore',
+      version: 1,
+      commandId,
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      expectedVersion,
+      payload: {},
     });
     return this.send(command);
   }
