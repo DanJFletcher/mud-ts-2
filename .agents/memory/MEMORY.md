@@ -1,0 +1,1 @@
+- [Client design priorities](client-design.md) — Mobile-first gameplay without marketing filler; Traveler info and Field notes belong on separate navigable screens.
