@@ -320,23 +320,27 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--mudd-accent) 15%, transparent);
 }
 
-.focused-paths { display: grid; gap: 8px; }
-.focused-paths-heading { margin-bottom: 1px; }
-.focused-paths .mudd-navigation { grid-template-columns: 1fr; gap: 8px; }
+.focused-paths { display: grid; gap: 4px; }
+.focused-paths-heading { margin-bottom: 0; }
+.focused-paths .mudd-navigation {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+  gap: 6px;
+}
 .focused-paths .mudd-button {
   position: relative;
   display: flex;
-  min-height: 54px;
+  min-height: 44px;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   border: 1px solid var(--mudd-border);
   border-radius: 9px;
-  padding: 10px 14px;
+  padding: 7px 10px;
   color: var(--mudd-text);
   background: var(--mudd-surface);
   text-align: left;
-  font-size: .88rem;
+  font-size: .8rem;
+  line-height: 1.25;
   font-weight: 600;
 }
 .focused-paths .mudd-button:after {
