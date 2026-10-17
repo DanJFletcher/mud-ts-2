@@ -200,7 +200,7 @@ describe('single-character world session client', () => {
     await screen.findByText('Commands');
     expect(history).toHaveTextContent('> help');
     expect(history).toHaveTextContent('take <item> — Pick up an item in the current room.');
-    expect(history).toHaveTextContent('Quick actions: Look describes the room; Walk shows available exits.');
+    expect(history).toHaveTextContent('Quick actions: Look, Read, Take, Drop, and Walk. Target actions appear when available.');
 
     fireEvent.change(commandInput, { target: { value: 'help LOOK' } });
     fireEvent.submit(commandInput.closest('form')!);
@@ -365,17 +365,23 @@ describe('single-character world session client', () => {
     )).toBe(true);
   });
 
-  it('switches quick commands from look to available walking directions', async () => {
+  it('shows look targets and switches quick commands to available walking directions', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     const history = screen.getByRole('region', { name: 'Terminal output' });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Quick look' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show look targets' }));
+    const lookTargets = screen.getByRole('group', { name: 'Things to look at' });
+    expect(lookTargets).toContainElement(screen.getByRole('button', { name: 'Look around' }));
+    expect(lookTargets).toContainElement(screen.getByRole('button', { name: 'Look at Weathered marker' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Look around' }));
     await waitFor(() => expect(screen.getAllByText('> look')).toHaveLength(2));
     expect(apiFetch.mock.calls.some(([path]) => path === '/api/queries')).toBe(true);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Return to quick commands' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Return to quick commands' }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Show walking directions' }));
-    expect(screen.queryByRole('button', { name: 'Quick look' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show look targets' })).not.toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Walking directions' })).toContainElement(
       screen.getByRole('button', { name: 'Go north' }),
     );
@@ -385,7 +391,7 @@ describe('single-character world session client', () => {
     expect(history).toHaveTextContent('> go north');
     expect(history).toHaveTextContent('You travel north.');
     expect(screen.getByRole('button', { name: 'Go south' })).toBeVisible();
-    expect(screen.queryByRole('button', { name: 'Quick look' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show look targets' })).not.toBeInTheDocument();
 
     const moveCommand = JSON.parse(
       apiFetch.mock.calls.find(([path]) => path === '/api/commands')?.[1].body as string,
@@ -398,7 +404,47 @@ describe('single-character world session client', () => {
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Return to quick commands' }));
-    expect(screen.getByRole('button', { name: 'Quick look' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Show look targets' })).toBeVisible();
+  });
+
+  it('shows contextual quick actions for supported commands and carried items', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+
+    expect(screen.getByRole('button', { name: 'Show look targets' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Quick help' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show readable objects' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Quick take Loose stone' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Show items to drop' })).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show readable objects' }));
+    const readableObjects = screen.getByRole('group', { name: 'Readable objects' });
+    expect(readableObjects).toContainElement(screen.getByRole('button', { name: 'Read Weathered marker' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Read Weathered marker' }));
+    await screen.findByText('OLD BELL TOWER — EAST');
+    expect(history).toHaveTextContent('> read Weathered marker');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Return to quick commands' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Return to quick commands' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Quick take Loose stone' }));
+    await screen.findByText('You pick up the loose stone.');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Show items to drop' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Show look targets' }));
+    const updatedLookTargets = screen.getByRole('group', { name: 'Things to look at' });
+    expect(updatedLookTargets).toContainElement(screen.getByRole('button', { name: 'Look at Loose stone' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Look at Loose stone' }));
+    await screen.findByText('A smooth, palm-sized stone with a pale stripe running through it.');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Return to quick commands' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Return to quick commands' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show items to drop' }));
+    const itemsToDrop = screen.getByRole('group', { name: 'Items to drop' });
+    expect(itemsToDrop).toContainElement(screen.getByRole('button', { name: 'Drop Loose stone' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Drop Loose stone' }));
+    await screen.findByText('You put down the loose stone.');
+    expect(itemsToDrop).toHaveTextContent('Nothing to drop');
+    fireEvent.click(screen.getByRole('button', { name: 'Return to quick commands' }));
+    expect(screen.getByRole('button', { name: 'Quick take Loose stone' })).toBeVisible();
   });
 
   it('surfaces rejected movement without changing rooms or leaving controls disabled', async () => {

@@ -253,6 +253,7 @@
   display: inline-flex;
   min-width: 40px;
   min-height: 30px;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   gap: 4px;

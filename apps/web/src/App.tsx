@@ -70,7 +70,7 @@ const GENERAL_HELP = [
   "read <object> — Read text on an object in the current room.",
   "take <item> — Pick up an item in the current room.",
   "drop <item> — Put down an item you carry.",
-  "Quick actions: Look describes the room; Walk shows available exits.",
+  "Quick actions: Look, Read, Take, Drop, and Walk. Target actions appear when available.",
 ];
 
 function getCommandHelp(topic: string): readonly string[] {
@@ -98,7 +98,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const [pending, setPending] = useState<"look" | "read" | "take" | "drop" | "move" | null>(null);
   const [pendingExitId, setPendingExitId] = useState<string>();
   const [command, setCommand] = useState("");
-  const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "walk">("quick");
+  const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "walk" | "look" | "read" | "drop">("quick");
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [connectionError, setConnectionError] = useState("");
   const [inspectedCarriedItem, setInspectedCarriedItem] = useState<{ id: string; label: string; description: string }>();
@@ -417,6 +417,16 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
       return [{ target, label: normalizedTarget }];
     });
   }, [exits]);
+  const quickLookTargets = useMemo(() => {
+    const roomObjects = snapshot?.location?.objects ?? [];
+    const roomObjectIds = new Set(roomObjects.map((object) => object.id));
+    return [
+      ...roomObjects.map(({ id, label }) => ({ id, label })),
+      ...(snapshot?.character?.inventory ?? [])
+        .filter((item) => !roomObjectIds.has(item.id))
+        .map(({ id, label }) => ({ id, label })),
+    ];
+  }, [snapshot?.character?.inventory, snapshot?.location?.objects]);
 
   return (
     <main className="focused-client" data-theme={theme}>
@@ -485,12 +495,17 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                   </div>
                   <section className="focused-quick-commands" aria-label="Quick commands">
                     <span className="focused-quick-commands__label" aria-hidden="true">
-                      {quickCommandMode === "walk" ? "Walk" : "Quick"}
+                      {quickCommandMode === "walk" ? "Walk" : quickCommandMode === "look" ? "Look" : quickCommandMode === "read" ? "Read" : quickCommandMode === "drop" ? "Drop" : "Quick"}
                     </span>
                     <div
                       className="focused-quick-commands__actions"
                       role="group"
-                      aria-label={quickCommandMode === "walk" ? "Walking directions" : "Quick commands"}
+                      aria-label={
+                        quickCommandMode === "walk" ? "Walking directions" :
+                          quickCommandMode === "look" ? "Things to look at" :
+                          quickCommandMode === "read" ? "Readable objects" :
+                            quickCommandMode === "drop" ? "Items to drop" : "Quick commands"
+                      }
                     >
                       {quickCommandMode === "walk" ? (
                         <>
@@ -516,16 +531,131 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                             </button>
                           )) : <span className="focused-quick-commands__empty">No open directions</span>}
                         </>
+                      ) : quickCommandMode === "look" ? (
+                        <>
+                          <button
+                            type="button"
+                            className="focused-quick-command focused-quick-command--back"
+                            onClick={() => setQuickCommandMode("quick")}
+                            aria-label="Return to quick commands"
+                            disabled={pending !== null}
+                          >
+                            ‹
+                          </button>
+                          <button
+                            type="button"
+                            className="focused-quick-command"
+                            onClick={() => void executeCommand("look")}
+                            aria-label="Look around"
+                            disabled={pending !== null}
+                          >
+                            room
+                          </button>
+                          {quickLookTargets.map((target) => (
+                            <button
+                              key={target.id}
+                              type="button"
+                              className="focused-quick-command"
+                              onClick={() => void executeCommand(`look at ${target.label}`)}
+                              aria-label={`Look at ${target.label}`}
+                              disabled={pending !== null}
+                            >
+                              {target.label.toLocaleLowerCase()}
+                            </button>
+                          ))}
+                        </>
+                      ) : quickCommandMode === "read" ? (
+                        <>
+                          <button
+                            type="button"
+                            className="focused-quick-command focused-quick-command--back"
+                            onClick={() => setQuickCommandMode("quick")}
+                            aria-label="Return to quick commands"
+                            disabled={pending !== null}
+                          >
+                            ‹
+                          </button>
+                          {(snapshot.location.objects ?? []).filter((object) => object.readable).length ? (
+                            (snapshot.location.objects ?? []).filter((object) => object.readable).map((object) => (
+                              <button
+                                key={object.id}
+                                type="button"
+                                className="focused-quick-command"
+                                onClick={() => void executeCommand(`read ${object.label}`)}
+                                aria-label={`Read ${object.label}`}
+                                disabled={pending !== null}
+                              >
+                                {object.label.toLocaleLowerCase()}
+                              </button>
+                            ))
+                          ) : <span className="focused-quick-commands__empty">Nothing readable here</span>}
+                        </>
+                      ) : quickCommandMode === "drop" ? (
+                        <>
+                          <button
+                            type="button"
+                            className="focused-quick-command focused-quick-command--back"
+                            onClick={() => setQuickCommandMode("quick")}
+                            aria-label="Return to quick commands"
+                            disabled={pending !== null}
+                          >
+                            ‹
+                          </button>
+                          {(snapshot.character?.inventory ?? []).length ? (
+                            (snapshot.character?.inventory ?? []).map((item) => (
+                              <button
+                                key={item.id}
+                                type="button"
+                                className="focused-quick-command"
+                                onClick={() => void executeCommand(`drop ${item.label}`)}
+                                aria-label={`Drop ${item.label}`}
+                                disabled={pending !== null}
+                              >
+                                {item.label.toLocaleLowerCase()}
+                              </button>
+                            ))
+                          ) : <span className="focused-quick-commands__empty">Nothing to drop</span>}
+                        </>
                       ) : (
                         <>
                           <button
                             type="button"
                             className="focused-quick-command"
-                            onClick={() => void executeCommand("look")}
-                            aria-label="Quick look"
+                            onClick={() => setQuickCommandMode("look")}
+                            aria-label="Show look targets"
                             disabled={pending !== null}
                           >
-                            look
+                            look <span aria-hidden="true">›</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="focused-quick-command"
+                            onClick={() => setQuickCommandMode("read")}
+                            aria-label="Show readable objects"
+                            disabled={pending !== null}
+                          >
+                            read <span aria-hidden="true">›</span>
+                          </button>
+                          {(snapshot.location.objects ?? []).filter((object) => object.takeable).map((object) => (
+                            <button
+                              key={`take-${object.id}`}
+                              type="button"
+                              className="focused-quick-command"
+                              onClick={() => void executeCommand(`take ${object.label}`)}
+                              aria-label={`Quick take ${object.label}`}
+                              disabled={pending !== null}
+                            >
+                              take {object.label.toLocaleLowerCase()}
+                            </button>
+                          ))}
+                          <button
+                            type="button"
+                            className="focused-quick-command"
+                            onClick={() => setQuickCommandMode("drop")}
+                            aria-label="Show items to drop"
+                            disabled={pending !== null}
+                          >
+                            drop <span aria-hidden="true">›</span>
                           </button>
                           <button
                             type="button"
@@ -541,7 +671,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                     </div>
                   </section>
                   <section className="focused-command" aria-label="Text command">
-                    <div className="focused-command-label"><span>Command</span><span>look at · take · drop · read</span></div>
+                    <div className="focused-command-label"><span>Command</span><span>help · look at · go · read · take · drop</span></div>
                     <form className="focused-command-form" onSubmit={submitCommand}>
                       <TextInput
                         id="focused-world-command"
