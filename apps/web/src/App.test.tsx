@@ -14,6 +14,8 @@ let room: 'clearing' | 'bridge';
 let revision: number;
 let moveError: string | null;
 let itemTaken: boolean;
+let includeSecondTakeable: boolean;
+let secondItemTaken: boolean;
 
 function currentLocation() {
   return {
@@ -34,6 +36,13 @@ function currentLocation() {
         id: 'mossgate-loose-stone',
         label: 'Loose stone',
         description: 'A smooth, palm-sized stone with a pale stripe running through it.',
+        readable: false,
+        takeable: true,
+      }] : []),
+      ...(includeSecondTakeable && !secondItemTaken ? [{
+        id: 'mossgate-lost-feather',
+        label: 'Lost feather',
+        description: 'A small gray feather lies among the pale stones.',
         readable: false,
         takeable: true,
       }] : []),
@@ -59,6 +68,8 @@ beforeEach(() => {
   revision = 1;
   moveError = null;
   itemTaken = false;
+  includeSecondTakeable = false;
+  secondItemTaken = false;
   apiFetch.mockReset();
   apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
     if (path === '/api/game') {
@@ -70,11 +81,18 @@ beforeEach(() => {
           name: 'Rowan',
           locationId: currentLocation().locationId,
           revision,
-          inventory: itemTaken ? [{
-            id: 'mossgate-loose-stone',
-            label: 'Loose stone',
-            description: 'A smooth, palm-sized stone with a pale stripe running through it.',
-          }] : [],
+          inventory: [
+            ...(itemTaken ? [{
+              id: 'mossgate-loose-stone',
+              label: 'Loose stone',
+              description: 'A smooth, palm-sized stone with a pale stripe running through it.',
+            }] : []),
+            ...(secondItemTaken ? [{
+              id: 'mossgate-lost-feather',
+              label: 'Lost feather',
+              description: 'A small gray feather lies among the pale stones.',
+            }] : []),
+          ],
         },
         location: currentLocation(),
       });
@@ -100,14 +118,16 @@ beforeEach(() => {
       return json({ ok: true, value: currentLocation() });
     }
     if (path === '/api/commands') {
-      const command = JSON.parse(String(init?.body ?? '{}')) as { type?: string };
+      const command = JSON.parse(String(init?.body ?? '{}')) as { type?: string; payload?: { itemId?: string } };
       if (command.type === 'character.take') {
-        itemTaken = true;
+        if (command.payload?.itemId === 'mossgate-loose-stone') itemTaken = true;
+        if (command.payload?.itemId === 'mossgate-lost-feather') secondItemTaken = true;
         revision += 1;
         return json({ receipt: { ok: true, newAggregateVersion: revision }, streamId: characterId });
       }
       if (command.type === 'character.drop') {
-        itemTaken = false;
+        if (command.payload?.itemId === 'mossgate-loose-stone') itemTaken = false;
+        if (command.payload?.itemId === 'mossgate-lost-feather') secondItemTaken = false;
         revision += 1;
         return json({ receipt: { ok: true, newAggregateVersion: revision }, streamId: characterId });
       }
@@ -201,8 +221,8 @@ describe('single-character world session client', () => {
     fireEvent.submit(commandInput.closest('form')!);
     await screen.findByText('Commands');
     expect(history).toHaveTextContent('> help');
-    expect(history).toHaveTextContent('take <item> — Pick up an item in the current room.');
-    expect(history).toHaveTextContent('Quick actions: Look, Read, Take, Drop, and Go. Target actions appear when available.');
+    expect(history).toHaveTextContent('take <item> | take all — Pick up one or all items in the current room.');
+    expect(history).toHaveTextContent('Quick actions: Look, Read, Take, Drop, Go, and Help.');
 
     fireEvent.change(commandInput, { target: { value: 'help LOOK' } });
     fireEvent.submit(commandInput.closest('form')!);
@@ -414,10 +434,12 @@ describe('single-character world session client', () => {
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     const history = screen.getByRole('region', { name: 'Terminal output' });
 
+    expect(screen.queryByText('Quick', { exact: true })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Show look targets' })).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Quick help' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Show readable objects' })).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Quick take Loose stone' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Show items to take' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show more quick actions' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Show items to drop' })).toBeVisible();
 
     fireEvent.click(screen.getByRole('button', { name: 'Show readable objects' }));
@@ -429,9 +451,20 @@ describe('single-character world session client', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Return to quick commands' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Return to quick commands' }));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Quick take Loose stone' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show more quick actions' }));
+    const moreQuickActions = screen.getByRole('group', { name: 'More quick actions' });
+    expect(moreQuickActions).toContainElement(screen.getByRole('button', { name: 'Quick help' }));
+    expect(moreQuickActions).toContainElement(screen.getByRole('button', { name: 'Show items to take' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show items to take' }));
+    const itemsToTake = screen.getByRole('group', { name: 'Items to take' });
+    expect(itemsToTake).toContainElement(screen.getByRole('button', { name: 'Take Loose stone' }));
+    expect(itemsToTake).toContainElement(screen.getByRole('button', { name: 'Take all available items' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Take Loose stone' }));
     await screen.findByText('You pick up the loose stone.');
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Show items to drop' })).toBeEnabled());
+    expect(itemsToTake).toHaveTextContent('Nothing to take here');
+    fireEvent.click(screen.getByRole('button', { name: 'Return to more quick actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Return to main quick actions' }));
     fireEvent.click(screen.getByRole('button', { name: 'Show look targets' }));
     const updatedLookTargets = screen.getByRole('group', { name: 'Things to look at' });
     expect(updatedLookTargets).toContainElement(screen.getByRole('button', { name: 'Look at Loose stone' }));
@@ -446,7 +479,44 @@ describe('single-character world session client', () => {
     await screen.findByText('You put down the loose stone.');
     expect(itemsToDrop).toHaveTextContent('Nothing to drop');
     fireEvent.click(screen.getByRole('button', { name: 'Return to quick commands' }));
-    expect(screen.getByRole('button', { name: 'Quick take Loose stone' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Show more quick actions' })).toBeVisible();
+  });
+
+  it('shows Help on the second quick-action page and lets Take all pick up every room item', async () => {
+    includeSecondTakeable = true;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show more quick actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Quick help' }));
+    expect(history).toHaveTextContent('> help');
+    expect(history).toHaveTextContent('Commands');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show items to take' }));
+    const itemsToTake = screen.getByRole('group', { name: 'Items to take' });
+    expect(itemsToTake).toContainElement(screen.getByRole('button', { name: 'Take Loose stone' }));
+    expect(itemsToTake).toContainElement(screen.getByRole('button', { name: 'Take Lost feather' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Take all available items' }));
+
+    await screen.findByText('You pick up the loose stone.');
+    await screen.findByText('You pick up the lost feather.');
+    expect(history).toHaveTextContent('> take all');
+    expect(itemsToTake).toHaveTextContent('Nothing to take here');
+
+    const takeCommands = apiFetch.mock.calls
+      .filter(([path, init]) => path === '/api/commands' &&
+        JSON.parse(String(init?.body ?? '{}')).type === 'character.take')
+      .map(([, init]) => JSON.parse(String(init?.body ?? '{}')) as {
+        expectedVersion: number;
+        payload: { itemId: string };
+      });
+    expect(takeCommands).toHaveLength(2);
+    expect(takeCommands.map((entry) => entry.payload.itemId)).toEqual([
+      'mossgate-loose-stone',
+      'mossgate-lost-feather',
+    ]);
+    expect(takeCommands.map((entry) => entry.expectedVersion)).toEqual([1, 2]);
   });
 
   it('surfaces rejected movement without changing rooms or leaving controls disabled', async () => {

@@ -45,8 +45,8 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
     "Read written text on an object in the current room.",
   ],
   take: [
-    "Usage: take <item>",
-    "Pick up an item available in the current room.",
+    "Usage: take <item> | take all",
+    "Pick up an item in the current room, or take all available items there.",
   ],
   drop: [
     "Usage: drop <item>",
@@ -64,9 +64,9 @@ const GENERAL_HELP = [
   "look [at] <object> — Describe the room or inspect an object here or in your inventory.",
   "go <direction> — Travel through an available exit.",
   "read <object> — Read text on an object in the current room.",
-  "take <item> — Pick up an item in the current room.",
+  "take <item> | take all — Pick up one or all items in the current room.",
   "drop <item> — Put down an item you carry.",
-  "Quick actions: Look, Read, Take, Drop, and Go. Target actions appear when available.",
+  "Quick actions: Look, Read, Take, Drop, Go, and Help.",
 ];
 
 function getCommandHelp(topic: string): readonly string[] {
@@ -94,7 +94,8 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const [pending, setPending] = useState<"look" | "read" | "take" | "drop" | "move" | null>(null);
   const [pendingExitId, setPendingExitId] = useState<string>();
   const [command, setCommand] = useState("");
-  const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "go" | "look" | "read" | "drop">("quick");
+  const [quickCommandPage, setQuickCommandPage] = useState<"main" | "more">("main");
+  const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "go" | "look" | "read" | "drop" | "take">("quick");
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [connectionError, setConnectionError] = useState("");
   const [inspectedCarriedItem, setInspectedCarriedItem] = useState<{ id: string; label: string; description: string }>();
@@ -242,6 +243,46 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     }
   }, [addEntry, pending, refreshAfterMutation, snapshot]);
 
+  const takeAllObjects = useCallback(async () => {
+    if (!snapshot?.character || pending) return;
+    setPending("take");
+    try {
+      let latestSnapshot = await client.getGame();
+      let takenCount = 0;
+      const initialTakeables = (latestSnapshot.location?.objects ?? []).filter((object) => object.takeable);
+      if (!initialTakeables.length) {
+        addEntry("error", "There is nothing here you can take.");
+        return;
+      }
+
+      for (const item of initialTakeables) {
+        const location = latestSnapshot.location;
+        if (!location || !location.objects.some((object) => object.id === item.id && object.takeable)) continue;
+        await client.take(snapshot.character.characterId, item.id, location.revision);
+        latestSnapshot = await client.getGame();
+        setSnapshot(latestSnapshot);
+        setConnectionError("");
+        addEntry("narration", `You pick up the ${item.label.toLocaleLowerCase()}.`);
+        takenCount += 1;
+      }
+
+      if (!takenCount) addEntry("error", "There is nothing here you can take.");
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "You cannot take those items just now.");
+      try {
+        const currentSnapshot = await client.getGame();
+        setSnapshot(currentSnapshot);
+        setConnectionError("");
+      } catch (refreshError) {
+        const message = refreshError instanceof Error ? refreshError.message : "The world could not be reached.";
+        setConnectionError(message);
+        addEntry("error", message);
+      }
+    } finally {
+      setPending(null);
+    }
+  }, [addEntry, pending, snapshot]);
+
   const dropObject = useCallback(async (itemId: string, label: string) => {
     if (!snapshot?.character || !snapshot.location || pending) return;
     setPending("drop");
@@ -320,6 +361,10 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
         addEntry("error", "Take what? Try “take stone”.");
         return;
       }
+      if (target.toLocaleLowerCase() === "all") {
+        await takeAllObjects();
+        return;
+      }
       const objects = snapshot?.location?.objects ?? [];
       const matches = findObjectMatches(target, objects);
       if (matches.length === 0) {
@@ -375,7 +420,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     }
     addEntry("system", `> ${value}`);
     addEntry("error", 'Unknown command. Try "help" for the command list.');
-  }, [addEntry, dropObject, inspect, move, pending, readObject, snapshot, takeObject]);
+  }, [addEntry, dropObject, inspect, move, pending, readObject, snapshot, takeAllObjects, takeObject]);
 
   const submitCommand = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -423,6 +468,11 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
         .map(({ id, label }) => ({ id, label })),
     ];
   }, [snapshot?.character?.inventory, snapshot?.location?.objects]);
+  const quickTakeableObjects = useMemo(
+    () => (snapshot?.location?.objects ?? []).filter((object) => object.takeable),
+    [snapshot?.location?.objects],
+  );
+  const quickReturnLabel = quickCommandPage === "more" ? "Return to more quick actions" : "Return to quick commands";
 
   return (
     <main className="focused-client" data-theme={theme}>
@@ -490,17 +540,26 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                     {entries.length > 0 && <ActivityLog entries={entries} label="Terminal transcript" />}
                   </div>
                   <section className="focused-quick-commands" aria-label="Quick commands">
-                    <span className="focused-quick-commands__label" aria-hidden="true">
-                      {quickCommandMode === "go" ? "Go" : quickCommandMode === "look" ? "Look" : quickCommandMode === "read" ? "Read" : quickCommandMode === "drop" ? "Drop" : "Quick"}
-                    </span>
+                    {(quickCommandMode !== "quick" || quickCommandPage === "more") && (
+                      <span className="focused-quick-commands__label" aria-hidden="true">
+                        {quickCommandMode === "quick"
+                          ? "More"
+                          : quickCommandMode === "go" ? "Go"
+                            : quickCommandMode === "look" ? "Look"
+                              : quickCommandMode === "read" ? "Read"
+                                : quickCommandMode === "drop" ? "Drop" : "Take"}
+                      </span>
+                    )}
                     <div
                       className="focused-quick-commands__actions"
                       role="group"
                       aria-label={
-                        quickCommandMode === "go" ? "Available directions" :
-                          quickCommandMode === "look" ? "Things to look at" :
-                          quickCommandMode === "read" ? "Readable objects" :
-                            quickCommandMode === "drop" ? "Items to drop" : "Quick commands"
+                        quickCommandMode === "quick"
+                          ? quickCommandPage === "more" ? "More quick actions" : "Quick commands"
+                          : quickCommandMode === "go" ? "Available directions"
+                            : quickCommandMode === "look" ? "Things to look at"
+                              : quickCommandMode === "read" ? "Readable objects"
+                                : quickCommandMode === "drop" ? "Items to drop" : "Items to take"
                       }
                     >
                       {quickCommandMode === "go" ? (
@@ -612,6 +671,73 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                             ))
                           ) : <span className="focused-quick-commands__empty">Nothing to drop</span>}
                         </>
+                      ) : quickCommandMode === "take" ? (
+                        <>
+                          <button
+                            type="button"
+                            className="focused-quick-command focused-quick-command--back"
+                            onClick={() => setQuickCommandMode("quick")}
+                            aria-label={quickReturnLabel}
+                            disabled={pending !== null}
+                          >
+                            ‹
+                          </button>
+                          {quickTakeableObjects.length ? (
+                            <>
+                              <button
+                                type="button"
+                                className="focused-quick-command"
+                                onClick={() => void executeCommand("take all")}
+                                aria-label="Take all available items"
+                                disabled={pending !== null}
+                              >
+                                all
+                              </button>
+                              {quickTakeableObjects.map((object) => (
+                                <button
+                                  key={object.id}
+                                  type="button"
+                                  className="focused-quick-command"
+                                  onClick={() => void executeCommand(`take ${object.label}`)}
+                                  aria-label={`Take ${object.label}`}
+                                  disabled={pending !== null}
+                                >
+                                  {object.label.toLocaleLowerCase()}
+                                </button>
+                              ))}
+                            </>
+                          ) : <span className="focused-quick-commands__empty">Nothing to take here</span>}
+                        </>
+                      ) : quickCommandMode === "quick" && quickCommandPage === "more" ? (
+                        <>
+                          <button
+                            type="button"
+                            className="focused-quick-command focused-quick-command--back"
+                            onClick={() => setQuickCommandPage("main")}
+                            aria-label="Return to main quick actions"
+                            disabled={pending !== null}
+                          >
+                            ‹
+                          </button>
+                          <button
+                            type="button"
+                            className="focused-quick-command"
+                            onClick={() => setQuickCommandMode("take")}
+                            aria-label="Show items to take"
+                            disabled={pending !== null}
+                          >
+                            take <span aria-hidden="true">›</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="focused-quick-command"
+                            onClick={() => void executeCommand("help")}
+                            aria-label="Quick help"
+                            disabled={pending !== null}
+                          >
+                            help
+                          </button>
+                        </>
                       ) : (
                         <>
                           <button
@@ -632,18 +758,6 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                           >
                             read <span aria-hidden="true">›</span>
                           </button>
-                          {(snapshot.location.objects ?? []).filter((object) => object.takeable).map((object) => (
-                            <button
-                              key={`take-${object.id}`}
-                              type="button"
-                              className="focused-quick-command"
-                              onClick={() => void executeCommand(`take ${object.label}`)}
-                              aria-label={`Quick take ${object.label}`}
-                              disabled={pending !== null}
-                            >
-                              take {object.label.toLocaleLowerCase()}
-                            </button>
-                          ))}
                           <button
                             type="button"
                             className="focused-quick-command"
@@ -661,6 +775,15 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                             disabled={pending !== null}
                           >
                             go <span aria-hidden="true">›</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="focused-quick-command focused-quick-command--next"
+                            onClick={() => setQuickCommandPage("more")}
+                            aria-label="Show more quick actions"
+                            disabled={pending !== null}
+                          >
+                            ›
                           </button>
                         </>
                       )}

@@ -285,6 +285,13 @@
   font-size: 1rem;
 }
 
+.focused-quick-command--next {
+  min-width: 38px;
+  margin-left: auto;
+  padding-inline: 6px;
+  font-size: 1rem;
+}
+
 .focused-quick-commands__empty {
   color: var(--terminal-muted);
   font: 400 .68rem/1.3 "DM Mono", monospace;
