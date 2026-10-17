@@ -1,6 +1,6 @@
 import "./_group.css";
 import "./_focused.css";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { MuddHttpClient, type GameSnapshot } from "./_shared/client";
 import {
   ActivityLog,
@@ -28,7 +28,26 @@ export function FocusedClient() {
   const [pendingExitId, setPendingExitId] = useState<string>();
   const [name, setName] = useState("");
   const [command, setCommand] = useState("");
-  const [entries, setEntries] = useState<ActivityEntry[]>([]);
+  const [entries, setEntries] = useState<ActivityEntry[]>([
+    { id: "preview-look", kind: "system", text: "> look" },
+    { id: "preview-look-result", kind: "narration", text: "You look around. A circle of pale stones breaks through the moss." },
+    { id: "preview-north", kind: "system", text: "> go north" },
+    { id: "preview-north-result", kind: "system", text: "You travel north." },
+    { id: "preview-bridge-look", kind: "system", text: "> look" },
+    { id: "preview-bridge-description", kind: "narration", text: "You look around. A low stone bridge crosses clear water." },
+    { id: "preview-south", kind: "system", text: "> go south" },
+    { id: "preview-south-result", kind: "system", text: "You travel south." },
+    { id: "preview-east", kind: "system", text: "> go east" },
+    { id: "preview-east-result", kind: "system", text: "You travel east." },
+    { id: "preview-tower-north", kind: "system", text: "> go north" },
+    { id: "preview-tower-north-result", kind: "system", text: "You travel north." },
+    { id: "preview-bridge-south", kind: "system", text: "> go south" },
+    { id: "preview-bridge-south-result", kind: "system", text: "You travel south." },
+    { id: "preview-return-look", kind: "system", text: "> look" },
+    { id: "preview-return-description", kind: "narration", text: "You look around. A circle of pale stones breaks through the moss." },
+  ]);
+  const terminalHistoryRef = useRef<HTMLDivElement>(null);
+  const terminalFollowsLatestRef = useRef(true);
   const [connectionError, setConnectionError] = useState("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [screen, setScreen] = useState<Screen>(() => {
@@ -37,8 +56,14 @@ export function FocusedClient() {
   });
 
   const addEntry = useCallback((kind: ActivityEntry["kind"], text: string) => {
-    setEntries((current) => [...current.slice(-29), makeEntry(kind, text)]);
+    terminalFollowsLatestRef.current = true;
+    setEntries((current) => [...current, makeEntry(kind, text)]);
   }, []);
+
+  useEffect(() => {
+    const history = terminalHistoryRef.current;
+    if (history && terminalFollowsLatestRef.current) history.scrollTop = history.scrollHeight;
+  }, [entries]);
 
   useEffect(() => {
     const stored = window.localStorage.getItem("mudd-theme");
@@ -158,7 +183,6 @@ export function FocusedClient() {
   };
 
   const exits = useMemo(() => snapshot?.location?.exits ?? [], [snapshot?.location?.exits]);
-  const latestEntry = entries[entries.length - 1];
 
   return (
     <main className="focused-client" data-theme={theme}>
@@ -196,11 +220,40 @@ export function FocusedClient() {
               </Panel>
             ) : snapshot?.location ? (
               <>
-                <Panel className="focused-room" aria-busy={pending === "move" || pending === "look"}>
-                  <RoomDescription title={snapshot.location.title} description={snapshot.location.description} exits={exits} />
-                  <Button type="button" variant="quiet" className="focused-look" onClick={() => void inspect()} disabled={pending !== null}>
-                    {pending === "look" ? "Looking…" : "Look around"}
-                  </Button>
+                <Panel className="focused-room focused-terminal" aria-busy={pending === "move" || pending === "look"}>
+                  <div className="focused-terminal-room">
+                    <div className="focused-terminal-head">
+                      <span>World activity</span>
+                      <span>{entries.length} {entries.length === 1 ? "event" : "events"}</span>
+                    </div>
+                    <RoomDescription title={snapshot.location.title} description={snapshot.location.description} exits={exits} />
+                  </div>
+                  <div
+                    className="focused-terminal-history"
+                    ref={terminalHistoryRef}
+                    role="region"
+                    aria-label="Event and command history"
+                    tabIndex={0}
+                    onScroll={(event) => {
+                      const history = event.currentTarget;
+                      terminalFollowsLatestRef.current = history.scrollHeight - history.scrollTop - history.clientHeight < 32;
+                    }}
+                  >
+                    {entries.length ? (
+                      <ActivityLog entries={entries} label="Event and command history" />
+                    ) : (
+                      <p className="focused-terminal-empty">No events yet.</p>
+                    )}
+                  </div>
+                  <section className="focused-command" aria-label="Text command">
+                    <div className="focused-command-label"><span>Command</span><span>look · go north</span></div>
+                    <form className="focused-command-form" onSubmit={submitCommand}>
+                      <TextInput id="focused-world-command" label="Enter a command" placeholder="Type a command" value={command} onChange={(event) => setCommand(event.target.value)} disabled={pending !== null} autoComplete="off" spellCheck={false} />
+                      <Button type="submit" variant="secondary" disabled={!command.trim() || pending !== null}>
+                        {pending === "look" ? "Looking" : pending === "move" ? "Moving" : "Send"}
+                      </Button>
+                    </form>
+                  </section>
                 </Panel>
                 <section className="focused-paths" aria-label="Available exits">
                   <div className="focused-kicker focused-paths-heading">Available paths</div>
@@ -215,24 +268,6 @@ export function FocusedClient() {
                     <p className="focused-feedback focused-feedback--empty">No open paths from here.</p>
                   )}
                 </section>
-                <section className="focused-command" aria-label="Text command">
-                  <div className="focused-command-label"><span>Command</span><span>look · go north</span></div>
-                  <form className="focused-command-form" onSubmit={submitCommand}>
-                    <TextInput
-                      id="focused-world-command"
-                      label="Enter a command"
-                      placeholder="Type a command"
-                      value={command}
-                      onChange={(event) => setCommand(event.target.value)}
-                      disabled={pending !== null}
-                      autoComplete="off"
-                      spellCheck={false}
-                    />
-                    <Button type="submit" variant="secondary" disabled={!command.trim() || pending !== null}>
-                      {pending === "look" ? "Looking" : pending === "move" ? "Moving" : "Send"}
-                    </Button>
-                  </form>
-                </section>
               </>
             ) : (
               <Panel className="focused-room focused-arrival" eyebrow="Traveler" title="Choose a name">
@@ -244,11 +279,6 @@ export function FocusedClient() {
               </Panel>
             )}
 
-            {latestEntry && (
-              <div className={`focused-feedback ${latestEntry.kind === "error" ? "focused-feedback--error" : ""}`} role="status" aria-live="polite">
-                <i aria-hidden="true" /><p>{latestEntry.text}</p>
-              </div>
-            )}
             {connectionError && snapshot && (
               <div className="focused-feedback focused-feedback--error" role="status" aria-live="polite">
                 <i aria-hidden="true" /><p>{connectionError} <button type="button" onClick={() => void loadGame()}>Retry</button></p>

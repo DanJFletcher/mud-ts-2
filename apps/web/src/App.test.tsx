@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { apiFetch } = vi.hoisted(() => {
@@ -66,7 +66,8 @@ describe('single-character world session client', () => {
     const onLeaveWorld = vi.fn().mockResolvedValue(undefined);
     render(<WorldClient onLeaveWorld={onLeaveWorld} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
-    expect(screen.getByRole('button', { name: 'Look around' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Look around' })).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Enter a command' })).toBeVisible();
     expect(screen.getByRole('link', { name: 'Traveler' })).toBeVisible();
     expect(screen.getByRole('link', { name: 'Field notes' })).toBeVisible();
     expect(screen.queryByText(/No rush|Guest identity|room:mosgate/)).not.toBeInTheDocument();
@@ -84,8 +85,13 @@ describe('single-character world session client', () => {
   it('uses real character-bound commands and retains the action history on Field notes', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Event and command history' });
+    expect(history).toHaveClass('focused-terminal-history');
+    expect(screen.getByRole('region', { name: 'Text command' })).toBeInTheDocument();
+    expect(screen.getByText('Available paths')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'North to Glasswater Bridge' }));
     await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    expect(history).toHaveTextContent('You travel north.');
     const command = JSON.parse(apiFetch.mock.calls.find(([path]) => path === '/api/commands')?.[1].body as string);
     expect(command).toMatchObject({
       type: 'character.move',
@@ -94,12 +100,26 @@ describe('single-character world session client', () => {
       payload: { exitId: 'clearing-to-bridge' },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Look around' }));
-    await waitFor(() => expect(apiFetch.mock.calls.some(([path]) => path === '/api/queries')).toBe(true));
     fireEvent.click(screen.getByRole('link', { name: 'Field notes' }));
     await screen.findByRole('heading', { name: 'Field notes' });
     expect(screen.getByText('You travel north.')).toBeVisible();
-    expect(screen.getByText(/You look around/)).toBeVisible();
+  });
+
+  it('records typed commands and their results in the terminal history', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Event and command history' });
+    const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
+    fireEvent.change(commandInput, { target: { value: 'look' } });
+    fireEvent.submit(commandInput.closest('form')!);
+
+    expect(await screen.findByText('> look')).toBeVisible();
+    expect(await screen.findByText(/You look around/)).toBeVisible();
+    expect(apiFetch.mock.calls.some(([path]) => path === '/api/queries')).toBe(true);
+    expect(history).toContainElement(screen.getByText('> look'));
+    expect(screen.getByRole('region', { name: 'Available exits' })).toContainElement(
+      screen.getByRole('button', { name: 'North to Glasswater Bridge' }),
+    );
   });
 
   it('surfaces rejected movement without changing rooms or leaving controls disabled', async () => {

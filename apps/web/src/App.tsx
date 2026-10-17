@@ -39,15 +39,25 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   );
   const [screen, setScreen] = useState<Screen>(currentScreen);
   const contentRef = useRef<HTMLElement>(null);
+  const terminalHistoryRef = useRef<HTMLDivElement>(null);
+  const terminalFollowsLatestRef = useRef(true);
 
   const addEntry = useCallback((kind: ActivityEntry["kind"], text: string) => {
-    setEntries((current) => [...current.slice(-29), makeEntry(kind, text)]);
+    terminalFollowsLatestRef.current = true;
+    setEntries((current) => [...current, makeEntry(kind, text)]);
   }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     window.localStorage.setItem("mudd-theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    const history = terminalHistoryRef.current;
+    if (screen === "play" && history && terminalFollowsLatestRef.current) {
+      history.scrollTop = history.scrollHeight;
+    }
+  }, [entries, screen]);
 
   useEffect(() => {
     const navigate = () => {
@@ -164,7 +174,6 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   };
 
   const exits = useMemo(() => snapshot?.location?.exits ?? [], [snapshot?.location?.exits]);
-  const latestEntry = entries[entries.length - 1];
 
   return (
     <main className="focused-client" data-theme={theme}>
@@ -214,11 +223,49 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
               </Panel>
             ) : snapshot?.location ? (
               <>
-                <Panel className="focused-room" aria-busy={pending === "move" || pending === "look"}>
-                  <RoomDescription title={snapshot.location.title} description={snapshot.location.description} exits={exits} />
-                  <Button type="button" variant="quiet" className="focused-look" onClick={() => void inspect()} disabled={pending !== null}>
-                    {pending === "look" ? "Looking…" : "Look around"}
-                  </Button>
+                <Panel className="focused-room focused-terminal" aria-busy={pending === "move" || pending === "look"}>
+                  <div className="focused-terminal-room">
+                    <div className="focused-terminal-head">
+                      <span>World activity</span>
+                      <span>{entries.length} {entries.length === 1 ? "event" : "events"}</span>
+                    </div>
+                    <RoomDescription title={snapshot.location.title} description={snapshot.location.description} exits={exits} />
+                  </div>
+                  <div
+                    className="focused-terminal-history"
+                    ref={terminalHistoryRef}
+                    role="region"
+                    aria-label="Event and command history"
+                    tabIndex={0}
+                    onScroll={(event) => {
+                      const history = event.currentTarget;
+                      terminalFollowsLatestRef.current = history.scrollHeight - history.scrollTop - history.clientHeight < 32;
+                    }}
+                  >
+                    {entries.length ? (
+                      <ActivityLog entries={entries} label="Event and command history" />
+                    ) : (
+                      <p className="focused-terminal-empty">No events yet.</p>
+                    )}
+                  </div>
+                  <section className="focused-command" aria-label="Text command">
+                    <div className="focused-command-label"><span>Command</span><span>look · go north</span></div>
+                    <form className="focused-command-form" onSubmit={submitCommand}>
+                      <TextInput
+                        id="focused-world-command"
+                        label="Enter a command"
+                        placeholder="Type a command"
+                        value={command}
+                        onChange={(event) => setCommand(event.target.value)}
+                        disabled={pending !== null}
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                      <Button type="submit" variant="secondary" disabled={!command.trim() || pending !== null}>
+                        {pending === "look" ? "Looking" : pending === "move" ? "Moving" : "Send"}
+                      </Button>
+                    </form>
+                  </section>
                 </Panel>
                 <section className="focused-paths" aria-label="Available exits">
                   <div className="focused-kicker focused-paths-heading">Available paths</div>
@@ -233,24 +280,6 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                     <p className="focused-feedback focused-feedback--empty">No open paths from here.</p>
                   )}
                 </section>
-                <section className="focused-command" aria-label="Text command">
-                  <div className="focused-command-label"><span>Command</span><span>look · go north</span></div>
-                  <form className="focused-command-form" onSubmit={submitCommand}>
-                    <TextInput
-                      id="focused-world-command"
-                      label="Enter a command"
-                      placeholder="Type a command"
-                      value={command}
-                      onChange={(event) => setCommand(event.target.value)}
-                      disabled={pending !== null}
-                      autoComplete="off"
-                      spellCheck={false}
-                    />
-                    <Button type="submit" variant="secondary" disabled={!command.trim() || pending !== null}>
-                      {pending === "look" ? "Looking" : pending === "move" ? "Moving" : "Send"}
-                    </Button>
-                  </form>
-                </section>
               </>
             ) : (
               <Panel className="focused-room focused-connection" eyebrow="World session" title="Character unavailable">
@@ -262,11 +291,6 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
               </Panel>
             )}
 
-            {latestEntry && (
-              <div className={`focused-feedback ${latestEntry.kind === "error" ? "focused-feedback--error" : ""}`} role="status" aria-live="polite">
-                <i aria-hidden="true" /><p>{latestEntry.text}</p>
-              </div>
-            )}
             {connectionError && snapshot && (
               <div className="focused-feedback focused-feedback--error" role="status" aria-live="polite">
                 <i aria-hidden="true" /><p>{connectionError} <button type="button" onClick={() => void loadGame()}>Retry</button></p>
