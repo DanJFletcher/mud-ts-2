@@ -1,0 +1,8 @@
+node_modules/
+**/node_modules/
+**/dist/
+coverage/
+.vite/
+.storybook-cache/
+storybook-static/
+.DS_Store

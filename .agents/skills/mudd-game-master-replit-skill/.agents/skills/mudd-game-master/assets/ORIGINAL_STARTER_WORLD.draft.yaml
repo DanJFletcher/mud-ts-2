@@ -1,0 +1,205 @@
+# ORIGINAL FICTION / EDITORIAL DRAFT; NOT AN ENGINE IMPORT SCHEMA.
+# Every action/flag below must be mapped to actual public MUDD contracts before use.
+format: mudd-gm-editorial-draft/v0
+importable: false
+status: draft
+meta:
+  id: example.briarfen
+  version: 0.1.0
+  title: Briarfen and the Silent Bell
+  source: original-fiction
+  rights: original-example-may-be-adapted
+  locale: en
+  genre: marshland mystery / community choices
+  estimatedMinutes: 20
+  players: 1-or-small-group
+  contentWarnings: [mild-peril, flood-risk]
+  requiredCapabilities:
+    - world-content-read
+    - movement
+    - inspect
+    - dialogue
+    - quest-state
+    - world-flag-or-equivalent
+  optionalCapabilities:
+    - world-time
+    - social-reputation
+    - object-transfer
+premise: >-
+  Briarfen's old warning bell has gone silent as an autumn surge approaches.
+  The ferrymen want the lost brass recovered; the Reed Wardens argue that
+  warning lamps would protect the villages more reliably. Both are right
+  about something, and both have hidden reasons for their urgency.
+playerPromise: >-
+  Follow contradictory evidence through a rain-drenched hamlet and choose
+  which warning system the community trusts, knowing the choice will be remembered.
+verbs: [explore, question, inspect, decide]
+worldStateDesign:
+  decisionScope: world-instance
+  creditScope: character
+  uniqueResolution: true
+  concurrencyPolicy: "Only one shared outcome may commit; other players get updated narration. Requires authoritative quest/world service."
+  disputedSecretsMustRemainGMOnly: true
+
+factions:
+  - id: example.briarfen.ferrymen
+    name: River Pilots
+    publicGoal: Restore the ferry warning bell.
+    privatePressure: Their night-crossing business depends on traditional signals.
+    nextMoveUnopposed: Launch a risky search upstream.
+  - id: example.briarfen.wardens
+    name: Reed Wardens
+    publicGoal: Install visible lamps along the river bends.
+    privatePressure: They fear the old bell cannot be heard during storms.
+    nextMoveUnopposed: Mark a temporary warning route with lanterns.
+
+facts:
+  - id: example.briarfen.fact.bell-was-moved
+    truth: "The bell was moved off its tower for repair, not stolen."
+    status: canon
+    visibility: gm-only
+    revealVia: [example.briarfen.clue.scratches, example.briarfen.clue.ledger, example.briarfen.clue.hauling]
+  - id: example.briarfen.fact.reed-danger
+    truth: "Storm wind can drown out the old bell from downstream."
+    status: canon
+    visibility: gm-only
+    revealVia: [example.briarfen.clue.hauling, example.briarfen.clue.wind]
+
+locations:
+  - id: example.briarfen.loc.market
+    name: Rain Market
+    arrival: >-
+      Rain threads from the awnings into shallow amber puddles. An empty bell
+      tower looms above a knot of arguing villagers. The reed path leads east
+      toward the ferry; a steep trail climbs north to the watch ridge.
+    look: >-
+      Worn ropes hang from the silent tower. Vendors are shuttering their stalls.
+    exits:
+      - { direction: east, to: example.briarfen.loc.ferry }
+      - { direction: north, to: example.briarfen.loc.ridge }
+    npcs: [example.briarfen.npc.salka]
+    inspectables:
+      - id: example.briarfen.obj.rope
+        description: "Fresh rope fibers remain caught around the tower pulley."
+        clue: example.briarfen.clue.scratches
+  - id: example.briarfen.loc.ferry
+    name: Old Ferry Landing
+    arrival: >-
+      Wet planks knock against stone in the river wind. An old boathook rests
+      beside the landing, and a ferry ledger lies under a weighted cloth.
+      The market is west and a maintenance path runs south to the sluice.
+    look: "There are tire ruts in the mud where no cart ought to have come."
+    exits:
+      - { direction: west, to: example.briarfen.loc.market }
+      - { direction: south, to: example.briarfen.loc.sluice }
+    npcs: [example.briarfen.npc.mirek]
+    inspectables:
+      - id: example.briarfen.obj.ledger
+        description: "A repair entry records a heavy load carried toward the sluice."
+        clue: example.briarfen.clue.ledger
+  - id: example.briarfen.loc.sluice
+    name: Flood Sluice
+    arrival: >-
+      At the edge of the works, water beats against a shut iron gate. A great
+      bell lies in a cradle beneath canvas, its rim repaired with bright brass.
+      The ferry path runs north; a narrow ladder climbs west to the ridge.
+    look: "The bell is intact, but the river wind carries away its faint echo."
+    exits:
+      - { direction: north, to: example.briarfen.loc.ferry }
+      - { direction: west, to: example.briarfen.loc.ridge }
+    npcs: []
+    inspectables:
+      - id: example.briarfen.obj.bell
+        description: "A chalk mark on the repaired rim shows the lifting crew's initials."
+        clue: example.briarfen.clue.hauling
+  - id: example.briarfen.loc.ridge
+    name: Watch Ridge
+    arrival: >-
+      Reeds bend silver below the ridge. From here the bends in the river are
+      visible, but a low gust buries the distant bell's sound. The market is
+      down south and the sluice ladder descends east.
+    look: "Two empty lantern posts stand along the ridge, aimed downstream."
+    exits:
+      - { direction: south, to: example.briarfen.loc.market }
+      - { direction: east, to: example.briarfen.loc.sluice }
+    npcs: []
+    inspectables:
+      - id: example.briarfen.obj.post
+        description: "Wind whistles through a notch where a test lantern once hung."
+        clue: example.briarfen.clue.wind
+
+npcs:
+  - id: example.briarfen.npc.salka
+    name: Salka, Keeper of the Warning Tower
+    home: example.briarfen.loc.market
+    faction: example.briarfen.ferrymen
+    motive: Preserve a warning tradition her family has maintained for years.
+    fear: That younger neighbors think her generation has failed them.
+    voice: "Measured sentences; names people individually; hides worry behind practicality."
+    knows: [example.briarfen.fact.bell-was-moved]
+    publicDialogue:
+      greeting: "The river won't wait for us to agree. Will you look into the missing bell?"
+      clueIfAsked: "A cart passed the tower at dawn, but I didn't see whose it was."
+  - id: example.briarfen.npc.mirek
+    name: Mirek, the Ferryman
+    home: example.briarfen.loc.ferry
+    faction: example.briarfen.wardens
+    motive: Prevent a repeat of last autumn's missed storm warning.
+    fear: Losing customers when the route is closed.
+    voice: "Quick, clipped phrasing; looks toward the river when a question hurts."
+    knows: [example.briarfen.fact.reed-danger]
+    publicDialogue:
+      greeting: "A signal nobody hears isn't a warning. Look at the wind out there."
+      clueIfAsked: "Someone hauled the bell to the sluice. But listen: you can't hear it from here."
+
+clues:
+  - id: example.briarfen.clue.scratches
+    source: example.briarfen.obj.rope
+    actionConcept: inspect
+    supports: example.briarfen.fact.bell-was-moved
+  - id: example.briarfen.clue.ledger
+    source: example.briarfen.obj.ledger
+    actionConcept: inspect
+    supports: example.briarfen.fact.bell-was-moved
+  - id: example.briarfen.clue.hauling
+    source: example.briarfen.obj.bell
+    actionConcept: inspect
+    supports: example.briarfen.fact.bell-was-moved
+  - id: example.briarfen.clue.wind
+    source: example.briarfen.obj.post
+    actionConcept: inspect
+    supports: example.briarfen.fact.reed-danger
+
+quests:
+  - id: example.briarfen.quest.silent-bell
+    name: The Silent Bell
+    scope: world-instance
+    characterJournalScope: character
+    dramaticQuestion: "Which warning will the village trust before the surge arrives?"
+    availability: "Any player who arrives at the market; no compulsory acceptance."
+    requiredDiscoverableFact: example.briarfen.fact.bell-was-moved
+    designStates: [unavailable, offered, active, resolved-bell, resolved-lamps, ignored]
+    possibleOutcomes:
+      - id: example.briarfen.outcome.restore-bell
+        proposedAction: "Ask Salka to restore the repaired bell to the tower."
+        requirement: "Reach the sluice or learn bell location; public quest decision capability."
+        persistentConsequence: "Shared world uses a bell warning; Mirek remains skeptical."
+      - id: example.briarfen.outcome.light-route
+        proposedAction: "Ask Mirek and wardens to light river warning posts instead."
+        requirement: "Investigate storm wind; public quest decision capability."
+        persistentConsequence: "Shared world uses a light route; Salka mourns the tradition."
+      - id: example.briarfen.outcome.ignore
+        proposedAction: "Walk away without resolving the dispute."
+        requirement: "Optional logical time capability if the surge progresses."
+        persistentConsequence: "Villagers make a temporary solution; later quest remains available or expires by design."
+    branchingNotes: >-
+      Design only: one global outcome must be committed atomically by the
+      engine, while per-character knowledge/journal may differ. Repeated
+      decisions and late joins must see the committed outcome, not grant
+      multiple rewards. No secret may be serialized into public projections.
+    testing:
+      - "Market -> ferry -> sluice leads to bell option."
+      - "Market -> ridge -> sluice leads to lamp option."
+      - "Three independent signs support learning that the bell was moved."
+      - "Two players racing to resolve must not commit contradictory outcomes."
+      - "All essential discoveries work from a text client."

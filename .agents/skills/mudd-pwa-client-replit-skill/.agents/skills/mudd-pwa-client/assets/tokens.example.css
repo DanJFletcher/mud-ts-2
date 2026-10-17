@@ -1,0 +1,52 @@
+/* Illustrative design-system theme; values are not an approved final brand. */
+:root {
+  color-scheme: light;
+  --ds-background: #f8f6f2;
+  --ds-surface: #ffffff;
+  --ds-surface-raised: #f2eee8;
+  --ds-text: #25221e;
+  --ds-text-muted: #605b55;
+  --ds-border: #beb7ad;
+  --ds-action: #3e5d84;
+  --ds-action-hover: #294666;
+  --ds-action-text: #ffffff;
+  --ds-focus-ring: #0f5bb5;
+  --ds-danger: #a32933;
+  --ds-chat-system: #485d74;
+  --ds-radius-sm: 0.375rem;
+  --ds-radius-lg: 0.875rem;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --ds-background: #14171a;
+  --ds-surface: #1b2126;
+  --ds-surface-raised: #263039;
+  --ds-text: #f4f1e9;
+  --ds-text-muted: #c9c6be;
+  --ds-border: #66727c;
+  --ds-action: #a8c8f3;
+  --ds-action-hover: #c2dcff;
+  --ds-action-text: #111e2d;
+  --ds-focus-ring: #f1ce71;
+  --ds-danger: #ffa9a9;
+  --ds-chat-system: #b8d4f5;
+}
+
+/* Put @import "tailwindcss" in the assembled stylesheet BEFORE this file. */
+@theme inline {
+  --color-background: var(--ds-background);
+  --color-surface: var(--ds-surface);
+  --color-surface-raised: var(--ds-surface-raised);
+  --color-content: var(--ds-text);
+  --color-content-muted: var(--ds-text-muted);
+  --color-border: var(--ds-border);
+  --color-action: var(--ds-action);
+  --color-action-hover: var(--ds-action-hover);
+  --color-action-foreground: var(--ds-action-text);
+  --color-focus-ring: var(--ds-focus-ring);
+  --color-danger: var(--ds-danger);
+  --color-chat-system: var(--ds-chat-system);
+  --radius-control: var(--ds-radius-sm);
+  --radius-panel: var(--ds-radius-lg);
+}

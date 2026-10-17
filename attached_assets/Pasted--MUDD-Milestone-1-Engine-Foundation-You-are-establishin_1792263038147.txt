@@ -1,0 +1,142 @@
+# MUDD — Milestone 1: Engine Foundation
+
+You are establishing the technical foundation of MUDD, a modular, persistent, multiplayer MUD-inspired game engine.
+
+Use the following Agent Skills:
+
+- `mudd-architect` — Owns engine architecture, plugin boundaries, persistence, protocols, and authoritative game state.
+- `mudd-pwa-client` — Owns the design system, Storybook component library, and mobile-first PWA.
+
+Read both skills and their relevant references before implementation. Follow their architectural rules throughout this task.
+
+## Objective
+
+Build the smallest working vertical slice that demonstrates the foundation of the engine.
+
+At the end of this milestone, a player should be able to open the PWA, enter a persistent character into a small game world, inspect their surroundings, move between three connected locations, and see those changes persist after reconnecting.
+
+Do not attempt to implement the full game or the complete MVP.
+
+## Step 1 — Establish the architecture
+
+Inspect the existing repository before making changes.
+
+Create or adapt a TypeScript-first monorepo with clear boundaries between:
+
+- Engine kernel and plugin host
+- Shared, versioned public API contracts
+- Server-side core plugins
+- Persistence and database schemas
+- Network transport and sessions
+- Client SDK
+- React PWA
+- Reusable UI component library and Storybook
+- World content
+
+Use Zod for contract validation, PostgreSQL with Drizzle ORM for authoritative persistence, and an event-driven command-processing architecture.
+
+Define a minimal plugin contract supporting registration, dependency declaration, lifecycle, and typed capabilities.
+
+Implement only the plugins required for this vertical slice. Avoid empty placeholder implementations for future systems.
+
+## Step 2 — Implement the first engine loop
+
+Support:
+
+1. Guest player identity and basic character creation.
+2. Loading a character into a world instance.
+3. Inspecting the current room and its exits.
+4. Moving through valid connections between rooms.
+5. Persisting authoritative state changes through domain events.
+6. Restoring the character's location and world state after a server restart.
+7. Communicating between client and server through typed contracts.
+
+All authoritative mutations must pass through the engine's command pipeline.
+
+Keep transport, persistence, plugin behavior, and domain logic separate.
+
+Implement optimistic concurrency or another explicit strategy that prevents conflicting state mutations. Include an in-memory test adapter, but use PostgreSQL for the running server.
+
+## Step 3 — Build the UI foundation in Storybook
+
+Before developing the gameplay interface, establish a reusable React component library.
+
+Configure Tailwind CSS v4, semantic design tokens, accessible light/dark themes, and Storybook.
+
+Create only the components necessary for the first playable interface, beginning with:
+
+- Button
+- Text and typography
+- Panel
+- Text input
+- Scrollable message or activity log
+- Room description
+- Navigation controls
+
+Each reusable component must have appropriate Storybook stories and tests before being integrated into the application.
+
+Do not place reusable UI components directly inside application screens. Do not build a large one-off frontend.
+
+## Step 4 — Build the first PWA interface
+
+Using the component library, implement a minimal mobile-first exploration interface with:
+
+- Current room name and description
+- Available exits
+- A movement interface
+- A text-command input supporting `look` and `go`
+- An activity log displaying server responses
+- Basic character identity
+
+Both buttons and typed commands should dispatch the same underlying engine commands.
+
+The PWA must use the shared client SDK, never manipulate authoritative state locally, and remain usable at narrow mobile viewport widths.
+
+Configure the basic installable PWA shell. Gameplay may require an active connection.
+
+## Step 5 — Create a test world
+
+Create an original, minimal three-room world using the world/content interfaces actually supported by the engine.
+
+The rooms should be interconnected and contain short descriptive text.
+
+Do not develop quests, lore encyclopedias, combat systems, crafting, economies, or NPC AI.
+
+This is an engineering fixture, not the finished game world.
+
+## Step 6 — Validate the foundation
+
+Write and execute tests proving:
+
+- Plugins can be registered and initialized.
+- Invalid commands are rejected.
+- Movement respects room connections.
+- Character state persists and can be restored.
+- Event replay reconstructs the expected state.
+- The client can use typed contracts to interact with the engine.
+- Reusable components work independently in Storybook.
+- The PWA functions at mobile screen sizes.
+
+Also verify linting, TypeScript checks, database migrations, and production builds.
+
+## Architectural constraints
+
+- Keep the kernel independent of D&D or any particular ruleset.
+- Keep all game rules server-authoritative.
+- Keep the engine independent of React and Replit.
+- Do not implement systems merely because they appear on the long-term roadmap.
+- Do not introduce multiple services when one modular server will suffice.
+- Avoid speculative abstractions that have no real implementation or tests.
+- Make architectural decisions reversible wherever practical.
+
+## Working method
+
+Work incrementally, completing and testing one vertical slice before expanding it.
+
+Before significant implementation, document a concise architecture plan, package dependencies, and the principal architectural decisions.
+
+Then execute the plan. Do not stop after creating documentation.
+
+After completion, report what is implemented, what tests passed, what remains incomplete, and what Milestone 2 should build upon.
+
+**Definition of done:** I can open the running PWA, enter the world, move between three rooms, refresh or reconnect, and continue from the persisted location. The UI is built from components developed in Storybook, and the game runs through the modular, authoritative engine rather than application-specific shortcuts.

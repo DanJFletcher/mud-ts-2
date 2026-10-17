@@ -1,0 +1,156 @@
+{
+  "bundle": "MUDD Engine Contracts \u2014 Design Bundle",
+  "version": "0.1.0",
+  "status": "proposed/not yet integrated",
+  "created": "2026-10-17",
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "610134d193892b63fbadc48feae2a02c264a13958b1627faede04ce426913adf"
+    },
+    {
+      "path": "docs/ADOPTION_GUIDE.md",
+      "sha256": "4dc2341e2658e6756e22168912b77e70bb7a1ed7bf9ae1c08828aa8fe1449272"
+    },
+    {
+      "path": "docs/CONTRACT_CATALOG.md",
+      "sha256": "8cc2f1d486866059e747daeebf2e99d5d09c48cd1bb331e0e6bd9aaf74fabd67"
+    },
+    {
+      "path": "docs/PERSISTENCE_REQUIREMENTS.md",
+      "sha256": "5dfce814dc49738f8349ffb4ddf7deb9b26c9a2d36141027fe9a2a38102d900b"
+    },
+    {
+      "path": "docs/SOURCE_MAP.md",
+      "sha256": "c79e03219b63b2e07a3606dea219ddc05ee737b4c695f3ccdc3519c45d2e39ba"
+    },
+    {
+      "path": "docs/STATUS_AND_GAPS.md",
+      "sha256": "582052a85df0d2e285250102f4a013668e412d52e8c030b60153ed9a7cdc7506"
+    },
+    {
+      "path": "docs/VALIDATION.md",
+      "sha256": "50a9bb57b210184c885965f087f3c34be707adca2a0302255f192a927c2d1ac0"
+    },
+    {
+      "path": "originals/architect/ARCHITECTURE.md",
+      "sha256": "57d11acdd669335a184a97ec2b0bcfa951690ba9bc1e3d66f2109ee835b39014"
+    },
+    {
+      "path": "originals/architect/CLIENTS_AND_REPLIT.md",
+      "sha256": "4fa8539c3c226fb8a9649c3dc707e8b5dcb02b72955cd065c62ac03b83733633"
+    },
+    {
+      "path": "originals/architect/DATA_MODEL.md",
+      "sha256": "9c1c766f4891ae33a08cf585816fdb2ea46666da967f98bdaaab3bd8fe879d52"
+    },
+    {
+      "path": "originals/architect/MESSAGE_CONTRACTS.example.ts",
+      "sha256": "67c3dfcbda77ad47b0f8acc9722d922e7aa3914b002eefd8af6ca53161cd1a85"
+    },
+    {
+      "path": "originals/architect/PLUGIN_CONTRACT.example.ts",
+      "sha256": "1ef8e253154acf64691dfd37384f21fef23672fae744340e380e2b4703481cf4"
+    },
+    {
+      "path": "originals/architect/PLUGIN_SYSTEM.md",
+      "sha256": "2be62281854ee98495d911bf2cf3ce78f943ed01cd255bcdb1e416efdfcafd77"
+    },
+    {
+      "path": "originals/architect/STATE_AND_PROTOCOL.md",
+      "sha256": "f801f935fd93d4a721bfc9dcb75de18bf3eff00fce7baffd6ad55e88d6c306fc"
+    },
+    {
+      "path": "originals/game-master/CONTENT_PORT.example.ts",
+      "sha256": "3055595ee9716d7bd700452efccdf3912dd97c169793a209aaa6c75e3d432fbf"
+    },
+    {
+      "path": "originals/game-master/PUBLIC_API_AND_CONTENT.md",
+      "sha256": "107762432b98f60cb69d76c4a75be7f4af0bd93ec8cbcb023f5527d73b060b0d"
+    },
+    {
+      "path": "originals/pwa-client/MUDD_CLIENT_BOUNDARIES.md",
+      "sha256": "5dba6c72cadbdd2e55462d064743c54fad645d7779a79de1b0695cb3af2d7942"
+    },
+    {
+      "path": "package.json",
+      "sha256": "6f5ae0c3bfe6947b791a009142d9371256e5066f279fb05df532238795399cd6"
+    },
+    {
+      "path": "scripts/verify_package.py",
+      "sha256": "0f6626c8b714c1796e1725bae0ea45657ce65e19a6f30d0bf6d9585e9bc0c1e0"
+    },
+    {
+      "path": "src/authoring.ts",
+      "sha256": "8214917575b4206c6be63cf3d26f956251055324042b87d24c12439130b4c274"
+    },
+    {
+      "path": "src/character.ts",
+      "sha256": "b158c14ddf78eafd79a0c3698691cf34b03032d300d02df7e151530de2828110"
+    },
+    {
+      "path": "src/chat.ts",
+      "sha256": "eb12a163483b6ece63a2becd2445ce3287150f77713e01fedf5b3442777915c2"
+    },
+    {
+      "path": "src/client.ts",
+      "sha256": "332a3d92cbe5fba9a5b317ad81a53f4349e134ff2c37d826e5cfb2640f17c830"
+    },
+    {
+      "path": "src/clock-rng.ts",
+      "sha256": "8de8291a4b61a784c4c8246a55ad90719c860a85eb5632012ff00226986f9f60"
+    },
+    {
+      "path": "src/combat.ts",
+      "sha256": "ae1b6fb329e6bd562ec108fcda9f0136455665f3c16b3321075c15ce8ee7326c"
+    },
+    {
+      "path": "src/event-store.ts",
+      "sha256": "ad5e609be744b62e070f0ba650d23ee8928a586841f21ceb6a0fe63a5d1364ef"
+    },
+    {
+      "path": "src/ids.ts",
+      "sha256": "be4b89a38218d062441702ad3b5b5104c91ad642dd3aaa37a34dc412cbe70204"
+    },
+    {
+      "path": "src/index.ts",
+      "sha256": "0a2606eb403afbbe1cf751a1250364140fb87bb994f66ae149bae7e491007044"
+    },
+    {
+      "path": "src/movement.ts",
+      "sha256": "fde721cb83d7d50b912033f27b20dbc163b72663cfb9db7b5dd7c0ab9c7c02f6"
+    },
+    {
+      "path": "src/network.ts",
+      "sha256": "c9c2042c658b672c31663670504c7ff963cae7b78f2a32a94c71140de1d4c0fe"
+    },
+    {
+      "path": "src/plugins.ts",
+      "sha256": "3eddbea3b11d50e284c51a44c94531e4779efd081f458daa322a3cd73a87d9aa"
+    },
+    {
+      "path": "src/protocol.ts",
+      "sha256": "04aea5893d765b661c9eb9e5f8a4f11560bb19fd13d3476900ab82edebed9f82"
+    },
+    {
+      "path": "src/session.ts",
+      "sha256": "362c483cfb4c7569064a8353c820c480d7376acac599b999760a9f76928a817f"
+    },
+    {
+      "path": "src/stream.ts",
+      "sha256": "8e9652da357293e0b49906995f46a0bed8d4ccdf8775e6cf1283118cada20ecf"
+    },
+    {
+      "path": "src/world.ts",
+      "sha256": "e2cea8bab374cee566bcb4688271933a305f59f148467c7365c92132197bf9e4"
+    },
+    {
+      "path": "tests/schema.test.mjs",
+      "sha256": "eb8b5c2499ac15012493c891ffbe99b371c788a03dca92b0b91d82d98944ec1a"
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "52211aaa3f180e8058274db025ff870255c1b92d6b31324f56a9a097baea7a21"
+    }
+  ]
+}

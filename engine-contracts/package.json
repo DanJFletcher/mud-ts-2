@@ -1,0 +1,19 @@
+{
+  "name": "@mudd/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Versioned TypeScript and Zod contracts used by the MUDD engine foundation.",
+  "sideEffects": false,
+  "exports": { ".": { "types": "./dist/src/index.d.ts", "default": "./dist/src/index.js" } },
+  "files": ["dist", "docs", "originals"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "verify-package": "python3 scripts/verify_package.py"
+  },
+  "dependencies": { "zod": "^3.25.0" },
+  "devDependencies": { "typescript": "^5.6.0" },
+  "engines": { "node": ">=20" }
+}

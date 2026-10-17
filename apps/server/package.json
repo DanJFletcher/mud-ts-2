@@ -1,0 +1,25 @@
+{
+  "name": "@mudd/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
+  },
+  "dependencies": {
+    "@mudd/client-sdk": "0.1.0",
+    "@mudd/contracts": "0.1.0",
+    "@mudd/core-plugins": "0.1.0",
+    "@mudd/engine-core": "0.1.0",
+    "@mudd/world-demo": "0.1.0",
+    "drizzle-orm": "^0.44.0",
+    "express": "^5.1.0",
+    "pg": "^8.16.0",
+    "zod": "^3.25.0"
+  }
+}
