@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   MoveCharacterCommandSchema, CharacterMovedEventSchema, CommandReceiptSchema,
-  PluginManifestSchema, LocationDescribeQuerySchema, ObjectReadQuerySchema, TakeCharacterItemCommandSchema, WorldPackDraftSchema,
+  PluginManifestSchema, LocationDescribeQuerySchema, ObjectReadQuerySchema, TakeCharacterItemCommandSchema,
+  DropCharacterItemCommandSchema, WorldPackDraftSchema,
   validateDraftWorldGraph,
 } from '../dist/src/index.js';
 
@@ -56,6 +57,17 @@ test('taking a room item is a versioned character command', () => {
   assert.equal(TakeCharacterItemCommandSchema.safeParse({
     type: 'character.take', version: 1, commandId: 'take1', worldInstanceId: 'world1',
     characterId: 'char1', expectedVersion: 1, payload: {},
+  }).success, false);
+});
+
+test('dropping a carried item is a versioned character command', () => {
+  assert.equal(DropCharacterItemCommandSchema.safeParse({
+    type: 'character.drop', version: 1, commandId: 'drop1', worldInstanceId: 'world1',
+    characterId: 'char1', expectedVersion: 2, payload: { itemId: 'mossgate-stone' },
+  }).success, true);
+  assert.equal(DropCharacterItemCommandSchema.safeParse({
+    type: 'character.drop', version: 1, commandId: 'drop1', worldInstanceId: 'world1',
+    characterId: 'char1', expectedVersion: 2, payload: {},
   }).success, false);
 });
 

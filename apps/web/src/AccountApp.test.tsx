@@ -28,6 +28,7 @@ const firstCharacter = {
   locationTitle: 'Mossgate Clearing',
   revision: 1,
   inventory: [],
+  itemLocations: [],
   archived: false,
 };
 const secondCharacter = {

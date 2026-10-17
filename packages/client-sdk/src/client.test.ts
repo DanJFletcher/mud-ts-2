@@ -64,7 +64,16 @@ describe('MuddHttpClient', () => {
     const afterTake = await client.look(characterId, 'sdk-look-after-take');
     expect(afterTake.revision).toBe(2);
     expect(afterTake.objects).not.toContainEqual(expect.objectContaining({ id: 'mossgate-loose-stone' }));
-    const moved = await client.move(characterId, 'clearing-to-bridge', afterTake.revision, 'sdk-move');
+    const dropped = await client.drop(characterId, 'mossgate-loose-stone', afterTake.revision, 'sdk-drop');
+    expect(dropped.receipt).toMatchObject({ ok: true, newAggregateVersion: 3 });
+    const afterDrop = await client.look(characterId, 'sdk-look-after-drop');
+    expect(afterDrop.objects).toContainEqual(expect.objectContaining({
+      id: 'mossgate-loose-stone',
+      takeable: true,
+    }));
+    const takenAgain = await client.take(characterId, 'mossgate-loose-stone', afterDrop.revision, 'sdk-take-again');
+    expect(takenAgain.receipt).toMatchObject({ ok: true, newAggregateVersion: 4 });
+    const moved = await client.move(characterId, 'clearing-to-bridge', 4, 'sdk-move');
     expect(moved.receipt.ok).toBe(true);
     const nextRoom = await client.look(characterId, 'sdk-look-2');
     expect(nextRoom.title).toBe('Glasswater Bridge');

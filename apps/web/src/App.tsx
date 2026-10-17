@@ -39,7 +39,7 @@ function makeEntry(kind: ActivityEntry["kind"], text: string): ActivityEntry {
 export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"look" | "read" | "take" | "move" | null>(null);
+  const [pending, setPending] = useState<"look" | "read" | "take" | "drop" | "move" | null>(null);
   const [pendingExitId, setPendingExitId] = useState<string>();
   const [command, setCommand] = useState("");
   const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "walk">("quick");
@@ -168,6 +168,19 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     }
   }, [addEntry, pending, refreshAfterMutation, snapshot]);
 
+  const dropObject = useCallback(async (itemId: string, label: string) => {
+    if (!snapshot?.character || !snapshot.location || pending) return;
+    setPending("drop");
+    try {
+      await client.drop(snapshot.character.characterId, itemId, snapshot.location.revision);
+      await refreshAfterMutation(`You put down the ${label.toLocaleLowerCase()}.`);
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "You cannot drop that item just now.");
+    } finally {
+      setPending(null);
+    }
+  }, [addEntry, pending, refreshAfterMutation, snapshot]);
+
   const move = useCallback(async (exitId: string) => {
     if (!snapshot?.character || !snapshot.location || pending) return;
     const exit = snapshot.location.exits.find((item) => item.id === exitId);
@@ -246,6 +259,27 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
       await takeObject(object.id, object.label);
       return;
     }
+    if (verb.toLowerCase() === "drop") {
+      addEntry("system", `> ${value}`);
+      if (!target) {
+        addEntry("error", "Drop what? Try “drop stone”.");
+        return;
+      }
+      const inventory = snapshot?.character?.inventory ?? [];
+      const matches = findObjectMatches(target, inventory.map((item) => ({
+        ...item, readable: false, takeable: true,
+      })));
+      if (matches.length === 0) {
+        addEntry("error", `You are not carrying anything called “${target}”.`);
+        return;
+      }
+      if (matches.length > 1) {
+        addEntry("error", `Which one do you mean: ${matches.map((item) => item.label).join(", ")}?`);
+        return;
+      }
+      await dropObject(matches[0]!.id, matches[0]!.label);
+      return;
+    }
     if (verb.toLowerCase() === "go" && target) {
       const exits = snapshot?.location?.exits ?? [];
       const match = exits.find((exit) => exit.available && (
@@ -261,8 +295,8 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
       return;
     }
     addEntry("system", `> ${value}`);
-    addEntry("error", "Use “look”, “look at <object>”, “go <direction>”, “read <object>”, or “take <item>”.");
-  }, [addEntry, inspect, move, pending, readObject, snapshot, takeObject]);
+    addEntry("error", "Use “look”, “look at <object>”, “go <direction>”, “read <object>”, “take <item>”, or “drop <item>”.");
+  }, [addEntry, dropObject, inspect, move, pending, readObject, snapshot, takeObject]);
 
   const submitCommand = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -424,7 +458,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                     </div>
                   </section>
                   <section className="focused-command" aria-label="Text command">
-                    <div className="focused-command-label"><span>Command</span><span>look at · take stone · read</span></div>
+                    <div className="focused-command-label"><span>Command</span><span>look at · take · drop · read</span></div>
                     <form className="focused-command-form" onSubmit={submitCommand}>
                       <TextInput
                         id="focused-world-command"
@@ -437,7 +471,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                         spellCheck={false}
                       />
                       <Button type="submit" variant="secondary" disabled={!command.trim() || pending !== null}>
-                        {pending === "look" ? "Looking" : pending === "read" ? "Reading" : pending === "take" ? "Taking" : pending === "move" ? "Moving" : "Send"}
+                        {pending === "look" ? "Looking" : pending === "read" ? "Reading" : pending === "take" ? "Taking" : pending === "drop" ? "Dropping" : pending === "move" ? "Moving" : "Send"}
                       </Button>
                     </form>
                   </section>

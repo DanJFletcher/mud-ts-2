@@ -37,6 +37,21 @@ export const CharacterItemTakenEventSchema = DomainEventBaseSchema.extend({
   }).strict(),
 }).strict();
 
+export const DropCharacterItemCommandSchema = ClientCommandBaseSchema.extend({
+  type: z.literal('character.drop'),
+  expectedVersion: NonNegativeIntSchema,
+  payload: z.object({ itemId: IdSchema }).strict(),
+}).strict();
+
+export const CharacterItemDroppedEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('character.item_dropped'),
+  payload: z.object({
+    characterId: IdSchema,
+    locationId: IdSchema,
+    item: InventoryItemProjectionSchema,
+  }).strict(),
+}).strict();
+
 export const RenameCharacterCommandSchema = z.object({
   type: z.literal('character.rename'),
   version: ContractVersionSchema,
@@ -89,6 +104,10 @@ export const CharacterProjectionSchema = z.object({
   locationId: IdSchema,
   revision: NonNegativeIntSchema,
   inventory: z.array(InventoryItemProjectionSchema).default([]),
+  itemLocations: z.array(z.object({
+    item: InventoryItemProjectionSchema,
+    locationId: IdSchema.nullable(),
+  }).strict()).default([]),
   archived: z.boolean().default(false),
 }).strict();
 
@@ -96,6 +115,8 @@ export type CreateCharacterCommand = z.infer<typeof CreateCharacterCommandSchema
 export type CharacterCreatedEvent = z.infer<typeof CharacterCreatedEventSchema>;
 export type TakeCharacterItemCommand = z.infer<typeof TakeCharacterItemCommandSchema>;
 export type CharacterItemTakenEvent = z.infer<typeof CharacterItemTakenEventSchema>;
+export type DropCharacterItemCommand = z.infer<typeof DropCharacterItemCommandSchema>;
+export type CharacterItemDroppedEvent = z.infer<typeof CharacterItemDroppedEventSchema>;
 export type InventoryItemProjection = z.infer<typeof InventoryItemProjectionSchema>;
 export type RenameCharacterCommand = z.infer<typeof RenameCharacterCommandSchema>;
 export type ArchiveCharacterCommand = z.infer<typeof ArchiveCharacterCommandSchema>;

@@ -7,6 +7,7 @@ import {
   ObjectReadQuerySchema,
   MoveCharacterCommandSchema,
   TakeCharacterItemCommandSchema,
+  DropCharacterItemCommandSchema,
   type CharacterProjection,
   type CommandReceipt,
   type LocationProjection,
@@ -182,6 +183,19 @@ export class MuddHttpClient {
   async take(characterId: string, itemId: string, expectedVersion: number, commandId = crypto.randomUUID()): Promise<CommandResponse> {
     const command = TakeCharacterItemCommandSchema.parse({
       type: 'character.take',
+      version: 1,
+      commandId,
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      expectedVersion,
+      payload: { itemId },
+    });
+    return this.send(command);
+  }
+
+  async drop(characterId: string, itemId: string, expectedVersion: number, commandId = crypto.randomUUID()): Promise<CommandResponse> {
+    const command = DropCharacterItemCommandSchema.parse({
+      type: 'character.drop',
       version: 1,
       commandId,
       worldInstanceId: this.options.worldInstanceId,

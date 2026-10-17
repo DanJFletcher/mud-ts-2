@@ -1,6 +1,7 @@
 import type { StoredGameEvent } from './types.js';
 import {
   CharacterItemTakenEventSchema,
+  CharacterItemDroppedEventSchema,
   CharacterProjectionSchema,
   CharacterCreatedEventSchema,
   CharacterMovedEventSchema,
@@ -40,9 +41,45 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
       if (state.inventory.some((item) => item.id === taken.payload.item.id)) {
         throw new Error(`Duplicate inventory item at revision ${event.aggregateVersion}.`);
       }
+      const itemLocation = state.itemLocations.find((entry) => entry.item.id === taken.payload.item.id);
+      if (itemLocation && (
+        itemLocation.locationId !== taken.payload.locationId ||
+        itemLocation.item.label !== taken.payload.item.label ||
+        itemLocation.item.description !== taken.payload.item.description
+      )) {
+        throw new Error(`Invalid item location at revision ${event.aggregateVersion}.`);
+      }
       state = CharacterProjectionSchema.parse({
         ...state,
         inventory: [...state.inventory, taken.payload.item],
+        itemLocations: itemLocation
+          ? state.itemLocations.map((entry) => entry.item.id === taken.payload.item.id
+            ? { ...entry, locationId: null }
+            : entry)
+          : [...state.itemLocations, { item: taken.payload.item, locationId: null }],
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.item_dropped') {
+      if (!state) throw new Error('Item dropped event encountered before character creation.');
+      const dropped = CharacterItemDroppedEventSchema.parse(publicEvent);
+      const carriedItem = state.inventory.find((item) => item.id === dropped.payload.item.id);
+      const itemLocation = state.itemLocations.find((entry) => entry.item.id === dropped.payload.item.id);
+      if (
+        dropped.payload.characterId !== state.characterId ||
+        dropped.payload.locationId !== state.locationId ||
+        !carriedItem ||
+        itemLocation?.locationId !== null ||
+        carriedItem.label !== dropped.payload.item.label ||
+        carriedItem.description !== dropped.payload.item.description
+      ) {
+        throw new Error(`Invalid item dropped event at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        inventory: state.inventory.filter((item) => item.id !== dropped.payload.item.id),
+        itemLocations: state.itemLocations.map((entry) => entry.item.id === dropped.payload.item.id
+          ? { ...entry, locationId: dropped.payload.locationId }
+          : entry),
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'character.renamed') {

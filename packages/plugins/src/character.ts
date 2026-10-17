@@ -1,6 +1,7 @@
 import {
   CharacterCreatedEventSchema,
   CharacterItemTakenEventSchema,
+  CharacterItemDroppedEventSchema,
   CharacterRenamedEventSchema,
   CharacterArchivedEventSchema,
   CharacterRestoredEventSchema,
@@ -9,6 +10,7 @@ import {
   RestoreCharacterCommandSchema,
   CreateCharacterCommandSchema,
   TakeCharacterItemCommandSchema,
+  DropCharacterItemCommandSchema,
   LocationDescribeQuerySchema,
   ObjectReadQuerySchema,
   LocationProjectionSchema,
@@ -66,7 +68,10 @@ export const characterPlugin: EnginePlugin = {
       }
       const location = context.world.locations.find((item) => item.id === character.locationId);
       if (!location) throw new Error('The character location is not present in this world version.');
-      const item = (location.takeables ?? []).find((candidate) => candidate.id === command.payload.itemId);
+      const trackedItem = character.itemLocations.find((entry) => entry.item.id === command.payload.itemId);
+      const item = trackedItem
+        ? trackedItem.locationId === character.locationId ? trackedItem.item : undefined
+        : (location.takeables ?? []).find((candidate) => candidate.id === command.payload.itemId);
       if (!item) throw new Error('That item is not available to take here.');
       const payload = {
         characterId: character.characterId,
@@ -78,6 +83,27 @@ export const characterPlugin: EnginePlugin = {
         streamId: command.characterId,
         expectedVersion: command.expectedVersion,
         events: [{ type: 'character.item_taken', version: 1, payload }],
+      };
+    });
+
+    registerCommand('character.drop', DropCharacterItemCommandSchema, async (command, context) => {
+      const character = await state.load(context, command.characterId);
+      if (!character || character.archived) throw new Error('That character is no longer available.');
+      const item = character.inventory.find((candidate) => candidate.id === command.payload.itemId);
+      if (!item) throw new Error('You are not carrying that item.');
+      CharacterItemDroppedEventSchema.shape.payload.parse({
+        characterId: character.characterId,
+        locationId: character.locationId,
+        item,
+      });
+      return {
+        streamId: command.characterId,
+        expectedVersion: command.expectedVersion,
+        events: [{
+          type: 'character.item_dropped',
+          version: 1,
+          payload: { characterId: character.characterId, locationId: character.locationId, item },
+        }],
       };
     });
 
@@ -142,9 +168,14 @@ export const characterPlugin: EnginePlugin = {
             id, label, description, readable: true, takeable: false,
           })),
           ...(location.takeables ?? [])
-            .filter((item) => !character.inventory.some((carried) => carried.id === item.id))
+            .filter((item) => !character.itemLocations.some((tracked) => tracked.item.id === item.id))
             .map(({ id, label, description }) => ({
               id, label, description, readable: false, takeable: true,
+            })),
+          ...character.itemLocations
+            .filter((entry) => entry.locationId === location.id)
+            .map(({ item }) => ({
+              id: item.id, label: item.label, description: item.description, readable: false, takeable: true,
             })),
         ],
         occupants: [],

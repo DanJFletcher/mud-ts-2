@@ -93,6 +93,11 @@ beforeEach(() => {
         revision += 1;
         return json({ receipt: { ok: true, newAggregateVersion: revision }, streamId: characterId });
       }
+      if (command.type === 'character.drop') {
+        itemTaken = false;
+        revision += 1;
+        return json({ receipt: { ok: true, newAggregateVersion: revision }, streamId: characterId });
+      }
       if (moveError) return json({ message: moveError }, 409);
       room = room === 'clearing' ? 'bridge' : 'clearing';
       revision += 1;
@@ -228,7 +233,7 @@ describe('single-character world session client', () => {
     )).toHaveLength(1);
   });
 
-  it('takes a loose stone into the active character inventory and removes it from the room', async () => {
+  it('takes a loose stone, drops it in the room, and can take it again', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     const history = screen.getByRole('region', { name: 'Terminal output' });
@@ -260,13 +265,26 @@ describe('single-character world session client', () => {
     fireEvent.click(screen.getByRole('link', { name: 'Play' }));
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     const commandInputAfterReturn = screen.getByRole('textbox', { name: 'Enter a command' });
+    fireEvent.change(commandInputAfterReturn, { target: { value: 'drop stone' } });
+    fireEvent.submit(commandInputAfterReturn.closest('form')!);
+    await screen.findByText('You put down the loose stone.');
+    const dropRequest = apiFetch.mock.calls.find(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'character.drop'
+    );
+    expect(JSON.parse(String(dropRequest?.[1]?.body))).toMatchObject({
+      type: 'character.drop',
+      characterId,
+      expectedVersion: 2,
+      payload: { itemId: 'mossgate-loose-stone' },
+    });
     fireEvent.change(commandInputAfterReturn, { target: { value: 'take stone' } });
     fireEvent.submit(commandInputAfterReturn.closest('form')!);
-    await screen.findByText('There is nothing here you can take called “stone”.');
+    await screen.findByText('You pick up the loose stone.');
     expect(apiFetch.mock.calls.filter(([path, init]) =>
       path === '/api/commands' &&
-      JSON.parse(String(init?.body ?? '{}')).type === 'character.take'
-    )).toHaveLength(1);
+      ['character.take', 'character.drop'].includes(JSON.parse(String(init?.body ?? '{}')).type)
+    )).toHaveLength(3);
   });
 
   it('switches quick commands from look to available walking directions', async () => {

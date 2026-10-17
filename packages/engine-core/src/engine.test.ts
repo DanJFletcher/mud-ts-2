@@ -165,6 +165,122 @@ describe('MUDD engine host', () => {
     await engine.stop();
   });
 
+  it('drops a carried item into the current room and keeps its location through replay', async () => {
+    const { engine, store } = makeEngine();
+    await engine.start();
+    const created = await engine.dispatch({
+      type: 'character.create',
+      version: 1,
+      commandId: 'drop-create',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      payload: { name: 'Rill' },
+    }, session);
+    const characterId = created.streamId!;
+    const take = await engine.dispatch({
+      type: 'character.take',
+      version: 1,
+      commandId: 'drop-take',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 1,
+      payload: { itemId: 'mossgate-loose-stone' },
+    }, session);
+    expect(take.receipt).toMatchObject({ ok: true, newAggregateVersion: 2 });
+    const moveToBridge = await engine.dispatch({
+      type: 'character.move',
+      version: 1,
+      commandId: 'drop-move-to-bridge',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 2,
+      payload: { exitId: 'clearing-to-bridge' },
+    }, session);
+    expect(moveToBridge.receipt).toMatchObject({ ok: true, newAggregateVersion: 3 });
+    const drop = await engine.dispatch({
+      type: 'character.drop',
+      version: 1,
+      commandId: 'drop-stone',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 3,
+      payload: { itemId: 'mossgate-loose-stone' },
+    }, session);
+    expect(drop.receipt).toMatchObject({ ok: true, newAggregateVersion: 4 });
+    expect(drop.events[0]).toMatchObject({
+      type: 'character.item_dropped',
+      version: 1,
+      payload: { characterId, locationId: 'glasswater-bridge', item: { id: 'mossgate-loose-stone' } },
+    });
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))).toMatchObject({
+      locationId: 'glasswater-bridge',
+      revision: 4,
+      inventory: [],
+      itemLocations: [{
+        item: { id: 'mossgate-loose-stone' },
+        locationId: 'glasswater-bridge',
+      }],
+    });
+    const droppedRoom = await engine.query({
+      type: 'location.describe',
+      version: 1,
+      queryId: 'look-at-dropped-stone',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      payload: {},
+    }, session);
+    expect(droppedRoom).toMatchObject({
+      ok: true,
+      value: { objects: [expect.objectContaining({ id: 'mossgate-loose-stone', takeable: true })] },
+    });
+    const moveBackToClearing = await engine.dispatch({
+      type: 'character.move',
+      version: 1,
+      commandId: 'drop-move-back-to-clearing',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 4,
+      payload: { exitId: 'bridge-to-clearing' },
+    }, session);
+    expect(moveBackToClearing.receipt).toMatchObject({ ok: true, newAggregateVersion: 5 });
+    const originalRoom = await engine.query({
+      type: 'location.describe',
+      version: 1,
+      queryId: 'look-at-original-stone-place',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      payload: {},
+    }, session);
+    expect(originalRoom).not.toMatchObject({
+      ok: true,
+      value: { objects: expect.arrayContaining([expect.objectContaining({ id: 'mossgate-loose-stone' })]) },
+    });
+    const returnToBridge = await engine.dispatch({
+      type: 'character.move',
+      version: 1,
+      commandId: 'drop-return-to-bridge',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 5,
+      payload: { exitId: 'clearing-to-bridge' },
+    }, session);
+    expect(returnToBridge.receipt).toMatchObject({ ok: true, newAggregateVersion: 6 });
+    const takeAgain = await engine.dispatch({
+      type: 'character.take',
+      version: 1,
+      commandId: 'take-dropped-stone',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 6,
+      payload: { itemId: 'mossgate-loose-stone' },
+    }, session);
+    expect(takeAgain.receipt).toMatchObject({ ok: true, newAggregateVersion: 7 });
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))).toMatchObject({
+      inventory: [{ id: 'mossgate-loose-stone' }],
+      itemLocations: [{ item: { id: 'mossgate-loose-stone' }, locationId: null }],
+    });
+    await engine.stop();
+  });
+
   it('keeps multiple characters under one account and supports versioned rename and archive events', async () => {
     const { engine, store } = makeEngine();
     await engine.start();
