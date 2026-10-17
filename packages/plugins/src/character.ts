@@ -153,12 +153,28 @@ export const characterPlugin: EnginePlugin = {
       }
       const location = context.world.locations.find((item) => item.id === character.locationId);
       if (!location) throw new Error('The character location is not present in this world version.');
+      const trackedItemIds = new Set(character.itemLocations.map((entry) => entry.item.id));
+      const roomTakeables = [
+        ...(location.takeables ?? []).filter((item) => !trackedItemIds.has(item.id)),
+        ...character.itemLocations
+          .filter((entry) => entry.locationId === location.id)
+          .map(({ item }) => item),
+      ];
+      const roomDescriptionByItemId = new Map(
+        context.world.locations.flatMap((worldLocation) =>
+          (worldLocation.takeables ?? []).map(({ id, roomDescription }) => [id, roomDescription] as const),
+        ),
+      );
+      const roomItemDescriptions = roomTakeables.flatMap((item) => {
+        const roomDescription = roomDescriptionByItemId.get(item.id);
+        return roomDescription ? [roomDescription] : [];
+      });
       return LocationProjectionSchema.parse({
         worldInstanceId: context.worldInstanceId,
         locationId: location.id,
         revision: character.revision,
         title: location.name,
-        description: location.description,
+        description: [location.description, ...roomItemDescriptions].join(' '),
         exits: location.exits.map((exit) => ({
           id: exit.id,
           label: exit.label,
@@ -169,16 +185,9 @@ export const characterPlugin: EnginePlugin = {
           ...(location.readables ?? []).map(({ id, label, description }) => ({
             id, label, description, readable: true, takeable: false,
           })),
-          ...(location.takeables ?? [])
-            .filter((item) => !character.itemLocations.some((tracked) => tracked.item.id === item.id))
-            .map(({ id, label, description }) => ({
+          ...roomTakeables.map(({ id, label, description }) => ({
               id, label, description, readable: false, takeable: true,
-            })),
-          ...character.itemLocations
-            .filter((entry) => entry.locationId === location.id)
-            .map(({ item }) => ({
-              id: item.id, label: item.label, description: item.description, readable: false, takeable: true,
-            })),
+          })),
         ],
         occupants: [],
       });

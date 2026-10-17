@@ -459,15 +459,8 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     });
   }, [exits]);
   const quickLookTargets = useMemo(() => {
-    const roomObjects = snapshot?.location?.objects ?? [];
-    const roomObjectIds = new Set(roomObjects.map((object) => object.id));
-    return [
-      ...roomObjects.map(({ id, label }) => ({ id, label })),
-      ...(snapshot?.character?.inventory ?? [])
-        .filter((item) => !roomObjectIds.has(item.id))
-        .map(({ id, label }) => ({ id, label })),
-    ];
-  }, [snapshot?.character?.inventory, snapshot?.location?.objects]);
+    return (snapshot?.location?.objects ?? []).map(({ id, label }) => ({ id, label }));
+  }, [snapshot?.location?.objects]);
   const quickTakeableObjects = useMemo(
     () => (snapshot?.location?.objects ?? []).filter((object) => object.takeable),
     [snapshot?.location?.objects],

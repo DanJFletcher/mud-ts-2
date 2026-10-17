@@ -22,6 +22,7 @@ export const TakeableObjectDefinitionSchema = z.object({
   id: IdSchema,
   label: z.string().min(1).max(120),
   description: z.string().min(1).max(1000),
+  roomDescription: z.string().min(1).max(1000).optional(),
 }).strict();
 
 export const LocationDefinitionSchema = z.object({

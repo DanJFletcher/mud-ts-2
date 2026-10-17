@@ -35,6 +35,7 @@ describe('MuddHttpClient', () => {
     const characterId = created.streamId!;
     const firstRoom = await client.look(characterId, 'sdk-look-1');
     expect(firstRoom.title).toBe('Mossgate Clearing');
+    expect(firstRoom.description).toContain('One loose stone bears a pale stripe.');
     expect(firstRoom.objects).toEqual([
       {
         id: 'mossgate-marker',
@@ -70,9 +71,11 @@ describe('MuddHttpClient', () => {
     const afterTake = await client.look(characterId, 'sdk-look-after-take');
     expect(afterTake.revision).toBe(2);
     expect(afterTake.objects).not.toContainEqual(expect.objectContaining({ id: 'mossgate-loose-stone' }));
+    expect(afterTake.description).not.toContain('One loose stone bears a pale stripe.');
     const dropped = await client.drop(characterId, 'mossgate-loose-stone', afterTake.revision, 'sdk-drop');
     expect(dropped.receipt).toMatchObject({ ok: true, newAggregateVersion: 3 });
     const afterDrop = await client.look(characterId, 'sdk-look-after-drop');
+    expect(afterDrop.description).toContain('One loose stone bears a pale stripe.');
     expect(afterDrop.objects).toContainEqual(expect.objectContaining({
       id: 'mossgate-loose-stone',
       takeable: true,

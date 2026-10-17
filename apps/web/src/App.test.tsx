@@ -22,7 +22,11 @@ function currentLocation() {
     worldInstanceId: 'mudd-demo-instance',
     locationId: room === 'clearing' ? 'mossgate-clearing' : 'glasswater-bridge',
     title: room === 'clearing' ? 'Mossgate Clearing' : 'Glasswater Bridge',
-    description: room === 'clearing' ? 'Pale stones break through the moss. One loose stone bears a pale stripe.' : 'A stone bridge crosses clear water.',
+    description: room === 'clearing'
+      ? itemTaken
+        ? 'A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east.'
+        : 'A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east. One loose stone bears a pale stripe.'
+      : 'A stone bridge crosses clear water.',
     revision,
     objects: room === 'clearing' ? [
       {
@@ -147,8 +151,8 @@ describe('single-character world session client', () => {
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     const history = screen.getByRole('region', { name: 'Terminal output' });
     expect(history).toHaveTextContent('> look');
-    await screen.findByText('Pale stones break through the moss. One loose stone bears a pale stripe.');
-    expect(screen.getAllByText('Pale stones break through the moss. One loose stone bears a pale stripe.')).toHaveLength(1);
+    await screen.findByText('A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east. One loose stone bears a pale stripe.');
+    expect(screen.getAllByText('A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east. One loose stone bears a pale stripe.')).toHaveLength(1);
     expect(screen.queryByText(/World activity|\b\d+\s+events?\b/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Look around' })).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Enter a command' })).toBeVisible();
@@ -161,7 +165,7 @@ describe('single-character world session client', () => {
     expect(screen.getByRole('heading', { name: 'Rowan' })).toBeVisible();
     fireEvent.click(screen.getByRole('link', { name: 'Field notes' }));
     await screen.findByRole('heading', { name: 'Field notes' });
-    expect(screen.getByText('Pale stones break through the moss. One loose stone bears a pale stripe.')).toBeVisible();
+    expect(screen.getByText('A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east. One loose stone bears a pale stripe.')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: /Characters/ }));
     expect(onLeaveWorld).toHaveBeenCalledOnce();
   });
@@ -202,7 +206,7 @@ describe('single-character world session client', () => {
 
     await waitFor(() => {
       expect(screen.getAllByText('> look')).toHaveLength(2);
-      expect(screen.getAllByText('Pale stones break through the moss. One loose stone bears a pale stripe.')).toHaveLength(2);
+      expect(screen.getAllByText('A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east. One loose stone bears a pale stripe.')).toHaveLength(2);
     });
     expect(apiFetch.mock.calls.some(([path]) => path === '/api/queries')).toBe(true);
     expect(history).toHaveTextContent('> look');
@@ -463,14 +467,17 @@ describe('single-character world session client', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Take Loose stone' }));
     await screen.findByText('You pick up the loose stone.');
     expect(itemsToTake).toHaveTextContent('Nothing to take here');
+    expect(screen.queryByRole('button', { name: 'Take Loose stone' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Take all available items' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Return to more quick actions' }));
     fireEvent.click(screen.getByRole('button', { name: 'Return to main quick actions' }));
     fireEvent.click(screen.getByRole('button', { name: 'Show look targets' }));
     const updatedLookTargets = screen.getByRole('group', { name: 'Things to look at' });
-    expect(updatedLookTargets).toContainElement(screen.getByRole('button', { name: 'Look at Loose stone' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Look at Loose stone' }));
-    await screen.findByText('A smooth, palm-sized stone with a pale stripe running through it.');
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Return to quick commands' })).toBeEnabled());
+    expect(updatedLookTargets).toContainElement(screen.getByRole('button', { name: 'Look at Weathered marker' }));
+    expect(screen.queryByRole('button', { name: 'Look at Loose stone' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Look around' }));
+    await screen.findByText('A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east.');
+    expect(screen.getAllByText('A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east. One loose stone bears a pale stripe.')).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Return to quick commands' }));
     fireEvent.click(screen.getByRole('button', { name: 'Show items to drop' }));
     const itemsToDrop = screen.getByRole('group', { name: 'Items to drop' });
