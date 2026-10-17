@@ -671,7 +671,6 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                     </div>
                   </section>
                   <section className="focused-command" aria-label="Text command">
-                    <div className="focused-command-label"><span>Command</span><span>help · look at · go · read · take · drop</span></div>
                     <form className="focused-command-form" onSubmit={submitCommand}>
                       <TextInput
                         id="focused-world-command"

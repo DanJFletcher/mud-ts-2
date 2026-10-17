@@ -173,6 +173,8 @@ describe('single-character world session client', () => {
   it('records typed commands and their results in the terminal history', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    expect(screen.queryByText('Command', { exact: true })).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Enter a command' })).toBeVisible();
     const history = screen.getByRole('region', { name: 'Terminal output' });
     const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
     fireEvent.change(commandInput, { target: { value: 'look' } });

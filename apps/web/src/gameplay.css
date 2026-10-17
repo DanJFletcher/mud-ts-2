@@ -213,13 +213,11 @@
 .focused-terminal .focused-command {
   flex: 0 0 auto;
   margin: 0;
-  padding: 11px 13px 13px;
+  padding: 8px 13px 13px;
   border: 0;
   border-radius: 0;
   background: var(--terminal-inset);
 }
-
-.focused-terminal .focused-command-label { color: var(--terminal-muted); }
 
 .focused-terminal .focused-quick-commands {
   display: flex;
@@ -359,17 +357,6 @@
   border: 1px solid var(--mudd-border);
   border-radius: 12px;
   background: color-mix(in srgb, var(--mudd-surface) 74%, transparent);
-}
-
-.focused-command-label {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 9px;
-  color: var(--mudd-muted);
-  font: 500 .67rem/1.2 "DM Mono", monospace;
-  letter-spacing: .1em;
-  text-transform: uppercase;
 }
 
 .focused-command-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
