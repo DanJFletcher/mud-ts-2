@@ -38,7 +38,7 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
   ],
   go: [
     "Usage: go <direction>",
-    "Travel through an available exit in the current room.",
+    "Travel through an available exit. Use the Go quick action to choose from current exits.",
   ],
   read: [
     "Usage: read <object>",
@@ -51,10 +51,6 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
   drop: [
     "Usage: drop <item>",
     "Put down an item you carry in the current room.",
-  ],
-  walk: [
-    "Walk is a quick action, not a typed command.",
-    "Choose Walk below the terminal to show exits, then select a direction. Typed movement uses: go <direction>.",
   ],
   inspect: [
     "There is no separate inspect command.",
@@ -70,7 +66,7 @@ const GENERAL_HELP = [
   "read <object> — Read text on an object in the current room.",
   "take <item> — Pick up an item in the current room.",
   "drop <item> — Put down an item you carry.",
-  "Quick actions: Look, Read, Take, Drop, and Walk. Target actions appear when available.",
+  "Quick actions: Look, Read, Take, Drop, and Go. Target actions appear when available.",
 ];
 
 function getCommandHelp(topic: string): readonly string[] {
@@ -98,7 +94,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const [pending, setPending] = useState<"look" | "read" | "take" | "drop" | "move" | null>(null);
   const [pendingExitId, setPendingExitId] = useState<string>();
   const [command, setCommand] = useState("");
-  const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "walk" | "look" | "read" | "drop">("quick");
+  const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "go" | "look" | "read" | "drop">("quick");
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [connectionError, setConnectionError] = useState("");
   const [inspectedCarriedItem, setInspectedCarriedItem] = useState<{ id: string; label: string; description: string }>();
@@ -495,19 +491,19 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                   </div>
                   <section className="focused-quick-commands" aria-label="Quick commands">
                     <span className="focused-quick-commands__label" aria-hidden="true">
-                      {quickCommandMode === "walk" ? "Walk" : quickCommandMode === "look" ? "Look" : quickCommandMode === "read" ? "Read" : quickCommandMode === "drop" ? "Drop" : "Quick"}
+                      {quickCommandMode === "go" ? "Go" : quickCommandMode === "look" ? "Look" : quickCommandMode === "read" ? "Read" : quickCommandMode === "drop" ? "Drop" : "Quick"}
                     </span>
                     <div
                       className="focused-quick-commands__actions"
                       role="group"
                       aria-label={
-                        quickCommandMode === "walk" ? "Walking directions" :
+                        quickCommandMode === "go" ? "Available directions" :
                           quickCommandMode === "look" ? "Things to look at" :
                           quickCommandMode === "read" ? "Readable objects" :
                             quickCommandMode === "drop" ? "Items to drop" : "Quick commands"
                       }
                     >
-                      {quickCommandMode === "walk" ? (
+                      {quickCommandMode === "go" ? (
                         <>
                           <button
                             type="button"
@@ -660,11 +656,11 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                           <button
                             type="button"
                             className="focused-quick-command"
-                            onClick={() => setQuickCommandMode("walk")}
-                            aria-label="Show walking directions"
+                            onClick={() => setQuickCommandMode("go")}
+                            aria-label="Show available exits"
                             disabled={pending !== null}
                           >
-                            walk <span aria-hidden="true">›</span>
+                            go <span aria-hidden="true">›</span>
                           </button>
                         </>
                       )}

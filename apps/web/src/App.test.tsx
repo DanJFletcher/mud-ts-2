@@ -202,7 +202,7 @@ describe('single-character world session client', () => {
     await screen.findByText('Commands');
     expect(history).toHaveTextContent('> help');
     expect(history).toHaveTextContent('take <item> — Pick up an item in the current room.');
-    expect(history).toHaveTextContent('Quick actions: Look, Read, Take, Drop, and Walk. Target actions appear when available.');
+    expect(history).toHaveTextContent('Quick actions: Look, Read, Take, Drop, and Go. Target actions appear when available.');
 
     fireEvent.change(commandInput, { target: { value: 'help LOOK' } });
     fireEvent.submit(commandInput.closest('form')!);
@@ -367,7 +367,7 @@ describe('single-character world session client', () => {
     )).toBe(true);
   });
 
-  it('shows look targets and switches quick commands to available walking directions', async () => {
+  it('shows look targets and switches quick commands to available directions', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     const history = screen.getByRole('region', { name: 'Terminal output' });
@@ -382,9 +382,9 @@ describe('single-character world session client', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Return to quick commands' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Return to quick commands' }));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show walking directions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show available exits' }));
     expect(screen.queryByRole('button', { name: 'Show look targets' })).not.toBeInTheDocument();
-    expect(screen.getByRole('group', { name: 'Walking directions' })).toContainElement(
+    expect(screen.getByRole('group', { name: 'Available directions' })).toContainElement(
       screen.getByRole('button', { name: 'Go north' }),
     );
 
