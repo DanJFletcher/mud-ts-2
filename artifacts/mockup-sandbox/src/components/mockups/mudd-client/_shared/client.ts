@@ -6,6 +6,11 @@ export interface RoomExit {
   available: boolean;
 }
 
+export interface ReadableObject {
+  id: string;
+  label: string;
+}
+
 export interface LocationProjection {
   worldInstanceId: string;
   locationId: string;
@@ -13,6 +18,7 @@ export interface LocationProjection {
   description: string;
   revision: number;
   exits: RoomExit[];
+  objects: ReadableObject[];
 }
 
 export interface GameSnapshot {
@@ -31,6 +37,7 @@ interface PreviewRoom {
   id: string;
   title: string;
   description: string;
+  readables?: Array<ReadableObject & { text: string }>;
   exits: (RoomExit & { target: string })[];
 }
 
@@ -39,6 +46,9 @@ const rooms: PreviewRoom[] = [
     id: 'mossgate-clearing',
     title: 'Mossgate Clearing',
     description: 'A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east.',
+    readables: [
+      { id: 'mossgate-marker', label: 'Weathered marker', text: 'OLD BELL TOWER — EAST' },
+    ],
     exits: [
       { id: 'clearing-to-bridge', target: 'glasswater-bridge', label: 'North to Glasswater Bridge', direction: 'north', available: true },
       { id: 'clearing-to-tower', target: 'bell-tower', label: 'East to the Old Bell Tower', direction: 'east', available: true },
@@ -97,6 +107,13 @@ export class MuddHttpClient {
     return this.describe();
   }
 
+  async read(_characterId: string, objectId: string) {
+    const room = rooms.find((item) => item.id === this.locationId);
+    const readable = room?.readables?.find((item) => item.id === objectId);
+    if (!readable) throw new Error('That object is not readable from here.');
+    return { id: readable.id, label: readable.label, text: readable.text };
+  }
+
   async move(_characterId: string, exitId: string, expectedVersion: number) {
     if (expectedVersion !== this.revision) throw new Error('Location changed. Try again.');
     const room = rooms.find((item) => item.id === this.locationId)!;
@@ -116,6 +133,7 @@ export class MuddHttpClient {
       description: room.description,
       revision: this.revision,
       exits: room.exits.map(({ target: _target, ...exit }) => exit),
+      objects: (room.readables ?? []).map(({ id, label }) => ({ id, label })),
     };
   }
 }

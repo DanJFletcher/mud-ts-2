@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   MoveCharacterCommandSchema, CharacterMovedEventSchema, CommandReceiptSchema,
-  PluginManifestSchema, LocationDescribeQuerySchema, WorldPackDraftSchema,
+  PluginManifestSchema, LocationDescribeQuerySchema, ObjectReadQuerySchema, WorldPackDraftSchema,
   validateDraftWorldGraph,
 } from '../dist/src/index.js';
 
@@ -37,9 +37,20 @@ test('look is a read-only query with no client actor field', () => {
   assert.equal(LocationDescribeQuerySchema.safeParse({ type: 'location.describe', version: 1, queryId: 'q1', worldInstanceId: 'world1', characterId: 'char1', payload: {} }).success, true);
 });
 
+test('reading a world object is a validated read-only query', () => {
+  assert.equal(ObjectReadQuerySchema.safeParse({
+    type: 'object.read', version: 1, queryId: 'q2', worldInstanceId: 'world1',
+    characterId: 'char1', payload: { objectId: 'marker' },
+  }).success, true);
+  assert.equal(ObjectReadQuerySchema.safeParse({
+    type: 'object.read', version: 1, queryId: 'q2', worldInstanceId: 'world1',
+    characterId: 'char1', payload: { objectId: '' },
+  }).success, false);
+});
+
 test('draft content checks graph references', () => {
   const pack = WorldPackDraftSchema.parse({ formatVersion: 1, packId: 'starter', packVersion: '0.1.0', displayName: 'Starter', locations: [
-    { id: 'r1', name: 'Crossroads', description: 'Paths branch', exits: [{ id: 'north', fromLocationId: 'r1', toLocationId: 'r2', label: 'North' }] },
+    { id: 'r1', name: 'Crossroads', description: 'Paths branch', readables: [{ id: 'marker', label: 'Marker', text: 'North to the forest' }], exits: [{ id: 'north', fromLocationId: 'r1', toLocationId: 'r2', label: 'North' }] },
     { id: 'r2', name: 'Forest', description: 'Old trees', exits: [] },
   ] });
   assert.deepEqual(validateDraftWorldGraph(pack), []);

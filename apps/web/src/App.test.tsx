@@ -21,6 +21,7 @@ function currentLocation() {
     title: room === 'clearing' ? 'Mossgate Clearing' : 'Glasswater Bridge',
     description: room === 'clearing' ? 'Pale stones break through the moss.' : 'A stone bridge crosses clear water.',
     revision,
+    objects: room === 'clearing' ? [{ id: 'mossgate-marker', label: 'Weathered marker' }] : [],
     exits: [{
       id: room === 'clearing' ? 'clearing-to-bridge' : 'bridge-to-clearing',
       label: room === 'clearing' ? 'North to Glasswater Bridge' : 'South to Mossgate Clearing',
@@ -42,7 +43,7 @@ beforeEach(() => {
   revision = 1;
   moveError = null;
   apiFetch.mockReset();
-  apiFetch.mockImplementation(async (path: string) => {
+  apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
     if (path === '/api/game') {
       return json({
         player: { id: 'account-1', displayName: 'Traveler' },
@@ -50,7 +51,13 @@ beforeEach(() => {
         location: currentLocation(),
       });
     }
-    if (path === '/api/queries') return json({ ok: true, value: currentLocation() });
+    if (path === '/api/queries') {
+      const query = JSON.parse(String(init?.body ?? '{}')) as { type?: string; payload?: { objectId?: string } };
+      if (query.type === 'object.read' && query.payload?.objectId === 'mossgate-marker') {
+        return json({ ok: true, value: { id: 'mossgate-marker', label: 'Weathered marker', text: 'OLD BELL TOWER — EAST' } });
+      }
+      return json({ ok: true, value: currentLocation() });
+    }
     if (path === '/api/commands') {
       if (moveError) return json({ message: moveError }, 409);
       room = room === 'clearing' ? 'bridge' : 'clearing';
@@ -128,6 +135,36 @@ describe('single-character world session client', () => {
     expect(screen.getByRole('region', { name: 'Available exits' })).toContainElement(
       screen.getByRole('button', { name: 'North to Glasswater Bridge' }),
     );
+  });
+
+  it('reads a current-room marker through a read-only query', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+    const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
+
+    fireEvent.change(commandInput, { target: { value: 'read marker' } });
+    fireEvent.submit(commandInput.closest('form')!);
+
+    await screen.findByText('OLD BELL TOWER — EAST');
+    expect(history).toHaveTextContent('> read marker');
+    const readRequest = apiFetch.mock.calls.find(([path, init]) =>
+      path === '/api/queries' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'object.read'
+    );
+    expect(JSON.parse(String(readRequest?.[1]?.body))).toMatchObject({
+      type: 'object.read',
+      characterId,
+      payload: { objectId: 'mossgate-marker' },
+    });
+
+    fireEvent.change(commandInput, { target: { value: 'read book' } });
+    fireEvent.submit(commandInput.closest('form')!);
+    await screen.findByText('There is nothing readable called “book” here.');
+    expect(apiFetch.mock.calls.filter(([path, init]) =>
+      path === '/api/queries' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'object.read'
+    )).toHaveLength(1);
   });
 
   it('switches quick commands from look to available walking directions', async () => {

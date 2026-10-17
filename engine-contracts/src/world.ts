@@ -11,12 +11,19 @@ export const ExitDefinitionSchema = z.object({
   direction: z.string().max(40).optional(),
 }).strict();
 
+export const ReadableObjectDefinitionSchema = z.object({
+  id: IdSchema,
+  label: z.string().min(1).max(120),
+  text: z.string().min(1).max(4000),
+}).strict();
+
 export const LocationDefinitionSchema = z.object({
   id: IdSchema,
   name: z.string().min(1).max(160),
   description: z.string().min(1),
   regionId: IdSchema.optional(),
   exits: z.array(ExitDefinitionSchema),
+  readables: z.array(ReadableObjectDefinitionSchema).optional(),
 }).strict();
 
 export const WorldPackDraftSchema = z.object({
@@ -30,6 +37,17 @@ export const WorldPackDraftSchema = z.object({
 export const LocationDescribeQuerySchema = ClientQueryBaseSchema.extend({
   type: z.literal('location.describe'),
   payload: z.object({ locationId: IdSchema.optional() }).strict(),
+}).strict();
+
+export const ObjectReadQuerySchema = ClientQueryBaseSchema.extend({
+  type: z.literal('object.read'),
+  payload: z.object({ objectId: IdSchema }).strict(),
+}).strict();
+
+export const ReadableObjectProjectionSchema = z.object({
+  id: IdSchema,
+  label: z.string(),
+  text: z.string().min(1).max(4000),
 }).strict();
 
 export const ExitProjectionSchema = z.object({
@@ -56,6 +74,9 @@ export type ExitDefinition = z.infer<typeof ExitDefinitionSchema>;
 export type LocationDefinition = z.infer<typeof LocationDefinitionSchema>;
 export type WorldPackDraft = z.infer<typeof WorldPackDraftSchema>;
 export type LocationDescribeQuery = z.infer<typeof LocationDescribeQuerySchema>;
+export type ObjectReadQuery = z.infer<typeof ObjectReadQuerySchema>;
+export type ReadableObjectDefinition = z.infer<typeof ReadableObjectDefinitionSchema>;
+export type ReadableObjectProjection = z.infer<typeof ReadableObjectProjectionSchema>;
 export type LocationProjection = z.infer<typeof LocationProjectionSchema>;
 
 export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {

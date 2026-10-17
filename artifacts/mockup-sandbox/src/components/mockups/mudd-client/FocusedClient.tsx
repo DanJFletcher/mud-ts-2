@@ -23,7 +23,7 @@ function makeEntry(kind: ActivityEntry["kind"], text: string): ActivityEntry {
 export function FocusedClient() {
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"create" | "look" | "move" | null>(null);
+  const [pending, setPending] = useState<"create" | "look" | "read" | "move" | null>(null);
   const [pendingExitId, setPendingExitId] = useState<string>();
   const [name, setName] = useState("");
   const [command, setCommand] = useState("");
@@ -131,6 +131,19 @@ export function FocusedClient() {
     }
   }, [addEntry, pending, snapshot]);
 
+  const readObject = useCallback(async (objectId: string) => {
+    if (!snapshot?.character || pending) return;
+    setPending("read");
+    try {
+      const readable = await client.read(snapshot.character.characterId, objectId);
+      addEntry("narration", readable.text);
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "You cannot read that just now.");
+    } finally {
+      setPending(null);
+    }
+  }, [addEntry, pending, snapshot]);
+
   const move = useCallback(async (exitId: string) => {
     if (!snapshot?.character || !snapshot.location || pending) return;
     const exit = snapshot.location.exits.find((item) => item.id === exitId);
@@ -161,6 +174,32 @@ export function FocusedClient() {
       await inspect();
       return;
     }
+    if (verb.toLowerCase() === "read") {
+      addEntry("system", `> ${value}`);
+      if (!target) {
+        addEntry("error", "Read what? Try “read marker”.");
+        return;
+      }
+      const readableObjects = snapshot?.location?.objects ?? [];
+      const normalizedTarget = target.toLocaleLowerCase();
+      const exactMatch = readableObjects.find((object) =>
+        object.id.toLocaleLowerCase() === normalizedTarget ||
+        object.label.toLocaleLowerCase() === normalizedTarget
+      );
+      const matches = exactMatch
+        ? [exactMatch]
+        : readableObjects.filter((object) => object.label.toLocaleLowerCase().includes(normalizedTarget));
+      if (matches.length === 0) {
+        addEntry("error", `There is nothing readable called “${target}” here.`);
+        return;
+      }
+      if (matches.length > 1) {
+        addEntry("error", `Which one do you mean: ${matches.map((object) => object.label).join(", ")}?`);
+        return;
+      }
+      await readObject(matches[0]!.id);
+      return;
+    }
     if (verb.toLowerCase() === "go" && target) {
       const exits = snapshot?.location?.exits ?? [];
       const match = exits.find((exit) => exit.available && (
@@ -176,8 +215,8 @@ export function FocusedClient() {
       return;
     }
     addEntry("system", `> ${value}`);
-    addEntry("error", "Use “look” or “go” followed by an available direction.");
-  }, [addEntry, inspect, move, pending, snapshot]);
+    addEntry("error", "Use “look”, “go <direction>”, or “read <object>”.");
+  }, [addEntry, inspect, move, pending, readObject, snapshot]);
 
   const submitCommand = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -242,7 +281,7 @@ export function FocusedClient() {
               </Panel>
             ) : snapshot?.location ? (
               <>
-                <Panel className="focused-room focused-terminal" aria-busy={pending === "move" || pending === "look"}>
+                <Panel className="focused-room focused-terminal" aria-busy={pending !== null}>
                   <div className="focused-terminal-room">
                     <h1 className="focused-terminal-location">{snapshot.location.title}</h1>
                   </div>
@@ -317,11 +356,11 @@ export function FocusedClient() {
                     </div>
                   </section>
                   <section className="focused-command" aria-label="Text command">
-                    <div className="focused-command-label"><span>Command</span><span>look · go north</span></div>
+                    <div className="focused-command-label"><span>Command</span><span>look · go north · read marker</span></div>
                     <form className="focused-command-form" onSubmit={submitCommand}>
                       <TextInput id="focused-world-command" label="Enter a command" placeholder="Type a command" value={command} onChange={(event) => setCommand(event.target.value)} disabled={pending !== null} autoComplete="off" spellCheck={false} />
                       <Button type="submit" variant="secondary" disabled={!command.trim() || pending !== null}>
-                        {pending === "look" ? "Looking" : pending === "move" ? "Moving" : "Send"}
+                        {pending === "look" ? "Looking" : pending === "read" ? "Reading" : pending === "move" ? "Moving" : "Send"}
                       </Button>
                     </form>
                   </section>

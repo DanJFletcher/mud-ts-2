@@ -8,7 +8,9 @@ import {
   RestoreCharacterCommandSchema,
   CreateCharacterCommandSchema,
   LocationDescribeQuerySchema,
+  ObjectReadQuerySchema,
   LocationProjectionSchema,
+  ReadableObjectProjectionSchema,
 } from '@mudd/contracts';
 import type { EngineCommandContext, EnginePlugin, QueryContext } from '@mudd/engine-core';
 import { replayCharacter } from '@mudd/engine-core';
@@ -110,9 +112,19 @@ export const characterPlugin: EnginePlugin = {
           direction: exit.direction,
           available: true,
         })),
-        objects: [],
+        objects: (location.readables ?? []).map(({ id, label }) => ({ id, label })),
         occupants: [],
       });
+    });
+
+    registerQuery('object.read', ObjectReadQuerySchema, async (query, context) => {
+      const character = await state.load(context, query.characterId);
+      if (!character || character.archived) throw new Error('That character is no longer available.');
+      const location = context.world.locations.find((item) => item.id === character.locationId);
+      if (!location) throw new Error('The character location is not present in this world version.');
+      const readable = (location.readables ?? []).find((item) => item.id === query.payload.objectId);
+      if (!readable) throw new Error('That object is not readable from here.');
+      return ReadableObjectProjectionSchema.parse(readable);
     });
   },
 };

@@ -4,7 +4,12 @@
  */
 import type { CommandReceipt } from './protocol.js';
 import type { CharacterProjection } from './character.js';
-import type { LocationProjection, LocationDescribeQuery } from './world.js';
+import type {
+  LocationProjection,
+  LocationDescribeQuery,
+  ObjectReadQuery,
+  ReadableObjectProjection,
+} from './world.js';
 import type { MoveCharacterCommand } from './movement.js';
 import type { SayCommand } from './chat.js';
 import type { CreateCharacterCommand } from './character.js';
@@ -12,7 +17,7 @@ import type { CombatActionCommand } from './combat.js';
 import type { StreamNotification, SubscriptionRequest } from './stream.js';
 
 export type ClientCommand = MoveCharacterCommand | SayCommand | CreateCharacterCommand | CombatActionCommand;
-export type ClientQuery = LocationDescribeQuery;
+export type ClientQuery = LocationDescribeQuery | ObjectReadQuery;
 export type ConnectionMode = 'local' | 'remote';
 
 export interface ConnectionOptions {
@@ -22,9 +27,12 @@ export interface ConnectionOptions {
   readonly sessionToken?: string;
 }
 
-export type QueryResult<Q extends ClientQuery> = Q extends LocationDescribeQuery
-  ? Readonly<{ ok: true; value: LocationProjection }> | Readonly<{ ok: false; code: string; message: string }>
-  : never;
+export type QueryResult<Q extends ClientQuery> =
+  Q extends LocationDescribeQuery
+    ? Readonly<{ ok: true; value: LocationProjection }> | Readonly<{ ok: false; code: string; message: string }>
+    : Q extends ObjectReadQuery
+      ? Readonly<{ ok: true; value: ReadableObjectProjection }> | Readonly<{ ok: false; code: string; message: string }>
+      : never;
 
 export type ProjectionListener = (notification: StreamNotification) => void;
 export type Unsubscribe = () => void;

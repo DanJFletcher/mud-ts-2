@@ -16,6 +16,9 @@ const draft = {
       name: 'Mossgate Clearing',
       description:
         'A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east.',
+      readables: [
+        { id: 'mossgate-marker', label: 'Weathered marker', text: 'OLD BELL TOWER — EAST' },
+      ],
       exits: [
         { id: 'clearing-to-bridge', fromLocationId: 'mossgate-clearing', toLocationId: 'glasswater-bridge', label: 'North to Glasswater Bridge', direction: 'north' },
         { id: 'clearing-to-tower', fromLocationId: 'mossgate-clearing', toLocationId: 'bell-tower', label: 'East to the Old Bell Tower', direction: 'east' },

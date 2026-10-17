@@ -4,10 +4,12 @@ import {
   ArchiveCharacterCommandSchema,
   RestoreCharacterCommandSchema,
   LocationDescribeQuerySchema,
+  ObjectReadQuerySchema,
   MoveCharacterCommandSchema,
   type CharacterProjection,
   type CommandReceipt,
   type LocationProjection,
+  type ReadableObjectProjection,
 } from '@mudd/contracts';
 
 export interface GameSnapshot {
@@ -143,6 +145,23 @@ export class MuddHttpClient {
       body: JSON.stringify(query),
     });
     if (!result.ok || !result.value) throw new Error(result.message ?? 'Unable to inspect the current location.');
+    return result.value;
+  }
+
+  async read(characterId: string, objectId: string, queryId = crypto.randomUUID()): Promise<ReadableObjectProjection> {
+    const query = ObjectReadQuerySchema.parse({
+      type: 'object.read',
+      version: 1,
+      queryId,
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      payload: { objectId },
+    });
+    const result = await this.request<{ ok: boolean; value?: ReadableObjectProjection; message?: string }>('/api/queries', {
+      method: 'POST',
+      body: JSON.stringify(query),
+    });
+    if (!result.ok || !result.value) throw new Error(result.message ?? 'Unable to read that object.');
     return result.value;
   }
 

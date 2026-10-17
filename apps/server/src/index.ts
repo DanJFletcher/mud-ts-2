@@ -9,6 +9,7 @@ import {
   CreateCharacterCommandSchema,
   IdSchema,
   LocationDescribeQuerySchema,
+  ObjectReadQuerySchema,
   RestoreCharacterCommandSchema,
   RenameCharacterCommandSchema,
 } from '@mudd/contracts';
@@ -235,14 +236,18 @@ app.post('/api/queries', async (req, res, next) => {
   try {
     const identity = await accountFor(req, res);
     if (!identity) return;
-    const query = LocationDescribeQuerySchema.safeParse(req.body);
-    if (!query.success) return res.status(400).json({ message: 'Invalid location query.' });
+    const locationQuery = LocationDescribeQuerySchema.safeParse(req.body);
+    const objectReadQuery = ObjectReadQuerySchema.safeParse(req.body);
+    let query: z.infer<typeof LocationDescribeQuerySchema> | z.infer<typeof ObjectReadQuerySchema>;
+    if (locationQuery.success) query = locationQuery.data;
+    else if (objectReadQuery.success) query = objectReadQuery.data;
+    else return res.status(400).json({ message: 'Invalid world query.' });
     const current = await activeSession(identity);
-    if (!current) return res.status(409).json({ message: 'Enter the world with a character before looking around.' });
-    if (query.data.characterId !== current.characterId) {
+    if (!current) return res.status(409).json({ message: 'Enter the world with a character before making a query.' });
+    if (query.characterId !== current.characterId) {
       return res.status(403).json({ message: 'This world session is bound to a different character.' });
     }
-    const result = await engine.query(query.data, worldContext(identity, current));
+    const result = await engine.query(query, worldContext(identity, current));
     return res.status(result.ok ? 200 : 403).json(result);
   } catch (error) {
     next(error);

@@ -35,10 +35,21 @@ describe('MuddHttpClient', () => {
     const characterId = created.streamId!;
     const firstRoom = await client.look(characterId, 'sdk-look-1');
     expect(firstRoom.title).toBe('Mossgate Clearing');
+    expect(firstRoom.objects).toEqual([{ id: 'mossgate-marker', label: 'Weathered marker' }]);
+    const marker = await client.read(characterId, 'mossgate-marker', 'sdk-read');
+    expect(marker).toEqual({
+      id: 'mossgate-marker',
+      label: 'Weathered marker',
+      text: 'OLD BELL TOWER — EAST',
+    });
+    await expect(client.read(characterId, 'unknown-object', 'sdk-read-missing'))
+      .rejects.toThrow('That object is not readable from here.');
     const moved = await client.move(characterId, 'clearing-to-bridge', firstRoom.revision, 'sdk-move');
     expect(moved.receipt.ok).toBe(true);
     const nextRoom = await client.look(characterId, 'sdk-look-2');
     expect(nextRoom.title).toBe('Glasswater Bridge');
+    await expect(client.read(characterId, 'mossgate-marker', 'sdk-read-from-bridge'))
+      .rejects.toThrow('That object is not readable from here.');
     await engine.stop();
   });
 });
