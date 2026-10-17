@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { apiFetch } = vi.hoisted(() => {
@@ -66,6 +66,11 @@ describe('single-character world session client', () => {
     const onLeaveWorld = vi.fn().mockResolvedValue(undefined);
     render(<WorldClient onLeaveWorld={onLeaveWorld} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+    expect(history).toHaveTextContent('> look');
+    await screen.findByText('Pale stones break through the moss.');
+    expect(screen.getAllByText('Pale stones break through the moss.')).toHaveLength(1);
+    expect(screen.queryByText(/World activity|\b\d+\s+events?\b/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Look around' })).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Enter a command' })).toBeVisible();
     expect(screen.getByRole('link', { name: 'Traveler' })).toBeVisible();
@@ -77,7 +82,7 @@ describe('single-character world session client', () => {
     expect(screen.getByRole('heading', { name: 'Rowan' })).toBeVisible();
     fireEvent.click(screen.getByRole('link', { name: 'Field notes' }));
     await screen.findByRole('heading', { name: 'Field notes' });
-    expect(screen.getByText(/No activity this session/)).toBeVisible();
+    expect(screen.getByText('Pale stones break through the moss.')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: /Characters/ }));
     expect(onLeaveWorld).toHaveBeenCalledOnce();
   });
@@ -85,13 +90,14 @@ describe('single-character world session client', () => {
   it('uses real character-bound commands and retains the action history on Field notes', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
-    const history = screen.getByRole('region', { name: 'Event and command history' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
     expect(history).toHaveClass('focused-terminal-history');
     expect(screen.getByRole('region', { name: 'Text command' })).toBeInTheDocument();
     expect(screen.getByText('Available paths')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'North to Glasswater Bridge' }));
     await screen.findByRole('heading', { name: 'Glasswater Bridge' });
     expect(history).toHaveTextContent('You travel north.');
+    expect(history).toHaveTextContent('A stone bridge crosses clear water.');
     const command = JSON.parse(apiFetch.mock.calls.find(([path]) => path === '/api/commands')?.[1].body as string);
     expect(command).toMatchObject({
       type: 'character.move',
@@ -108,15 +114,17 @@ describe('single-character world session client', () => {
   it('records typed commands and their results in the terminal history', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
-    const history = screen.getByRole('region', { name: 'Event and command history' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
     const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
     fireEvent.change(commandInput, { target: { value: 'look' } });
     fireEvent.submit(commandInput.closest('form')!);
 
-    expect(await screen.findByText('> look')).toBeVisible();
-    expect(await screen.findByText(/You look around/)).toBeVisible();
+    await waitFor(() => {
+      expect(screen.getAllByText('> look')).toHaveLength(2);
+      expect(screen.getAllByText('Pale stones break through the moss.')).toHaveLength(2);
+    });
     expect(apiFetch.mock.calls.some(([path]) => path === '/api/queries')).toBe(true);
-    expect(history).toContainElement(screen.getByText('> look'));
+    expect(history).toHaveTextContent('> look');
     expect(screen.getByRole('region', { name: 'Available exits' })).toContainElement(
       screen.getByRole('button', { name: 'North to Glasswater Bridge' }),
     );

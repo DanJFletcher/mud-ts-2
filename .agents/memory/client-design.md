@@ -7,8 +7,8 @@ description: User direction for MUDD's gameplay UI, navigation, and mobile prior
 - The game should have a tight, focused UI around what the player is doing and the actions they can take, not feel like a marketing website.
 - Traveler info and Field notes should be separate screens the player navigates to.
 - Marketing language can be reserved for the main home or login page, not gameplay.
-- The Play room readout, event history, and command field form one terminal panel: history scrolls independently, the command stays docked, and Available paths remain separate.
+- Play uses one terminal: show only the current room name above the transcript, emit default `look` output on room entry, scroll the transcript independently, dock the command field, keep Available paths separate, and show no message counts.
 
-**Why:** The user rejected the marketing-like gameplay presentation and unnecessary copy such as “No rush. Just the quiet work of being somewhere,” then approved the gameplay-first mobile direction with supporting information off the Play screen. The user also asked for a terminal-style, independently scrollable history with the command field at its bottom.
+**Why:** The user rejected marketing-like gameplay copy and asked for a terminal-focused Play view. They clarified that room descriptions should come from the default `look` output rather than duplicate static text, and that message counts are not useful to players.
 
-**How to apply:** Prioritize the mobile play experience, keep actionable game information prominent, use one terminal-style Play panel with a scrollable history and docked command field, and keep Available paths as separate quick actions.
+**How to apply:** Prioritize mobile gameplay; keep the room name as context, put room descriptions and command results in the transcript, make only the transcript scrollable, dock commands at the bottom, omit activity counts, and preserve Available paths as separate quick actions.

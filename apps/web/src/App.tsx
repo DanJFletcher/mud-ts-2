@@ -5,7 +5,6 @@ import {
   Button,
   NavigationControls,
   Panel,
-  RoomDescription,
   Text,
   TextInput,
   type ActivityEntry,
@@ -41,11 +40,19 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const contentRef = useRef<HTMLElement>(null);
   const terminalHistoryRef = useRef<HTMLDivElement>(null);
   const terminalFollowsLatestRef = useRef(true);
+  const lastRoomLookIdRef = useRef<string | null>(null);
 
   const addEntry = useCallback((kind: ActivityEntry["kind"], text: string) => {
     terminalFollowsLatestRef.current = true;
     setEntries((current) => [...current, makeEntry(kind, text)]);
   }, []);
+
+  const addDefaultLook = useCallback((location: GameSnapshot["location"]) => {
+    if (!location || lastRoomLookIdRef.current === location.locationId) return;
+    lastRoomLookIdRef.current = location.locationId;
+    addEntry("system", "> look");
+    addEntry("narration", location.description);
+  }, [addEntry]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -73,7 +80,9 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     setLoading(true);
     setConnectionError("");
     try {
-      setSnapshot(await client.getGame());
+      const nextSnapshot = await client.getGame();
+      setSnapshot(nextSnapshot);
+      addDefaultLook(nextSnapshot.location);
     } catch (error) {
       const message = error instanceof Error ? error.message : "The world could not be reached.";
       setConnectionError(message);
@@ -81,7 +90,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     } finally {
       setLoading(false);
     }
-  }, [addEntry]);
+  }, [addDefaultLook, addEntry]);
 
   useEffect(() => {
     void loadGame();
@@ -89,9 +98,11 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
 
   const refreshAfterMutation = useCallback(async (message: string) => {
     addEntry("system", message);
-    setSnapshot(await client.getGame());
+    const nextSnapshot = await client.getGame();
+    setSnapshot(nextSnapshot);
     setConnectionError("");
-  }, [addEntry]);
+    addDefaultLook(nextSnapshot.location);
+  }, [addDefaultLook, addEntry]);
 
   const inspect = useCallback(async () => {
     if (!snapshot?.character || pending) return;
@@ -99,7 +110,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     try {
       const location = await client.look(snapshot.character.characterId);
       setSnapshot((current) => current ? { ...current, location } : current);
-      addEntry("narration", `You look around. ${location.description}`);
+      addEntry("narration", location.description);
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "You cannot get a clear look just now.");
     } finally {
@@ -225,28 +236,20 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
               <>
                 <Panel className="focused-room focused-terminal" aria-busy={pending === "move" || pending === "look"}>
                   <div className="focused-terminal-room">
-                    <div className="focused-terminal-head">
-                      <span>World activity</span>
-                      <span>{entries.length} {entries.length === 1 ? "event" : "events"}</span>
-                    </div>
-                    <RoomDescription title={snapshot.location.title} description={snapshot.location.description} exits={exits} />
+                    <h1 className="focused-terminal-location">{snapshot.location.title}</h1>
                   </div>
                   <div
                     className="focused-terminal-history"
                     ref={terminalHistoryRef}
                     role="region"
-                    aria-label="Event and command history"
+                    aria-label="Terminal output"
                     tabIndex={0}
                     onScroll={(event) => {
                       const history = event.currentTarget;
                       terminalFollowsLatestRef.current = history.scrollHeight - history.scrollTop - history.clientHeight < 32;
                     }}
                   >
-                    {entries.length ? (
-                      <ActivityLog entries={entries} label="Event and command history" />
-                    ) : (
-                      <p className="focused-terminal-empty">No events yet.</p>
-                    )}
+                    {entries.length > 0 && <ActivityLog entries={entries} label="Terminal transcript" />}
                   </div>
                   <section className="focused-command" aria-label="Text command">
                     <div className="focused-command-label"><span>Command</span><span>look · go north</span></div>

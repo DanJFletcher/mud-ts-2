@@ -159,36 +159,15 @@
 
 .focused-terminal-room {
   flex: 0 0 auto;
-  padding: 15px 17px 13px;
+  padding: 13px 17px;
+  border-bottom: 1px solid var(--terminal-border);
 }
 
-.focused-terminal-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 13px;
-  color: var(--terminal-accent);
-  font: 500 .64rem/1.3 "DM Mono", monospace;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-}
-
-.focused-terminal-head span:last-child {
-  color: var(--terminal-muted);
-  letter-spacing: .04em;
-}
-
-.focused-room.focused-terminal .mudd-room__title {
-  margin-bottom: 8px;
+.focused-terminal-location {
+  margin: 0;
   color: var(--terminal-text);
   font: 500 1rem/1.4 "DM Mono", monospace;
-  letter-spacing: 0;
-}
-
-.focused-room.focused-terminal .mudd-room__description {
-  color: var(--terminal-muted);
-  font: 400 .78rem/1.6 "DM Mono", monospace;
+  letter-spacing: .02em;
 }
 
 .focused-terminal-history {
@@ -198,7 +177,6 @@
   overscroll-behavior: contain;
   scrollbar-color: var(--terminal-border) transparent;
   padding: 9px 16px;
-  border-top: 1px solid var(--terminal-border);
   border-bottom: 1px solid var(--terminal-border);
   outline-offset: -3px;
 }
@@ -230,12 +208,6 @@
 .focused-terminal-history .mudd-log__entry--error {
   border-color: var(--mudd-error);
   color: #f1a69a;
-}
-
-.focused-terminal-empty {
-  margin: 0;
-  color: var(--terminal-muted);
-  font: 400 .76rem/1.5 "DM Mono", monospace;
 }
 
 .focused-terminal .focused-command {
@@ -278,24 +250,6 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--mudd-accent) 15%, transparent);
 }
 
-.focused-room .mudd-room { gap: 0; }
-.focused-room .mudd-room > .mudd-text--eyebrow { display: none; }
-.focused-room .mudd-room__title {
-  max-width: 100%;
-  margin: 0 0 12px;
-  font-size: clamp(1.65rem, 6.5vw, 2.3rem);
-  line-height: 1.15;
-}
-
-.focused-room .mudd-room__description {
-  max-width: 58ch;
-  margin: 0;
-  color: color-mix(in srgb, var(--mudd-text) 88%, var(--mudd-muted));
-  font-size: 1rem;
-  line-height: 1.65;
-}
-
-.focused-room .mudd-room__exits { display: none; }
 .focused-paths { display: grid; gap: 8px; }
 .focused-paths-heading { margin-bottom: 1px; }
 .focused-paths .mudd-navigation { grid-template-columns: 1fr; gap: 8px; }
@@ -532,7 +486,6 @@
   .focused-client { padding-right: 12px; padding-left: 12px; }
   .focused-content { padding-top: 15px; }
   .focused-room { padding: 19px 16px 16px; }
-  .focused-room .mudd-room__title { font-size: 1.65rem; }
   .focused-command { padding: 12px; }
 }
 

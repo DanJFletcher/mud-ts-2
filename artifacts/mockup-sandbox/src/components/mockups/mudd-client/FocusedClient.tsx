@@ -7,7 +7,6 @@ import {
   Button,
   NavigationControls,
   Panel,
-  RoomDescription,
   Text,
   TextInput,
   type ActivityEntry,
@@ -30,11 +29,11 @@ export function FocusedClient() {
   const [command, setCommand] = useState("");
   const [entries, setEntries] = useState<ActivityEntry[]>([
     { id: "preview-look", kind: "system", text: "> look" },
-    { id: "preview-look-result", kind: "narration", text: "You look around. A circle of pale stones breaks through the moss." },
+    { id: "preview-look-result", kind: "narration", text: "A circle of pale stones breaks through the moss." },
     { id: "preview-north", kind: "system", text: "> go north" },
     { id: "preview-north-result", kind: "system", text: "You travel north." },
     { id: "preview-bridge-look", kind: "system", text: "> look" },
-    { id: "preview-bridge-description", kind: "narration", text: "You look around. A low stone bridge crosses clear water." },
+    { id: "preview-bridge-description", kind: "narration", text: "A low stone bridge crosses clear water." },
     { id: "preview-south", kind: "system", text: "> go south" },
     { id: "preview-south-result", kind: "system", text: "You travel south." },
     { id: "preview-east", kind: "system", text: "> go east" },
@@ -44,7 +43,7 @@ export function FocusedClient() {
     { id: "preview-bridge-south", kind: "system", text: "> go south" },
     { id: "preview-bridge-south-result", kind: "system", text: "You travel south." },
     { id: "preview-return-look", kind: "system", text: "> look" },
-    { id: "preview-return-description", kind: "narration", text: "You look around. A circle of pale stones breaks through the moss." },
+    { id: "preview-return-description", kind: "narration", text: "A circle of pale stones breaks through the moss." },
   ]);
   const terminalHistoryRef = useRef<HTMLDivElement>(null);
   const terminalFollowsLatestRef = useRef(true);
@@ -91,8 +90,13 @@ export function FocusedClient() {
 
   const refreshAfterMutation = useCallback(async (message: string) => {
     addEntry("system", message);
-    setSnapshot(await client.getGame());
+    const nextSnapshot = await client.getGame();
+    setSnapshot(nextSnapshot);
     setConnectionError("");
+    if (nextSnapshot.location) {
+      addEntry("system", "> look");
+      addEntry("narration", nextSnapshot.location.description);
+    }
   }, [addEntry]);
 
   const createCharacter = async (event: FormEvent<HTMLFormElement>) => {
@@ -118,7 +122,7 @@ export function FocusedClient() {
     try {
       const location = await client.look(snapshot.character.characterId);
       setSnapshot((current) => current ? { ...current, location } : current);
-      addEntry("narration", `You look around. ${location.description}`);
+      addEntry("narration", location.description);
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "You cannot get a clear look just now.");
     } finally {
@@ -222,28 +226,20 @@ export function FocusedClient() {
               <>
                 <Panel className="focused-room focused-terminal" aria-busy={pending === "move" || pending === "look"}>
                   <div className="focused-terminal-room">
-                    <div className="focused-terminal-head">
-                      <span>World activity</span>
-                      <span>{entries.length} {entries.length === 1 ? "event" : "events"}</span>
-                    </div>
-                    <RoomDescription title={snapshot.location.title} description={snapshot.location.description} exits={exits} />
+                    <h1 className="focused-terminal-location">{snapshot.location.title}</h1>
                   </div>
                   <div
                     className="focused-terminal-history"
                     ref={terminalHistoryRef}
                     role="region"
-                    aria-label="Event and command history"
+                    aria-label="Terminal output"
                     tabIndex={0}
                     onScroll={(event) => {
                       const history = event.currentTarget;
                       terminalFollowsLatestRef.current = history.scrollHeight - history.scrollTop - history.clientHeight < 32;
                     }}
                   >
-                    {entries.length ? (
-                      <ActivityLog entries={entries} label="Event and command history" />
-                    ) : (
-                      <p className="focused-terminal-empty">No events yet.</p>
-                    )}
+                    {entries.length > 0 && <ActivityLog entries={entries} label="Terminal transcript" />}
                   </div>
                   <section className="focused-command" aria-label="Text command">
                     <div className="focused-command-label"><span>Command</span><span>look · go north</span></div>
