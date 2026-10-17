@@ -189,6 +189,31 @@ describe('single-character world session client', () => {
     );
   });
 
+  it('shows the command list and command-specific help in the terminal', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+    const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
+
+    fireEvent.change(commandInput, { target: { value: 'help' } });
+    fireEvent.submit(commandInput.closest('form')!);
+    await screen.findByText('Commands');
+    expect(history).toHaveTextContent('> help');
+    expect(history).toHaveTextContent('take <item> — Pick up an item in the current room.');
+    expect(history).toHaveTextContent('Quick actions: Look describes the room; Walk shows available exits.');
+
+    fireEvent.change(commandInput, { target: { value: 'help LOOK' } });
+    fireEvent.submit(commandInput.closest('form')!);
+    await screen.findByText('Usage: look | look [at] <object>');
+    expect(history).toHaveTextContent('Look describes the current room. Add an object to inspect it here or in your inventory.');
+
+    fireEvent.change(commandInput, { target: { value: 'help unknown' } });
+    fireEvent.submit(commandInput.closest('form')!);
+    await screen.findByText('No help is available for "unknown".');
+    expect(history).toHaveTextContent('Try "help" for the command list.');
+    expect(apiFetch.mock.calls.some(([path]) => path === '/api/commands' || path === '/api/queries')).toBe(false);
+  });
+
   it('looks at visible objects by target and only while they are in the current room', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });

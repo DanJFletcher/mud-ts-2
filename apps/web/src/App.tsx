@@ -27,6 +27,62 @@ function findObjectMatches(target: string, objects: VisibleRoomObject[]) {
     : objects.filter((object) => object.label.toLocaleLowerCase().includes(normalizedTarget));
 }
 
+const COMMAND_HELP: Record<string, readonly string[]> = {
+  help: [
+    "Usage: help [command]",
+    "Show the command list or instructions for one command.",
+  ],
+  look: [
+    "Usage: look | look [at] <object>",
+    "Look describes the current room. Add an object to inspect it here or in your inventory.",
+  ],
+  go: [
+    "Usage: go <direction>",
+    "Travel through an available exit in the current room.",
+  ],
+  read: [
+    "Usage: read <object>",
+    "Read written text on an object in the current room.",
+  ],
+  take: [
+    "Usage: take <item>",
+    "Pick up an item available in the current room.",
+  ],
+  drop: [
+    "Usage: drop <item>",
+    "Put down an item you carry in the current room.",
+  ],
+  walk: [
+    "Walk is a quick action, not a typed command.",
+    "Choose Walk below the terminal to show exits, then select a direction. Typed movement uses: go <direction>.",
+  ],
+  inspect: [
+    "There is no separate inspect command.",
+    "Use look at <object> to inspect something in the room or an item you carry.",
+  ],
+};
+
+const GENERAL_HELP = [
+  "Commands",
+  "help [command] — List commands or show instructions for one.",
+  "look [at] <object> — Describe the room or inspect an object here or in your inventory.",
+  "go <direction> — Travel through an available exit.",
+  "read <object> — Read text on an object in the current room.",
+  "take <item> — Pick up an item in the current room.",
+  "drop <item> — Put down an item you carry.",
+  "Quick actions: Look describes the room; Walk shows available exits.",
+];
+
+function getCommandHelp(topic: string): readonly string[] {
+  const normalizedTopic = topic.trim().toLocaleLowerCase().replace(/\s+/g, " ");
+  if (!normalizedTopic) return GENERAL_HELP;
+  const helpTopic = normalizedTopic === "look at" ? "look" : normalizedTopic;
+  return COMMAND_HELP[helpTopic] ?? [
+    `No help is available for "${topic.trim()}".`,
+    'Try "help" for the command list.',
+  ];
+}
+
 function currentScreen(): Screen {
   const route = window.location.hash.slice(2);
   return route === "traveler" || route === "notes" ? route : "play";
@@ -228,6 +284,11 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     if (!value || pending) return;
     const [verb, ...rest] = value.split(/\s+/);
     const target = rest.join(" ").trim();
+    if (verb.toLowerCase() === "help") {
+      addEntry("system", `> ${value}`);
+      for (const line of getCommandHelp(target)) addEntry("narration", line);
+      return;
+    }
     if (verb.toLowerCase() === "look") {
       addEntry("system", `> ${value}`);
       const lookTarget = target.replace(/^at\s+/i, "").replace(/^the\s+/i, "").trim();
@@ -317,7 +378,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
       return;
     }
     addEntry("system", `> ${value}`);
-    addEntry("error", "Use “look”, “look at <object>”, “go <direction>”, “read <object>”, “take <item>”, or “drop <item>”.");
+    addEntry("error", 'Unknown command. Try "help" for the command list.');
   }, [addEntry, dropObject, inspect, move, pending, readObject, snapshot, takeObject]);
 
   const submitCommand = (event: FormEvent<HTMLFormElement>) => {
