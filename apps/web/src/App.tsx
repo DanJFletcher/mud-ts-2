@@ -539,14 +539,12 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                     {entries.length > 0 && <ActivityLog entries={entries} label="Terminal transcript" />}
                   </div>
                   <section className="focused-quick-commands" aria-label="Quick commands">
-                    {(quickCommandMode !== "quick" || quickCommandPage === "more") && (
+                    {quickCommandMode !== "quick" && (
                       <span className="focused-quick-commands__label" aria-hidden="true">
-                        {quickCommandMode === "quick"
-                          ? "More"
-                          : quickCommandMode === "go" ? "Go"
-                            : quickCommandMode === "look" ? "Look"
-                              : quickCommandMode === "read" ? "Read"
-                                : quickCommandMode === "drop" ? "Drop" : "Take"}
+                        {quickCommandMode === "go" ? "Go"
+                          : quickCommandMode === "look" ? "Look"
+                            : quickCommandMode === "read" ? "Read"
+                              : quickCommandMode === "drop" ? "Drop" : "Take"}
                       </span>
                     )}
                     <div

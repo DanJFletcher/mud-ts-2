@@ -461,6 +461,7 @@ describe('single-character world session client', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Show more quick actions' }));
     const moreQuickActions = screen.getByRole('group', { name: 'More quick actions' });
+    expect(screen.queryByText('More', { exact: true })).not.toBeInTheDocument();
     expect(moreQuickActions).toContainElement(screen.getByRole('button', { name: 'Quick help' }));
     expect(moreQuickActions).toContainElement(screen.getByRole('button', { name: 'Show items to take' }));
     fireEvent.click(screen.getByRole('button', { name: 'Show items to take' }));
