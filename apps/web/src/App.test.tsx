@@ -130,6 +130,42 @@ describe('single-character world session client', () => {
     );
   });
 
+  it('switches quick commands from look to available walking directions', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Quick look' }));
+    await waitFor(() => expect(screen.getAllByText('> look')).toHaveLength(2));
+    expect(apiFetch.mock.calls.some(([path]) => path === '/api/queries')).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show walking directions' }));
+    expect(screen.queryByRole('button', { name: 'Quick look' })).not.toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Walking directions' })).toContainElement(
+      screen.getByRole('button', { name: 'Go north' }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Go north' }));
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    expect(history).toHaveTextContent('> go north');
+    expect(history).toHaveTextContent('You travel north.');
+    expect(screen.getByRole('button', { name: 'Go south' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Quick look' })).not.toBeInTheDocument();
+
+    const moveCommand = JSON.parse(
+      apiFetch.mock.calls.find(([path]) => path === '/api/commands')?.[1].body as string,
+    );
+    expect(moveCommand).toMatchObject({
+      type: 'character.move',
+      characterId,
+      expectedVersion: 1,
+      payload: { exitId: 'clearing-to-bridge' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Return to quick commands' }));
+    expect(screen.getByRole('button', { name: 'Quick look' })).toBeVisible();
+  });
+
   it('surfaces rejected movement without changing rooms or leaving controls disabled', async () => {
     moveError = 'Exit is blocked.';
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);

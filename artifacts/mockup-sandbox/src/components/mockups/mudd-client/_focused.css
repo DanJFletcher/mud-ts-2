@@ -202,6 +202,67 @@
   background: var(--terminal-inset);
 }
 .focused-terminal .focused-command-label { color: var(--terminal-muted); }
+.focused-terminal .focused-quick-commands {
+  display: flex;
+  min-height: 40px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 13px;
+  border-bottom: 1px solid var(--terminal-border);
+  background: var(--terminal-inset);
+}
+.focused-quick-commands__label {
+  flex: 0 0 auto;
+  color: var(--terminal-muted);
+  font: 500 .62rem/1.2 "DM Mono", monospace;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.focused-quick-commands__actions {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.focused-quick-command {
+  display: inline-flex;
+  min-width: 40px;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid var(--terminal-border);
+  border-radius: 6px;
+  padding: 3px 9px;
+  color: var(--terminal-text);
+  background: var(--terminal-surface);
+  font: 500 .72rem/1.2 "DM Mono", monospace;
+  cursor: pointer;
+}
+.focused-quick-command:hover:not(:disabled) {
+  border-color: var(--terminal-accent);
+  color: var(--terminal-accent);
+}
+.focused-quick-command:focus-visible {
+  outline: 2px solid var(--terminal-accent);
+  outline-offset: 2px;
+}
+.focused-quick-command:disabled {
+  cursor: wait;
+  opacity: .55;
+}
+.focused-quick-command--back {
+  min-width: 38px;
+  padding-inline: 6px;
+  font-size: 1rem;
+}
+.focused-quick-commands__empty {
+  color: var(--terminal-muted);
+  font: 400 .68rem/1.3 "DM Mono", monospace;
+}
 .focused-terminal .focused-command-form .mudd-input {
   border-color: var(--terminal-border);
   color: var(--terminal-text);

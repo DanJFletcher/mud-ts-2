@@ -27,6 +27,7 @@ export function FocusedClient() {
   const [pendingExitId, setPendingExitId] = useState<string>();
   const [name, setName] = useState("");
   const [command, setCommand] = useState("");
+  const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "walk">("quick");
   const [entries, setEntries] = useState<ActivityEntry[]>([
     { id: "preview-look", kind: "system", text: "> look" },
     { id: "preview-look-result", kind: "narration", text: "A circle of pale stones breaks through the moss." },
@@ -150,11 +151,9 @@ export function FocusedClient() {
     }
   }, [addEntry, pending, refreshAfterMutation, snapshot]);
 
-  const submitCommand = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const value = command.trim();
+  const executeCommand = useCallback(async (rawCommand: string) => {
+    const value = rawCommand.trim();
     if (!value || pending) return;
-    setCommand("");
     const [verb, ...rest] = value.split(/\s+/);
     const target = rest.join(" ").trim();
     if (verb.toLowerCase() === "look" && !target) {
@@ -178,6 +177,14 @@ export function FocusedClient() {
     }
     addEntry("system", `> ${value}`);
     addEntry("error", "Use “look” or “go” followed by an available direction.");
+  }, [addEntry, inspect, move, pending, snapshot]);
+
+  const submitCommand = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!command.trim() || pending) return;
+    const value = command;
+    setCommand("");
+    void executeCommand(value);
   };
 
   const toggleTheme = () => {
@@ -187,6 +194,17 @@ export function FocusedClient() {
   };
 
   const exits = useMemo(() => snapshot?.location?.exits ?? [], [snapshot?.location?.exits]);
+  const quickDirections = useMemo(() => {
+    const seen = new Set<string>();
+    return exits.flatMap((exit) => {
+      if (!exit.available) return [];
+      const target = exit.direction?.trim() || exit.label.trim();
+      const normalizedTarget = target.toLowerCase();
+      if (!target || seen.has(normalizedTarget)) return [];
+      seen.add(normalizedTarget);
+      return [{ target, label: normalizedTarget }];
+    });
+  }, [exits]);
 
   return (
     <main className="focused-client" data-theme={theme}>
@@ -241,6 +259,63 @@ export function FocusedClient() {
                   >
                     {entries.length > 0 && <ActivityLog entries={entries} label="Terminal transcript" />}
                   </div>
+                  <section className="focused-quick-commands" aria-label="Quick commands">
+                    <span className="focused-quick-commands__label" aria-hidden="true">
+                      {quickCommandMode === "walk" ? "Walk" : "Quick"}
+                    </span>
+                    <div
+                      className="focused-quick-commands__actions"
+                      role="group"
+                      aria-label={quickCommandMode === "walk" ? "Walking directions" : "Quick commands"}
+                    >
+                      {quickCommandMode === "walk" ? (
+                        <>
+                          <button
+                            type="button"
+                            className="focused-quick-command focused-quick-command--back"
+                            onClick={() => setQuickCommandMode("quick")}
+                            aria-label="Return to quick commands"
+                            disabled={pending !== null}
+                          >
+                            ‹
+                          </button>
+                          {quickDirections.length ? quickDirections.map((direction) => (
+                            <button
+                              key={direction.target}
+                              type="button"
+                              className="focused-quick-command"
+                              onClick={() => void executeCommand(`go ${direction.target}`)}
+                              aria-label={`Go ${direction.label}`}
+                              disabled={pending !== null}
+                            >
+                              {direction.label}
+                            </button>
+                          )) : <span className="focused-quick-commands__empty">No open directions</span>}
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="focused-quick-command"
+                            onClick={() => void executeCommand("look")}
+                            aria-label="Quick look"
+                            disabled={pending !== null}
+                          >
+                            look
+                          </button>
+                          <button
+                            type="button"
+                            className="focused-quick-command"
+                            onClick={() => setQuickCommandMode("walk")}
+                            aria-label="Show walking directions"
+                            disabled={pending !== null}
+                          >
+                            walk <span aria-hidden="true">›</span>
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </section>
                   <section className="focused-command" aria-label="Text command">
                     <div className="focused-command-label"><span>Command</span><span>look · go north</span></div>
                     <form className="focused-command-form" onSubmit={submitCommand}>
