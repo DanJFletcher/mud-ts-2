@@ -35,7 +35,11 @@ describe('MuddHttpClient', () => {
     const characterId = created.streamId!;
     const firstRoom = await client.look(characterId, 'sdk-look-1');
     expect(firstRoom.title).toBe('Mossgate Clearing');
-    expect(firstRoom.objects).toEqual([{ id: 'mossgate-marker', label: 'Weathered marker' }]);
+    expect(firstRoom.objects).toEqual([{
+      id: 'mossgate-marker',
+      label: 'Weathered marker',
+      description: 'A weathered stone marker, its carved arrow worn but still pointing east.',
+    }]);
     const marker = await client.read(characterId, 'mossgate-marker', 'sdk-read');
     expect(marker).toEqual({
       id: 'mossgate-marker',

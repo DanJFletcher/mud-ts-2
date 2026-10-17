@@ -112,7 +112,7 @@ export const characterPlugin: EnginePlugin = {
           direction: exit.direction,
           available: true,
         })),
-        objects: (location.readables ?? []).map(({ id, label }) => ({ id, label })),
+        objects: (location.readables ?? []).map(({ id, label, description }) => ({ id, label, description })),
         occupants: [],
       });
     });
@@ -124,7 +124,11 @@ export const characterPlugin: EnginePlugin = {
       if (!location) throw new Error('The character location is not present in this world version.');
       const readable = (location.readables ?? []).find((item) => item.id === query.payload.objectId);
       if (!readable) throw new Error('That object is not readable from here.');
-      return ReadableObjectProjectionSchema.parse(readable);
+      return ReadableObjectProjectionSchema.parse({
+        id: readable.id,
+        label: readable.label,
+        text: readable.text,
+      });
     });
   },
 };

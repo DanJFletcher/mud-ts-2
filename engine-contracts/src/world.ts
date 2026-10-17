@@ -14,6 +14,7 @@ export const ExitDefinitionSchema = z.object({
 export const ReadableObjectDefinitionSchema = z.object({
   id: IdSchema,
   label: z.string().min(1).max(120),
+  description: z.string().min(1).max(1000),
   text: z.string().min(1).max(4000),
 }).strict();
 
@@ -66,7 +67,11 @@ export const LocationProjectionSchema = z.object({
   title: z.string(),
   description: z.string(),
   exits: z.array(ExitProjectionSchema),
-  objects: z.array(z.object({ id: IdSchema, label: z.string() }).strict()),
+  objects: z.array(z.object({
+    id: IdSchema,
+    label: z.string(),
+    description: z.string().min(1).max(1000),
+  }).strict()),
   occupants: z.array(z.object({ id: IdSchema, displayName: z.string() }).strict()),
 }).strict();
 

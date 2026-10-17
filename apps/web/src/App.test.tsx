@@ -21,7 +21,11 @@ function currentLocation() {
     title: room === 'clearing' ? 'Mossgate Clearing' : 'Glasswater Bridge',
     description: room === 'clearing' ? 'Pale stones break through the moss.' : 'A stone bridge crosses clear water.',
     revision,
-    objects: room === 'clearing' ? [{ id: 'mossgate-marker', label: 'Weathered marker' }] : [],
+    objects: room === 'clearing' ? [{
+      id: 'mossgate-marker',
+      label: 'Weathered marker',
+      description: 'A weathered stone marker, its carved arrow worn but still pointing east.',
+    }] : [],
     exits: [{
       id: room === 'clearing' ? 'clearing-to-bridge' : 'bridge-to-clearing',
       label: room === 'clearing' ? 'North to Glasswater Bridge' : 'South to Mossgate Clearing',
@@ -135,6 +139,33 @@ describe('single-character world session client', () => {
     expect(screen.getByRole('region', { name: 'Available exits' })).toContainElement(
       screen.getByRole('button', { name: 'North to Glasswater Bridge' }),
     );
+  });
+
+  it('looks at visible objects by target and only while they are in the current room', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+    const terminal = history.closest('.focused-terminal')!;
+    const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
+    const appearance = 'A weathered stone marker, its carved arrow worn but still pointing east.';
+
+    fireEvent.change(commandInput, { target: { value: 'look marker' } });
+    fireEvent.submit(commandInput.closest('form')!);
+    await screen.findByText(appearance);
+    expect(history).toHaveTextContent('> look marker');
+    await waitFor(() => expect(terminal).toHaveAttribute('aria-busy', 'false'));
+
+    fireEvent.change(commandInput, { target: { value: 'look at marker' } });
+    fireEvent.submit(commandInput.closest('form')!);
+    await waitFor(() => expect(screen.getAllByText(appearance)).toHaveLength(2));
+    await waitFor(() => expect(terminal).toHaveAttribute('aria-busy', 'false'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'North to Glasswater Bridge' }));
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    await waitFor(() => expect(terminal).toHaveAttribute('aria-busy', 'false'));
+    fireEvent.change(commandInput, { target: { value: 'look marker' } });
+    fireEvent.submit(commandInput.closest('form')!);
+    await screen.findByText('You do not see anything called “marker” here.');
   });
 
   it('reads a current-room marker through a read-only query', async () => {

@@ -50,7 +50,7 @@ test('reading a world object is a validated read-only query', () => {
 
 test('draft content checks graph references', () => {
   const pack = WorldPackDraftSchema.parse({ formatVersion: 1, packId: 'starter', packVersion: '0.1.0', displayName: 'Starter', locations: [
-    { id: 'r1', name: 'Crossroads', description: 'Paths branch', readables: [{ id: 'marker', label: 'Marker', text: 'North to the forest' }], exits: [{ id: 'north', fromLocationId: 'r1', toLocationId: 'r2', label: 'North' }] },
+    { id: 'r1', name: 'Crossroads', description: 'Paths branch', readables: [{ id: 'marker', label: 'Marker', description: 'A painted wooden sign.', text: 'North to the forest' }], exits: [{ id: 'north', fromLocationId: 'r1', toLocationId: 'r2', label: 'North' }] },
     { id: 'r2', name: 'Forest', description: 'Old trees', exits: [] },
   ] });
   assert.deepEqual(validateDraftWorldGraph(pack), []);

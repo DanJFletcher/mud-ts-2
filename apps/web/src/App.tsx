@@ -14,6 +14,18 @@ import { Compass, Moon, NotebookText, Sun, UserRound, Users } from "lucide-react
 const client = new MuddHttpClient({ worldInstanceId: "mudd-demo-instance" });
 type Screen = "play" | "traveler" | "notes";
 type WorldClientProps = { onLeaveWorld: () => Promise<void> };
+type VisibleRoomObject = NonNullable<GameSnapshot["location"]>["objects"][number];
+
+function findObjectMatches(target: string, objects: VisibleRoomObject[]) {
+  const normalizedTarget = target.toLocaleLowerCase();
+  const exactMatch = objects.find((object) =>
+    object.id.toLocaleLowerCase() === normalizedTarget ||
+    object.label.toLocaleLowerCase() === normalizedTarget
+  );
+  return exactMatch
+    ? [exactMatch]
+    : objects.filter((object) => object.label.toLocaleLowerCase().includes(normalizedTarget));
+}
 
 function currentScreen(): Screen {
   const route = window.location.hash.slice(2);
@@ -105,13 +117,24 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     addDefaultLook(nextSnapshot.location);
   }, [addDefaultLook, addEntry]);
 
-  const inspect = useCallback(async () => {
+  const inspect = useCallback(async (target?: string) => {
     if (!snapshot?.character || pending) return;
     setPending("look");
     try {
       const location = await client.look(snapshot.character.characterId);
       setSnapshot((current) => current ? { ...current, location } : current);
-      addEntry("narration", location.description);
+      if (!target) {
+        addEntry("narration", location.description);
+        return;
+      }
+      const matches = findObjectMatches(target, location.objects);
+      if (matches.length === 0) {
+        addEntry("error", `You do not see anything called “${target}” here.`);
+      } else if (matches.length > 1) {
+        addEntry("error", `Which one do you mean: ${matches.map((object) => object.label).join(", ")}?`);
+      } else {
+        addEntry("narration", matches[0]!.description);
+      }
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "You cannot get a clear look just now.");
     } finally {
@@ -157,9 +180,14 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     if (!value || pending) return;
     const [verb, ...rest] = value.split(/\s+/);
     const target = rest.join(" ").trim();
-    if (verb.toLowerCase() === "look" && !target) {
+    if (verb.toLowerCase() === "look") {
       addEntry("system", `> ${value}`);
-      await inspect();
+      const lookTarget = target.replace(/^at\s+/i, "").replace(/^the\s+/i, "").trim();
+      if (target && (!lookTarget || /^at$/i.test(target))) {
+        addEntry("error", "Look at what? Try “look at marker”.");
+        return;
+      }
+      await inspect(lookTarget || undefined);
       return;
     }
     if (verb.toLowerCase() === "read") {
@@ -169,14 +197,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
         return;
       }
       const readableObjects = snapshot?.location?.objects ?? [];
-      const normalizedTarget = target.toLocaleLowerCase();
-      const exactMatch = readableObjects.find((object) =>
-        object.id.toLocaleLowerCase() === normalizedTarget ||
-        object.label.toLocaleLowerCase() === normalizedTarget
-      );
-      const matches = exactMatch
-        ? [exactMatch]
-        : readableObjects.filter((object) => object.label.toLocaleLowerCase().includes(normalizedTarget));
+      const matches = findObjectMatches(target, readableObjects);
       if (matches.length === 0) {
         addEntry("error", `There is nothing readable called “${target}” here.`);
         return;
@@ -203,7 +224,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
       return;
     }
     addEntry("system", `> ${value}`);
-    addEntry("error", "Use “look”, “go <direction>”, or “read <object>”.");
+    addEntry("error", "Use “look”, “look at <object>”, “go <direction>”, or “read <object>”.");
   }, [addEntry, inspect, move, pending, readObject, snapshot]);
 
   const submitCommand = (event: FormEvent<HTMLFormElement>) => {
@@ -366,7 +387,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                     </div>
                   </section>
                   <section className="focused-command" aria-label="Text command">
-                    <div className="focused-command-label"><span>Command</span><span>look · go north · read marker</span></div>
+                    <div className="focused-command-label"><span>Command</span><span>look at · go north · read</span></div>
                     <form className="focused-command-form" onSubmit={submitCommand}>
                       <TextInput
                         id="focused-world-command"

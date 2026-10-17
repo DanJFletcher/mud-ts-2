@@ -9,6 +9,7 @@ export interface RoomExit {
 export interface ReadableObject {
   id: string;
   label: string;
+  description: string;
 }
 
 export interface LocationProjection {
@@ -47,7 +48,12 @@ const rooms: PreviewRoom[] = [
     title: 'Mossgate Clearing',
     description: 'A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east.',
     readables: [
-      { id: 'mossgate-marker', label: 'Weathered marker', text: 'OLD BELL TOWER — EAST' },
+      {
+        id: 'mossgate-marker',
+        label: 'Weathered marker',
+        description: 'A weathered stone marker, its carved arrow worn but still pointing east.',
+        text: 'OLD BELL TOWER — EAST',
+      },
     ],
     exits: [
       { id: 'clearing-to-bridge', target: 'glasswater-bridge', label: 'North to Glasswater Bridge', direction: 'north', available: true },
@@ -133,7 +139,7 @@ export class MuddHttpClient {
       description: room.description,
       revision: this.revision,
       exits: room.exits.map(({ target: _target, ...exit }) => exit),
-      objects: (room.readables ?? []).map(({ id, label }) => ({ id, label })),
+      objects: (room.readables ?? []).map(({ id, label, description }) => ({ id, label, description })),
     };
   }
 }
