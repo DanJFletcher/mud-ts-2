@@ -1,5 +1,10 @@
 import type { StoredGameEvent } from './types.js';
-import { CharacterProjectionSchema, CharacterCreatedEventSchema, CharacterMovedEventSchema } from '@mudd/contracts';
+import {
+  CharacterItemTakenEventSchema,
+  CharacterProjectionSchema,
+  CharacterCreatedEventSchema,
+  CharacterMovedEventSchema,
+} from '@mudd/contracts';
 
 export function replayCharacter(events: readonly StoredGameEvent[]) {
   let state: ReturnType<typeof CharacterProjectionSchema.parse> | undefined;
@@ -24,6 +29,20 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
       state = CharacterProjectionSchema.parse({
         ...state,
         locationId: moved.payload.toLocationId,
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.item_taken') {
+      if (!state) throw new Error('Item taken event encountered before character creation.');
+      const taken = CharacterItemTakenEventSchema.parse(publicEvent);
+      if (taken.payload.characterId !== state.characterId || taken.payload.locationId !== state.locationId) {
+        throw new Error(`Invalid item taken event at revision ${event.aggregateVersion}.`);
+      }
+      if (state.inventory.some((item) => item.id === taken.payload.item.id)) {
+        throw new Error(`Duplicate inventory item at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        inventory: [...state.inventory, taken.payload.item],
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'character.renamed') {

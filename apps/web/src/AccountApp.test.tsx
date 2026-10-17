@@ -27,6 +27,7 @@ const firstCharacter = {
   locationId: 'mossgate-clearing',
   locationTitle: 'Mossgate Clearing',
   revision: 1,
+  inventory: [],
   archived: false,
 };
 const secondCharacter = {

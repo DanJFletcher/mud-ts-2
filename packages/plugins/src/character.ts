@@ -1,5 +1,6 @@
 import {
   CharacterCreatedEventSchema,
+  CharacterItemTakenEventSchema,
   CharacterRenamedEventSchema,
   CharacterArchivedEventSchema,
   CharacterRestoredEventSchema,
@@ -7,6 +8,7 @@ import {
   ArchiveCharacterCommandSchema,
   RestoreCharacterCommandSchema,
   CreateCharacterCommandSchema,
+  TakeCharacterItemCommandSchema,
   LocationDescribeQuerySchema,
   ObjectReadQuerySchema,
   LocationProjectionSchema,
@@ -53,6 +55,29 @@ export const characterPlugin: EnginePlugin = {
         streamId: characterId,
         expectedVersion: 0,
         events: [{ type: 'character.created', version: 1, payload }],
+      };
+    });
+
+    registerCommand('character.take', TakeCharacterItemCommandSchema, async (command, context) => {
+      const character = await state.load(context, command.characterId);
+      if (!character || character.archived) throw new Error('That character is no longer available.');
+      if (character.inventory.some((item) => item.id === command.payload.itemId)) {
+        throw new Error('You are already carrying that item.');
+      }
+      const location = context.world.locations.find((item) => item.id === character.locationId);
+      if (!location) throw new Error('The character location is not present in this world version.');
+      const item = (location.takeables ?? []).find((candidate) => candidate.id === command.payload.itemId);
+      if (!item) throw new Error('That item is not available to take here.');
+      const payload = {
+        characterId: character.characterId,
+        locationId: character.locationId,
+        item: { id: item.id, label: item.label, description: item.description },
+      };
+      CharacterItemTakenEventSchema.shape.payload.parse(payload);
+      return {
+        streamId: command.characterId,
+        expectedVersion: command.expectedVersion,
+        events: [{ type: 'character.item_taken', version: 1, payload }],
       };
     });
 
@@ -112,7 +137,16 @@ export const characterPlugin: EnginePlugin = {
           direction: exit.direction,
           available: true,
         })),
-        objects: (location.readables ?? []).map(({ id, label, description }) => ({ id, label, description })),
+        objects: [
+          ...(location.readables ?? []).map(({ id, label, description }) => ({
+            id, label, description, readable: true, takeable: false,
+          })),
+          ...(location.takeables ?? [])
+            .filter((item) => !character.inventory.some((carried) => carried.id === item.id))
+            .map(({ id, label, description }) => ({
+              id, label, description, readable: false, takeable: true,
+            })),
+        ],
         occupants: [],
       });
     });

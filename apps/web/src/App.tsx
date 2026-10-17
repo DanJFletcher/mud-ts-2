@@ -39,7 +39,7 @@ function makeEntry(kind: ActivityEntry["kind"], text: string): ActivityEntry {
 export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"look" | "read" | "move" | null>(null);
+  const [pending, setPending] = useState<"look" | "read" | "take" | "move" | null>(null);
   const [pendingExitId, setPendingExitId] = useState<string>();
   const [command, setCommand] = useState("");
   const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "walk">("quick");
@@ -155,6 +155,19 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     }
   }, [addEntry, pending, snapshot]);
 
+  const takeObject = useCallback(async (itemId: string, label: string) => {
+    if (!snapshot?.character || !snapshot.location || pending) return;
+    setPending("take");
+    try {
+      await client.take(snapshot.character.characterId, itemId, snapshot.location.revision);
+      await refreshAfterMutation(`You pick up the ${label.toLocaleLowerCase()}.`);
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "You cannot take that item just now.");
+    } finally {
+      setPending(null);
+    }
+  }, [addEntry, pending, refreshAfterMutation, snapshot]);
+
   const move = useCallback(async (exitId: string) => {
     if (!snapshot?.character || !snapshot.location || pending) return;
     const exit = snapshot.location.exits.find((item) => item.id === exitId);
@@ -196,7 +209,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
         addEntry("error", "Read what? Try “read marker”.");
         return;
       }
-      const readableObjects = snapshot?.location?.objects ?? [];
+      const readableObjects = (snapshot?.location?.objects ?? []).filter((object) => object.readable);
       const matches = findObjectMatches(target, readableObjects);
       if (matches.length === 0) {
         addEntry("error", `There is nothing readable called “${target}” here.`);
@@ -207,6 +220,30 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
         return;
       }
       await readObject(matches[0]!.id);
+      return;
+    }
+    if (verb.toLowerCase() === "take") {
+      addEntry("system", `> ${value}`);
+      if (!target) {
+        addEntry("error", "Take what? Try “take stone”.");
+        return;
+      }
+      const objects = snapshot?.location?.objects ?? [];
+      const matches = findObjectMatches(target, objects);
+      if (matches.length === 0) {
+        addEntry("error", `There is nothing here you can take called “${target}”.`);
+        return;
+      }
+      if (matches.length > 1) {
+        addEntry("error", `Which one do you mean: ${matches.map((object) => object.label).join(", ")}?`);
+        return;
+      }
+      const object = matches[0]!;
+      if (!object.takeable) {
+        addEntry("error", `You cannot take the ${object.label.toLocaleLowerCase()}.`);
+        return;
+      }
+      await takeObject(object.id, object.label);
       return;
     }
     if (verb.toLowerCase() === "go" && target) {
@@ -224,8 +261,8 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
       return;
     }
     addEntry("system", `> ${value}`);
-    addEntry("error", "Use “look”, “look at <object>”, “go <direction>”, or “read <object>”.");
-  }, [addEntry, inspect, move, pending, readObject, snapshot]);
+    addEntry("error", "Use “look”, “look at <object>”, “go <direction>”, “read <object>”, or “take <item>”.");
+  }, [addEntry, inspect, move, pending, readObject, snapshot, takeObject]);
 
   const submitCommand = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -387,7 +424,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                     </div>
                   </section>
                   <section className="focused-command" aria-label="Text command">
-                    <div className="focused-command-label"><span>Command</span><span>look at · go north · read</span></div>
+                    <div className="focused-command-label"><span>Command</span><span>look at · take stone · read</span></div>
                     <form className="focused-command-form" onSubmit={submitCommand}>
                       <TextInput
                         id="focused-world-command"
@@ -400,7 +437,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                         spellCheck={false}
                       />
                       <Button type="submit" variant="secondary" disabled={!command.trim() || pending !== null}>
-                        {pending === "look" ? "Looking" : pending === "read" ? "Reading" : pending === "move" ? "Moving" : "Send"}
+                        {pending === "look" ? "Looking" : pending === "read" ? "Reading" : pending === "take" ? "Taking" : pending === "move" ? "Moving" : "Send"}
                       </Button>
                     </form>
                   </section>
@@ -455,6 +492,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                   <div className="focused-detail"><span>Journey</span><strong>{snapshot.character ? "Underway" : "Not started"}</strong></div>
                    <div className="focused-detail"><span>World</span><strong>The Waystone Path</strong></div>
                    <div className="focused-detail focused-detail--wide"><span>Current location</span><strong>{snapshot.location?.title || "—"}</strong></div>
+                   <div className="focused-detail focused-detail--wide"><span>Carried items</span><strong>{snapshot.character?.inventory.map((item) => item.label).join(", ") || "None"}</strong></div>
                 </div>
                 {!snapshot.character && <p className="focused-note">Begin from Play to enter the world.</p>}
               </Panel>

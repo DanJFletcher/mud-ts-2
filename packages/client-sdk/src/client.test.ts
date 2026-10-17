@@ -35,11 +35,22 @@ describe('MuddHttpClient', () => {
     const characterId = created.streamId!;
     const firstRoom = await client.look(characterId, 'sdk-look-1');
     expect(firstRoom.title).toBe('Mossgate Clearing');
-    expect(firstRoom.objects).toEqual([{
-      id: 'mossgate-marker',
-      label: 'Weathered marker',
-      description: 'A weathered stone marker, its carved arrow worn but still pointing east.',
-    }]);
+    expect(firstRoom.objects).toEqual([
+      {
+        id: 'mossgate-marker',
+        label: 'Weathered marker',
+        description: 'A weathered stone marker, its carved arrow worn but still pointing east.',
+        readable: true,
+        takeable: false,
+      },
+      {
+        id: 'mossgate-loose-stone',
+        label: 'Loose stone',
+        description: 'A smooth, palm-sized stone with a pale stripe running through it.',
+        readable: false,
+        takeable: true,
+      },
+    ]);
     const marker = await client.read(characterId, 'mossgate-marker', 'sdk-read');
     expect(marker).toEqual({
       id: 'mossgate-marker',
@@ -48,7 +59,12 @@ describe('MuddHttpClient', () => {
     });
     await expect(client.read(characterId, 'unknown-object', 'sdk-read-missing'))
       .rejects.toThrow('That object is not readable from here.');
-    const moved = await client.move(characterId, 'clearing-to-bridge', firstRoom.revision, 'sdk-move');
+    const taken = await client.take(characterId, 'mossgate-loose-stone', firstRoom.revision, 'sdk-take');
+    expect(taken.receipt).toMatchObject({ ok: true, newAggregateVersion: 2 });
+    const afterTake = await client.look(characterId, 'sdk-look-after-take');
+    expect(afterTake.revision).toBe(2);
+    expect(afterTake.objects).not.toContainEqual(expect.objectContaining({ id: 'mossgate-loose-stone' }));
+    const moved = await client.move(characterId, 'clearing-to-bridge', afterTake.revision, 'sdk-move');
     expect(moved.receipt.ok).toBe(true);
     const nextRoom = await client.look(characterId, 'sdk-look-2');
     expect(nextRoom.title).toBe('Glasswater Bridge');

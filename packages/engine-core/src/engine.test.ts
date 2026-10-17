@@ -121,20 +121,46 @@ describe('MUDD engine host', () => {
     expect(blocked.receipt).toMatchObject({ ok: false, code: 'RULE_VIOLATION' });
 
     const moved = await engine.dispatch({
+      type: 'character.take',
+      version: 1,
+      commandId: 'take-stone',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: created.streamId,
+      expectedVersion: 1,
+      payload: { itemId: 'mossgate-loose-stone' },
+    }, session);
+    expect(moved.receipt).toMatchObject({ ok: true, newAggregateVersion: 2 });
+    const cannotTakeSign = await engine.dispatch({
+      type: 'character.take',
+      version: 1,
+      commandId: 'take-marker',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: created.streamId,
+      expectedVersion: 2,
+      payload: { itemId: 'mossgate-marker' },
+    }, session);
+    expect(cannotTakeSign.receipt).toMatchObject({ ok: false, code: 'RULE_VIOLATION' });
+
+    const movedAfterTake = await engine.dispatch({
       type: 'character.move',
       version: 1,
       commandId: 'move-1',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId: created.streamId,
-      expectedVersion: 1,
+      expectedVersion: 2,
       payload: { exitId: 'clearing-to-bridge' },
     }, session);
-    expect(moved.receipt).toMatchObject({ ok: true, newAggregateVersion: 2 });
+    expect(movedAfterTake.receipt).toMatchObject({ ok: true, newAggregateVersion: 3 });
     const projection = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, created.streamId!));
     expect(projection).toMatchObject({
       characterId: created.streamId,
       locationId: 'glasswater-bridge',
-      revision: 2,
+      revision: 3,
+      inventory: [{
+        id: 'mossgate-loose-stone',
+        label: 'Loose stone',
+        description: 'A smooth, palm-sized stone with a pale stripe running through it.',
+      }],
     });
     await engine.stop();
   });

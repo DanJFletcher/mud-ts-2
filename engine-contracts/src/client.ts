@@ -11,12 +11,13 @@ import type {
   ReadableObjectProjection,
 } from './world.js';
 import type { MoveCharacterCommand } from './movement.js';
+import type { TakeCharacterItemCommand } from './character.js';
 import type { SayCommand } from './chat.js';
 import type { CreateCharacterCommand } from './character.js';
 import type { CombatActionCommand } from './combat.js';
 import type { StreamNotification, SubscriptionRequest } from './stream.js';
 
-export type ClientCommand = MoveCharacterCommand | SayCommand | CreateCharacterCommand | CombatActionCommand;
+export type ClientCommand = MoveCharacterCommand | TakeCharacterItemCommand | SayCommand | CreateCharacterCommand | CombatActionCommand;
 export type ClientQuery = LocationDescribeQuery | ObjectReadQuery;
 export type ConnectionMode = 'local' | 'remote';
 

@@ -18,6 +18,12 @@ export const ReadableObjectDefinitionSchema = z.object({
   text: z.string().min(1).max(4000),
 }).strict();
 
+export const TakeableObjectDefinitionSchema = z.object({
+  id: IdSchema,
+  label: z.string().min(1).max(120),
+  description: z.string().min(1).max(1000),
+}).strict();
+
 export const LocationDefinitionSchema = z.object({
   id: IdSchema,
   name: z.string().min(1).max(160),
@@ -25,6 +31,7 @@ export const LocationDefinitionSchema = z.object({
   regionId: IdSchema.optional(),
   exits: z.array(ExitDefinitionSchema),
   readables: z.array(ReadableObjectDefinitionSchema).optional(),
+  takeables: z.array(TakeableObjectDefinitionSchema).optional(),
 }).strict();
 
 export const WorldPackDraftSchema = z.object({
@@ -69,8 +76,10 @@ export const LocationProjectionSchema = z.object({
   exits: z.array(ExitProjectionSchema),
   objects: z.array(z.object({
     id: IdSchema,
-    label: z.string(),
+    label: z.string().min(1).max(120),
     description: z.string().min(1).max(1000),
+    readable: z.boolean(),
+    takeable: z.boolean(),
   }).strict()),
   occupants: z.array(z.object({ id: IdSchema, displayName: z.string() }).strict()),
 }).strict();
@@ -81,6 +90,7 @@ export type WorldPackDraft = z.infer<typeof WorldPackDraftSchema>;
 export type LocationDescribeQuery = z.infer<typeof LocationDescribeQuerySchema>;
 export type ObjectReadQuery = z.infer<typeof ObjectReadQuerySchema>;
 export type ReadableObjectDefinition = z.infer<typeof ReadableObjectDefinitionSchema>;
+export type TakeableObjectDefinition = z.infer<typeof TakeableObjectDefinitionSchema>;
 export type ReadableObjectProjection = z.infer<typeof ReadableObjectProjectionSchema>;
 export type LocationProjection = z.infer<typeof LocationProjectionSchema>;
 

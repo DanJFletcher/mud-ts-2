@@ -15,13 +15,20 @@ const draft = {
       id: 'mossgate-clearing',
       name: 'Mossgate Clearing',
       description:
-        'A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east.',
+        'A circle of pale stones breaks through the moss. One loose stone bears a pale stripe. A narrow path runs north, while a weathered marker points east.',
       readables: [
         {
           id: 'mossgate-marker',
           label: 'Weathered marker',
           description: 'A weathered stone marker, its carved arrow worn but still pointing east.',
           text: 'OLD BELL TOWER — EAST',
+        },
+      ],
+      takeables: [
+        {
+          id: 'mossgate-loose-stone',
+          label: 'Loose stone',
+          description: 'A smooth, palm-sized stone with a pale stripe running through it.',
         },
       ],
       exits: [

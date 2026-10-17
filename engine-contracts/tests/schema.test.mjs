@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   MoveCharacterCommandSchema, CharacterMovedEventSchema, CommandReceiptSchema,
-  PluginManifestSchema, LocationDescribeQuerySchema, ObjectReadQuerySchema, WorldPackDraftSchema,
+  PluginManifestSchema, LocationDescribeQuerySchema, ObjectReadQuerySchema, TakeCharacterItemCommandSchema, WorldPackDraftSchema,
   validateDraftWorldGraph,
 } from '../dist/src/index.js';
 
@@ -48,9 +48,20 @@ test('reading a world object is a validated read-only query', () => {
   }).success, false);
 });
 
+test('taking a room item is a versioned character command', () => {
+  assert.equal(TakeCharacterItemCommandSchema.safeParse({
+    type: 'character.take', version: 1, commandId: 'take1', worldInstanceId: 'world1',
+    characterId: 'char1', expectedVersion: 1, payload: { itemId: 'mossgate-stone' },
+  }).success, true);
+  assert.equal(TakeCharacterItemCommandSchema.safeParse({
+    type: 'character.take', version: 1, commandId: 'take1', worldInstanceId: 'world1',
+    characterId: 'char1', expectedVersion: 1, payload: {},
+  }).success, false);
+});
+
 test('draft content checks graph references', () => {
   const pack = WorldPackDraftSchema.parse({ formatVersion: 1, packId: 'starter', packVersion: '0.1.0', displayName: 'Starter', locations: [
-    { id: 'r1', name: 'Crossroads', description: 'Paths branch', readables: [{ id: 'marker', label: 'Marker', description: 'A painted wooden sign.', text: 'North to the forest' }], exits: [{ id: 'north', fromLocationId: 'r1', toLocationId: 'r2', label: 'North' }] },
+    { id: 'r1', name: 'Crossroads', description: 'Paths branch', readables: [{ id: 'marker', label: 'Marker', description: 'A painted wooden sign.', text: 'North to the forest' }], takeables: [{ id: 'pebble', label: 'Pebble', description: 'A smooth pebble.' }], exits: [{ id: 'north', fromLocationId: 'r1', toLocationId: 'r2', label: 'North' }] },
     { id: 'r2', name: 'Forest', description: 'Old trees', exits: [] },
   ] });
   assert.deepEqual(validateDraftWorldGraph(pack), []);

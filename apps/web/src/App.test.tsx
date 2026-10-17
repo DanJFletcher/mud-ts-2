@@ -13,19 +13,31 @@ const characterId = '11111111-1111-4111-8111-111111111111';
 let room: 'clearing' | 'bridge';
 let revision: number;
 let moveError: string | null;
+let itemTaken: boolean;
 
 function currentLocation() {
   return {
     worldInstanceId: 'mudd-demo-instance',
     locationId: room === 'clearing' ? 'mossgate-clearing' : 'glasswater-bridge',
     title: room === 'clearing' ? 'Mossgate Clearing' : 'Glasswater Bridge',
-    description: room === 'clearing' ? 'Pale stones break through the moss.' : 'A stone bridge crosses clear water.',
+    description: room === 'clearing' ? 'Pale stones break through the moss. One loose stone bears a pale stripe.' : 'A stone bridge crosses clear water.',
     revision,
-    objects: room === 'clearing' ? [{
-      id: 'mossgate-marker',
-      label: 'Weathered marker',
-      description: 'A weathered stone marker, its carved arrow worn but still pointing east.',
-    }] : [],
+    objects: room === 'clearing' ? [
+      {
+        id: 'mossgate-marker',
+        label: 'Weathered marker',
+        description: 'A weathered stone marker, its carved arrow worn but still pointing east.',
+        readable: true,
+        takeable: false,
+      },
+      ...(!itemTaken ? [{
+        id: 'mossgate-loose-stone',
+        label: 'Loose stone',
+        description: 'A smooth, palm-sized stone with a pale stripe running through it.',
+        readable: false,
+        takeable: true,
+      }] : []),
+    ] : [],
     exits: [{
       id: room === 'clearing' ? 'clearing-to-bridge' : 'bridge-to-clearing',
       label: room === 'clearing' ? 'North to Glasswater Bridge' : 'South to Mossgate Clearing',
@@ -46,12 +58,24 @@ beforeEach(() => {
   room = 'clearing';
   revision = 1;
   moveError = null;
+  itemTaken = false;
   apiFetch.mockReset();
   apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
     if (path === '/api/game') {
       return json({
         player: { id: 'account-1', displayName: 'Traveler' },
-        character: { characterId, worldInstanceId: 'mudd-demo-instance', name: 'Rowan', locationId: currentLocation().locationId, revision },
+        character: {
+          characterId,
+          worldInstanceId: 'mudd-demo-instance',
+          name: 'Rowan',
+          locationId: currentLocation().locationId,
+          revision,
+          inventory: itemTaken ? [{
+            id: 'mossgate-loose-stone',
+            label: 'Loose stone',
+            description: 'A smooth, palm-sized stone with a pale stripe running through it.',
+          }] : [],
+        },
         location: currentLocation(),
       });
     }
@@ -63,6 +87,12 @@ beforeEach(() => {
       return json({ ok: true, value: currentLocation() });
     }
     if (path === '/api/commands') {
+      const command = JSON.parse(String(init?.body ?? '{}')) as { type?: string };
+      if (command.type === 'character.take') {
+        itemTaken = true;
+        revision += 1;
+        return json({ receipt: { ok: true, newAggregateVersion: revision }, streamId: characterId });
+      }
       if (moveError) return json({ message: moveError }, 409);
       room = room === 'clearing' ? 'bridge' : 'clearing';
       revision += 1;
@@ -79,8 +109,8 @@ describe('single-character world session client', () => {
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     const history = screen.getByRole('region', { name: 'Terminal output' });
     expect(history).toHaveTextContent('> look');
-    await screen.findByText('Pale stones break through the moss.');
-    expect(screen.getAllByText('Pale stones break through the moss.')).toHaveLength(1);
+    await screen.findByText('Pale stones break through the moss. One loose stone bears a pale stripe.');
+    expect(screen.getAllByText('Pale stones break through the moss. One loose stone bears a pale stripe.')).toHaveLength(1);
     expect(screen.queryByText(/World activity|\b\d+\s+events?\b/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Look around' })).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Enter a command' })).toBeVisible();
@@ -93,7 +123,7 @@ describe('single-character world session client', () => {
     expect(screen.getByRole('heading', { name: 'Rowan' })).toBeVisible();
     fireEvent.click(screen.getByRole('link', { name: 'Field notes' }));
     await screen.findByRole('heading', { name: 'Field notes' });
-    expect(screen.getByText('Pale stones break through the moss.')).toBeVisible();
+    expect(screen.getByText('Pale stones break through the moss. One loose stone bears a pale stripe.')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: /Characters/ }));
     expect(onLeaveWorld).toHaveBeenCalledOnce();
   });
@@ -132,7 +162,7 @@ describe('single-character world session client', () => {
 
     await waitFor(() => {
       expect(screen.getAllByText('> look')).toHaveLength(2);
-      expect(screen.getAllByText('Pale stones break through the moss.')).toHaveLength(2);
+      expect(screen.getAllByText('Pale stones break through the moss. One loose stone bears a pale stripe.')).toHaveLength(2);
     });
     expect(apiFetch.mock.calls.some(([path]) => path === '/api/queries')).toBe(true);
     expect(history).toHaveTextContent('> look');
@@ -195,6 +225,47 @@ describe('single-character world session client', () => {
     expect(apiFetch.mock.calls.filter(([path, init]) =>
       path === '/api/queries' &&
       JSON.parse(String(init?.body ?? '{}')).type === 'object.read'
+    )).toHaveLength(1);
+  });
+
+  it('takes a loose stone into the active character inventory and removes it from the room', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+    const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
+
+    fireEvent.change(commandInput, { target: { value: 'take marker' } });
+    fireEvent.submit(commandInput.closest('form')!);
+    await screen.findByText('You cannot take the weathered marker.');
+    expect(apiFetch.mock.calls.filter(([path]) => path === '/api/commands')).toHaveLength(0);
+
+    fireEvent.change(commandInput, { target: { value: 'take stone' } });
+    fireEvent.submit(commandInput.closest('form')!);
+    await screen.findByText('You pick up the loose stone.');
+    expect(history).toHaveTextContent('> take stone');
+    const takeRequest = apiFetch.mock.calls.find(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'character.take'
+    );
+    expect(JSON.parse(String(takeRequest?.[1]?.body))).toMatchObject({
+      type: 'character.take',
+      characterId,
+      expectedVersion: 1,
+      payload: { itemId: 'mossgate-loose-stone' },
+    });
+
+    fireEvent.click(screen.getByRole('link', { name: 'Traveler' }));
+    await screen.findByRole('heading', { name: 'Traveler' });
+    expect(screen.getByText('Loose stone')).toBeVisible();
+    fireEvent.click(screen.getByRole('link', { name: 'Play' }));
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const commandInputAfterReturn = screen.getByRole('textbox', { name: 'Enter a command' });
+    fireEvent.change(commandInputAfterReturn, { target: { value: 'take stone' } });
+    fireEvent.submit(commandInputAfterReturn.closest('form')!);
+    await screen.findByText('There is nothing here you can take called “stone”.');
+    expect(apiFetch.mock.calls.filter(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'character.take'
     )).toHaveLength(1);
   });
 
