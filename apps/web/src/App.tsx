@@ -422,6 +422,12 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     addEntry("error", 'Unknown command. Try "help" for the command list.');
   }, [addEntry, dropObject, inspect, move, pending, readObject, snapshot, takeAllObjects, takeObject]);
 
+  const submitQuickCommand = useCallback((rawCommand: string) => {
+    setQuickCommandMode("quick");
+    setQuickCommandPage("main");
+    void executeCommand(rawCommand);
+  }, [executeCommand]);
+
   const submitCommand = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!command.trim() || pending) return;
@@ -571,7 +577,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                               key={direction.target}
                               type="button"
                               className="focused-quick-command"
-                              onClick={() => void executeCommand(`go ${direction.target}`)}
+                              onClick={() => submitQuickCommand(`go ${direction.target}`)}
                               aria-label={`Go ${direction.label}`}
                               disabled={pending !== null}
                             >
@@ -593,7 +599,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                           <button
                             type="button"
                             className="focused-quick-command"
-                            onClick={() => void executeCommand("look")}
+                            onClick={() => submitQuickCommand("look")}
                             aria-label="Look around"
                             disabled={pending !== null}
                           >
@@ -604,7 +610,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                               key={target.id}
                               type="button"
                               className="focused-quick-command"
-                              onClick={() => void executeCommand(`look at ${target.label}`)}
+                              onClick={() => submitQuickCommand(`look at ${target.label}`)}
                               aria-label={`Look at ${target.label}`}
                               disabled={pending !== null}
                             >
@@ -629,7 +635,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                                 key={object.id}
                                 type="button"
                                 className="focused-quick-command"
-                                onClick={() => void executeCommand(`read ${object.label}`)}
+                                onClick={() => submitQuickCommand(`read ${object.label}`)}
                                 aria-label={`Read ${object.label}`}
                                 disabled={pending !== null}
                               >
@@ -655,7 +661,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                                 key={item.id}
                                 type="button"
                                 className="focused-quick-command"
-                                onClick={() => void executeCommand(`drop ${item.label}`)}
+                                onClick={() => submitQuickCommand(`drop ${item.label}`)}
                                 aria-label={`Drop ${item.label}`}
                                 disabled={pending !== null}
                               >
@@ -680,7 +686,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                               <button
                                 type="button"
                                 className="focused-quick-command"
-                                onClick={() => void executeCommand("take all")}
+                                onClick={() => submitQuickCommand("take all")}
                                 aria-label="Take all available items"
                                 disabled={pending !== null}
                               >
@@ -691,7 +697,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                                   key={object.id}
                                   type="button"
                                   className="focused-quick-command"
-                                  onClick={() => void executeCommand(`take ${object.label}`)}
+                                  onClick={() => submitQuickCommand(`take ${object.label}`)}
                                   aria-label={`Take ${object.label}`}
                                   disabled={pending !== null}
                                 >
@@ -724,7 +730,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                           <button
                             type="button"
                             className="focused-quick-command"
-                            onClick={() => void executeCommand("help")}
+                            onClick={() => submitQuickCommand("help")}
                             aria-label="Quick help"
                             disabled={pending !== null}
                           >
