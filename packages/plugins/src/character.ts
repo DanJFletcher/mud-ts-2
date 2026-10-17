@@ -13,8 +13,10 @@ import {
   DropCharacterItemCommandSchema,
   LocationDescribeQuerySchema,
   ObjectReadQuerySchema,
+  ObjectInspectQuerySchema,
   LocationProjectionSchema,
   ReadableObjectProjectionSchema,
+  ObjectInspectionProjectionSchema,
 } from '@mudd/contracts';
 import type { EngineCommandContext, EnginePlugin, QueryContext } from '@mudd/engine-core';
 import { replayCharacter } from '@mudd/engine-core';
@@ -193,6 +195,29 @@ export const characterPlugin: EnginePlugin = {
         id: readable.id,
         label: readable.label,
         text: readable.text,
+      });
+    });
+
+    registerQuery('object.inspect', ObjectInspectQuerySchema, async (query, context) => {
+      const character = await state.load(context, query.characterId);
+      if (!character || character.archived) throw new Error('That character is no longer available.');
+      const location = context.world.locations.find((item) => item.id === character.locationId);
+      if (!location) throw new Error('The character location is not present in this world version.');
+      const trackedItemIds = new Set(character.itemLocations.map((entry) => entry.item.id));
+      const objectInRoom = [
+        ...(location.readables ?? []),
+        ...(location.takeables ?? []).filter((item) => !trackedItemIds.has(item.id)),
+        ...character.itemLocations
+          .filter((entry) => entry.locationId === location.id)
+          .map(({ item }) => item),
+      ].find((item) => item.id === query.payload.objectId);
+      const objectInPack = character.inventory.find((item) => item.id === query.payload.objectId);
+      const object = objectInRoom ?? objectInPack;
+      if (!object) throw new Error('That object is not here or in your pack.');
+      return ObjectInspectionProjectionSchema.parse({
+        id: object.id,
+        label: object.label,
+        description: object.description,
       });
     });
   },

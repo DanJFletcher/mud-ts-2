@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   MoveCharacterCommandSchema, CharacterMovedEventSchema, CommandReceiptSchema,
-  PluginManifestSchema, LocationDescribeQuerySchema, ObjectReadQuerySchema, TakeCharacterItemCommandSchema,
+  PluginManifestSchema, LocationDescribeQuerySchema, ObjectReadQuerySchema, ObjectInspectQuerySchema, TakeCharacterItemCommandSchema,
   DropCharacterItemCommandSchema, WorldPackDraftSchema,
   validateDraftWorldGraph,
 } from '../dist/src/index.js';
@@ -45,6 +45,17 @@ test('reading a world object is a validated read-only query', () => {
   }).success, true);
   assert.equal(ObjectReadQuerySchema.safeParse({
     type: 'object.read', version: 1, queryId: 'q2', worldInstanceId: 'world1',
+    characterId: 'char1', payload: { objectId: '' },
+  }).success, false);
+});
+
+test('inspecting an object is a validated read-only query', () => {
+  assert.equal(ObjectInspectQuerySchema.safeParse({
+    type: 'object.inspect', version: 1, queryId: 'q3', worldInstanceId: 'world1',
+    characterId: 'char1', payload: { objectId: 'pebble' },
+  }).success, true);
+  assert.equal(ObjectInspectQuerySchema.safeParse({
+    type: 'object.inspect', version: 1, queryId: 'q3', worldInstanceId: 'world1',
     characterId: 'char1', payload: { objectId: '' },
   }).success, false);
 });

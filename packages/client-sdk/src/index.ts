@@ -5,6 +5,7 @@ import {
   RestoreCharacterCommandSchema,
   LocationDescribeQuerySchema,
   ObjectReadQuerySchema,
+  ObjectInspectQuerySchema,
   MoveCharacterCommandSchema,
   TakeCharacterItemCommandSchema,
   DropCharacterItemCommandSchema,
@@ -12,6 +13,7 @@ import {
   type CommandReceipt,
   type LocationProjection,
   type ReadableObjectProjection,
+  type ObjectInspectionProjection,
 } from '@mudd/contracts';
 
 export interface GameSnapshot {
@@ -164,6 +166,23 @@ export class MuddHttpClient {
       body: JSON.stringify(query),
     });
     if (!result.ok || !result.value) throw new Error(result.message ?? 'Unable to read that object.');
+    return result.value;
+  }
+
+  async inspect(characterId: string, objectId: string, queryId = crypto.randomUUID()): Promise<ObjectInspectionProjection> {
+    const query = ObjectInspectQuerySchema.parse({
+      type: 'object.inspect',
+      version: 1,
+      queryId,
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      payload: { objectId },
+    });
+    const result = await this.request<{ ok: boolean; value?: ObjectInspectionProjection; message?: string }>('/api/queries', {
+      method: 'POST',
+      body: JSON.stringify(query),
+    });
+    if (!result.ok || !result.value) throw new Error(result.message ?? 'Unable to inspect that object.');
     return result.value;
   }
 

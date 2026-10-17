@@ -52,10 +52,21 @@ export const ObjectReadQuerySchema = ClientQueryBaseSchema.extend({
   payload: z.object({ objectId: IdSchema }).strict(),
 }).strict();
 
+export const ObjectInspectQuerySchema = ClientQueryBaseSchema.extend({
+  type: z.literal('object.inspect'),
+  payload: z.object({ objectId: IdSchema }).strict(),
+}).strict();
+
 export const ReadableObjectProjectionSchema = z.object({
   id: IdSchema,
   label: z.string(),
   text: z.string().min(1).max(4000),
+}).strict();
+
+export const ObjectInspectionProjectionSchema = z.object({
+  id: IdSchema,
+  label: z.string(),
+  description: z.string().min(1).max(1000),
 }).strict();
 
 export const ExitProjectionSchema = z.object({
@@ -89,9 +100,11 @@ export type LocationDefinition = z.infer<typeof LocationDefinitionSchema>;
 export type WorldPackDraft = z.infer<typeof WorldPackDraftSchema>;
 export type LocationDescribeQuery = z.infer<typeof LocationDescribeQuerySchema>;
 export type ObjectReadQuery = z.infer<typeof ObjectReadQuerySchema>;
+export type ObjectInspectQuery = z.infer<typeof ObjectInspectQuerySchema>;
 export type ReadableObjectDefinition = z.infer<typeof ReadableObjectDefinitionSchema>;
 export type TakeableObjectDefinition = z.infer<typeof TakeableObjectDefinitionSchema>;
 export type ReadableObjectProjection = z.infer<typeof ReadableObjectProjectionSchema>;
+export type ObjectInspectionProjection = z.infer<typeof ObjectInspectionProjectionSchema>;
 export type LocationProjection = z.infer<typeof LocationProjectionSchema>;
 
 export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {

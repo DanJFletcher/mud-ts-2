@@ -45,6 +45,8 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "walk">("quick");
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [connectionError, setConnectionError] = useState("");
+  const [inspectedCarriedItem, setInspectedCarriedItem] = useState<{ id: string; label: string; description: string }>();
+  const [inventoryInspectError, setInventoryInspectError] = useState("");
   const [leaving, setLeaving] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(() =>
     window.localStorage.getItem("mudd-theme") === "dark" ? "dark" : "light"
@@ -127,13 +129,19 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
         addEntry("narration", location.description);
         return;
       }
-      const matches = findObjectMatches(target, location.objects);
+      const inventoryObjects = (snapshot.character.inventory ?? []).map((item) => ({
+        ...item,
+        readable: false,
+        takeable: true,
+      }));
+      const matches = findObjectMatches(target, [...location.objects, ...inventoryObjects]);
       if (matches.length === 0) {
         addEntry("error", `You do not see anything called “${target}” here.`);
       } else if (matches.length > 1) {
         addEntry("error", `Which one do you mean: ${matches.map((object) => object.label).join(", ")}?`);
       } else {
-        addEntry("narration", matches[0]!.description);
+        const object = await client.inspect(snapshot.character.characterId, matches[0]!.id);
+        addEntry("narration", object.description);
       }
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "You cannot get a clear look just now.");
@@ -141,6 +149,20 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
       setPending(null);
     }
   }, [addEntry, pending, snapshot]);
+
+  const inspectCarriedItem = useCallback(async (item: NonNullable<GameSnapshot["character"]>["inventory"][number]) => {
+    if (!snapshot?.character || pending) return;
+    setPending("look");
+    setInventoryInspectError("");
+    try {
+      const inspected = await client.inspect(snapshot.character.characterId, item.id);
+      setInspectedCarriedItem(inspected);
+    } catch (error) {
+      setInventoryInspectError(error instanceof Error ? error.message : "You cannot inspect that item just now.");
+    } finally {
+      setPending(null);
+    }
+  }, [pending, snapshot]);
 
   const readObject = useCallback(async (objectId: string) => {
     if (!snapshot?.character || pending) return;
@@ -526,7 +548,32 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                   <div className="focused-detail"><span>Journey</span><strong>{snapshot.character ? "Underway" : "Not started"}</strong></div>
                    <div className="focused-detail"><span>World</span><strong>The Waystone Path</strong></div>
                    <div className="focused-detail focused-detail--wide"><span>Current location</span><strong>{snapshot.location?.title || "—"}</strong></div>
-                   <div className="focused-detail focused-detail--wide"><span>Carried items</span><strong>{snapshot.character?.inventory.map((item) => item.label).join(", ") || "None"}</strong></div>
+                    <div className="focused-detail focused-detail--wide">
+                      <span>Carried items</span>
+                      {snapshot.character?.inventory.length ? (
+                        <div className="focused-inventory">
+                          {snapshot.character.inventory.map((item) => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              className="focused-inventory-item"
+                              aria-label={`Inspect ${item.label}`}
+                              disabled={pending !== null}
+                              onClick={() => void inspectCarriedItem(item)}
+                            >
+                              {item.label}
+                            </button>
+                          ))}
+                        </div>
+                      ) : <strong>None</strong>}
+                      {inspectedCarriedItem && snapshot.character?.inventory.some((item) => item.id === inspectedCarriedItem.id) && (
+                        <p className="focused-inventory-description" aria-live="polite">
+                          <strong>{inspectedCarriedItem.label}</strong>
+                          {inspectedCarriedItem.description}
+                        </p>
+                      )}
+                      {inventoryInspectError && <p className="focused-inventory-error" role="status">{inventoryInspectError}</p>}
+                    </div>
                 </div>
                 {!snapshot.character && <p className="focused-note">Begin from Play to enter the world.</p>}
               </Panel>

@@ -61,6 +61,12 @@ describe('MuddHttpClient', () => {
       .rejects.toThrow('That object is not readable from here.');
     const taken = await client.take(characterId, 'mossgate-loose-stone', firstRoom.revision, 'sdk-take');
     expect(taken.receipt).toMatchObject({ ok: true, newAggregateVersion: 2 });
+    await expect(client.inspect(characterId, 'mossgate-loose-stone', 'sdk-inspect-carried'))
+      .resolves.toEqual({
+        id: 'mossgate-loose-stone',
+        label: 'Loose stone',
+        description: 'A smooth, palm-sized stone with a pale stripe running through it.',
+      });
     const afterTake = await client.look(characterId, 'sdk-look-after-take');
     expect(afterTake.revision).toBe(2);
     expect(afterTake.objects).not.toContainEqual(expect.objectContaining({ id: 'mossgate-loose-stone' }));
@@ -77,6 +83,10 @@ describe('MuddHttpClient', () => {
     expect(moved.receipt.ok).toBe(true);
     const nextRoom = await client.look(characterId, 'sdk-look-2');
     expect(nextRoom.title).toBe('Glasswater Bridge');
+    await expect(client.inspect(characterId, 'mossgate-loose-stone', 'sdk-inspect-carried-away'))
+      .resolves.toMatchObject({ id: 'mossgate-loose-stone', label: 'Loose stone' });
+    await expect(client.inspect(characterId, 'mossgate-marker', 'sdk-inspect-unavailable'))
+      .rejects.toThrow('That object is not here or in your pack.');
     await expect(client.read(characterId, 'mossgate-marker', 'sdk-read-from-bridge'))
       .rejects.toThrow('That object is not readable from here.');
     await engine.stop();

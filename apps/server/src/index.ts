@@ -10,6 +10,7 @@ import {
   IdSchema,
   LocationDescribeQuerySchema,
   ObjectReadQuerySchema,
+  ObjectInspectQuerySchema,
   RestoreCharacterCommandSchema,
   RenameCharacterCommandSchema,
 } from '@mudd/contracts';
@@ -238,9 +239,14 @@ app.post('/api/queries', async (req, res, next) => {
     if (!identity) return;
     const locationQuery = LocationDescribeQuerySchema.safeParse(req.body);
     const objectReadQuery = ObjectReadQuerySchema.safeParse(req.body);
-    let query: z.infer<typeof LocationDescribeQuerySchema> | z.infer<typeof ObjectReadQuerySchema>;
+    const objectInspectQuery = ObjectInspectQuerySchema.safeParse(req.body);
+    let query:
+      | z.infer<typeof LocationDescribeQuerySchema>
+      | z.infer<typeof ObjectReadQuerySchema>
+      | z.infer<typeof ObjectInspectQuerySchema>;
     if (locationQuery.success) query = locationQuery.data;
     else if (objectReadQuery.success) query = objectReadQuery.data;
+    else if (objectInspectQuery.success) query = objectInspectQuery.data;
     else return res.status(400).json({ message: 'Invalid world query.' });
     const current = await activeSession(identity);
     if (!current) return res.status(409).json({ message: 'Enter the world with a character before making a query.' });

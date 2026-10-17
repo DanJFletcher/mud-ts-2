@@ -84,6 +84,19 @@ beforeEach(() => {
       if (query.type === 'object.read' && query.payload?.objectId === 'mossgate-marker') {
         return json({ ok: true, value: { id: 'mossgate-marker', label: 'Weathered marker', text: 'OLD BELL TOWER — EAST' } });
       }
+      if (query.type === 'object.inspect') {
+        const objectId = query.payload?.objectId;
+        const object = [...currentLocation().objects, ...(itemTaken ? [{
+          id: 'mossgate-loose-stone',
+          label: 'Loose stone',
+          description: 'A smooth, palm-sized stone with a pale stripe running through it.',
+          readable: false,
+          takeable: true,
+        }] : [])].find((candidate) => candidate.id === objectId);
+        return object
+          ? json({ ok: true, value: { id: object.id, label: object.label, description: object.description } })
+          : json({ ok: false, message: 'That object is not here or in your pack.' });
+      }
       return json({ ok: true, value: currentLocation() });
     }
     if (path === '/api/commands') {
@@ -285,6 +298,46 @@ describe('single-character world session client', () => {
       path === '/api/commands' &&
       ['character.take', 'character.drop'].includes(JSON.parse(String(init?.body ?? '{}')).type)
     )).toHaveLength(3);
+  });
+
+  it('inspects carried items from Traveler and by command, including after leaving their room', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
+
+    fireEvent.change(commandInput, { target: { value: 'take stone' } });
+    fireEvent.submit(commandInput.closest('form')!);
+    await screen.findByText('You pick up the loose stone.');
+
+    fireEvent.click(screen.getByRole('link', { name: 'Traveler' }));
+    await screen.findByRole('heading', { name: 'Traveler' });
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect Loose stone' }));
+    await screen.findByText('A smooth, palm-sized stone with a pale stripe running through it.');
+
+    fireEvent.click(screen.getByRole('link', { name: 'Play' }));
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const commandHistory = screen.getByRole('region', { name: 'Terminal output' });
+    const commandInputAfterReturn = screen.getByRole('textbox', { name: 'Enter a command' });
+    fireEvent.change(commandInputAfterReturn, { target: { value: 'look at stone' } });
+    fireEvent.submit(commandInputAfterReturn.closest('form')!);
+    await waitFor(() => expect(commandHistory).toHaveTextContent('> look at stone'));
+    expect(commandHistory).toHaveTextContent('A smooth, palm-sized stone with a pale stripe running through it.');
+
+    fireEvent.click(screen.getByRole('button', { name: 'North to Glasswater Bridge' }));
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    fireEvent.change(commandInputAfterReturn, { target: { value: 'look stone' } });
+    fireEvent.submit(commandInputAfterReturn.closest('form')!);
+    await waitFor(() => expect(commandHistory).toHaveTextContent('> look stone'));
+    expect(commandHistory).toHaveTextContent('A smooth, palm-sized stone with a pale stripe running through it.');
+
+    fireEvent.change(commandInputAfterReturn, { target: { value: 'look marker' } });
+    fireEvent.submit(commandInputAfterReturn.closest('form')!);
+    await screen.findByText('You do not see anything called “marker” here.');
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/queries' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'object.inspect' &&
+      JSON.parse(String(init?.body ?? '{}')).payload.objectId === 'mossgate-loose-stone'
+    )).toBe(true);
   });
 
   it('switches quick commands from look to available walking directions', async () => {

@@ -165,6 +165,99 @@ describe('MUDD engine host', () => {
     await engine.stop();
   });
 
+  it('allows inspection of carried items after travel but not objects left behind', async () => {
+    const { engine } = makeEngine();
+    await engine.start();
+    const created = await engine.dispatch({
+      type: 'character.create',
+      version: 1,
+      commandId: 'inspect-create',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      payload: { name: 'Rill' },
+    }, session);
+    const characterId = created.streamId!;
+    await engine.dispatch({
+      type: 'character.take',
+      version: 1,
+      commandId: 'inspect-take',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 1,
+      payload: { itemId: 'mossgate-loose-stone' },
+    }, session);
+    await engine.dispatch({
+      type: 'character.move',
+      version: 1,
+      commandId: 'inspect-move',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 2,
+      payload: { exitId: 'clearing-to-bridge' },
+    }, session);
+
+    const carriedItem = await engine.query({
+      type: 'object.inspect',
+      version: 1,
+      queryId: 'inspect-carried-stone',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      payload: { objectId: 'mossgate-loose-stone' },
+    }, session);
+    expect(carriedItem).toMatchObject({
+      ok: true,
+      value: {
+        id: 'mossgate-loose-stone',
+        label: 'Loose stone',
+        description: 'A smooth, palm-sized stone with a pale stripe running through it.',
+      },
+    });
+    const objectLeftBehind = await engine.query({
+      type: 'object.inspect',
+      version: 1,
+      queryId: 'inspect-room-marker',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      payload: { objectId: 'mossgate-marker' },
+    }, session);
+    expect(objectLeftBehind).toMatchObject({
+      ok: false,
+      message: 'That object is not here or in your pack.',
+    });
+
+    const droppedItem = await engine.dispatch({
+      type: 'character.drop',
+      version: 1,
+      commandId: 'inspect-drop-stone',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 3,
+      payload: { itemId: 'mossgate-loose-stone' },
+    }, session);
+    expect(droppedItem.receipt).toMatchObject({ ok: true, newAggregateVersion: 4 });
+    await engine.dispatch({
+      type: 'character.move',
+      version: 1,
+      commandId: 'inspect-return',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 4,
+      payload: { exitId: 'bridge-to-clearing' },
+    }, session);
+    const itemLeftBehind = await engine.query({
+      type: 'object.inspect',
+      version: 1,
+      queryId: 'inspect-dropped-stone-from-original-room',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      payload: { objectId: 'mossgate-loose-stone' },
+    }, session);
+    expect(itemLeftBehind).toMatchObject({
+      ok: false,
+      message: 'That object is not here or in your pack.',
+    });
+    await engine.stop();
+  });
+
   it('drops a carried item into the current room and keeps its location through replay', async () => {
     const { engine, store } = makeEngine();
     await engine.start();

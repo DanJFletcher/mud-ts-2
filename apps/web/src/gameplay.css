@@ -446,6 +446,23 @@
 .focused-detail--wide { grid-column: 1 / -1; }
 .focused-detail span { color: var(--mudd-muted); font: 500 .65rem "DM Mono", monospace; letter-spacing: .1em; text-transform: uppercase; }
 .focused-detail strong { font-size: .9rem; font-weight: 600; }
+.focused-inventory { display: flex; flex-wrap: wrap; gap: 8px; }
+.focused-inventory-item {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--mudd-border);
+  border-radius: 999px;
+  color: var(--mudd-ink);
+  background: var(--mudd-surface);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.focused-inventory-item:disabled { cursor: wait; opacity: .65; }
+.focused-inventory-item:focus-visible { outline: 2px solid var(--mudd-accent); outline-offset: 2px; }
+.focused-inventory-description { display: grid; gap: 4px; margin: 2px 0 0; color: var(--mudd-muted); font-size: .88rem; line-height: 1.5; }
+.focused-inventory-description strong { color: var(--mudd-ink); }
+.focused-inventory-error { margin: 0; color: var(--mudd-danger); font-size: .85rem; }
 .focused-note { margin: 0; padding-top: 16px; color: var(--mudd-muted); font-size: .88rem; line-height: 1.6; }
 
 .focused-log { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
