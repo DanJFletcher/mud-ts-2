@@ -8,6 +8,6 @@ description: User direction for MUDD's gameplay UI, navigation, and mobile prior
 - Traveler info and Field notes should be separate screens the player navigates to.
 - Marketing language can be reserved for the main home or login page, not gameplay.
 
-**Why:** The user rejected the marketing-like gameplay presentation and unnecessary copy such as “No rush. Just the quiet work of being somewhere.”
+**Why:** The user rejected the marketing-like gameplay presentation and unnecessary copy such as “No rush. Just the quiet work of being somewhere,” then approved the gameplay-first mobile direction with supporting information off the Play screen.
 
 **How to apply:** Prioritize the mobile play experience, keep actionable game information prominent, and keep supporting information off the main gameplay screen.
