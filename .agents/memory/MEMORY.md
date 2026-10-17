@@ -1,1 +1,2 @@
 - [Client design priorities](client-design.md) — Mobile-first gameplay without marketing filler; Traveler info and Field notes belong on separate navigable screens.
+- [Account and character sessions](account-character-model.md) — Accounts can manage multiple characters; each world session plays as one character at a time.
