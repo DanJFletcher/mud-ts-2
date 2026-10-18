@@ -15,6 +15,7 @@ import {
   CharacterRestoredEventSchema,
   CharacterWalletInitializedEventSchema,
   MerchantItemPurchasedEventSchema,
+  CombatActionResolvedEventSchema,
 } from '@mudd/contracts';
 
 export function replayCharacter(events: readonly StoredGameEvent[]) {
@@ -67,6 +68,34 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         wallet: { ...state.wallet, balance: state.wallet.balance - price },
         inventory: [...state.inventory, item],
         purchasedMerchantListingIds: [...state.purchasedMerchantListingIds, listingId],
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.combat_action_resolved') {
+      if (!state) throw new Error('Combat action encountered before character creation.');
+      const resolved = CombatActionResolvedEventSchema.parse(publicEvent);
+      const combat = resolved.payload.encounter;
+      const previous = state.combat;
+      if (
+        resolved.payload.characterId !== state.characterId ||
+        combat.locationId !== state.locationId ||
+        (previous?.status === 'active' && (
+          combat.encounterId !== previous.encounterId ||
+          combat.opponentNpcId !== previous.opponentNpcId ||
+          combat.round !== previous.round + 1 ||
+          combat.playerHealth > previous.playerHealth ||
+          combat.opponentHealth > previous.opponentHealth
+        )) ||
+        (previous?.status !== 'active' && (
+          combat.lastAction !== 'attack' ||
+          combat.round !== 1 ||
+          combat.encounterId === previous?.encounterId
+        ))
+      ) {
+        throw new Error(`Invalid combat action at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        combat,
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'character.moved') {

@@ -2,6 +2,7 @@
 import { z } from 'zod';
 import { ClientCommandBaseSchema, DomainEventBaseSchema } from './protocol.js';
 import { IdSchema, NonEmptyNameSchema, NonNegativeIntSchema, ContractVersionSchema } from './ids.js';
+import { CombatEncounterProjectionSchema } from './combat.js';
 
 export const InventoryItemProjectionSchema = z.object({
   id: IdSchema,
@@ -176,6 +177,7 @@ export const CharacterProjectionSchema = z.object({
   revision: NonNegativeIntSchema,
   inventory: z.array(InventoryItemProjectionSchema).default([]),
   wallet: CharacterWalletSchema.optional(),
+  combat: CombatEncounterProjectionSchema.optional(),
   purchasedMerchantListingIds: z.array(IdSchema).default([]),
   itemLocations: z.array(z.object({
     item: InventoryItemProjectionSchema,

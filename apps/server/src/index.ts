@@ -19,7 +19,7 @@ import {
   MerchantCatalogQuerySchema,
 } from '@mudd/contracts';
 import { EngineHost, projectQuestJournal, replayCharacter } from '@mudd/engine-core';
-import { characterPlugin, merchantPlugin, movementPlugin, npcDialoguePlugin } from '@mudd/core-plugins';
+import { characterPlugin, combatPlugin, merchantPlugin, movementPlugin, npcDialoguePlugin } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import { db, pool } from './db/client.js';
 import { characters, durableEffects, worldSessions } from './db/schema.js';
@@ -71,7 +71,7 @@ const authorization = {
   },
 };
 const engine = new EngineHost(
-  [characterPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin, demoEventEffectsPlugin],
+  [characterPlugin, combatPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin, demoEventEffectsPlugin],
   store,
   authorization,
   demoWorld,

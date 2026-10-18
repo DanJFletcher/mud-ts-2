@@ -4,6 +4,7 @@ import { ClientCommandBaseSchema, ClientQueryBaseSchema } from './protocol.js';
 import { ContractVersionSchema, IdSchema, NonNegativeIntSchema } from './ids.js';
 import { QuestDefinitionSchema, QuestDialogueActionSchema } from './quests.js';
 import { MerchantCatalogDefinitionSchema, WorldCurrencyDefinitionSchema } from './commerce.js';
+import { NpcCombatProfileSchema } from './combat.js';
 
 export const ExitDefinitionSchema = z.object({
   id: IdSchema,
@@ -147,6 +148,7 @@ export const NpcDefinitionSchema = z.object({
   unknownTopicResponse: z.string().min(1).max(2000),
   announcements: z.array(z.string().min(1).max(500)).max(24).optional(),
   roomChatReactions: z.array(NpcRoomChatReactionDefinitionSchema).max(24).optional(),
+  combatProfile: NpcCombatProfileSchema.optional(),
   shop: MerchantCatalogDefinitionSchema.optional(),
 }).strict();
 
@@ -154,6 +156,7 @@ export const NpcPresenceProjectionSchema = z.object({
   id: IdSchema,
   name: z.string().min(1).max(120),
   description: z.string().min(1).max(1000),
+  canChallenge: z.boolean().default(false),
 }).strict();
 
 export const LocationDefinitionSchema = z.object({

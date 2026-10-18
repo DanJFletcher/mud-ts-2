@@ -38,6 +38,20 @@ let roomChatMessages: TestRoomChatMessage[];
 let nextRoomChatMessageId: number;
 let walletBalance: number;
 let merchantLanternPurchased: boolean;
+let combatEncounter: {
+  encounterId: string;
+  locationId: string;
+  opponentNpcId: string;
+  opponentName: string;
+  round: number;
+  playerHealth: number;
+  playerMaxHealth: number;
+  opponentHealth: number;
+  opponentMaxHealth: number;
+  status: 'active' | 'victory' | 'defeat' | 'fled';
+  lastAction: 'attack' | 'defend' | 'flee';
+  lastNarration: string;
+} | null;
 
 function currentLocation() {
   return {
@@ -102,10 +116,17 @@ function currentLocation() {
       id: 'mara-waykeeper',
       name: 'Mara',
       description: 'A path keeper stands beside the weathered marker, watching the northern trail.',
+      canChallenge: false,
+    }, {
+      id: 'mossgate-training-sentinel',
+      name: 'Practice Sentinel',
+      description: 'A knee-high wooden sentinel waits beside the trail. Its padded arms lift as you approach.',
+      canChallenge: true,
     }] : room === 'market' ? [{
       id: 'sella-reedbank-merchant',
       name: 'Sella',
       description: 'A careful trader sorts travel goods beneath a green awning.',
+      canChallenge: false,
     }] : [],
   };
 }
@@ -178,6 +199,7 @@ beforeEach(() => {
   nextRoomChatMessageId = 1;
   walletBalance = 12;
   merchantLanternPurchased = false;
+  combatEncounter = null;
   apiFetch.mockReset();
   apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
     if (path.startsWith('/api/chat')) {
@@ -230,6 +252,7 @@ beforeEach(() => {
           visitedLocationIds,
           revision,
           wallet: { currencyId: 'moss-mark', balance: walletBalance },
+          ...(combatEncounter ? { combat: combatEncounter } : {}),
           inventory: [
             ...(itemTaken ? [{
               id: 'mossgate-loose-stone',
@@ -338,8 +361,52 @@ beforeEach(() => {
       const command = JSON.parse(String(init?.body ?? '{}')) as {
         type?: string;
         commandId?: string;
-        payload?: { itemId?: string; targetId?: string; choiceId?: string; objectId?: string };
+        payload?: {
+          itemId?: string;
+          targetId?: string;
+          choiceId?: string;
+          objectId?: string;
+          action?: 'attack' | 'defend' | 'flee';
+          encounterId?: string;
+          targetNpcId?: string;
+        };
       };
+      if (command.type === 'combat.action') {
+        const action = command.payload?.action;
+        if (!combatEncounter) {
+          if (action !== 'attack' || command.payload?.targetNpcId !== 'mossgate-training-sentinel') {
+            return json({ receipt: { ok: false, commandId: command.commandId ?? 'mock-command', code: 'RULE_VIOLATION', message: 'That opponent is not available here.' } });
+          }
+          combatEncounter = {
+            encounterId: 'combat-ui-encounter',
+            locationId: 'mossgate-clearing',
+            opponentNpcId: 'mossgate-training-sentinel',
+            opponentName: 'Practice Sentinel',
+            round: 1,
+            playerHealth: 5,
+            playerMaxHealth: 6,
+            opponentHealth: 2,
+            opponentMaxHealth: 4,
+            status: 'active',
+            lastAction: 'attack',
+            lastNarration: 'You deal 2 damage to Practice Sentinel. It strikes back for 1.',
+          };
+        } else {
+          combatEncounter = {
+            ...combatEncounter,
+            round: combatEncounter.round + 1,
+            lastAction: action ?? combatEncounter.lastAction,
+            lastNarration: action === 'defend'
+              ? 'You guard against Practice Sentinel’s padded strike and take no damage.'
+              : combatEncounter.lastNarration,
+          };
+        }
+        revision += 1;
+        return json({
+          receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision },
+          streamId: characterId,
+        });
+      }
       if (command.type === 'merchant.purchase') {
         if (room !== 'market' || merchantLanternPurchased || walletBalance < 8) {
           return json({ receipt: { ok: false, commandId: command.commandId ?? 'mock-command', code: 'RULE_VIOLATION', message: 'That purchase is unavailable.' } });
@@ -424,6 +491,31 @@ beforeEach(() => {
 });
 
 describe('single-character world session client', () => {
+  it('starts and controls combat through terminal actions backed by SDK commands', async () => {
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'challenge Practice Sentinel' }));
+    await screen.findByText('Round 1 · Practice Sentinel');
+    fireEvent.click(screen.getByRole('button', { name: 'defend' }));
+    await screen.findByText('Round 2 · Practice Sentinel');
+
+    const commands = apiFetch.mock.calls
+      .filter(([path]) => path === '/api/commands')
+      .map(([, init]) => JSON.parse(String(init?.body ?? '{}')) as {
+        type?: string;
+        payload?: { action?: string; targetNpcId?: string; encounterId?: string };
+      });
+    expect(commands).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'combat.action',
+        payload: { action: 'attack', targetNpcId: 'mossgate-training-sentinel' },
+      }),
+      expect.objectContaining({
+        type: 'combat.action',
+        payload: { action: 'defend', encounterId: 'combat-ui-encounter' },
+      }),
+    ]));
+  });
+
   it('opens directly into focused gameplay with separate Traveler and Field notes screens', async () => {
     const onLeaveWorld = vi.fn().mockResolvedValue(undefined);
     render(<WorldClient onLeaveWorld={onLeaveWorld} />);

@@ -88,6 +88,12 @@ describe('MuddHttpClient', () => {
       id: 'mara-waykeeper',
       name: 'Mara',
       description: 'A path keeper stands beside the weathered marker, watching the northern trail.',
+      canChallenge: false,
+    }, {
+      id: 'mossgate-training-sentinel',
+      name: 'Practice Sentinel',
+      description: 'A knee-high wooden sentinel waits beside the trail. Its padded arms lift as you approach.',
+      canChallenge: true,
     }]);
     expect(firstRoom.objects).toEqual([
       {

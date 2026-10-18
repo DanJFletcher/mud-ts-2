@@ -288,7 +288,12 @@ export const characterPlugin: EnginePlugin = {
         occupants: [],
         ...(location.npcs?.length
           ? {
-            npcs: location.npcs.map(({ id, name, description }) => ({ id, name, description })),
+            npcs: location.npcs.map(({ id, name, description, combatProfile }) => ({
+              id,
+              name,
+              description,
+              canChallenge: Boolean(combatProfile),
+            })),
           }
           : {}),
       });

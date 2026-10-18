@@ -218,6 +218,15 @@ const draft = {
             },
           ],
         },
+        {
+          id: 'mossgate-training-sentinel',
+          name: 'Practice Sentinel',
+          description: 'A knee-high wooden sentinel waits beside the trail. Its padded arms lift as you approach.',
+          greeting: 'The practice sentinel clicks into a ready stance.',
+          topics: [],
+          unknownTopicResponse: 'The sentinel answers with a wooden click.',
+          combatProfile: { maxHealth: 4, attackDamage: 1 },
+        },
       ],
       exits: [
         { id: 'clearing-to-bridge', fromLocationId: 'mossgate-clearing', toLocationId: 'glasswater-bridge', label: 'North to Glasswater Bridge', direction: 'north' },

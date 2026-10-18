@@ -25,11 +25,13 @@ import {
   MerchantCatalogProjectionSchema,
   MerchantCatalogQuerySchema,
   MerchantPurchaseCommandSchema,
+  CombatActionCommandSchema,
   type LocationProjection,
   type NpcDialogueProjection,
   type ReadableObjectProjection,
   type ObjectInspectionProjection,
   type MerchantCatalogProjection,
+  type CombatActionId,
 } from '@mudd/contracts';
 import { z } from 'zod';
 
@@ -283,6 +285,25 @@ export class MuddHttpClient {
       characterId,
       expectedVersion,
       payload: { merchantNpcId, listingId },
+    });
+    return this.send(command);
+  }
+
+  async performCombatAction(
+    characterId: string,
+    action: CombatActionId,
+    expectedVersion: number,
+    target: { encounterId?: string; targetNpcId?: string },
+    commandId = crypto.randomUUID(),
+  ): Promise<CommandResponse> {
+    const command = CombatActionCommandSchema.parse({
+      type: 'combat.action',
+      version: 1,
+      commandId,
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      expectedVersion,
+      payload: { action, ...target },
     });
     return this.send(command);
   }

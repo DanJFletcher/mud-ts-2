@@ -102,6 +102,7 @@ vi.mock('@mudd/contracts', async () => {
 
 vi.mock('@mudd/core-plugins', () => ({
   characterPlugin: {},
+  combatPlugin: {},
   movementPlugin: {},
   npcDialoguePlugin: {},
   merchantPlugin: {},

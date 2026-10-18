@@ -27,6 +27,9 @@ export const movementPlugin: EnginePlugin = {
     registerCommand('character.move', MoveCharacterCommandSchema, async (command, context) => {
       const character = await characterState.load(context, command.characterId);
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
+      if (character.combat?.status === 'active') {
+        throw new RuleViolationError('You cannot leave while combat is active. Flee first.');
+      }
       const exit = context.world.locations
         .find((location) => location.id === character.locationId)
         ?.exits.find((candidate) => candidate.id === command.payload.exitId);

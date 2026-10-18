@@ -460,12 +460,58 @@
   flex: 0 0 auto;
 }
 
+.focused-terminal-combat {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: .65rem;
+  padding: .4rem .65rem;
+  border-top: 1px solid var(--terminal-line);
+  background: var(--terminal-inset);
+}
+
+.focused-terminal-combat__status {
+  display: grid;
+  min-width: 0;
+  gap: .15rem;
+  color: var(--terminal-text);
+  font: 500 .7rem/1.3 "DM Mono", monospace;
+}
+
+.focused-terminal-combat__status span {
+  overflow: hidden;
+  color: var(--terminal-muted);
+  text-overflow: ellipsis;
+}
+
+.focused-terminal-combat__actions {
+  display: flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: .4rem;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
 .focused-quick-commands__label {
   flex: 0 0 auto;
   color: var(--terminal-muted);
   font: 500 .62rem/1.2 "DM Mono", monospace;
   letter-spacing: .1em;
   text-transform: uppercase;
+}
+
+@media (max-width: 540px) {
+  .focused-terminal-combat {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .focused-terminal-combat__actions {
+    width: 100%;
+  }
 }
 
 .focused-quick-commands__actions {

@@ -93,6 +93,18 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
     "Usage: drop <item>",
     "Put down an item you carry in the current room.",
   ],
+  attack: [
+    "Usage: attack <opponent> | attack",
+    "Start an encounter with an available opponent, or attack during an active encounter.",
+  ],
+  defend: [
+    "Usage: defend",
+    "Guard against the opponent’s next strike during an active encounter.",
+  ],
+  flee: [
+    "Usage: flee",
+    "End an active encounter and return to the room without lasting injury.",
+  ],
   inspect: [
     "There is no separate inspect command.",
     "Use look at <object> to inspect something in the room or an item you carry.",
@@ -111,6 +123,9 @@ const GENERAL_HELP = [
   "take <item> | take all — Pick up one or all items in the current room.",
   "use <item> on <target> — Use a carried item on an interactive target here.",
   "drop <item> — Put down an item you carry.",
+  "attack <opponent> — Begin an encounter or attack during combat.",
+  "defend — Guard against the opponent’s next strike.",
+  "flee — End the current encounter.",
   "Quick actions: Look, Read, Take, Use, Drop, Go, and Talk.",
 ];
 
@@ -144,7 +159,7 @@ function completedQuestObjectiveKeys(snapshot: GameSnapshot): string[] {
 export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"look" | "read" | "take" | "use" | "drop" | "move" | "talk" | "shop" | "buy" | null>(null);
+  const [pending, setPending] = useState<"look" | "read" | "take" | "use" | "drop" | "move" | "talk" | "shop" | "buy" | "combat" | null>(null);
   const [command, setCommand] = useState("");
   const [quickCommandPage, setQuickCommandPage] = useState<"main" | "more">("main");
   const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "go" | "look" | "read" | "drop" | "take" | "talk" | "use" | "use-target">("quick");
@@ -536,6 +551,48 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     }
   }, [activeMerchantCatalog, addEntry, pending, snapshot]);
 
+  const performCombatAction = useCallback(async (
+    action: "attack" | "defend" | "flee",
+    targetNpcId?: string,
+    recordCommand = false,
+  ) => {
+    if (!snapshot?.character || !snapshot.location || pending) return;
+    const activeEncounter = snapshot.character.combat?.status === "active"
+      ? snapshot.character.combat
+      : undefined;
+    if (recordCommand) {
+      const commandText = action === "attack" && targetNpcId
+        ? `> attack ${snapshot.location.npcs?.find((npc) => npc.id === targetNpcId)?.name ?? "opponent"}`
+        : `> ${action}`;
+      addEntry("system", commandText);
+    }
+    setPending("combat");
+    try {
+      const result = await client.performCombatAction(
+        snapshot.character.characterId,
+        action,
+        snapshot.character.revision,
+        activeEncounter
+          ? { encounterId: activeEncounter.encounterId }
+          : targetNpcId
+            ? { targetNpcId }
+            : {},
+      );
+      if (!result.receipt.ok) throw new Error(result.receipt.message);
+      const nextSnapshot = await client.getGame();
+      setSnapshot(nextSnapshot);
+      setConnectionError("");
+      const encounter = nextSnapshot.character?.combat;
+      if (encounter) {
+        addEntry("narration", `${encounter.lastNarration} You: ${encounter.playerHealth}/${encounter.playerMaxHealth}. ${encounter.opponentName}: ${encounter.opponentHealth}/${encounter.opponentMaxHealth}.`);
+      }
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "The combat action could not be completed.");
+    } finally {
+      setPending(null);
+    }
+  }, [addEntry, pending, snapshot]);
+
   const executeCommand = useCallback(async (rawCommand: string) => {
     const value = rawCommand.trim();
     if (!value || pending) return;
@@ -544,6 +601,41 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     if (verb.toLowerCase() === "help") {
       addEntry("system", `> ${value}`);
       for (const line of getCommandHelp(target)) addEntry("narration", line);
+      return;
+    }
+    if (["attack", "defend", "flee"].includes(verb.toLowerCase())) {
+      const action = verb.toLowerCase() as "attack" | "defend" | "flee";
+      addEntry("system", `> ${value}`);
+      const activeEncounter = snapshot?.character?.combat?.status === "active"
+        ? snapshot.character.combat
+        : undefined;
+      if (action === "attack" && !activeEncounter) {
+        if (!target) {
+          addEntry("error", "Attack whom? Choose an available combatant or try “attack Practice Sentinel”.");
+          return;
+        }
+        const targets = (snapshot?.location?.npcs ?? []).filter((npc) => npc.canChallenge);
+        const matches = findNpcMatches(target, targets);
+        if (matches.length === 0) {
+          addEntry("error", `There is no available combatant called “${target}” here.`);
+          return;
+        }
+        if (matches.length > 1) {
+          addEntry("error", `Who do you mean: ${matches.map((npc) => npc.name).join(", ")}?`);
+          return;
+        }
+        await performCombatAction("attack", matches[0]!.id);
+        return;
+      }
+      if (!activeEncounter) {
+        addEntry("error", "There is no active encounter. Choose an available combatant to attack first.");
+        return;
+      }
+      if (target) {
+        addEntry("error", `The active opponent is ${activeEncounter.opponentName}; use “${action}” without a target.`);
+        return;
+      }
+      await performCombatAction(action);
       return;
     }
     if (verb.toLowerCase() === "talk") {
@@ -751,7 +843,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     }
     addEntry("system", `> ${value}`);
     addEntry("error", 'Unknown command. Try "help" for the command list.');
-  }, [addEntry, browseMerchant, dropObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, activeMerchantCatalog]);
+  }, [addEntry, browseMerchant, dropObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, activeMerchantCatalog, performCombatAction]);
 
   const submitQuickCommand = useCallback((rawCommand: string) => {
     setQuickCommandMode("quick");
@@ -806,6 +898,14 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     () => (snapshot?.location?.objects ?? []).filter((object) => object.takeable),
     [snapshot?.location?.objects],
   );
+  const challengeableNpcs = useMemo(
+    () => (snapshot?.location?.npcs ?? []).filter((npc) => npc.canChallenge),
+    [snapshot?.location?.npcs],
+  );
+  const currentCombat = snapshot?.character?.combat;
+  const visibleCombat = currentCombat?.locationId === snapshot?.location?.locationId
+    ? currentCombat
+    : undefined;
   const quickReturnLabel = quickCommandPage === "more" ? "Return to more quick actions" : "Return to quick commands";
 
   const handleContentTouchStart = (event: ReactTouchEvent<HTMLElement>) => {
@@ -977,6 +1077,42 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                         ))}
                       </div>
                     </div>
+                  ) : null}
+                  {visibleCombat?.status === "active" ? (
+                    <section className="focused-terminal-combat" aria-label="Combat">
+                      <div className="focused-terminal-combat__status" role="status" aria-live="polite">
+                        <strong>Round {visibleCombat.round} · {visibleCombat.opponentName}</strong>
+                        <span>You {visibleCombat.playerHealth}/{visibleCombat.playerMaxHealth} · {visibleCombat.opponentName} {visibleCombat.opponentHealth}/{visibleCombat.opponentMaxHealth}</span>
+                      </div>
+                      <div className="focused-terminal-combat__actions" role="group" aria-label="Combat actions">
+                        <button type="button" className="focused-quick-command" onClick={() => void performCombatAction("attack", undefined, true)} disabled={pending !== null}>attack</button>
+                        <button type="button" className="focused-quick-command" onClick={() => void performCombatAction("defend", undefined, true)} disabled={pending !== null}>defend</button>
+                        <button type="button" className="focused-quick-command" onClick={() => void performCombatAction("flee", undefined, true)} disabled={pending !== null}>flee</button>
+                      </div>
+                    </section>
+                  ) : visibleCombat ? (
+                    <section className="focused-terminal-combat" aria-label="Last combat">
+                      <div className="focused-terminal-combat__status" role="status">
+                        <strong>{visibleCombat.status === "victory" ? "Victory" : visibleCombat.status === "defeat" ? "Defeat" : "Encounter ended"} · {visibleCombat.opponentName}</strong>
+                        <span>{visibleCombat.lastNarration}</span>
+                      </div>
+                    </section>
+                  ) : challengeableNpcs.length > 0 ? (
+                    <section className="focused-terminal-combat" aria-label="Available opponents">
+                      <div className="focused-terminal-combat__actions" role="group" aria-label="Available opponents">
+                        {challengeableNpcs.map((npc) => (
+                          <button
+                            key={npc.id}
+                            type="button"
+                            className="focused-quick-command"
+                            onClick={() => void performCombatAction("attack", npc.id, true)}
+                            disabled={pending !== null}
+                          >
+                            challenge {npc.name}
+                          </button>
+                        ))}
+                      </div>
+                    </section>
                   ) : null}
                   <section className="focused-quick-commands" aria-label="Quick commands">
                     {quickCommandMode !== "quick" && (
@@ -1338,7 +1474,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                         spellCheck={false}
                       />
                       <Button type="submit" variant="secondary" disabled={!command.trim() || pending !== null}>
-                        {pending === "look" ? "Looking" : pending === "read" ? "Reading" : pending === "take" ? "Taking" : pending === "drop" ? "Dropping" : pending === "move" ? "Moving" : pending === "talk" ? "Talking" : pending === "shop" ? "Browsing" : pending === "buy" ? "Buying" : "Send"}
+                        {pending === "look" ? "Looking" : pending === "read" ? "Reading" : pending === "take" ? "Taking" : pending === "drop" ? "Dropping" : pending === "move" ? "Moving" : pending === "talk" ? "Talking" : pending === "shop" ? "Browsing" : pending === "buy" ? "Buying" : pending === "combat" ? "Acting" : "Send"}
                       </Button>
                     </form>
                   </section>
