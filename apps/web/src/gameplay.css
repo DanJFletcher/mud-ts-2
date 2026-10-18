@@ -347,7 +347,7 @@
 .focused-room-chat {
   display: grid;
   box-sizing: border-box;
-  height: 240px;
+  height: 200px;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   overflow: hidden;
   border: 1px solid var(--mudd-border);
