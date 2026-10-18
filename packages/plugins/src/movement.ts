@@ -58,6 +58,15 @@ export const movementPlugin: EnginePlugin = {
             exitId: exit.id,
           },
         }],
+        effects: [{
+          type: 'world.location.entered',
+          version: 1,
+          payload: {
+            characterId: command.characterId,
+            fromLocationId: character.locationId,
+            toLocationId: exit.toLocationId,
+          },
+        }],
       };
     });
   },

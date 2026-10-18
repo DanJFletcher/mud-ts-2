@@ -35,9 +35,10 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
   afterAll(async () => {
     if (!db || !pool) return;
     const { eq, inArray } = await import('drizzle-orm');
-    const { characters, commandReceipts, gameEvents, players } = await import('./db/schema.js');
+    const { characters, commandReceipts, durableEffects, gameEvents, players } = await import('./db/schema.js');
     try {
       const testWorlds = [worldInstanceId, chatWorldInstanceId];
+      await db.delete(durableEffects).where(inArray(durableEffects.worldInstanceId, testWorlds));
       await db.delete(commandReceipts).where(inArray(commandReceipts.worldInstanceId, testWorlds));
       await db.delete(gameEvents).where(inArray(gameEvents.worldInstanceId, testWorlds));
       await db.delete(characters).where(eq(characters.playerId, playerId));
@@ -135,6 +136,69 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     expect(results.map((result) => result.kind).sort()).toEqual(['committed', 'conflict']);
   });
 
+  it('commits event effects atomically, retries them after restart, and deduplicates their output', async () => {
+    const { durableEffects } = await import('./db/schema.js');
+    const commandId = `effect-command-${randomUUID()}`;
+    const streamId = `effect-stream-${randomUUID()}`;
+    const payloadHash = randomUUID();
+    const effectKey = `command:${worldInstanceId}:${playerId}:${commandId}:0`;
+    const blockerId = randomUUID();
+    await db.insert(durableEffects).values({
+      id: blockerId,
+      worldInstanceId,
+      sourceStreamId: streamId,
+      causationCommandId: 'existing-effect',
+      effectType: 'audit.test',
+      effectVersion: 1,
+      payload: { reason: 'force the append transaction to fail' },
+      dedupeKey: effectKey,
+    });
+
+    const appendRequest: AppendRequest = {
+      worldInstanceId,
+      streamId,
+      actorId: playerId,
+      commandId,
+      payloadHash,
+      expectedVersion: 0,
+      events: [{ type: 'audit.effect_source', version: 1, payload: { committed: true } }],
+      effects: [{ type: 'audit.test', version: 1, payload: { message: 'deliver once' } }],
+    };
+    await expect(store.append(appendRequest)).rejects.toThrow();
+    expect(await store.readStream(worldInstanceId, streamId)).toHaveLength(0);
+    expect(await store.lookupCommand(worldInstanceId, playerId, commandId, payloadHash)).toBeUndefined();
+    await db.delete(durableEffects).where((await import('drizzle-orm')).eq(durableEffects.id, blockerId));
+
+    expect((await store.append(appendRequest)).kind).toBe('committed');
+    expect((await store.append(appendRequest)).kind).toBe('duplicate');
+    const restartedStore = new (await import('./persistence/postgres-event-store.js')).PostgresEventStore();
+    const claimed = await restartedStore.claimNextEffect(60_000);
+    expect(claimed).toMatchObject({
+      worldInstanceId,
+      sourceStreamId: streamId,
+      causationCommandId: commandId,
+      type: 'audit.test',
+      version: 1,
+      payload: { message: 'deliver once' },
+      attempts: 1,
+    });
+    if (!claimed) throw new Error('Expected the event effect to be claimable after restarting the store.');
+
+    expect(await store.claimNextEffect(60_000)).toBeUndefined();
+    expect(await restartedStore.retryEffect(claimed.id, claimed.leaseToken, 0, 'simulated transient failure')).toBe(true);
+    const retried = await store.claimNextEffect(60_000);
+    expect(retried).toMatchObject({ id: claimed.id, attempts: 2 });
+    if (!retried) throw new Error('Expected the event effect to be available for retry.');
+    expect(await store.completeEffect(retried.id, retried.leaseToken)).toBe(true);
+    expect(await restartedStore.claimNextEffect(60_000)).toBeUndefined();
+
+    const persistedEffects = await db.select().from(durableEffects).where(
+      (await import('drizzle-orm')).eq(durableEffects.dedupeKey, effectKey),
+    );
+    expect(persistedEffects).toHaveLength(1);
+    expect(persistedEffects[0]).toMatchObject({ status: 'completed', attempts: 2 });
+  });
+
   it('enforces one active character session per account and world', async () => {
     const { characters, worldSessions } = await import('./db/schema.js');
     const firstCharacterId = randomUUID();
@@ -160,7 +224,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
   it('keeps room-chat membership and idempotency ordered with character movement', async () => {
     const { PostgresEventStore: EventStore } = await import('./persistence/postgres-event-store.js');
     const { createPlayerRoomChatMessage, listRoomChatMessages } = await import('./room-chat-service.js');
-    const { characters, roomChatMessages, worldSessions } = await import('./db/schema.js');
+    const { characters, durableEffects, roomChatMessages, worldSessions } = await import('./db/schema.js');
     const chatStore = new EventStore();
 
     await chatStore.append({
@@ -205,6 +269,11 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
       throw new Error('Expected the repeated chat submission to return the original message.');
     }
     expect(retrySubmission.message.id).toBe(firstSubmission.message.id);
+    expect(retrySubmission.effectId).toBe(firstSubmission.effectId);
+    const chatEffects = await db.select().from(durableEffects).where(
+      (await import('drizzle-orm')).eq(durableEffects.worldInstanceId, chatWorldInstanceId),
+    );
+    expect(chatEffects).toHaveLength(1);
 
     const movement = await chatStore.append({
       worldInstanceId: chatWorldInstanceId,
@@ -246,6 +315,27 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
       (await import('drizzle-orm')).eq(roomChatMessages.submissionId, submissionId),
     );
     expect(persisted).toHaveLength(1);
+    const { publishNpcRoomMessage } = await import('./room-chat-service.js');
+    const outputKey = `effect-output-${randomUUID()}`;
+    const [firstNpcReply, retriedNpcReply] = await Promise.all([
+      publishNpcRoomMessage({
+        worldInstanceId: chatWorldInstanceId,
+        roomId: 'glasswater-bridge',
+        npcId: 'npc-effect-test',
+        npcName: 'Fixture NPC',
+        text: 'This reply survives a retry.',
+        sourceEffectId: outputKey,
+      }),
+      publishNpcRoomMessage({
+        worldInstanceId: chatWorldInstanceId,
+        roomId: 'glasswater-bridge',
+        npcId: 'npc-effect-test',
+        npcName: 'Fixture NPC',
+        text: 'This reply survives a retry.',
+        sourceEffectId: outputKey,
+      }),
+    ]);
+    expect(retriedNpcReply.id).toBe(firstNpcReply.id);
     await db.delete(characters).where((await import('drizzle-orm')).eq(characters.id, chatCharacterId));
   });
 });

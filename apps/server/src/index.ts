@@ -20,18 +20,18 @@ import { EngineHost, projectQuestJournal, replayCharacter } from '@mudd/engine-c
 import { characterPlugin, movementPlugin, npcDialoguePlugin } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import { db, pool } from './db/client.js';
-import { characters, worldSessions } from './db/schema.js';
+import { characters, durableEffects, worldSessions } from './db/schema.js';
 import { PostgresEventStore } from './persistence/postgres-event-store.js';
+import { demoEventEffectsPlugin } from './demo-event-effects-plugin.js';
+import { LOCATION_ENTERED_EFFECT } from './durable-effect-contracts.js';
 import { expiredGuestCookie, getAccountIdentity, type AccountIdentity } from './session-service.js';
 import { CLERK_PROXY_PATH, clerkProxyMiddleware, getClerkProxyHost } from './middlewares/clerkProxyMiddleware.js';
 import {
   createPlayerRoomChatMessage,
+  getRoomChatMessageBySourceEffectId,
   listRoomChatMessages,
   MAX_ROOM_CHAT_MESSAGE_LENGTH,
-  publishNpcRoomMessage,
 } from './room-chat-service.js';
-import { createNpcRoomAnnouncer } from './npc-announcer.js';
-import { createNpcRoomChatReactor } from './npc-chat-reactor.js';
 import {
   createOriginGuard,
   createRateLimiter,
@@ -63,49 +63,29 @@ const authorization = {
     return Boolean(row);
   },
 };
-const engine = new EngineHost([characterPlugin, movementPlugin, npcDialoguePlugin], store, authorization, demoWorld);
+const engine = new EngineHost(
+  [characterPlugin, movementPlugin, npcDialoguePlugin, demoEventEffectsPlugin],
+  store,
+  authorization,
+  demoWorld,
+);
 await engine.start();
 
-const announceNpcRoomMessage = createNpcRoomAnnouncer(publishNpcRoomMessage);
-const reactToNpcRoomChat = createNpcRoomChatReactor(publishNpcRoomMessage);
-async function announceNpcsOnEntry(worldInstanceId: string, roomId: string) {
-  const location = demoWorld.locations.find((candidate) => candidate.id === roomId);
-  for (const npc of location?.npcs ?? []) {
-    if (!npc.announcements?.length) continue;
-    try {
-      await announceNpcRoomMessage({
-        worldInstanceId,
-        roomId,
-        npcId: npc.id,
-        npcName: npc.name,
-        announcements: npc.announcements,
-      });
-    } catch (error) {
-      console.error('Could not publish NPC room announcement:', error instanceof Error ? error.message : 'unknown error');
-    }
+let effectBatchRunning = false;
+async function runPendingEffectBatch() {
+  if (effectBatchRunning) return;
+  effectBatchRunning = true;
+  try {
+    await engine.processPendingEffects();
+  } catch {
+    console.error('Could not process durable event effects.');
+  } finally {
+    effectBatchRunning = false;
   }
 }
-
-async function reactToNpcsInRoomChat(worldInstanceId: string, roomId: string, playerMessage: string) {
-  const location = demoWorld.locations.find((candidate) => candidate.id === roomId);
-  for (const npc of location?.npcs ?? []) {
-    if (!npc.roomChatReactions?.length) continue;
-    try {
-      const response = await reactToNpcRoomChat({
-        worldInstanceId,
-        roomId,
-        npcId: npc.id,
-        npcName: npc.name,
-        playerMessage,
-        reactions: npc.roomChatReactions,
-      });
-      if (response) return response;
-    } catch (error) {
-      console.error('Could not publish NPC room-chat reaction:', error instanceof Error ? error.message : 'unknown error');
-    }
-  }
-  return undefined;
-}
+void runPendingEffectBatch();
+const effectPoller = setInterval(() => void runPendingEffectBatch(), 1_000);
+effectPoller.unref();
 
 function projectWorldMap(character: NonNullable<ReturnType<typeof replayCharacter>>) {
   const visitedLocationIds = new Set(character.visitedLocationIds);
@@ -221,6 +201,10 @@ app.post('/api/world-session', async (req, res, next) => {
     if (!identity) return;
     const input = z.object({ characterId: IdSchema }).safeParse(req.body);
     if (!input.success) return res.status(400).json({ message: 'Choose a valid character.' });
+    const characterProjection = replayCharacter(await store.readStream(
+      DEMO_WORLD_INSTANCE_ID,
+      input.data.characterId,
+    ));
 
     const result = await db.transaction(async (tx) => {
       await tx.execute(sql`SELECT id FROM players WHERE id = ${identity.playerId} FOR UPDATE`);
@@ -250,15 +234,28 @@ app.post('/api/world-session', async (req, res, next) => {
         characterId: character.id,
       }).returning();
       if (!created) throw new Error('Could not start the world session.');
+      if (characterProjection && !characterProjection.archived) {
+        const effectId = globalThis.crypto.randomUUID();
+        await tx.insert(durableEffects).values({
+          id: effectId,
+          worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+          sourceStreamId: character.id,
+          causationCommandId: created.id,
+          effectType: LOCATION_ENTERED_EFFECT,
+          effectVersion: 1,
+          payload: {
+            characterId: character.id,
+            toLocationId: characterProjection.locationId,
+          },
+          dedupeKey: `world-session:${created.id}`,
+        });
+      }
       return { kind: 'active' as const, session: created };
     });
 
     if (result.kind === 'missing') return res.status(404).json({ message: 'That character is unavailable.' });
     if (result.kind === 'occupied') return res.status(409).json({ message: 'Leave the current world session before switching characters.' });
-    const character = replayCharacter(await store.readStream(result.session.worldInstanceId, result.session.characterId));
-    if (character && !character.archived) {
-      await announceNpcsOnEntry(result.session.worldInstanceId, character.locationId);
-    }
+    await runPendingEffectBatch();
     return res.json({ sessionId: result.session.id, characterId: result.session.characterId });
   } catch (error) {
     next(error);
@@ -382,8 +379,9 @@ app.post('/api/chat', createRateLimiter({ windowMs: 60_000, maxRequests: 30 }), 
     if (submission.kind === 'conflict') {
       return res.status(409).json({ message: 'This message ID was already used for a different message.' });
     }
-    const npcMessage = submission.kind === 'created'
-      ? await reactToNpcsInRoomChat(current.session.worldInstanceId, input.data.roomId, input.data.text)
+    if (submission.effectId) await runPendingEffectBatch();
+    const npcMessage = submission.kind === 'created' && submission.effectId
+      ? await getRoomChatMessageBySourceEffectId(submission.effectId)
       : undefined;
     return res.status(submission.kind === 'created' ? 201 : 200).json({
       message: submission.message,
@@ -427,15 +425,7 @@ app.post('/api/commands', createRateLimiter({ windowMs: 60_000, maxRequests: 120
     }
 
     const result = await engine.dispatch(req.body, context, res.locals.requestId);
-    if (result.receipt.ok && result.commitOutcome === 'committed' && command?.type === 'character.move') {
-      const current = await activeSession(identity);
-      if (current) {
-        const character = replayCharacter(await store.readStream(current.worldInstanceId, current.characterId));
-        if (character && !character.archived) {
-          await announceNpcsOnEntry(current.worldInstanceId, character.locationId);
-        }
-      }
-    }
+    if (result.receipt.ok) await runPendingEffectBatch();
     if (!result.receipt.ok && result.receipt.code === 'INTERNAL_ERROR') {
       return res.status(500).json({
         ...result,

@@ -21,7 +21,7 @@ Room chat is a public room feed, while NPC dialogue and gameplay commands remain
 - A concurrent move and chat request has a deterministic lock order: the message is accepted in the old room before movement, or rejected after movement; it cannot be accepted using a stale room projection.
 - A retry after a successful send returns the original message even if the character has since moved.
 - Existing NPC messages are retained; the new nullable idempotency fields do not require rewriting old rows.
-- NPC reactions are still an in-process post-commit effect. A process crash between message commit and reaction publication can lose that reaction; a transactional outbox is deferred until durable cross-service effects are required.
+- NPC reactions are queued in the same transaction as the player message and use the durable effect ID to deduplicate published replies. The general outbox policy is recorded in [ADR 0004](0004-durable-event-effects.md).
 - `TRUSTED_HOSTS` must be configured in production. The current rate limiter is process-local and is not a cluster-wide quota.
 
 ## Alternatives considered

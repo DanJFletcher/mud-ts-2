@@ -8,6 +8,7 @@ type NpcRoomChatReactionInput = Readonly<{
   npcName: string;
   playerMessage: string;
   reactions: readonly NpcRoomChatReactionDefinition[];
+  sourceEffectId?: string;
 }>;
 
 type ReactionPublisher = (input: Readonly<{
@@ -16,6 +17,7 @@ type ReactionPublisher = (input: Readonly<{
   npcId: string;
   npcName: string;
   text: string;
+  sourceEffectId?: string;
 }>) => Promise<RoomChatMessage>;
 
 function normalizeWords(value: string): string {
@@ -69,6 +71,7 @@ export function createNpcRoomChatReactor(
         npcId: input.npcId,
         npcName: input.npcName,
         text: response,
+        sourceEffectId: input.sourceEffectId,
       });
       lastPublishedAt.set(key, now());
       return message;

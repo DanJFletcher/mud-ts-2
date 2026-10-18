@@ -1,4 +1,6 @@
+import { sql } from 'drizzle-orm';
 import {
+  check,
   integer,
   index,
   jsonb,
@@ -91,6 +93,7 @@ export const roomChatMessages = pgTable('room_chat_messages', {
   speakerId: text('speaker_id').notNull(),
   speakerName: text('speaker_name').notNull(),
   message: text('message').notNull(),
+  sourceEffectId: text('source_effect_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('room_chat_messages_world_room_id_idx').on(table.worldInstanceId, table.roomId, table.id),
@@ -99,4 +102,30 @@ export const roomChatMessages = pgTable('room_chat_messages', {
     table.playerId,
     table.submissionId,
   ),
+  uniqueIndex('room_chat_messages_source_effect_id_idx').on(table.sourceEffectId),
+]);
+
+export const durableEffects = pgTable('durable_effects', {
+  id: uuid('id').primaryKey(),
+  worldInstanceId: text('world_instance_id').notNull(),
+  sourceStreamId: text('source_stream_id'),
+  causationCommandId: text('causation_command_id').notNull(),
+  effectType: text('effect_type').notNull(),
+  effectVersion: integer('effect_version').notNull(),
+  payload: jsonb('payload').notNull().$type<Record<string, unknown>>(),
+  dedupeKey: text('dedupe_key').notNull(),
+  status: text('status').$type<'pending' | 'processing' | 'completed' | 'dead'>().notNull().default('pending'),
+  attempts: integer('attempts').notNull().default(0),
+  availableAt: timestamp('available_at', { withTimezone: true }).notNull().defaultNow(),
+  lockedUntil: timestamp('locked_until', { withTimezone: true }),
+  leaseToken: uuid('lease_token'),
+  lastError: text('last_error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+}, (table) => [
+  uniqueIndex('durable_effects_dedupe_idx').on(table.dedupeKey),
+  index('durable_effects_pending_idx').on(table.status, table.availableAt, table.createdAt),
+  check('durable_effects_status_check', sql`${table.status} in ('pending', 'processing', 'completed', 'dead')`),
+  check('durable_effects_attempts_check', sql`${table.attempts} >= 0`),
+  check('durable_effects_version_check', sql`${table.effectVersion} > 0`),
 ]);

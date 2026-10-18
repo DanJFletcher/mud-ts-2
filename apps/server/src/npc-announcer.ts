@@ -4,6 +4,7 @@ type AnnouncementPublisher = (input: Readonly<{
   npcId: string;
   npcName: string;
   text: string;
+  sourceEffectId?: string;
 }>) => Promise<unknown>;
 
 export type RoomNpcAnnouncement = Readonly<{
@@ -12,6 +13,7 @@ export type RoomNpcAnnouncement = Readonly<{
   npcId: string;
   npcName: string;
   announcements: readonly string[];
+  sourceEffectId?: string;
 }>;
 
 export function createNpcRoomAnnouncer(
@@ -45,6 +47,7 @@ export function createNpcRoomAnnouncer(
         npcId: input.npcId,
         npcName: input.npcName,
         text,
+        sourceEffectId: input.sourceEffectId,
       });
       lastPublishedAt.set(key, now());
       nextAnnouncementIndex.set(key, (index + 1) % input.announcements.length);

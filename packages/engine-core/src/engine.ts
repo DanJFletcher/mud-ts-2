@@ -10,6 +10,8 @@ import type {
   CommandDefinition,
   DispatchResult,
   EngineCommandContext,
+  EventEffectContext,
+  EventEffectDefinition,
   EnginePlugin,
   EventStorePort,
   PluginContext,
@@ -21,6 +23,8 @@ import type { CharacterProjection } from '@mudd/contracts';
 import { isRuleViolationError } from './domain-error.js';
 
 const apiVersion = '1.0';
+const EFFECT_LEASE_MS = 60_000;
+const MAX_EFFECT_ATTEMPTS = 10;
 const failure = (
   commandId: string,
   code: Extract<CommandReceipt, { ok: false }>['code'],
@@ -83,6 +87,7 @@ function dependencyVersionMatches(actual: string, range: string): boolean {
 export class EngineHost {
   private readonly commands = new Map<string, CommandDefinition>();
   private readonly queries = new Map<string, QueryDefinition>();
+  private readonly effects = new Map<string, EventEffectDefinition>();
   private readonly capabilities = new Map<string, { version: string; implementation: unknown }>();
   private readonly orderedPlugins: EnginePlugin[];
   private started = false;
@@ -104,6 +109,11 @@ export class EngineHost {
       registerQuery: (type, schema, handle) => {
         if (this.queries.has(type)) throw new Error(`Duplicate query registration: ${type}`);
         this.queries.set(type, { schema, handle } as QueryDefinition);
+      },
+      registerEffect: (type, version, schema, handle) => {
+        if (this.effects.has(type)) throw new Error(`Duplicate event effect registration: ${type}`);
+        if (!Number.isInteger(version) || version < 1) throw new Error(`Invalid event effect version for ${type}.`);
+        this.effects.set(type, { version, schema, handle } as EventEffectDefinition);
       },
       provideCapability: <T>(token: CapabilityToken<T>, implementation: T) => {
         if (this.capabilities.has(token.id)) throw new Error(`Duplicate capability provider: ${token.id}`);
@@ -182,6 +192,60 @@ export class EngineHost {
     this.started = false;
   }
 
+  async processPendingEffects(limit = 25): Promise<number> {
+    if (!this.started) return 0;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
+      throw new RangeError('Effect processing limit must be an integer from 1 to 500.');
+    }
+
+    let processed = 0;
+    while (processed < limit) {
+      const effect = await this.store.claimNextEffect(EFFECT_LEASE_MS);
+      if (!effect) break;
+      processed += 1;
+      const definition = this.effects.get(effect.type);
+      if (!definition || definition.version !== effect.version) {
+        const reason = definition
+          ? `Unsupported effect version ${effect.version} for ${effect.type}.`
+          : `No plugin registered a handler for ${effect.type}.`;
+        await this.store.deadLetterEffect(effect.id, effect.leaseToken, reason);
+        console.error(`[effect:${effect.id}] ${reason}`);
+        continue;
+      }
+
+      const parsed = definition.schema.safeParse(effect.payload);
+      if (!parsed.success) {
+        const reason = `Persisted payload did not match effect contract ${effect.type}@${effect.version}.`;
+        await this.store.deadLetterEffect(effect.id, effect.leaseToken, reason);
+        console.error(`[effect:${effect.id}] ${reason}`);
+        continue;
+      }
+
+      const context: EventEffectContext = {
+        effectId: effect.id,
+        worldInstanceId: effect.worldInstanceId,
+        sourceStreamId: effect.sourceStreamId,
+        causationCommandId: effect.causationCommandId,
+      };
+      try {
+        await definition.handle(parsed.data, context);
+        await this.store.completeEffect(effect.id, effect.leaseToken);
+      } catch (error) {
+        const errorName = error instanceof Error ? error.name : 'UnknownError';
+        const message = `Effect handler failed (${errorName}).`;
+        if (effect.attempts >= MAX_EFFECT_ATTEMPTS) {
+          await this.store.deadLetterEffect(effect.id, effect.leaseToken, message);
+          console.error(`[effect:${effect.id}] Dead-lettered after ${effect.attempts} attempts (${errorName}).`);
+          continue;
+        }
+        const delayMs = Math.min(300_000, 1_000 * 2 ** Math.min(effect.attempts - 1, 8));
+        await this.store.retryEffect(effect.id, effect.leaseToken, delayMs, message);
+        console.error(`[effect:${effect.id}] Delivery failed; retry scheduled (${errorName}).`);
+      }
+    }
+    return processed;
+  }
+
   async dispatch(raw: unknown, session: SessionContext, correlationId = globalThis.crypto.randomUUID()): Promise<DispatchResult> {
     const untrusted = typeof raw === 'object' && raw !== null ? raw as Record<string, unknown> : {};
     const commandId = typeof untrusted.commandId === 'string' ? untrusted.commandId : this.makeId();
@@ -244,6 +308,7 @@ export class EngineHost {
         payloadHash,
         expectedVersion: plan.expectedVersion,
         events: plan.events,
+        effects: plan.effects,
       });
       return {
         receipt: CommandReceiptSchema.parse(outcome.receipt),

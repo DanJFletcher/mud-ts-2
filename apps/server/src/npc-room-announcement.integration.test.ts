@@ -39,6 +39,19 @@ const state = vi.hoisted(() => ({
   messages: [],
   nextMessageId: 1,
   chatSubmissions: new Map(),
+  pendingEffects: [] as Array<{
+    effectId: string;
+    type: string;
+    payload: unknown;
+    context: {
+      effectId: string;
+      worldInstanceId: string;
+      sourceStreamId: string | null;
+      causationCommandId: string;
+    };
+  }>,
+  effectHandlers: new Map<string, (payload: unknown, context: unknown) => Promise<void>>(),
+  effectPlugin: null as unknown,
   nextChatSubmissionId: 1,
   moveReceipts: new Map(),
   nextMoveId: 1,
@@ -89,8 +102,33 @@ vi.mock('@mudd/core-plugins', () => ({
 
 vi.mock('@mudd/engine-core', () => ({
   EngineHost: class {
+    constructor(plugins: unknown[] = []) {
+      for (const candidate of plugins) {
+        const plugin = candidate as {
+          manifest?: { id?: string };
+          register?: (context: never) => void;
+        };
+        if (plugin.manifest?.id !== 'mudd.demo-event-effects') continue;
+        state.effectPlugin = candidate;
+        plugin.register?.({
+          registerEffect: (
+            type: string,
+            _version: number,
+            _schema: unknown,
+            handler: (payload: unknown, context: unknown) => Promise<void>,
+          ) => state.effectHandlers.set(type, handler),
+        } as never);
+      }
+    }
     async start() {}
     async stop() {}
+    async processPendingEffects() {
+      while (state.pendingEffects.length) {
+        const effect = state.pendingEffects.shift();
+        if (!effect) continue;
+        await state.effectHandlers.get(effect.type)?.(effect.payload, effect.context);
+      }
+    }
     async dispatch(command: {
       type?: string;
       commandId?: string;
@@ -111,7 +149,21 @@ vi.mock('@mudd/engine-core', () => ({
             'quiet-room': { 'back-to-entry': 'entry-room' },
           }[character.locationId]?.[command.payload.exitId]
           : undefined;
-        if (character && destination) character.locationId = destination;
+        const fromLocationId = character?.locationId;
+        if (character && destination) {
+          character.locationId = destination;
+          state.pendingEffects.push({
+            effectId: `move-effect-${command.commandId}`,
+            type: 'world.location.entered',
+            payload: { characterId: command.characterId, fromLocationId, toLocationId: destination },
+            context: {
+              effectId: `move-effect-${command.commandId}`,
+              worldInstanceId: instanceId,
+              sourceStreamId: command.characterId,
+              causationCommandId: command.commandId ?? '',
+            },
+          });
+        }
         const result = { receipt: { ok: true }, commitOutcome: 'committed' };
         state.moveReceipts.set(command.commandId ?? '', result);
         return result;
@@ -250,23 +302,42 @@ vi.mock('./db/client.js', async () => {
   function insert(table: { [key: symbol]: unknown }) {
     return {
       values(values: Record<string, unknown>) {
+        const persist = async () => {
+          const tableName = table[Symbol.for('drizzle:BaseName')];
+          if (tableName === 'world_sessions') {
+            state.sessions.set(values.playerId as string, values);
+            return [values];
+          }
+          if (tableName === 'room_chat_messages') {
+            const row = {
+              ...values,
+              id: state.nextMessageId++,
+              createdAt: new Date('2026-10-18T12:00:00.000Z'),
+            };
+            state.messages.push(row);
+            return [row];
+          }
+          if (tableName === 'durable_effects') {
+            const effectId = String(values.id);
+            const payload = values.payload;
+            state.pendingEffects.push({
+              effectId,
+              type: String(values.effectType),
+              payload,
+              context: {
+                effectId,
+                worldInstanceId: String(values.worldInstanceId),
+                sourceStreamId: typeof values.sourceStreamId === 'string' ? values.sourceStreamId : null,
+                causationCommandId: String(values.causationCommandId),
+              },
+            });
+          }
+          return [];
+        };
         return {
-          returning: async () => {
-            const tableName = table[Symbol.for('drizzle:BaseName')];
-            if (tableName === 'world_sessions') {
-              state.sessions.set(values.playerId, values);
-              return [values];
-            }
-            if (tableName === 'room_chat_messages') {
-              const row = {
-                ...values,
-                id: state.nextMessageId++,
-                createdAt: new Date('2026-10-18T12:00:00.000Z'),
-              };
-              state.messages.push(row);
-              return [row];
-            }
-            return [];
+          returning: persist,
+          then(resolve: (rows: unknown[]) => unknown, reject?: (error: unknown) => unknown) {
+            return persist().then(resolve, reject);
           },
         };
       },
@@ -301,7 +372,9 @@ vi.mock('./room-chat-service.js', () => ({
       const matches = prior.roomId === input.roomId &&
         prior.speakerId === input.characterId &&
         prior.message === input.text;
-      return matches ? { kind: 'duplicate', message: prior.publicMessage } : { kind: 'conflict' };
+      return matches
+        ? { kind: 'duplicate', message: prior.publicMessage, effectId: prior.effectId }
+        : { kind: 'conflict' };
     }
     const character = state.characters[input.characterId as keyof typeof state.characters];
     const session = state.sessions.get(input.playerId);
@@ -318,8 +391,10 @@ vi.mock('./room-chat-service.js', () => ({
       speakerId: input.characterId,
       speakerName: character.name,
       message: input.text,
+      sourceEffectId: null,
       createdAt: new Date('2026-10-18T12:00:00.000Z'),
     };
+    const effectId = `chat-effect-${row.id}`;
     const publicMessage = {
       id: row.id,
       roomId: row.roomId,
@@ -329,8 +404,41 @@ vi.mock('./room-chat-service.js', () => ({
       createdAt: row.createdAt.toISOString(),
     };
     state.messages.push(row);
-    state.chatSubmissions.set(key, { ...row, publicMessage });
-    return { kind: 'created', message: publicMessage };
+    state.chatSubmissions.set(key, { ...row, publicMessage, effectId });
+    state.pendingEffects.push({
+      effectId,
+      type: 'room-chat.player-message',
+      payload: { roomChatMessageId: row.id },
+      context: {
+        effectId,
+        worldInstanceId: input.worldInstanceId,
+        sourceStreamId: input.characterId,
+        causationCommandId: input.clientMessageId,
+      },
+    });
+    return { kind: 'created', message: publicMessage, effectId };
+  },
+  getRoomChatMessageById: async (messageId: number) => {
+    const message = state.messages.find((candidate) => candidate.id === messageId);
+    return message ? {
+      id: message.id,
+      roomId: message.roomId,
+      speakerType: message.speakerType,
+      speakerName: message.speakerName,
+      text: message.message,
+      createdAt: message.createdAt.toISOString(),
+    } : undefined;
+  },
+  getRoomChatMessageBySourceEffectId: async (sourceEffectId: string) => {
+    const message = state.messages.find((candidate) => candidate.sourceEffectId === sourceEffectId);
+    return message ? {
+      id: message.id,
+      roomId: message.roomId,
+      speakerType: message.speakerType,
+      speakerName: message.speakerName,
+      text: message.message,
+      createdAt: message.createdAt.toISOString(),
+    } : undefined;
   },
   listRoomChatMessages: async (input: {
     worldInstanceId: string;
@@ -361,7 +469,21 @@ vi.mock('./room-chat-service.js', () => ({
     npcId: string;
     npcName: string;
     text: string;
+    sourceEffectId?: string;
   }) => {
+    const existing = input.sourceEffectId
+      ? state.messages.find((candidate) => candidate.sourceEffectId === input.sourceEffectId)
+      : undefined;
+    if (existing) {
+      return {
+        id: existing.id,
+        roomId: existing.roomId,
+        speakerType: existing.speakerType,
+        speakerName: existing.speakerName,
+        text: existing.message,
+        createdAt: existing.createdAt.toISOString(),
+      };
+    }
     const row = {
       id: state.nextMessageId++,
       worldInstanceId: input.worldInstanceId,
@@ -372,6 +494,7 @@ vi.mock('./room-chat-service.js', () => ({
       speakerId: input.npcId,
       speakerName: input.npcName,
       message: input.text,
+      sourceEffectId: input.sourceEffectId ?? null,
       createdAt: new Date('2026-10-18T12:00:00.000Z'),
     };
     state.messages.push(row);
@@ -449,6 +572,19 @@ describe('NPC room announcements through the server', () => {
     state.chatSubmissions.clear();
     state.nextChatSubmissionId = 1;
     state.moveReceipts.clear();
+    state.pendingEffects.length = 0;
+    state.effectHandlers.clear();
+    const effectPlugin = state.effectPlugin as {
+      register?: (context: never) => void;
+    } | null;
+    effectPlugin?.register?.({
+      registerEffect: (
+        type: string,
+        _version: number,
+        _schema: unknown,
+        handler: (payload: unknown, context: unknown) => Promise<void>,
+      ) => state.effectHandlers.set(type, handler),
+    } as never);
     state.nextMoveId = 1;
     announcementState.attempts = 0;
     state.characters['character-alice'].locationId = 'npc-room';
@@ -580,7 +716,9 @@ describe('NPC room announcements through the server', () => {
     expect(matchingRetry.status).toBe(200);
     expect((await matchingRetry.json() as { npcMessage?: unknown }).npcMessage).toBeUndefined();
     expect(state.messages.filter((message) => message.speakerType === 'player')).toHaveLength(2);
-    expect(state.messages.filter((message) => message.speakerType === 'npc')).toHaveLength(1);
+    expect(state.messages.filter((message) =>
+      message.speakerType === 'npc' && message.message === 'The marker still points east.',
+    )).toHaveLength(1);
     const reusedSubmissionId = await sendRoomMessage(
       'alice',
       'npc-room',
@@ -608,6 +746,7 @@ describe('NPC room announcements through the server', () => {
 
   it('rejects cross-origin state-changing requests before they mutate room chat', async () => {
     await enterWorld('alice', 'character-alice');
+    const messageCountBeforeRequest = state.messages.length;
     const response = await fetch(`${baseUrl}/api/chat`, {
       method: 'POST',
       headers: {
@@ -619,7 +758,7 @@ describe('NPC room announcements through the server', () => {
     });
 
     expect(response.status).toBe(403);
-    expect(state.messages).toEqual([]);
+    expect(state.messages).toHaveLength(messageCountBeforeRequest);
   });
 
   it('returns a bounded request-body error with a request ID', async () => {

@@ -1,8 +1,13 @@
-import { and, desc, eq } from 'drizzle-orm';
-import { sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, lte, or, sql } from 'drizzle-orm';
 import type { CommandReceipt } from '@mudd/contracts';
-import type { AppendOutcome, AppendRequest, EventStorePort, StoredGameEvent } from '@mudd/engine-core';
-import { characters, commandReceipts, gameEvents, worldSessions } from '../db/schema.js';
+import type {
+  AppendOutcome,
+  AppendRequest,
+  EventStorePort,
+  StoredEventEffect,
+  StoredGameEvent,
+} from '@mudd/engine-core';
+import { characters, commandReceipts, durableEffects, gameEvents, worldSessions } from '../db/schema.js';
 import { db } from '../db/client.js';
 
 export function toStoredGameEvent(row: typeof gameEvents.$inferSelect): StoredGameEvent {
@@ -19,6 +24,23 @@ export function toStoredGameEvent(row: typeof gameEvents.$inferSelect): StoredGa
     actorId: row.actorId,
     occurredAt: row.occurredAt.toISOString(),
     tick: row.tick,
+  };
+}
+
+function toStoredEventEffect(
+  row: typeof durableEffects.$inferSelect,
+  leaseToken: string,
+): StoredEventEffect {
+  return {
+    id: row.id,
+    worldInstanceId: row.worldInstanceId,
+    sourceStreamId: row.sourceStreamId,
+    causationCommandId: row.causationCommandId,
+    type: row.effectType,
+    version: row.effectVersion,
+    payload: row.payload,
+    attempts: row.attempts,
+    leaseToken,
   };
 }
 
@@ -137,6 +159,19 @@ export class PostgresEventStore implements EventStorePort {
         tick: event.tick,
       })));
 
+      if (request.effects?.length) {
+        await tx.insert(durableEffects).values(request.effects.map((effect, index) => ({
+          id: globalThis.crypto.randomUUID(),
+          worldInstanceId: request.worldInstanceId,
+          sourceStreamId: request.streamId,
+          causationCommandId: request.commandId,
+          effectType: effect.type,
+          effectVersion: effect.version,
+          payload: effect.payload,
+          dedupeKey: `command:${request.worldInstanceId}:${request.actorId}:${request.commandId}:${index}`,
+        })));
+      }
+
       for (const event of appended) {
         if (event.type === 'character.created') {
           await tx.insert(characters).values({
@@ -190,5 +225,84 @@ export class PostgresEventStore implements EventStorePort {
       });
       return { kind: 'committed', streamId: request.streamId, events: appended, receipt };
     });
+  }
+
+  async claimNextEffect(leaseMs: number): Promise<StoredEventEffect | undefined> {
+    if (!Number.isInteger(leaseMs) || leaseMs < 1) throw new RangeError('Effect lease must be a positive integer.');
+    return db.transaction(async (tx) => {
+      const now = new Date();
+      const [pending] = await tx.select().from(durableEffects).where(and(
+        lte(durableEffects.availableAt, now),
+        or(
+          eq(durableEffects.status, 'pending'),
+          and(
+            eq(durableEffects.status, 'processing'),
+            or(isNull(durableEffects.lockedUntil), lte(durableEffects.lockedUntil, now)),
+          ),
+        ),
+      )).orderBy(asc(durableEffects.createdAt), asc(durableEffects.id))
+        .limit(1)
+        .for('update', { skipLocked: true });
+      if (!pending) return undefined;
+
+      const leaseToken = globalThis.crypto.randomUUID();
+      const [claimed] = await tx.update(durableEffects).set({
+        status: 'processing',
+        attempts: sql`${durableEffects.attempts} + 1`,
+        lockedUntil: new Date(now.getTime() + leaseMs),
+        leaseToken,
+      }).where(eq(durableEffects.id, pending.id)).returning();
+      return claimed ? toStoredEventEffect(claimed, leaseToken) : undefined;
+    });
+  }
+
+  async completeEffect(effectId: string, leaseToken: string): Promise<boolean> {
+    const rows = await db.update(durableEffects).set({
+      status: 'completed',
+      lockedUntil: null,
+      leaseToken: null,
+      lastError: null,
+      completedAt: new Date(),
+    }).where(and(
+      eq(durableEffects.id, effectId),
+      eq(durableEffects.status, 'processing'),
+      eq(durableEffects.leaseToken, leaseToken),
+    )).returning({ id: durableEffects.id });
+    return rows.length > 0;
+  }
+
+  async retryEffect(
+    effectId: string,
+    leaseToken: string,
+    delayMs: number,
+    errorMessage: string,
+  ): Promise<boolean> {
+    if (!Number.isInteger(delayMs) || delayMs < 0) throw new RangeError('Effect retry delay must be non-negative.');
+    const rows = await db.update(durableEffects).set({
+      status: 'pending',
+      availableAt: sql`now() + (${delayMs} * interval '1 millisecond')`,
+      lockedUntil: null,
+      leaseToken: null,
+      lastError: errorMessage.slice(0, 500),
+    }).where(and(
+      eq(durableEffects.id, effectId),
+      eq(durableEffects.status, 'processing'),
+      eq(durableEffects.leaseToken, leaseToken),
+    )).returning({ id: durableEffects.id });
+    return rows.length > 0;
+  }
+
+  async deadLetterEffect(effectId: string, leaseToken: string, errorMessage: string): Promise<boolean> {
+    const rows = await db.update(durableEffects).set({
+      status: 'dead',
+      lockedUntil: null,
+      leaseToken: null,
+      lastError: errorMessage.slice(0, 500),
+    }).where(and(
+      eq(durableEffects.id, effectId),
+      eq(durableEffects.status, 'processing'),
+      eq(durableEffects.leaseToken, leaseToken),
+    )).returning({ id: durableEffects.id });
+    return rows.length > 0;
   }
 }

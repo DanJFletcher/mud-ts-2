@@ -112,6 +112,63 @@ describe('MUDD engine host', () => {
     await expect(engine.stop()).resolves.toBeUndefined();
   });
 
+  it('retries versioned durable effects without duplicating a command effect', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-18T12:00:00.000Z'));
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let attempts = 0;
+    let successfulDeliveries = 0;
+    const effectPlugin: EnginePlugin = {
+      manifest: {
+        id: 'mudd.effect-test',
+        version: '1.0.0',
+        apiVersion: '1.0',
+        category: 'core',
+      },
+      register(context) {
+        context.registerCommand('test.effect-command', z.object({
+          type: z.literal('test.effect-command'),
+          version: z.literal(1),
+          commandId: z.string(),
+          worldInstanceId: z.string(),
+        }), async () => ({
+          streamId: 'effect-test-stream',
+          expectedVersion: 0,
+          events: [{ type: 'test.effect-commanded', version: 1, payload: {} }],
+          effects: [{ type: 'test.delivery', version: 1, payload: { value: 'persisted' } }],
+        }));
+        context.registerEffect('test.delivery', 1, z.object({ value: z.string() }), async (payload) => {
+          attempts += 1;
+          if (attempts === 1) throw new Error('temporary delivery failure');
+          expect(payload.value).toBe('persisted');
+          successfulDeliveries += 1;
+        });
+      },
+    };
+    const store = new InMemoryEventStore();
+    const engine = new EngineHost([effectPlugin], store, authorization, demoWorld);
+    await engine.start();
+    const command = {
+      type: 'test.effect-command',
+      version: 1,
+      commandId: 'effect-command-1',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+    };
+    expect((await engine.dispatch(command, session)).receipt.ok).toBe(true);
+    expect((await engine.dispatch(command, session)).commitOutcome).toBe('duplicate');
+
+    expect(await engine.processPendingEffects()).toBe(1);
+    expect(successfulDeliveries).toBe(0);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(await engine.processPendingEffects()).toBe(1);
+    expect(successfulDeliveries).toBe(1);
+    expect(await engine.processPendingEffects()).toBe(0);
+
+    await engine.stop();
+    log.mockRestore();
+    vi.useRealTimers();
+  });
+
   it('rejects malformed and unknown commands', async () => {
     const { engine } = makeEngine();
     await engine.start();
@@ -560,14 +617,13 @@ describe('MUDD engine host', () => {
       expectedVersion: 1,
       payload: { exitId: 'clearing-to-bridge' },
     };
-    const [first, duplicate] = await Promise.all([
+    const [firstAttempt, secondAttempt] = await Promise.all([
       engine.dispatch(command, session),
       engine.dispatch(command, session),
     ]);
-    expect(first.receipt.ok).toBe(true);
-    expect(duplicate.receipt).toMatchObject({ ok: true, newAggregateVersion: 2 });
-    expect(duplicate.commitOutcome).toBe('duplicate');
-    expect(first.commitOutcome).toBe('committed');
+    expect([firstAttempt.commitOutcome, secondAttempt.commitOutcome].sort()).toEqual(['committed', 'duplicate']);
+    expect(firstAttempt.receipt).toMatchObject({ ok: true, newAggregateVersion: 2 });
+    expect(secondAttempt.receipt).toMatchObject({ ok: true, newAggregateVersion: 2 });
     const competing = await engine.dispatch({ ...command, commandId: 'move-race-b', payload: { exitId: 'clearing-to-tower' } }, session);
     expect(competing.receipt).toMatchObject({ ok: false, code: 'VERSION_CONFLICT' });
     expect((await store.readStream(DEMO_WORLD_INSTANCE_ID, created.streamId!))).toHaveLength(2);

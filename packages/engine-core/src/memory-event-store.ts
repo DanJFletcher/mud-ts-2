@@ -1,5 +1,11 @@
 import type { CommandReceipt } from '@mudd/contracts';
-import type { AppendOutcome, AppendRequest, EventStorePort, StoredGameEvent } from './types.js';
+import type {
+  AppendOutcome,
+  AppendRequest,
+  EventStorePort,
+  StoredEventEffect,
+  StoredGameEvent,
+} from './types.js';
 
 function failure(
   commandId: string,
@@ -13,6 +19,12 @@ function failure(
 export class InMemoryEventStore implements EventStorePort {
   private readonly streams = new Map<string, StoredGameEvent[]>();
   private readonly receipts = new Map<string, { hash: string; outcome: AppendOutcome }>();
+  private readonly effects = new Map<string, {
+    effect: StoredEventEffect;
+    status: 'pending' | 'processing' | 'completed' | 'dead';
+    availableAt: number;
+    leaseExpiresAt: number | null;
+  }>();
 
   async readStream(worldInstanceId: string, streamId: string): Promise<readonly StoredGameEvent[]> {
     return [...(this.streams.get(`${worldInstanceId}:${streamId}`) ?? [])];
@@ -81,8 +93,79 @@ export class InMemoryEventStore implements EventStorePort {
       eventIds: appended.map((event) => event.eventId),
       newAggregateVersion: next.at(-1)?.aggregateVersion ?? revision,
     };
+    for (const [index, effect] of (request.effects ?? []).entries()) {
+      const storedEffect: StoredEventEffect = {
+        ...effect,
+        id: globalThis.crypto.randomUUID(),
+        worldInstanceId: request.worldInstanceId,
+        sourceStreamId: request.streamId,
+        causationCommandId: request.commandId,
+        attempts: 0,
+        leaseToken: '',
+      };
+      this.effects.set(`${request.worldInstanceId}:${request.actorId}:${request.commandId}:${index}`, {
+        effect: storedEffect,
+        status: 'pending',
+        availableAt: Date.now(),
+        leaseExpiresAt: null,
+      });
+    }
     const outcome: AppendOutcome = { kind: 'committed', receipt, streamId: request.streamId, events: appended };
     this.receipts.set(receiptKey, { hash: request.payloadHash, outcome });
     return outcome;
+  }
+
+  async claimNextEffect(leaseMs: number): Promise<StoredEventEffect | undefined> {
+    const now = Date.now();
+    for (const record of this.effects.values()) {
+      const isAvailable = record.status === 'pending' ||
+        (record.status === 'processing' && (record.leaseExpiresAt ?? 0) <= now);
+      if (!isAvailable || record.availableAt > now) continue;
+      const leaseToken = globalThis.crypto.randomUUID();
+      const effect = {
+        ...record.effect,
+        attempts: record.effect.attempts + 1,
+        leaseToken,
+      };
+      record.effect = effect;
+      record.status = 'processing';
+      record.leaseExpiresAt = now + leaseMs;
+      return effect;
+    }
+    return undefined;
+  }
+
+  async completeEffect(effectId: string, leaseToken: string): Promise<boolean> {
+    const record = this.findEffect(effectId, leaseToken);
+    if (!record) return false;
+    record.status = 'completed';
+    record.leaseExpiresAt = null;
+    return true;
+  }
+
+  async retryEffect(effectId: string, leaseToken: string, delayMs: number, _errorMessage: string): Promise<boolean> {
+    const record = this.findEffect(effectId, leaseToken);
+    if (!record) return false;
+    record.status = 'pending';
+    record.availableAt = Date.now() + delayMs;
+    record.leaseExpiresAt = null;
+    return true;
+  }
+
+  async deadLetterEffect(effectId: string, leaseToken: string, _errorMessage: string): Promise<boolean> {
+    const record = this.findEffect(effectId, leaseToken);
+    if (!record) return false;
+    record.status = 'dead';
+    record.leaseExpiresAt = null;
+    return true;
+  }
+
+  private findEffect(effectId: string, leaseToken: string) {
+    const record = [...this.effects.values()].find((candidate) =>
+      candidate.effect.id === effectId &&
+      candidate.status === 'processing' &&
+      candidate.effect.leaseToken === leaseToken,
+    );
+    return record;
   }
 }

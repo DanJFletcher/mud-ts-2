@@ -11,6 +11,21 @@ export interface ProposedDomainEvent {
   readonly payload: Readonly<Record<string, unknown>>;
 }
 
+export interface ProposedEventEffect {
+  readonly type: string;
+  readonly version: number;
+  readonly payload: Readonly<Record<string, unknown>>;
+}
+
+export interface StoredEventEffect extends ProposedEventEffect {
+  readonly id: string;
+  readonly worldInstanceId: string;
+  readonly sourceStreamId: string | null;
+  readonly causationCommandId: string;
+  readonly attempts: number;
+  readonly leaseToken: string;
+}
+
 export interface StoredGameEvent extends ProposedDomainEvent {
   readonly eventId: string;
   readonly worldInstanceId: string;
@@ -31,6 +46,7 @@ export interface AppendRequest {
   readonly payloadHash: string;
   readonly expectedVersion: number;
   readonly events: readonly ProposedDomainEvent[];
+  readonly effects?: readonly ProposedEventEffect[];
 }
 
 export type AppendOutcome =
@@ -46,6 +62,10 @@ export interface EventStorePort {
     payloadHash: string,
   ): Promise<AppendOutcome | undefined>;
   append(request: AppendRequest): Promise<AppendOutcome>;
+  claimNextEffect(leaseMs: number): Promise<StoredEventEffect | undefined>;
+  completeEffect(effectId: string, leaseToken: string): Promise<boolean>;
+  retryEffect(effectId: string, leaseToken: string, delayMs: number, errorMessage: string): Promise<boolean>;
+  deadLetterEffect(effectId: string, leaseToken: string, errorMessage: string): Promise<boolean>;
 }
 
 export interface AuthorizationPort {
@@ -68,6 +88,25 @@ export interface CommandPlan {
   readonly streamId: string;
   readonly expectedVersion: number;
   readonly events: readonly ProposedDomainEvent[];
+  readonly effects?: readonly ProposedEventEffect[];
+}
+
+export interface EventEffectContext {
+  readonly effectId: string;
+  readonly worldInstanceId: string;
+  readonly sourceStreamId: string | null;
+  readonly causationCommandId: string;
+}
+
+export type EventEffectHandler<T = unknown> = (
+  payload: T,
+  context: EventEffectContext,
+) => Promise<void>;
+
+export interface EventEffectDefinition<T = unknown> {
+  readonly version: number;
+  readonly schema: z.ZodType<T>;
+  readonly handle: EventEffectHandler<T>;
 }
 
 export interface QueryContext {
@@ -101,6 +140,7 @@ export interface QueryDefinition<T = unknown, R = unknown> {
 export interface PluginContext {
   registerCommand<T>(type: string, schema: z.ZodType<T>, handler: CommandHandler<T>): void;
   registerQuery<T, R>(type: string, schema: z.ZodType<T>, handler: QueryHandler<T, R>): void;
+  registerEffect<T>(type: string, version: number, schema: z.ZodType<T>, handler: EventEffectHandler<T>): void;
   provideCapability<T>(token: CapabilityToken<T>, implementation: T): void;
   requireCapability<T>(token: CapabilityToken<T>): T;
 }
