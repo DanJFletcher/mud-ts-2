@@ -41,7 +41,7 @@
 
 .focused-client .focused-topbar {
   width: min(100%, 880px);
-  min-height: 62px;
+  min-height: 50px;
   margin: 0 auto;
   display: flex;
   align-items: center;
