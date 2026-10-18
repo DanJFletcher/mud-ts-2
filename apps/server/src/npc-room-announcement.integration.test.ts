@@ -1,6 +1,6 @@
 import { createServer } from 'node:net';
 import { once } from 'node:events';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
   characters: {
@@ -22,11 +22,18 @@ const state = vi.hoisted(() => ({
       locationId: 'other-room',
       archived: false,
     },
+    'character-mover': {
+      characterId: 'character-mover',
+      name: 'Mover',
+      locationId: 'entry-room',
+      archived: false,
+    },
   },
   charactersByOwner: {
     'character-alice': 'player-alice',
     'character-bob': 'player-bob',
     'character-elsewhere': 'player-elsewhere',
+    'character-mover': 'player-mover',
   },
   sessions: new Map(),
   messages: [],
@@ -38,6 +45,7 @@ const playersByAuthId: Record<string, { playerId: string; displayName: string }>
   alice: { playerId: 'player-alice', displayName: 'Alice' },
   bob: { playerId: 'player-bob', displayName: 'Bob' },
   elsewhere: { playerId: 'player-elsewhere', displayName: 'Elsewhere' },
+  mover: { playerId: 'player-mover', displayName: 'Mover' },
 };
 
 vi.mock('@clerk/express', () => ({
@@ -78,7 +86,25 @@ vi.mock('@mudd/engine-core', () => ({
   EngineHost: class {
     async start() {}
     async stop() {}
-    async dispatch() {
+    async dispatch(command: {
+      type?: string;
+      characterId?: string;
+      payload?: { exitId?: string };
+    }) {
+      if (command.type === 'character.move' && command.characterId && command.payload?.exitId) {
+        const character = state.characters[command.characterId as keyof typeof state.characters];
+        const destination = character
+          ? {
+            'entry-room': {
+              'to-arrival-room': 'arrival-room',
+              'to-quiet-room': 'quiet-room',
+            },
+            'arrival-room': { 'back-to-entry': 'entry-room' },
+            'quiet-room': { 'back-to-entry': 'entry-room' },
+          }[character.locationId]?.[command.payload.exitId]
+          : undefined;
+        if (character && destination) character.locationId = destination;
+      }
       return { receipt: { ok: true } };
     }
   },
@@ -98,6 +124,16 @@ vi.mock('@mudd/world-demo', () => ({
         }],
       },
       { id: 'other-room', npcs: [] },
+      { id: 'entry-room', npcs: [] },
+      {
+        id: 'arrival-room',
+        npcs: [{
+          id: 'mara-arrival',
+          name: 'Mara',
+          announcements: ['The north bridge is open.'],
+        }],
+      },
+      { id: 'quiet-room', npcs: [] },
     ],
   },
 }));
@@ -276,6 +312,16 @@ describe('NPC room announcements through the server', () => {
     baseUrl = `http://127.0.0.1:${port}`;
   });
 
+  beforeEach(() => {
+    state.sessions.clear();
+    state.messages.length = 0;
+    state.nextMessageId = 1;
+    state.characters['character-alice'].locationId = 'npc-room';
+    state.characters['character-bob'].locationId = 'npc-room';
+    state.characters['character-elsewhere'].locationId = 'other-room';
+    state.characters['character-mover'].locationId = 'entry-room';
+  });
+
   afterAll(async () => {
     if (server?.listening) {
       await new Promise<void>((resolve, reject) => {
@@ -294,6 +340,25 @@ describe('NPC room announcements through the server', () => {
       body: JSON.stringify({ characterId }),
     });
     expect(response.status).toBe(200);
+  }
+
+  async function move(userId: string, characterId: string, exitId: string) {
+    return fetch(`${baseUrl}/api/commands`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-user': userId,
+      },
+      body: JSON.stringify({
+        type: 'character.move',
+        version: 1,
+        commandId: `move-${characterId}-${exitId}`,
+        worldInstanceId: instanceId,
+        characterId,
+        expectedVersion: 0,
+        payload: { exitId },
+      }),
+    });
   }
 
   async function readRoom(userId: string, roomId: string) {
@@ -332,5 +397,36 @@ describe('NPC room announcements through the server', () => {
 
     const inaccessibleRoomChat = await readRoom('elsewhere', 'npc-room');
     expect(inaccessibleRoomChat.response.status).toBe(409);
+  });
+
+  it('announces on successful movement into an NPC room and applies the arrival cooldown', async () => {
+    await enterWorld('mover', 'character-mover');
+    expect(state.messages).toEqual([]);
+
+    const arrival = await move('mover', 'character-mover', 'to-arrival-room');
+    expect(arrival.status).toBe(200);
+    const arrivalChat = await readRoom('mover', 'arrival-room');
+    expect(arrivalChat.body.messages).toEqual([expect.objectContaining({
+      speakerType: 'npc',
+      speakerName: 'Mara',
+      text: 'The north bridge is open.',
+      roomId: 'arrival-room',
+    })]);
+
+    expect((await move('mover', 'character-mover', 'back-to-entry')).status).toBe(200);
+    expect((await move('mover', 'character-mover', 'to-arrival-room')).status).toBe(200);
+    expect(state.messages).toHaveLength(1);
+  });
+
+  it('does not announce when movement enters a room without an announcing NPC', async () => {
+    await enterWorld('mover', 'character-mover');
+
+    const arrival = await move('mover', 'character-mover', 'to-quiet-room');
+    expect(arrival.status).toBe(200);
+    const quietChat = await readRoom('mover', 'quiet-room');
+
+    expect(quietChat.response.status).toBe(200);
+    expect(quietChat.body.messages).toEqual([]);
+    expect(state.messages).toEqual([]);
   });
 });
