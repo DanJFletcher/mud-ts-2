@@ -155,6 +155,7 @@ describe('MUDD engine host', () => {
     expect(projection).toMatchObject({
       characterId: created.streamId,
       locationId: 'glasswater-bridge',
+      visitedLocationIds: ['mossgate-clearing', 'glasswater-bridge'],
       revision: 3,
       inventory: [{
         id: 'mossgate-loose-stone',
@@ -162,6 +163,19 @@ describe('MUDD engine host', () => {
         description: 'A smooth, palm-sized stone with a pale stripe running through it.',
       }],
     });
+
+    const returned = await engine.dispatch({
+      type: 'character.move',
+      version: 1,
+      commandId: 'return-to-clearing',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: created.streamId,
+      expectedVersion: 3,
+      payload: { exitId: 'bridge-to-clearing' },
+    }, session);
+    expect(returned.receipt).toMatchObject({ ok: true, newAggregateVersion: 4 });
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, created.streamId!))?.visitedLocationIds)
+      .toEqual(['mossgate-clearing', 'glasswater-bridge']);
     await engine.stop();
   });
 

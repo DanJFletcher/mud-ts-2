@@ -17,12 +17,14 @@ import {
   type NpcDialogueProjection,
   type ReadableObjectProjection,
   type ObjectInspectionProjection,
+  type WorldMapProjection,
 } from '@mudd/contracts';
 
 export interface GameSnapshot {
   player: { id: string; displayName: string };
   character?: CharacterProjection;
   location?: LocationProjection;
+  map?: WorldMapProjection;
 }
 
 export interface CharacterRosterSnapshot {

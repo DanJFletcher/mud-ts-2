@@ -112,6 +112,7 @@ export const CharacterProjectionSchema = z.object({
   characterId: IdSchema,
   name: NonEmptyNameSchema,
   locationId: IdSchema,
+  visitedLocationIds: z.array(IdSchema).default([]),
   revision: NonNegativeIntSchema,
   inventory: z.array(InventoryItemProjectionSchema).default([]),
   itemLocations: z.array(z.object({

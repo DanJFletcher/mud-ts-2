@@ -18,6 +18,7 @@ import {
 } from "@mudd/ui";
 import { Compass, Moon, NotebookText, Sun, UserRound, Users } from "lucide-react";
 import { RoomChatPanel } from "./RoomChatPanel.js";
+import { WorldMapPanel } from "./WorldMapPanel.js";
 
 const client = new MuddHttpClient({ worldInstanceId: "mudd-demo-instance" });
 type DialogueProjection = Awaited<ReturnType<MuddHttpClient["talk"]>>;
@@ -132,11 +133,21 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   );
   const [screen, setScreen] = useState<Screen>(currentScreen);
   const [chatFullscreen, setChatFullscreen] = useState(false);
+  const [mapFullscreen, setMapFullscreen] = useState(false);
   const contentRef = useRef<HTMLElement>(null);
   const terminalHistoryRef = useRef<HTMLDivElement>(null);
   const terminalFollowsLatestRef = useRef(true);
   const lastRoomLookIdRef = useRef<string | null>(null);
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  const handleChatFullscreenChange = useCallback((fullscreen: boolean) => {
+    setChatFullscreen(fullscreen);
+    if (fullscreen) setMapFullscreen(false);
+  }, []);
+  const handleMapFullscreenChange = useCallback((fullscreen: boolean) => {
+    setMapFullscreen(fullscreen);
+    if (fullscreen) setChatFullscreen(false);
+  }, []);
 
   const addEntry = useCallback((kind: ActivityEntry["kind"], text: string) => {
     terminalFollowsLatestRef.current = true;
@@ -603,8 +614,14 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     const deltaX = touch.clientX - start.x;
     const deltaY = touch.clientY - start.y;
     if (Math.abs(deltaX) < 80 || Math.abs(deltaY) > 60) return;
-    if (deltaX > 0 && !chatFullscreen) setChatFullscreen(true);
-    if (deltaX < 0 && chatFullscreen) setChatFullscreen(false);
+    if (deltaX > 0) {
+      if (mapFullscreen) handleMapFullscreenChange(false);
+      else if (!chatFullscreen) handleChatFullscreenChange(true);
+    }
+    if (deltaX < 0) {
+      if (chatFullscreen) handleChatFullscreenChange(false);
+      else if (!mapFullscreen) handleMapFullscreenChange(true);
+    }
   };
 
   return (
@@ -1008,7 +1025,12 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                 <RoomChatPanel
                   roomId={snapshot.location.locationId}
                   fullscreen={chatFullscreen}
-                  onFullscreenChange={setChatFullscreen}
+                  onFullscreenChange={handleChatFullscreenChange}
+                />
+                <WorldMapPanel
+                  map={snapshot.map}
+                  fullscreen={mapFullscreen}
+                  onFullscreenChange={handleMapFullscreenChange}
                 />
               </>
             ) : (

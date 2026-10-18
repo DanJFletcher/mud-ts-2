@@ -11,6 +11,11 @@ export const ExitDefinitionSchema = z.object({
   direction: z.string().max(40).optional(),
 }).strict();
 
+export const MapPositionSchema = z.object({
+  x: z.number().int().min(-10000).max(10000),
+  y: z.number().int().min(-10000).max(10000),
+}).strict();
+
 export const ReadableObjectDefinitionSchema = z.object({
   id: IdSchema,
   label: z.string().min(1).max(120),
@@ -86,6 +91,7 @@ export const LocationDefinitionSchema = z.object({
   name: z.string().min(1).max(160),
   description: z.string().min(1),
   regionId: IdSchema.optional(),
+  mapPosition: MapPositionSchema.optional(),
   exits: z.array(ExitDefinitionSchema),
   readables: z.array(ReadableObjectDefinitionSchema).optional(),
   takeables: z.array(TakeableObjectDefinitionSchema).optional(),
@@ -181,7 +187,23 @@ export const LocationProjectionSchema = z.object({
   npcs: z.array(NpcPresenceProjectionSchema).optional(),
 }).strict();
 
+export const WorldMapProjectionSchema = z.object({
+  worldInstanceId: IdSchema,
+  currentLocationId: IdSchema,
+  locations: z.array(z.object({
+    id: IdSchema,
+    name: z.string().min(1).max(160),
+    x: z.number().int().min(-10000).max(10000),
+    y: z.number().int().min(-10000).max(10000),
+  }).strict()).min(1).max(500),
+  connections: z.array(z.object({
+    fromLocationId: IdSchema,
+    toLocationId: IdSchema,
+  }).strict()).max(2000),
+}).strict();
+
 export type ExitDefinition = z.infer<typeof ExitDefinitionSchema>;
+export type MapPosition = z.infer<typeof MapPositionSchema>;
 export type LocationDefinition = z.infer<typeof LocationDefinitionSchema>;
 export type WorldPackDraft = z.infer<typeof WorldPackDraftSchema>;
 export type LocationDescribeQuery = z.infer<typeof LocationDescribeQuerySchema>;
@@ -199,6 +221,7 @@ export type NpcDialogueProjection = z.infer<typeof NpcDialogueProjectionSchema>;
 export type ReadableObjectProjection = z.infer<typeof ReadableObjectProjectionSchema>;
 export type ObjectInspectionProjection = z.infer<typeof ObjectInspectionProjectionSchema>;
 export type LocationProjection = z.infer<typeof LocationProjectionSchema>;
+export type WorldMapProjection = z.infer<typeof WorldMapProjectionSchema>;
 
 export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
   const errors: string[] = [];

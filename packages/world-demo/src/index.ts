@@ -14,6 +14,7 @@ const draft = {
     {
       id: 'mossgate-clearing',
       name: 'Mossgate Clearing',
+      mapPosition: { x: 0, y: 0 },
       description:
         'A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east.',
       readables: [
@@ -82,6 +83,7 @@ const draft = {
     {
       id: 'glasswater-bridge',
       name: 'Glasswater Bridge',
+      mapPosition: { x: 0, y: 1 },
       description:
         'A low stone bridge crosses clear water. Reeds stir below it, and the path returns south or bends east toward a dark roofline.',
       exits: [
@@ -92,6 +94,7 @@ const draft = {
     {
       id: 'bell-tower',
       name: 'Old Bell Tower',
+      mapPosition: { x: 1, y: 0 },
       description:
         'The roofless tower stands quiet above the trees. Its cracked bell hangs still; paths lead west to the clearing and north to the bridge.',
       exits: [

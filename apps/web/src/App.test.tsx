@@ -11,6 +11,7 @@ import { WorldClient } from './App.js';
 
 const characterId = '11111111-1111-4111-8111-111111111111';
 let room: 'clearing' | 'bridge';
+let visitedLocationIds: string[];
 let revision: number;
 let moveError: string | null;
 let itemTaken: boolean;
@@ -77,6 +78,25 @@ function currentLocation() {
   };
 }
 
+function currentWorldMap() {
+  const allLocations = [
+    { id: 'mossgate-clearing', name: 'Mossgate Clearing', x: 0, y: 0 },
+    { id: 'glasswater-bridge', name: 'Glasswater Bridge', x: 0, y: 1 },
+    { id: 'bell-tower', name: 'Old Bell Tower', x: 1, y: 0 },
+  ];
+  const locations = allLocations.filter((location) => visitedLocationIds.includes(location.id));
+  const hasClearing = visitedLocationIds.includes('mossgate-clearing');
+  const hasBridge = visitedLocationIds.includes('glasswater-bridge');
+  return {
+    worldInstanceId: 'mudd-demo-instance',
+    currentLocationId: currentLocation().locationId,
+    locations,
+    connections: hasClearing && hasBridge
+      ? [{ fromLocationId: 'mossgate-clearing', toLocationId: 'glasswater-bridge' }]
+      : [],
+  };
+}
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
@@ -113,6 +133,7 @@ beforeEach(() => {
   window.localStorage.clear();
   delete document.documentElement.dataset.theme;
   room = 'clearing';
+  visitedLocationIds = ['mossgate-clearing'];
   revision = 1;
   moveError = null;
   itemTaken = false;
@@ -158,6 +179,7 @@ beforeEach(() => {
           worldInstanceId: 'mudd-demo-instance',
           name: 'Rowan',
           locationId: currentLocation().locationId,
+          visitedLocationIds,
           revision,
           inventory: [
             ...(itemTaken ? [{
@@ -173,6 +195,7 @@ beforeEach(() => {
           ],
         },
         location: currentLocation(),
+        map: currentWorldMap(),
       });
     }
     if (path === '/api/queries') {
@@ -245,6 +268,8 @@ beforeEach(() => {
       }
       if (moveError) return json({ message: moveError }, 409);
       room = room === 'clearing' ? 'bridge' : 'clearing';
+      const newLocationId = currentLocation().locationId;
+      if (!visitedLocationIds.includes(newLocationId)) visitedLocationIds.push(newLocationId);
       revision += 1;
       return json({ receipt: { ok: true, newAggregateVersion: revision }, streamId: characterId });
     }
@@ -276,6 +301,57 @@ describe('single-character world session client', () => {
     expect(screen.getByText('A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east. One loose stone bears a pale stripe.')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: /Characters/ }));
     expect(onLeaveWorld).toHaveBeenCalledOnce();
+  });
+
+  it('tracks the current room and rooms already visited on the map', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    const map = await screen.findByRole('region', { name: 'World map' });
+    expect(map.querySelector('.focused-world-map__location--current')).toHaveTextContent('Mossgate Clearing');
+    expect(map).not.toHaveTextContent('Glasswater Bridge');
+
+    quickGo('north');
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    await waitFor(() => expect(map).toHaveTextContent('Glasswater Bridge'));
+    expect(map.querySelector('.focused-world-map__location--current')).toHaveTextContent('Glasswater Bridge');
+    expect(map.querySelectorAll('.focused-world-map__path')).toHaveLength(1);
+  });
+
+  it('collapses the map and can still open it full screen', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    const map = await screen.findByRole('region', { name: 'World map' });
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse map' }));
+    expect(map).toHaveClass('focused-world-map--collapsed');
+    expect(screen.getByRole('button', { name: 'Expand map' })).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open map full screen' }));
+    const dialog = await screen.findByRole('dialog', { name: 'World map' });
+    expect(dialog).not.toHaveClass('focused-world-map--collapsed');
+    expect(dialog.querySelector('.focused-world-map__svg')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close full-screen map' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'World map' })).not.toBeInTheDocument());
+    const collapsedMap = screen.getByRole('region', { name: 'World map' });
+    expect(collapsedMap).toHaveClass('focused-world-map--collapsed');
+    fireEvent.click(screen.getByRole('button', { name: 'Expand map' }));
+    expect(screen.getByRole('region', { name: 'World map' })).not.toHaveClass('focused-world-map--collapsed');
+  });
+
+  it('opens the world map full screen with a left swipe and closes with a right swipe or Escape', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('region', { name: 'World map' });
+
+    fireTouchSwipe(screen.getByRole('region', { name: 'Terminal output' }), { x: 220, y: 100 }, { x: 70, y: 105 });
+    const dialog = await screen.findByRole('dialog', { name: 'World map' });
+    expect(dialog).toHaveClass('focused-world-map--fullscreen');
+    expect(screen.getByRole('button', { name: 'Close full-screen map' })).toBeVisible();
+
+    fireTouchSwipe(dialog, { x: 40, y: 100 }, { x: 160, y: 105 });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'World map' })).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open map full screen' }));
+    await screen.findByRole('dialog', { name: 'World map' });
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'World map' })).not.toBeInTheDocument());
   });
 
   it('replaces available paths with shared room chat for player and NPC messages', async () => {

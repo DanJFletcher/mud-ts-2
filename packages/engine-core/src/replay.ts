@@ -20,6 +20,7 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         characterId: created.payload.characterId,
         name: created.payload.name,
         locationId: created.payload.startingLocationId,
+        visitedLocationIds: [created.payload.startingLocationId],
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'character.moved') {
@@ -31,6 +32,9 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
       state = CharacterProjectionSchema.parse({
         ...state,
         locationId: moved.payload.toLocationId,
+        visitedLocationIds: state.visitedLocationIds.includes(moved.payload.toLocationId)
+          ? state.visitedLocationIds
+          : [...state.visitedLocationIds, moved.payload.toLocationId],
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'character.item_taken') {
