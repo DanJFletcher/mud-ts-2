@@ -12,10 +12,12 @@ The engine exposes only a draft combat command shape and has no combat runtime, 
 - The first encounter is one character against one authored NPC, with the character's combat state stored in that character's event stream.
 - Each character receives an independent encounter against the same authored NPC. NPC definitions and combat profiles remain immutable world content; combat does not mutate shared NPC or location state.
 - The combat plugin owns encounter validation, turn resolution, and a deterministic starter ruleset. The generic engine core remains rules-agnostic.
-- The first ruleset supports attack, defend, and flee. It uses authored opponent health/damage and fixed player values; it does not roll dice, change persistent character health, or grant rewards.
+- The first ruleset supports attack, defend, and flee. It uses authored opponent health/damage and fixed player values; it does not roll dice or persist combat injuries.
 - Equipment is character-owned: inventory, equipped slots, and their changes live in the character event stream. Gear modifiers are immutable item attributes authored in world/merchant content; combat reads only the character's currently equipped items and records resolved damage in the combat event.
 - One active encounter is permitted per character. Movement is blocked while it is active; fleeing or resolving the encounter clears that restriction.
 - The existing one-active-character-per-world-session rule is unchanged.
+- The combat plugin owns victory XP, level thresholds, and max-health rewards. A victory writes the combat result followed by a character advancement event in one character-stream append; leveling increases max health for future encounters.
+- The generic engine stores the resulting experience and level but does not calculate advancement rules. Injury remains encounter-local in this slice.
 
 ## Alternatives considered
 
@@ -29,7 +31,7 @@ The engine exposes only a draft combat command shape and has no combat runtime, 
 
 - **Positive:** Commands, outcomes, and replay stay authoritative and character-scoped; retries and concurrent actions use the existing aggregate revision and command receipt behavior.
 - **Negative:** Fighting an NPC does not change what another character sees, and the deterministic starter rules are intentionally simple.
-- **Compatibility/migration:** New optional character projection state and new versioned event types; legacy character streams replay without combat state.
+- **Compatibility/migration:** Advancement is optional in the character projection so legacy streams replay unchanged. Replay accepts combat event versions 1 and 2; version 1 defaults missing opponent style to `steady`. `character.advancement_awarded` is a new version-1 event. No database migration is required.
 - **Security/abuse/trust:** The server resolves the NPC, location, stats, current encounter, damage, and outcome from trusted world content and replayed character state. Client commands express only an action and target.
 - **Performance/operational:** Combat is stored in the existing character stream; no new table, aggregate writer, or migration is required.
 - **Rollback/reversibility:** Remove the combat plugin and authored combat profile; historical combat events remain readable by replay code. Do not remove their schemas after they have been persisted.
@@ -40,7 +42,13 @@ The engine exposes only a draft combat command shape and has no combat runtime, 
 - The event changes one slot only. Equipping validates that the referenced item is carried and its authored slot matches; dropping an equipped item is rejected until it is unequipped.
 - Item definitions remain immutable world content, and their combat bonuses are copied onto the character-owned item when acquired. No shared item/world aggregate or database migration is introduced.
 - Combat derives outgoing damage from base attack plus the equipped weapon bonus, and incoming damage from authored opponent damage minus equipped armor reduction (floored at zero). The resolved event persists the result; replay does not recalculate balance rules.
-- This does not introduce levels, experience, persistent health, random rolls, loot, or shared NPC state. Revisit those decisions before implementing them.
+
+## Addendum: character advancement
+
+- Each victory awards the combat plugin's configured experience reward. The plugin applies cumulative thresholds and caps advancement at its configured maximum level; each level adds max health to future encounters.
+- The resolved combat event and its advancement reward are appended atomically to the same character stream. Duplicate command IDs use the engine's existing receipt; replay verifies the reward matches a victory, prevents duplicate encounter rewards, and uses recorded level/experience rather than recalculating thresholds.
+- One active character per world session remains unchanged. Progression belongs to the character aggregate, so another character's victories cannot affect it.
+- Persistent injuries, healing, loot, shared NPC state, and random rolls remain deferred; injury stays local to an encounter in this slice.
 
 ## Addendum: authored opponent styles
 
@@ -48,7 +56,7 @@ The engine exposes only a draft combat command shape and has no combat runtime, 
 - `steady` opponents strike after each player attack as before. `heavy` opponents telegraph on odd-numbered encounter rounds and strike on even-numbered rounds; defending still blocks the strike. `guardian` opponents reduce each incoming player hit by their authored defense value (default 1) and counterattack after attacks.
 - The encounter projection snapshots the opponent style. The character-scoped combat event records the resolved damage and narration, so replay never re-runs the style logic. NPC definitions remain immutable shared world content; encounters and health remain character-specific.
 - The combat event advances to schema version 2. Replay continues to accept version-1 events and interprets their missing style as `steady`.
-- This adds no shared NPC health, random rolls, persistent injuries, rewards, or database migration.
+- This adds no shared NPC health, random rolls, persistent injuries, or database migration.
 
 ## Verification
 

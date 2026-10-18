@@ -1,13 +1,21 @@
 import {
+  CharacterAdvancementAwardedEventSchema,
   CombatActionCommandSchema,
   CombatActionResolvedEventV2Schema,
 } from '@mudd/contracts';
-import type { EnginePlugin } from '@mudd/engine-core';
+import type { EnginePlugin, ProposedDomainEvent } from '@mudd/engine-core';
 import { RuleViolationError } from '@mudd/engine-core';
 import { characterStateCapability, type CharacterStateCapability } from './character.js';
 
-const PLAYER_MAX_HEALTH = 6;
+const PLAYER_BASE_MAX_HEALTH = 6;
+const PLAYER_HEALTH_PER_LEVEL = 2;
 const PLAYER_ATTACK_DAMAGE = 2;
+const VICTORY_EXPERIENCE_REWARD = 10;
+const MAX_LEVEL = 10;
+
+function experienceRequiredForNextLevel(level: number): number {
+  return level * 20;
+}
 
 export const combatPlugin: EnginePlugin = {
   manifest: {
@@ -17,7 +25,10 @@ export const combatPlugin: EnginePlugin = {
     category: 'first-party',
     requires: [characterStateCapability.id],
     requiredPlugins: { 'mudd.character': '^1.0.0' },
-    eventSchemaVersions: { 'character.combat_action_resolved': 2 },
+    eventSchemaVersions: {
+      'character.combat_action_resolved': 2,
+      'character.advancement_awarded': 1,
+    },
   },
   register({ registerCommand, requireCapability }) {
     const characterState = requireCapability<CharacterStateCapability>(characterStateCapability);
@@ -45,6 +56,8 @@ export const combatPlugin: EnginePlugin = {
         if (!npc?.combatProfile) {
           throw new RuleViolationError('That opponent is not available here.');
         }
+        const playerMaxHealth = PLAYER_BASE_MAX_HEALTH
+          + ((character.advancement?.level ?? 1) - 1) * PLAYER_HEALTH_PER_LEVEL;
         encounter = {
           encounterId: context.makeId(),
           locationId: character.locationId,
@@ -52,8 +65,8 @@ export const combatPlugin: EnginePlugin = {
           opponentName: npc.name,
           opponentStyle: npc.combatProfile.style ?? 'steady',
           round: 0,
-          playerHealth: PLAYER_MAX_HEALTH,
-          playerMaxHealth: PLAYER_MAX_HEALTH,
+          playerHealth: playerMaxHealth,
+          playerMaxHealth,
           opponentHealth: npc.combatProfile.maxHealth,
           opponentMaxHealth: npc.combatProfile.maxHealth,
           status: 'active',
@@ -134,10 +147,34 @@ export const combatPlugin: EnginePlugin = {
         encounter: resolvedEncounter,
       };
       CombatActionResolvedEventV2Schema.shape.payload.parse(payload);
+      const events: ProposedDomainEvent[] = [
+        { type: 'character.combat_action_resolved', version: 2, payload },
+      ];
+      if (status === 'victory') {
+        const currentAdvancement = character.advancement ?? { experience: 0, level: 1 };
+        const totalExperience = currentAdvancement.experience + VICTORY_EXPERIENCE_REWARD;
+        let level = currentAdvancement.level;
+        while (level < MAX_LEVEL && totalExperience >= experienceRequiredForNextLevel(level)) {
+          level += 1;
+        }
+        const advancementPayload = {
+          characterId: character.characterId,
+          encounterId: resolvedEncounter.encounterId,
+          experienceAwarded: VICTORY_EXPERIENCE_REWARD,
+          totalExperience,
+          level,
+        };
+        CharacterAdvancementAwardedEventSchema.shape.payload.parse(advancementPayload);
+        events.push({
+          type: 'character.advancement_awarded',
+          version: 1,
+          payload: advancementPayload,
+        });
+      }
       return {
         streamId: character.characterId,
         expectedVersion: command.expectedVersion,
-        events: [{ type: 'character.combat_action_resolved', version: 2, payload }],
+        events,
       };
     });
   },

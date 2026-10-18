@@ -1,7 +1,7 @@
 /** PROPOSED minimal character intent/view, independent of race/class rulesets. */
 import { z } from 'zod';
 import { ClientCommandBaseSchema, DomainEventBaseSchema } from './protocol.js';
-import { IdSchema, NonEmptyNameSchema, NonNegativeIntSchema, ContractVersionSchema } from './ids.js';
+import { IdSchema, NonEmptyNameSchema, NonNegativeIntSchema, PositiveIntSchema, ContractVersionSchema } from './ids.js';
 import { CombatEncounterProjectionSchema } from './combat.js';
 
 export const InventoryItemProjectionSchema = z.object({
@@ -32,6 +32,23 @@ export const CharacterEquipmentSchema = z.object({
 export const CharacterWalletSchema = z.object({
   currencyId: IdSchema,
   balance: NonNegativeIntSchema.max(2_147_483_647),
+}).strict();
+
+export const CharacterAdvancementProjectionSchema = z.object({
+  experience: NonNegativeIntSchema.max(2_147_483_647),
+  level: PositiveIntSchema,
+  lastRewardedEncounterId: IdSchema.optional(),
+}).strict();
+
+export const CharacterAdvancementAwardedEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('character.advancement_awarded'),
+  payload: z.object({
+    characterId: IdSchema,
+    encounterId: IdSchema,
+    experienceAwarded: PositiveIntSchema,
+    totalExperience: NonNegativeIntSchema.max(2_147_483_647),
+    level: PositiveIntSchema,
+  }).strict(),
 }).strict();
 
 export const CreateCharacterCommandSchema = z.object({
@@ -218,6 +235,7 @@ export const CharacterProjectionSchema = z.object({
   inventory: z.array(InventoryItemProjectionSchema).default([]),
   equipment: CharacterEquipmentSchema.default({ weaponItemId: null, armorItemId: null }),
   wallet: CharacterWalletSchema.optional(),
+  advancement: CharacterAdvancementProjectionSchema.optional(),
   combat: CombatEncounterProjectionSchema.optional(),
   purchasedMerchantListingIds: z.array(IdSchema).default([]),
   itemLocations: z.array(z.object({
@@ -266,6 +284,8 @@ export type InventoryItemProjection = z.infer<typeof InventoryItemProjectionSche
 export type CharacterWallet = z.infer<typeof CharacterWalletSchema>;
 export type InitializeCharacterWalletCommand = z.infer<typeof InitializeCharacterWalletCommandSchema>;
 export type CharacterWalletInitializedEvent = z.infer<typeof CharacterWalletInitializedEventSchema>;
+export type CharacterAdvancementProjection = z.infer<typeof CharacterAdvancementProjectionSchema>;
+export type CharacterAdvancementAwardedEvent = z.infer<typeof CharacterAdvancementAwardedEventSchema>;
 export type RenameCharacterCommand = z.infer<typeof RenameCharacterCommandSchema>;
 export type ArchiveCharacterCommand = z.infer<typeof ArchiveCharacterCommandSchema>;
 export type RestoreCharacterCommand = z.infer<typeof RestoreCharacterCommandSchema>;

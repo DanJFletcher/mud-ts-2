@@ -85,7 +85,7 @@ describe('turn-based PvE combat', () => {
     const defendedState = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, firstId))!;
     expect(defendedState.combat).toMatchObject({ round: 2, playerHealth: 5, opponentHealth: 2, status: 'active' });
 
-    await client.performCombatAction(
+    const victory = await client.performCombatAction(
       firstId,
       'attack',
       defendedState.revision,
@@ -94,6 +94,21 @@ describe('turn-based PvE combat', () => {
     );
     const wonState = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, firstId))!;
     expect(wonState.combat).toMatchObject({ status: 'victory', playerHealth: 5, opponentHealth: 0 });
+    expect(wonState.advancement).toEqual({
+      experience: 10,
+      level: 1,
+      lastRewardedEncounterId: defendedState.combat!.encounterId,
+    });
+    const eventCountAfterVictory = (await store.readStream(DEMO_WORLD_INSTANCE_ID, firstId)).length;
+    const retriedVictory = await client.performCombatAction(
+      firstId,
+      'attack',
+      defendedState.revision,
+      { encounterId: defendedState.combat!.encounterId },
+      'combat-finish',
+    );
+    expect(retriedVictory.receipt).toEqual(victory.receipt);
+    expect(await store.readStream(DEMO_WORLD_INSTANCE_ID, firstId)).toHaveLength(eventCountAfterVictory);
     await expect(client.move(firstId, 'clearing-to-bridge', wonState.revision, 'combat-move-after'))
       .resolves.toMatchObject({ receipt: { ok: true } });
 
@@ -178,6 +193,52 @@ describe('turn-based PvE combat', () => {
       playerHealth: 5,
       lastNarration: 'You deal 1 damage to Practice Guardian. Its guard softens your blow. It strikes back for 1.',
     });
+  });
+
+  it('awards experience once per victory and raises health on the next encounter after leveling up', async () => {
+    const { client, store } = makeClient();
+    const created = await client.createCharacter('Rowan', 'combat-advancement-create');
+    const characterId = created.streamId!;
+
+    async function winEncounter(prefix: string) {
+      let state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+      let commandNumber = 0;
+      do {
+        await client.performCombatAction(
+          characterId,
+          'attack',
+          state.revision,
+          state.combat?.status === 'active'
+            ? { encounterId: state.combat.encounterId }
+            : { targetNpcId: 'mossgate-training-sentinel' },
+          `${prefix}-${++commandNumber}`,
+        );
+        state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+      } while (state.combat?.status !== 'victory');
+      return state;
+    }
+
+    const firstVictory = await winEncounter('combat-advancement-first');
+    expect(firstVictory.advancement).toMatchObject({ experience: 10, level: 1 });
+
+    const secondVictory = await winEncounter('combat-advancement-second');
+    expect(secondVictory.advancement).toMatchObject({ experience: 20, level: 2 });
+    expect(secondVictory.advancement?.lastRewardedEncounterId).toBe(secondVictory.combat?.encounterId);
+
+    await client.performCombatAction(
+      characterId,
+      'attack',
+      secondVictory.revision,
+      { targetNpcId: 'mossgate-training-sentinel' },
+      'combat-advancement-third-start',
+    );
+    const thirdEncounter = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(thirdEncounter.combat).toMatchObject({
+      status: 'active',
+      playerHealth: 7,
+      playerMaxHealth: 8,
+    });
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))).toEqual(thirdEncounter);
   });
 
   it('records a nonlethal defeat when an authored opponent overwhelms the player', async () => {

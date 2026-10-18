@@ -597,6 +597,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     recordCommand = false,
   ) => {
     if (!snapshot?.character || !snapshot.location || pending) return;
+    const previousExperience = snapshot.character.advancement?.experience ?? 0;
     const activeEncounter = snapshot.character.combat?.status === "active"
       ? snapshot.character.combat
       : undefined;
@@ -624,7 +625,12 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
       setConnectionError("");
       const encounter = nextSnapshot.character?.combat;
       if (encounter) {
-        addEntry("narration", `${encounter.lastNarration} You: ${encounter.playerHealth}/${encounter.playerMaxHealth}. ${encounter.opponentName}: ${encounter.opponentHealth}/${encounter.opponentMaxHealth}.`);
+        const advancement = nextSnapshot.character?.advancement;
+        const rewardNarration = encounter.status === "victory" &&
+          advancement?.lastRewardedEncounterId === encounter.encounterId
+          ? ` You gain ${advancement.experience - previousExperience} XP. Level ${advancement.level}.`
+          : "";
+        addEntry("narration", `${encounter.lastNarration}${rewardNarration} You: ${encounter.playerHealth}/${encounter.playerMaxHealth}. ${encounter.opponentName}: ${encounter.opponentHealth}/${encounter.opponentMaxHealth}.`);
       }
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "The combat action could not be completed.");
@@ -1762,6 +1768,14 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                   <div className="focused-detail"><span>Journey</span><strong>{snapshot.character ? "Underway" : "Not started"}</strong></div>
                    <div className="focused-detail"><span>World</span><strong>The Waystone Path</strong></div>
                    <div className="focused-detail focused-detail--wide"><span>Current location</span><strong>{snapshot.location?.title || "—"}</strong></div>
+                    <div className="focused-detail focused-detail--wide">
+                      <span>Advancement</span>
+                      <strong>
+                        {snapshot.character?.advancement
+                          ? `Level ${snapshot.character.advancement.level} · ${snapshot.character.advancement.experience} XP`
+                          : "No combat victories yet"}
+                      </strong>
+                    </div>
                     <div className="focused-detail focused-detail--wide">
                       <span>Equipment</span>
                       <div className="focused-equipment">

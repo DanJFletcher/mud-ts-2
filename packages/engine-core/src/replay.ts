@@ -15,6 +15,7 @@ import {
   CharacterArchivedEventSchema,
   CharacterRestoredEventSchema,
   CharacterWalletInitializedEventSchema,
+  CharacterAdvancementAwardedEventSchema,
   MerchantItemPurchasedEventSchema,
   CombatActionResolvedEventSchema,
 } from '@mudd/contracts';
@@ -102,6 +103,26 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
       state = CharacterProjectionSchema.parse({
         ...state,
         combat,
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.advancement_awarded') {
+      if (!state) throw new Error('Advancement event encountered before character creation.');
+      const awarded = CharacterAdvancementAwardedEventSchema.parse(publicEvent);
+      const { characterId, encounterId, experienceAwarded, totalExperience, level } = awarded.payload;
+      const previousAdvancement = state.advancement;
+      if (
+        characterId !== state.characterId ||
+        state.combat?.status !== 'victory' ||
+        state.combat.encounterId !== encounterId ||
+        previousAdvancement?.lastRewardedEncounterId === encounterId ||
+        totalExperience !== (previousAdvancement?.experience ?? 0) + experienceAwarded ||
+        level < (previousAdvancement?.level ?? 1)
+      ) {
+        throw new Error(`Invalid character advancement event at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        advancement: { experience: totalExperience, level, lastRewardedEncounterId: encounterId },
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'character.moved') {

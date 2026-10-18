@@ -31,6 +31,54 @@ const created = event('character.created', 1, {
 });
 
 describe('character event replay validation', () => {
+  it('keeps legacy character streams valid without progression and rejects duplicate victory rewards', () => {
+    expect(replayCharacter([created])?.advancement).toBeUndefined();
+
+    const victory = event('character.combat_action_resolved', 2, {
+      characterId: 'character-test',
+      damageDealt: 4,
+      damageTaken: 0,
+      encounter: {
+        encounterId: 'encounter-test',
+        locationId: 'mossgate-clearing',
+        opponentNpcId: 'sentinel',
+        opponentName: 'Practice Sentinel',
+        round: 1,
+        playerHealth: 6,
+        playerMaxHealth: 6,
+        opponentHealth: 0,
+        opponentMaxHealth: 4,
+        status: 'victory',
+        lastAction: 'attack',
+        lastNarration: 'You defeat the sentinel.',
+      },
+    });
+    const reward = event('character.advancement_awarded', 3, {
+      characterId: 'character-test',
+      encounterId: 'encounter-test',
+      experienceAwarded: 10,
+      totalExperience: 10,
+      level: 1,
+    });
+    expect(replayCharacter([created, victory, reward])?.advancement).toEqual({
+      experience: 10,
+      level: 1,
+      lastRewardedEncounterId: 'encounter-test',
+    });
+    expect(() => replayCharacter([
+      created,
+      victory,
+      reward,
+      event('character.advancement_awarded', 4, {
+        characterId: 'character-test',
+        encounterId: 'encounter-test',
+        experienceAwarded: 10,
+        totalExperience: 20,
+        level: 2,
+      }),
+    ])).toThrow(/invalid character advancement event/i);
+  });
+
   it('rejects unknown event types instead of silently skipping them', () => {
     expect(() => replayCharacter([
       created,
