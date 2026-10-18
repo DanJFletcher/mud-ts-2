@@ -195,6 +195,131 @@ describe('turn-based PvE combat', () => {
     });
   });
 
+  it('uses a carried healing draught during combat, applies incoming damage, and consumes it once', async () => {
+    const strongSentinelWorld = {
+      ...demoWorld,
+      locations: demoWorld.locations.map((location) => ({
+        ...location,
+        npcs: location.npcs?.map((npc) => npc.id === 'mossgate-training-sentinel'
+          ? { ...npc, combatProfile: { maxHealth: 12, attackDamage: 2, style: 'steady' as const } }
+          : npc),
+      })),
+    };
+    const { client, store } = makeClient(strongSentinelWorld);
+    const created = await client.createCharacter('Willow', 'combat-potion-create');
+    const characterId = created.streamId!;
+    let state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+
+    await client.move(characterId, 'clearing-to-bridge', state.revision, 'combat-potion-to-bridge');
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    await client.move(characterId, 'bridge-to-reedbank', state.revision, 'combat-potion-to-stalls');
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    await client.purchaseMerchantListing(
+      characterId,
+      'sella-reedbank-merchant',
+      'reedbank-healing-draught',
+      state.revision,
+      'combat-potion-buy',
+    );
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    const potion = state.inventory.find((item) => item.consumable?.effect === 'heal')!;
+    expect(potion.consumable?.amount).toBe(3);
+
+    await client.move(characterId, 'reedbank-to-bridge', state.revision, 'combat-potion-back-bridge');
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    await client.move(characterId, 'bridge-to-clearing', state.revision, 'combat-potion-back-clearing');
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    await client.performCombatAction(
+      characterId,
+      'attack',
+      state.revision,
+      { targetNpcId: 'mossgate-training-sentinel' },
+      'combat-potion-start',
+    );
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(state.combat).toMatchObject({ playerHealth: 4, opponentHealth: 10, status: 'active' });
+
+    const useResult = await client.performCombatAction(
+      characterId,
+      'use-item',
+      state.revision,
+      { encounterId: state.combat!.encounterId, itemId: potion.id },
+      'combat-potion-use',
+    );
+    const eventsAfterUse = await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId);
+    state = replayCharacter(eventsAfterUse)!;
+    expect(state.combat).toMatchObject({
+      round: 2,
+      playerHealth: 4,
+      opponentHealth: 10,
+      lastAction: 'use-item',
+      lastNarration: 'You use the small healing draught and recover 2 health. It strikes back for 2.',
+    });
+    expect(state.inventory.some((item) => item.id === potion.id)).toBe(false);
+    expect(state.itemLocations.some((entry) => entry.item.id === potion.id)).toBe(false);
+    expect(eventsAfterUse.at(-1)).toMatchObject({
+      type: 'character.combat_action_resolved',
+      version: 3,
+      payload: { consumedItemId: potion.id, healingDone: 2 },
+    });
+
+    const retry = await client.performCombatAction(
+      characterId,
+      'use-item',
+      state.revision - 1,
+      { encounterId: state.combat!.encounterId, itemId: potion.id },
+      'combat-potion-use',
+    );
+    expect(retry.receipt).toEqual(useResult.receipt);
+    expect(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).toHaveLength(eventsAfterUse.length);
+  });
+
+  it('rejects a healing item at full health without consuming it or advancing combat', async () => {
+    const { client, store } = makeClient();
+    const created = await client.createCharacter('Elm', 'combat-potion-full-create');
+    const characterId = created.streamId!;
+    let state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    await client.move(characterId, 'clearing-to-bridge', state.revision, 'combat-potion-full-to-bridge');
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    await client.move(characterId, 'bridge-to-reedbank', state.revision, 'combat-potion-full-to-stalls');
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    await client.purchaseMerchantListing(
+      characterId,
+      'sella-reedbank-merchant',
+      'reedbank-healing-draught',
+      state.revision,
+      'combat-potion-full-buy',
+    );
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    const potion = state.inventory.find((item) => item.consumable?.effect === 'heal')!;
+    await client.move(characterId, 'reedbank-to-bridge', state.revision, 'combat-potion-full-back-bridge');
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    await client.move(characterId, 'bridge-to-clearing', state.revision, 'combat-potion-full-back-clearing');
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    await client.performCombatAction(
+      characterId,
+      'attack',
+      state.revision,
+      { targetNpcId: 'mossgate-practice-mauler' },
+      'combat-potion-full-start',
+    );
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(state.combat).toMatchObject({ playerHealth: 6, status: 'active' });
+    const streamLength = (await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).length;
+
+    await expect(client.performCombatAction(
+      characterId,
+      'use-item',
+      state.revision,
+      { encounterId: state.combat!.encounterId, itemId: potion.id },
+      'combat-potion-full-use',
+    )).rejects.toThrow('You are already at full health.');
+    const unchanged = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(unchanged.combat).toEqual(state.combat);
+    expect(unchanged.inventory.some((item) => item.id === potion.id)).toBe(true);
+    expect(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).toHaveLength(streamLength);
+  });
+
   it('awards experience once per victory and raises health on the next encounter after leveling up', async () => {
     const { client, store } = makeClient();
     const created = await client.createCharacter('Rowan', 'combat-advancement-create');

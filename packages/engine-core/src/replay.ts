@@ -80,22 +80,46 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         ...resolved.payload.encounter,
         opponentStyle: resolved.payload.encounter.opponentStyle ?? 'steady',
       };
+      const healingDone = 'healingDone' in resolved.payload ? resolved.payload.healingDone : 0;
+      const consumedItemId = 'consumedItemId' in resolved.payload
+        ? resolved.payload.consumedItemId
+        : undefined;
       const previous = state.combat;
+      const consumedItem = consumedItemId
+        ? state.inventory.find((item) => item.id === consumedItemId)
+        : undefined;
+      const combatItemUseIsValid = combat.lastAction === 'use-item'
+        ? event.version === 3 &&
+          Boolean(consumedItem?.consumable) &&
+          !consumedItem?.equipment &&
+          state.equipment.weaponItemId !== consumedItemId &&
+          state.equipment.armorItemId !== consumedItemId
+        : !consumedItemId && healingDone === 0;
       if (
         resolved.payload.characterId !== state.characterId ||
         combat.locationId !== state.locationId ||
+        !combatItemUseIsValid ||
         (previous?.status === 'active' && (
           combat.encounterId !== previous.encounterId ||
           combat.opponentNpcId !== previous.opponentNpcId ||
           combat.opponentStyle !== previous.opponentStyle ||
           combat.round !== previous.round + 1 ||
-          combat.playerHealth > previous.playerHealth ||
-          combat.opponentHealth > previous.opponentHealth
+          combat.opponentHealth > previous.opponentHealth ||
+          (combat.lastAction === 'use-item' && !consumedItem) ||
+          (combat.lastAction === 'use-item'
+            ? healingDone !== Math.min(
+              consumedItem.consumable?.amount ?? 0,
+              previous.playerMaxHealth - previous.playerHealth,
+            )
+            : healingDone !== 0) ||
+          combat.playerHealth !== previous.playerHealth + healingDone - resolved.payload.damageTaken
         )) ||
         (previous?.status !== 'active' && (
           combat.lastAction !== 'attack' ||
           combat.round !== 1 ||
-          combat.encounterId === previous?.encounterId
+          combat.encounterId === previous?.encounterId ||
+          healingDone !== 0 ||
+          Boolean(consumedItemId)
         ))
       ) {
         throw new Error(`Invalid combat action at revision ${event.aggregateVersion}.`);
@@ -103,6 +127,10 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
       state = CharacterProjectionSchema.parse({
         ...state,
         combat,
+        ...(consumedItemId ? {
+          inventory: state.inventory.filter((item) => item.id !== consumedItemId),
+          itemLocations: state.itemLocations.filter((entry) => entry.item.id !== consumedItemId),
+        } : {}),
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'character.advancement_awarded') {

@@ -296,7 +296,7 @@ export class MuddHttpClient {
     characterId: string,
     action: CombatActionId,
     expectedVersion: number,
-    target: { encounterId?: string; targetNpcId?: string },
+    target: { encounterId?: string; targetNpcId?: string; itemId?: string },
     commandId = crypto.randomUUID(),
   ): Promise<CommandResponse> {
     const command = CombatActionCommandSchema.parse({

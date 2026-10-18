@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { ClientCommandBaseSchema, DomainEventBaseSchema } from './protocol.js';
 import { IdSchema, NonNegativeIntSchema, PositiveIntSchema } from './ids.js';
 
-export const CombatActionIdSchema = z.enum(['attack', 'defend', 'flee']);
+export const CombatActionIdSchema = z.enum(['attack', 'defend', 'flee', 'use-item']);
 export const CombatOutcomeSchema = z.enum(['active', 'victory', 'defeat', 'fled']);
 export const CombatStyleSchema = z.enum(['steady', 'heavy', 'guardian']);
 
@@ -50,6 +50,7 @@ export const CombatActionCommandSchema = ClientCommandBaseSchema.extend({
     action: CombatActionIdSchema,
     encounterId: IdSchema.optional(),
     targetNpcId: IdSchema.optional(),
+    itemId: IdSchema.optional(),
   }).strict().superRefine((payload, context) => {
     if (payload.action === 'attack' && !payload.encounterId && !payload.targetNpcId) {
       context.addIssue({
@@ -62,7 +63,21 @@ export const CombatActionCommandSchema = ClientCommandBaseSchema.extend({
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['encounterId'],
-        message: 'Defend and flee require an active encounter.',
+        message: 'This action requires an active encounter.',
+      });
+    }
+    if (payload.action === 'use-item' && !payload.itemId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['itemId'],
+        message: 'Using an item requires an item ID.',
+      });
+    }
+    if (payload.action !== 'use-item' && payload.itemId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['itemId'],
+        message: 'Only the use-item action accepts an item ID.',
       });
     }
     if (payload.encounterId && payload.targetNpcId) {
@@ -82,6 +97,27 @@ const CombatActionResolvedPayloadSchema = z.object({
   encounter: CombatEncounterProjectionSchema,
 }).strict();
 
+const CombatActionResolvedPayloadV3Schema = CombatActionResolvedPayloadSchema.extend({
+  consumedItemId: IdSchema.optional(),
+  healingDone: NonNegativeIntSchema.max(1000).default(0),
+}).strict().superRefine((payload, context) => {
+  const usedItem = payload.encounter.lastAction === 'use-item';
+  if (usedItem !== Boolean(payload.consumedItemId)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['consumedItemId'],
+      message: 'Combat item use must record exactly one consumed item.',
+    });
+  }
+  if (usedItem !== (payload.healingDone > 0)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['healingDone'],
+      message: 'Combat item use must record positive healing.',
+    });
+  }
+});
+
 export const CombatActionResolvedEventV1Schema = DomainEventBaseSchema.extend({
   type: z.literal('character.combat_action_resolved'),
   version: z.literal(1),
@@ -94,9 +130,16 @@ export const CombatActionResolvedEventV2Schema = DomainEventBaseSchema.extend({
   payload: CombatActionResolvedPayloadSchema,
 }).strict();
 
+export const CombatActionResolvedEventV3Schema = DomainEventBaseSchema.extend({
+  type: z.literal('character.combat_action_resolved'),
+  version: z.literal(3),
+  payload: CombatActionResolvedPayloadV3Schema,
+}).strict();
+
 export const CombatActionResolvedEventSchema = z.discriminatedUnion('version', [
   CombatActionResolvedEventV1Schema,
   CombatActionResolvedEventV2Schema,
+  CombatActionResolvedEventV3Schema,
 ]);
 
 export type CombatActionId = z.infer<typeof CombatActionIdSchema>;

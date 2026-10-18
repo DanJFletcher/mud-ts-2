@@ -38,6 +38,7 @@ let roomChatMessages: TestRoomChatMessage[];
 let nextRoomChatMessageId: number;
 let walletBalance: number;
 let merchantLanternPurchased: boolean;
+let healingDraughtCarried: boolean;
 let combatEncounter: {
   encounterId: string;
   locationId: string;
@@ -49,7 +50,7 @@ let combatEncounter: {
   opponentHealth: number;
   opponentMaxHealth: number;
   status: 'active' | 'victory' | 'defeat' | 'fled';
-  lastAction: 'attack' | 'defend' | 'flee';
+  lastAction: 'attack' | 'defend' | 'flee' | 'use-item';
   lastNarration: string;
 } | null;
 
@@ -257,6 +258,7 @@ beforeEach(() => {
   nextRoomChatMessageId = 1;
   walletBalance = 12;
   merchantLanternPurchased = false;
+  healingDraughtCarried = false;
   combatEncounter = null;
   apiFetch.mockReset();
   apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
@@ -326,6 +328,12 @@ beforeEach(() => {
               id: 'item-reedbank-brass-lantern',
               label: 'Brass lantern',
               description: 'A compact brass lantern with a sliding shutter and a soot-dark wick.',
+            }] : []),
+            ...(healingDraughtCarried ? [{
+              id: 'item-reedbank-healing-draught',
+              label: 'Small healing draught',
+              description: 'A stoppered glass vial of herbal tonic.',
+              consumable: { effect: 'heal' as const, amount: 3 },
             }] : []),
           ],
         },
@@ -424,9 +432,10 @@ beforeEach(() => {
           targetId?: string;
           choiceId?: string;
           objectId?: string;
-          action?: 'attack' | 'defend' | 'flee';
+          action?: 'attack' | 'defend' | 'flee' | 'use-item';
           encounterId?: string;
           targetNpcId?: string;
+          itemId?: string;
         };
       };
       if (command.type === 'combat.action') {
@@ -450,14 +459,26 @@ beforeEach(() => {
             lastNarration: 'You deal 2 damage to Practice Sentinel. It strikes back for 1.',
           };
         } else {
-          combatEncounter = {
-            ...combatEncounter,
-            round: combatEncounter.round + 1,
-            lastAction: action ?? combatEncounter.lastAction,
-            lastNarration: action === 'defend'
-              ? 'You guard against Practice Sentinel’s padded strike and take no damage.'
-              : combatEncounter.lastNarration,
-          };
+          if (action === 'use-item' && healingDraughtCarried &&
+            command.payload?.itemId === 'item-reedbank-healing-draught') {
+            healingDraughtCarried = false;
+            combatEncounter = {
+              ...combatEncounter,
+              round: combatEncounter.round + 1,
+              playerHealth: Math.min(combatEncounter.playerMaxHealth, combatEncounter.playerHealth + 3) - 1,
+              lastAction: 'use-item',
+              lastNarration: 'You use the small healing draught and recover 3 health. It strikes back for 1.',
+            };
+          } else {
+            combatEncounter = {
+              ...combatEncounter,
+              round: combatEncounter.round + 1,
+              lastAction: action ?? combatEncounter.lastAction,
+              lastNarration: action === 'defend'
+                ? 'You guard against Practice Sentinel’s padded strike and take no damage.'
+                : combatEncounter.lastNarration,
+            };
+          }
         }
         revision += 1;
         return json({
@@ -982,7 +1003,7 @@ describe('single-character world session client', () => {
     expect(history).toHaveTextContent('> help');
     expect(history).toHaveTextContent('take <item> | take all — Pick up one or all items in the current room.');
     expect(history).toHaveTextContent('talk <npc> [about <topic>] — Speak privately with someone in the current room.');
-    expect(history).toHaveTextContent('use <item> on <target> — Use a carried item on an interactive target here.');
+    expect(history).toHaveTextContent('use <item> on <target> | use <healing item> — Use a room item or heal during combat.');
     expect(history).toHaveTextContent('Quick actions include available movement, item, equipment, merchant, dialogue, and combat actions.');
     expect(history).toHaveTextContent('equip <item> — Equip a carried weapon or armor item.');
 
@@ -1041,6 +1062,63 @@ describe('single-character world session client', () => {
         body.payload.itemId === 'mossgate-loose-stone' &&
         body.payload.targetId === 'tower-cracked-bell';
     })).toBe(true);
+  });
+
+  it('uses a healing item from the terminal during active combat', async () => {
+    healingDraughtCarried = true;
+    combatEncounter = {
+      encounterId: 'combat-ui-encounter',
+      locationId: 'mossgate-clearing',
+      opponentNpcId: 'mossgate-training-sentinel',
+      opponentName: 'Practice Sentinel',
+      round: 1,
+      playerHealth: 3,
+      playerMaxHealth: 6,
+      opponentHealth: 2,
+      opponentMaxHealth: 4,
+      status: 'active',
+      lastAction: 'attack',
+      lastNarration: 'The sentinel waits.',
+    };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
+    fireEvent.change(commandInput, { target: { value: 'use Small healing draught' } });
+    fireEvent.submit(commandInput.closest('form')!);
+
+    await screen.findByText(/You use the small healing draught and recover 3 health/);
+    expect(apiFetch.mock.calls.some(([path, init]) => {
+      if (path !== '/api/commands') return false;
+      const body = JSON.parse(String(init?.body ?? '{}'));
+      return body.type === 'combat.action' &&
+        body.payload.action === 'use-item' &&
+        body.payload.itemId === 'item-reedbank-healing-draught' &&
+        body.payload.encounterId === 'combat-ui-encounter';
+    })).toBe(true);
+  });
+
+  it('offers carried healing items as combat quick actions only when health is missing', async () => {
+    healingDraughtCarried = true;
+    combatEncounter = {
+      encounterId: 'combat-ui-encounter',
+      locationId: 'mossgate-clearing',
+      opponentNpcId: 'mossgate-training-sentinel',
+      opponentName: 'Practice Sentinel',
+      round: 1,
+      playerHealth: 3,
+      playerMaxHealth: 6,
+      opponentHealth: 2,
+      opponentMaxHealth: 4,
+      status: 'active',
+      lastAction: 'attack',
+      lastNarration: 'The sentinel waits.',
+    };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    clickQuickAction('Show items to use');
+    fireEvent.click(screen.getByRole('button', { name: 'Use Small healing draught during combat' }));
+    await screen.findByText(/You use the small healing draught and recover 3 health/);
+    expect(healingDraughtCarried).toBe(false);
   });
 
   it('keeps NPC choices private in the terminal and exposes them as persistent actions', async () => {

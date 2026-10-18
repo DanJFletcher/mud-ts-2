@@ -94,8 +94,8 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
     "Remove the item from an equipment slot. Gear cannot be changed during combat.",
   ],
   use: [
-    "Usage: use <item> on <target>",
-    "Use a carried item on an interactive target in the current room.",
+    "Usage: use <item> on <target> | use <healing item>",
+    "Use an item on a room object, or use a carried healing item during combat.",
   ],
   drop: [
     "Usage: drop <item>",
@@ -131,7 +131,7 @@ const GENERAL_HELP = [
   "take <item> | take all — Pick up one or all items in the current room.",
   "equip <item> — Equip a carried weapon or armor item.",
   "unequip <weapon|armor> — Remove equipped gear from a slot.",
-  "use <item> on <target> — Use a carried item on an interactive target here.",
+  "use <item> on <target> | use <healing item> — Use a room item or heal during combat.",
   "drop <item> — Put down an item you carry.",
   "attack <opponent> — Begin an encounter or attack during combat.",
   "defend — Guard against the opponent’s next strike.",
@@ -592,9 +592,10 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   }, [activeMerchantCatalog, addEntry, pending, snapshot]);
 
   const performCombatAction = useCallback(async (
-    action: "attack" | "defend" | "flee",
+    action: "attack" | "defend" | "flee" | "use-item",
     targetNpcId?: string,
     recordCommand = false,
+    itemId?: string,
   ) => {
     if (!snapshot?.character || !snapshot.location || pending) return;
     const previousExperience = snapshot.character.advancement?.experience ?? 0;
@@ -604,7 +605,9 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     if (recordCommand) {
       const commandText = action === "attack" && targetNpcId
         ? `> attack ${snapshot.location.npcs?.find((npc) => npc.id === targetNpcId)?.name ?? "opponent"}`
-        : `> ${action}`;
+        : action === "use-item" && itemId
+          ? `> use ${snapshot.character.inventory.find((item) => item.id === itemId)?.label ?? "item"}`
+          : `> ${action}`;
       addEntry("system", commandText);
     }
     setPending("combat");
@@ -614,7 +617,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
         action,
         snapshot.character.revision,
         activeEncounter
-          ? { encounterId: activeEncounter.encounterId }
+          ? { encounterId: activeEncounter.encounterId, ...(itemId ? { itemId } : {}) }
           : targetNpcId
             ? { targetNpcId }
             : {},
@@ -851,6 +854,32 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     }
     if (verb.toLowerCase() === "use") {
       addEntry("system", `> ${value}`);
+      const activeEncounter = snapshot?.character?.combat?.status === "active"
+        ? snapshot.character.combat
+        : undefined;
+      if (activeEncounter) {
+        if (!target || /\s+on\s+/i.test(target)) {
+          addEntry("error", "During combat, use a healing item by name, for example “use Small healing draught”.");
+          return;
+        }
+        const carriedItems = snapshot?.character?.inventory ?? [];
+        const itemMatches = findObjectMatches(target.replace(/^(?:the|a|an)\s+/i, "").trim(), carriedItems);
+        if (itemMatches.length === 0) {
+          addEntry("error", `You are not carrying anything called “${target}”.`);
+          return;
+        }
+        if (itemMatches.length > 1) {
+          addEntry("error", `Which item do you mean: ${itemMatches.map((item) => item.label).join(", ")}?`);
+          return;
+        }
+        const item = itemMatches[0]!;
+        if (!item.consumable || item.equipment) {
+          addEntry("error", `${item.label} cannot be used as a combat item.`);
+          return;
+        }
+        await performCombatAction("use-item", undefined, false, item.id);
+        return;
+      }
       const useMatch = /^(.+?)\s+on\s+(.+)$/i.exec(target);
       if (!useMatch) {
         addEntry("error", "Use what on what? Try “use stone on bell”.");
@@ -996,6 +1025,11 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const visibleCombat = currentCombat?.locationId === snapshot?.location?.locationId
     ? currentCombat
     : undefined;
+  const quickUseItems = visibleCombat?.status === "active"
+    ? visibleCombat.playerHealth < visibleCombat.playerMaxHealth
+      ? (snapshot?.character?.inventory ?? []).filter((item) => item.consumable?.effect === "heal")
+      : []
+    : (snapshot?.character?.inventory ?? []);
   const quickCommandItems = useMemo(() => {
     type QuickAction = {
       id: string;
@@ -1025,7 +1059,9 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     if (unequippedInventory.length > 0) addMode("drop", "drop", "Show items to drop");
     if (quickDirections.length > 0) addMode("go", "go", "Show available exits");
     if (quickTakeableObjects.length > 0) addMode("take", "take", "Show items to take");
-    if (inventory.length > 0 && usableTargets.length > 0) addMode("use", "use", "Show items to use");
+    if (visibleCombat?.status === "active" ? quickUseItems.length > 0 : inventory.length > 0 && usableTargets.length > 0) {
+      addMode("use", "use", "Show items to use");
+    }
     if ((snapshot?.location?.npcs?.length ?? 0) > 0) addMode("talk", "talk", "Show people to talk to");
     if (quickShopNpcs.length > 0) addMode("shop", "shop", "Show merchants");
     if (quickBuyListings.length > 0) addMode("buy", "buy", "Show items to buy");
@@ -1073,6 +1109,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     quickDirections.length,
     quickShopNpcs.length,
     quickTakeableObjects.length,
+    quickUseItems.length,
     setQuickCommandMode,
     snapshot?.character?.inventory,
     snapshot?.character?.equipment,
@@ -1503,23 +1540,31 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                           >
                             ‹
                           </button>
-                          {(snapshot.character?.inventory ?? []).length ? (
-                            (snapshot.character?.inventory ?? []).map((item) => (
+                          {quickUseItems.length ? (
+                            quickUseItems.map((item) => (
                               <button
                                 key={item.id}
                                 type="button"
                                 className="focused-quick-command"
                                 onClick={() => {
-                                  setQuickUseItemId(item.id);
-                                  setQuickCommandMode("use-target");
+                                  if (visibleCombat?.status === "active") {
+                                    void performCombatAction("use-item", undefined, true, item.id);
+                                  } else {
+                                    setQuickUseItemId(item.id);
+                                    setQuickCommandMode("use-target");
+                                  }
                                 }}
-                                aria-label={`Choose ${item.label} to use`}
+                                aria-label={visibleCombat?.status === "active"
+                                  ? `Use ${item.label} during combat`
+                                  : `Choose ${item.label} to use`}
                                 disabled={pending !== null}
                               >
                                 {item.label.toLocaleLowerCase()}
                               </button>
                             ))
-                          ) : <span className="focused-quick-commands__empty">Nothing to use</span>}
+                          ) : <span className="focused-quick-commands__empty">
+                            {visibleCombat?.status === "active" ? "No healing items to use" : "Nothing to use"}
+                          </span>}
                         </>
                       ) : quickCommandMode === "use-target" ? (
                         <>

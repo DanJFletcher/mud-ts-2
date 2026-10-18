@@ -4,10 +4,16 @@ import { ClientCommandBaseSchema, DomainEventBaseSchema } from './protocol.js';
 import { IdSchema, NonEmptyNameSchema, NonNegativeIntSchema, PositiveIntSchema, ContractVersionSchema } from './ids.js';
 import { CombatEncounterProjectionSchema } from './combat.js';
 
+export const ConsumableItemSchema = z.object({
+  effect: z.literal('heal'),
+  amount: PositiveIntSchema.max(1000),
+}).strict();
+
 export const InventoryItemProjectionSchema = z.object({
   id: IdSchema,
   label: z.string().min(1).max(120),
   description: z.string().min(1).max(1000),
+  consumable: ConsumableItemSchema.optional(),
   equipment: z.object({
     slot: z.enum(['weapon', 'armor']),
     attackBonus: NonNegativeIntSchema.max(10).default(0),
@@ -21,7 +27,15 @@ export const InventoryItemProjectionSchema = z.object({
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['attackBonus'], message: 'Armor cannot provide weapon damage.' });
     }
   }),
-}).strict();
+}).strict().superRefine((item, context) => {
+  if (item.consumable && item.equipment) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['consumable'],
+      message: 'Consumable items cannot also be equipped.',
+    });
+  }
+});
 
 export const EquipmentSlotSchema = z.enum(['weapon', 'armor']);
 export const CharacterEquipmentSchema = z.object({

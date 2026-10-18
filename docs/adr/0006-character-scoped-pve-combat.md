@@ -58,6 +58,13 @@ The engine exposes only a draft combat command shape and has no combat runtime, 
 - The combat event advances to schema version 2. Replay continues to accept version-1 events and interprets their missing style as `steady`.
 - This adds no shared NPC health, random rolls, persistent injuries, or database migration.
 
+## Addendum: combat healing items
+
+- Consumable healing items are character-owned inventory entries with authored healing amounts. A combat `use-item` action requires an active encounter and a carried healing item.
+- The combat event records the consumed item and healing amount atomically with the updated encounter. Replay validates ownership and effect limits, then removes the item from inventory and item-location tracking.
+- Healing is capped at the active encounter's max health. Using an item consumes the player's turn, so the opponent still responds according to its authored style. At full health, or outside combat, the item is not consumed.
+- This heals encounter-local health only; it does not add persistent injuries or change future encounters' starting health. Existing version-1 and version-2 combat events remain readable; consumable combat actions use event version 3.
+
 ## Verification
 
 The initial implementation must test invalid targets and locations, attack/defend/flee resolution, victory/defeat, movement lock, replay, stale revisions, duplicate command IDs, and independent encounters for two characters.

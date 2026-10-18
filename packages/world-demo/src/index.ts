@@ -499,7 +499,7 @@ const draft = {
             {
               id: 'reedbank-wares',
               keywords: ['wares', 'goods', 'shop', 'prices', 'price'],
-              response: 'The lantern is eight moss marks and the waxed cord is five. I also have a practice blade and a padded vest for five marks each. Each traveler has their own allotment.',
+              response: 'The lantern is eight moss marks and the waxed cord is five. I also have a practice blade and padded vest for five marks each, plus a small healing draught for three. Each traveler has their own allotment.',
             },
           ],
           unknownTopicResponse: 'Ask me about the wares or use the shop command to browse.',
@@ -542,6 +542,16 @@ const draft = {
                   equipment: { slot: 'armor', attackBonus: 0, defenseBonus: 1 },
                 },
                 price: 5,
+              },
+              {
+                id: 'reedbank-healing-draught',
+                item: {
+                  id: 'item-reedbank-healing-draught',
+                  label: 'Small healing draught',
+                  description: 'A stoppered green glass vial of herbal tonic. During combat, drink it to recover up to 3 health.',
+                  consumable: { effect: 'heal', amount: 3 },
+                },
+                price: 3,
               },
             ],
           },
