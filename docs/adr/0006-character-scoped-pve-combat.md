@@ -15,6 +15,7 @@ The engine exposes only a draft combat command shape and has no combat runtime, 
 - The first ruleset supports attack, defend, flee, and healing-item use. It uses authored opponent health/damage and fixed player values; it does not roll dice.
 - Equipment is character-owned: inventory, equipped slots, and their changes live in the character event stream. Gear modifiers are immutable item attributes authored in world/merchant content; combat reads only the character's currently equipped items and records resolved damage in the combat event.
 - One active encounter is permitted per character. Movement is blocked while it is active; fleeing or resolving the encounter clears that restriction.
+- A combat defeat at zero health is permanent character death and ends that character's game. No potion, command, or world session may revive or resume that character; the player must create a new character to start over. The dead character remains account-manageable but cannot re-enter the world.
 - The existing one-active-character-per-world-session rule is unchanged.
 - The combat plugin owns victory XP, level thresholds, and max-health rewards. A victory writes the combat result followed by a character advancement event in one character-stream append; leveling increases persistent max health without silently restoring current health.
 - The generic engine stores the resulting experience, level, and health but does not calculate combat or advancement rules.
@@ -63,7 +64,7 @@ The engine exposes only a draft combat command shape and has no combat runtime, 
 - Current and maximum health are character projections backed by the character event stream. Combat action events persist the resolved health; the next encounter begins at that current health rather than silently restoring it.
 - Healing consumables remain character-owned inventory entries. During combat, `use-item` records item consumption and healing atomically with the resolved encounter turn; the opponent still responds according to its authored style.
 - Outside combat, the same combat-plugin command emits `character.combat_item_used`, which records health restoration and consumes the carried item in one character-stream event. Replay validates the item, caps healing at the recorded maximum, and removes it from inventory and item-location tracking.
-- Healing cannot be consumed at full health. Defeat leaves health at zero, but a potion can restore it outside combat; a character at zero health cannot start another encounter until healed.
+- Healing cannot be consumed at full health. Defeat leaves health at zero and permanently ends that character's game. Out-of-combat healing remains available between encounters only while the character is alive; a dead character cannot use items, issue gameplay commands, chat, query the world, or re-enter its session. Starting over means creating a new character at the world's starting location.
 - Level-up events advance to version 2 and record the new maximum health without restoring current health. Replay retains version-1 advancement and version-1/version-2 combat event compatibility; active combat consumables use combat event version 3.
 - Health, items, encounters, and advancement remain character-owned. NPC definitions and shop listings remain immutable world content; this adds no shared state or database migration.
 

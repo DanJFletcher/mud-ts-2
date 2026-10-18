@@ -9,7 +9,7 @@ import {
 import type { EnginePlugin } from '@mudd/engine-core';
 import { RuleViolationError } from '@mudd/engine-core';
 import type { WorldPackDraft } from '@mudd/contracts';
-import { characterStateCapability, type CharacterStateCapability } from './character.js';
+import { assertCharacterAlive, characterStateCapability, type CharacterStateCapability } from './character.js';
 
 export const merchantPlugin: EnginePlugin = {
   manifest: {
@@ -69,6 +69,7 @@ export const merchantPlugin: EnginePlugin = {
     registerCommand('merchant.purchase', MerchantPurchaseCommandSchema, async (command, context) => {
       const character = await characterState.load(context, command.characterId);
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
+      assertCharacterAlive(character);
       const merchant = currentMerchant(context.world, character.locationId, command.payload.merchantNpcId);
       const currency = context.world.currency;
       if (!currency) throw new RuleViolationError('This world has no configured currency.');

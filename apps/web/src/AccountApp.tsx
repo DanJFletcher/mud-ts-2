@@ -311,6 +311,7 @@ export function CharacterRoster() {
   const activeCharacter = roster?.characters.find((character) => character.characterId === roster.activeWorldSession?.characterId);
   const activeCharacterId = roster?.activeWorldSession?.characterId;
   const hasActiveSession = Boolean(roster?.activeWorldSession);
+  const activeCharacterIsDead = activeCharacter?.combat?.status === 'defeat' || activeCharacter?.health?.current === 0;
   const visibleCharacters = roster?.characters.filter((character) => character.archived === showArchived) ?? [];
 
   return (
@@ -344,12 +345,16 @@ export function CharacterRoster() {
             {activeCharacter && (
               <aside className="account-active-session" aria-label="Active world session">
                 <div>
-                  <span className="focused-kicker">IN THE WORLD</span>
-                  <p>Playing as <strong>{activeCharacter.name}</strong>. Only one character can enter this world at a time.</p>
+                  <span className="focused-kicker">{activeCharacterIsDead ? 'GAME OVER' : 'IN THE WORLD'}</span>
+                  <p>{activeCharacterIsDead
+                    ? <><strong>{activeCharacter.name}</strong> has died. Create a new character to begin again.</>
+                    : <>Playing as <strong>{activeCharacter.name}</strong>. Only one character can enter this world at a time.</>}</p>
                 </div>
                 <div className="account-active-session__actions">
-                  <Button type="button" variant="secondary" onClick={() => void joinWorld(activeCharacter.characterId)} disabled={pending}>Return to world</Button>
-                  <Button type="button" variant="quiet" onClick={() => void leaveWorld()} disabled={pending}>Leave world to switch</Button>
+                  {!activeCharacterIsDead && <Button type="button" variant="secondary" onClick={() => void joinWorld(activeCharacter.characterId)} disabled={pending}>Return to world</Button>}
+                  <Button type="button" variant="quiet" onClick={() => void leaveWorld()} disabled={pending}>
+                    {activeCharacterIsDead ? 'Leave world to start over' : 'Leave world to switch'}
+                  </Button>
                 </div>
               </aside>
             )}
@@ -372,7 +377,9 @@ export function CharacterRoster() {
                         ) : (
                           <>
                             <h2>{character.name}</h2>
-                            <p>{character.locationTitle} · {character.archived ? 'Archived' : isActive ? 'In this world' : 'Ready'}</p>
+                            <p>{character.locationTitle} · {character.combat?.status === 'defeat' || character.health?.current === 0
+                              ? 'Dead · Game over'
+                              : character.archived ? 'Archived' : isActive ? 'In this world' : 'Ready'}</p>
                           </>
                         )}
                       </div>
@@ -384,8 +391,8 @@ export function CharacterRoster() {
                         </Button>
                       ) : (
                         <>
-                          <Button type="button" onClick={() => isActive ? setLocation('/world') : void joinWorld(character.characterId)} disabled={pending || anotherActive}>
-                            {isActive ? 'Enter world' : anotherActive ? 'Leave world to switch' : 'Enter world'}
+                          <Button type="button" onClick={() => isActive ? setLocation('/world') : void joinWorld(character.characterId)} disabled={pending || anotherActive || character.combat?.status === 'defeat' || character.health?.current === 0}>
+                            {character.combat?.status === 'defeat' || character.health?.current === 0 ? 'Game over' : isActive ? 'Enter world' : anotherActive ? 'Leave world to switch' : 'Enter world'}
                           </Button>
                           {!isActive && (
                             <Button type="button" variant="quiet" aria-label={`Rename ${character.name}`} disabled={pending || anotherActive} onClick={() => { setRenamingId(character.characterId); setRenameValue(character.name); }}>

@@ -34,6 +34,12 @@ export interface CharacterStateCapability {
   load(context: EngineCommandContext | QueryContext, characterId: string): Promise<CharacterProjection | undefined>;
 }
 
+export function assertCharacterAlive(character: CharacterProjection): void {
+  if (character.combat?.status === 'defeat' || character.health?.current === 0) {
+    throw new RuleViolationError('Your character has died. Start a new character to begin again.');
+  }
+}
+
 export const characterStateCapability = Object.freeze({
   id: 'mudd.character.state.v1',
   version: '1',
@@ -90,6 +96,7 @@ export const characterPlugin: EnginePlugin = {
     registerCommand('character.take', TakeCharacterItemCommandSchema, async (command, context) => {
       const character = await state.load(context, command.characterId);
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
+      assertCharacterAlive(character);
       if (character.inventory.some((item) => item.id === command.payload.itemId)) {
         throw new RuleViolationError('You are already carrying that item.');
       }
@@ -116,6 +123,7 @@ export const characterPlugin: EnginePlugin = {
     registerCommand('character.drop', DropCharacterItemCommandSchema, async (command, context) => {
       const character = await state.load(context, command.characterId);
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
+      assertCharacterAlive(character);
       const item = character.inventory.find((candidate) => candidate.id === command.payload.itemId);
       if (!item) throw new RuleViolationError('You are not carrying that item.');
       if (character.equipment.weaponItemId === item.id || character.equipment.armorItemId === item.id) {
@@ -140,6 +148,7 @@ export const characterPlugin: EnginePlugin = {
     registerCommand('character.equip', EquipCharacterItemCommandSchema, async (command, context) => {
       const character = await state.load(context, command.characterId);
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
+      assertCharacterAlive(character);
       if (character.combat?.status === 'active') {
         throw new RuleViolationError('You cannot change equipment during an active encounter.');
       }
@@ -163,6 +172,7 @@ export const characterPlugin: EnginePlugin = {
     registerCommand('character.unequip', UnequipCharacterItemCommandSchema, async (command, context) => {
       const character = await state.load(context, command.characterId);
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
+      assertCharacterAlive(character);
       if (character.combat?.status === 'active') {
         throw new RuleViolationError('You cannot change equipment during an active encounter.');
       }
@@ -182,6 +192,7 @@ export const characterPlugin: EnginePlugin = {
     registerCommand('character.use', UseCharacterItemCommandSchema, async (command, context) => {
       const character = await state.load(context, command.characterId);
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
+      assertCharacterAlive(character);
       if (character.combat?.status === 'active') {
         throw new RuleViolationError('Use a healing item through your combat action while a fight is active.');
       }
@@ -227,6 +238,7 @@ export const characterPlugin: EnginePlugin = {
     registerCommand('character.read', ReadCharacterObjectCommandSchema, async (command, context) => {
       const character = await state.load(context, command.characterId);
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
+      assertCharacterAlive(character);
       const location = context.world.locations.find((item) => item.id === character.locationId);
       if (!location) throw new Error('The character location is not present in this world version.');
       const readable = (location.readables ?? []).find((item) => item.id === command.payload.objectId);

@@ -6,7 +6,7 @@ import type { EnginePlugin } from '@mudd/engine-core';
 import type { CharacterProjection } from '@mudd/contracts';
 import type { EngineCommandContext } from '@mudd/engine-core';
 import { RuleViolationError } from '@mudd/engine-core';
-import { characterStateCapability } from './character.js';
+import { assertCharacterAlive, characterStateCapability } from './character.js';
 
 interface CharacterStateCapability {
   load(context: EngineCommandContext, characterId: string): Promise<CharacterProjection | undefined>;
@@ -27,6 +27,7 @@ export const movementPlugin: EnginePlugin = {
     registerCommand('character.move', MoveCharacterCommandSchema, async (command, context) => {
       const character = await characterState.load(context, command.characterId);
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
+      assertCharacterAlive(character);
       if (character.combat?.status === 'active') {
         throw new RuleViolationError('You cannot leave while combat is active. Flee first.');
       }

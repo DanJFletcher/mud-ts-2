@@ -172,6 +172,43 @@ describe('account character roster', () => {
     expect(commandBodies.map((body) => body.type)).toEqual(['character.archive', 'character.restore']);
   });
 
+  it('marks dead characters as game over, leaves the session, and lets the account start fresh', async () => {
+    characters[0] = {
+      ...firstCharacter,
+      combat: {
+        encounterId: 'dead-encounter',
+        locationId: 'mossgate-clearing',
+        opponentNpcId: 'mossgate-training-sentinel',
+        opponentName: 'Practice Sentinel',
+        opponentStyle: 'steady',
+        round: 2,
+        playerHealth: 0,
+        playerMaxHealth: 6,
+        opponentHealth: 1,
+        opponentMaxHealth: 4,
+        status: 'defeat',
+        lastAction: 'attack',
+        lastNarration: 'You fall beneath the sentinel’s final strike.',
+      },
+    };
+    active = { id: 'dead-session', characterId: firstCharacter.characterId };
+    render(<CharacterRoster />);
+
+    expect(await screen.findByRole('complementary', { name: 'Active world session' })).toHaveTextContent('has died');
+    expect(screen.getByRole('button', { name: 'Leave world to start over' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Game over' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Leave world to start over' }));
+    await waitFor(() => expect(active).toBeNull());
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Character name' }), { target: { value: 'Rowan Again' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create character' }));
+    await screen.findByRole('heading', { name: 'Rowan Again' });
+    expect(commandBodies.at(-1)).toMatchObject({
+      type: 'character.create',
+      payload: { name: 'Rowan Again' },
+    });
+  });
+
   it('binds one character to the world session and requires leaving before switching', async () => {
     render(<CharacterRoster />);
     await screen.findByRole('heading', { name: 'Rowan' });

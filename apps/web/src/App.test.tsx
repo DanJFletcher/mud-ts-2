@@ -1174,6 +1174,33 @@ describe('single-character world session client', () => {
     expect(healingDraughtCarried).toBe(false);
   });
 
+  it('replaces gameplay with a game-over screen after character death', async () => {
+    characterHealth = { current: 0, maximum: 6 };
+    combatEncounter = {
+      encounterId: 'combat-ui-encounter',
+      locationId: 'mossgate-clearing',
+      opponentNpcId: 'mossgate-training-sentinel',
+      opponentName: 'Practice Sentinel',
+      round: 2,
+      playerHealth: 0,
+      playerMaxHealth: 6,
+      opponentHealth: 1,
+      opponentMaxHealth: 4,
+      status: 'defeat',
+      lastAction: 'attack',
+      lastNarration: 'The sentinel strikes you down.',
+    };
+    const onLeaveWorld = vi.fn().mockResolvedValue(undefined);
+    render(<WorldClient onLeaveWorld={onLeaveWorld} />);
+
+    expect(await screen.findByRole('heading', { name: 'Game over' })).toBeInTheDocument();
+    expect(screen.getByText(/Create a new character to begin again/)).toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Enter a command' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Game screens' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Start a new character' }));
+    await waitFor(() => expect(onLeaveWorld).toHaveBeenCalledOnce());
+  });
+
   it('keeps NPC choices private in the terminal and exposes them as persistent actions', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });

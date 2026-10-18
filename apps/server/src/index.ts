@@ -179,7 +179,11 @@ async function ensureCharacterWallet(
   session: typeof worldSessions.$inferSelect,
   character: NonNullable<ReturnType<typeof replayCharacter>>,
 ) {
-  if (character.wallet) return character;
+  if (
+    character.wallet ||
+    character.combat?.status === 'defeat' ||
+    character.health?.current === 0
+  ) return character;
   const command = InitializeCharacterWalletCommandSchema.parse({
     type: 'character.wallet.initialize',
     version: 1,
@@ -235,6 +239,9 @@ app.post('/api/world-session', async (req, res, next) => {
       DEMO_WORLD_INSTANCE_ID,
       input.data.characterId,
     ));
+    if (characterProjection?.combat?.status === 'defeat' || characterProjection?.health?.current === 0) {
+      return res.status(409).json({ message: 'Your character has died. Start a new character to begin again.' });
+    }
 
     const result = await db.transaction(async (tx) => {
       await tx.execute(sql`SELECT id FROM players WHERE id = ${identity.playerId} FOR UPDATE`);
@@ -364,6 +371,9 @@ app.get('/api/chat', async (req, res, next) => {
 
     const current = await activeCharacter(identity);
     if (!current) return res.status(409).json({ message: 'Enter the world with a character before using room chat.' });
+    if (current.character.combat?.status === 'defeat' || current.character.health?.current === 0) {
+      return res.status(409).json({ message: 'Your character has died. Start a new character to begin again.' });
+    }
     const messages = await listRoomChatMessages({
       worldInstanceId: current.session.worldInstanceId,
       playerId: identity.playerId,
@@ -394,6 +404,9 @@ app.post('/api/chat', createRateLimiter({ windowMs: 60_000, maxRequests: 30 }), 
 
     const current = await activeCharacter(identity);
     if (!current) return res.status(409).json({ message: 'Enter the world with a character before using room chat.' });
+    if (current.character.combat?.status === 'defeat' || current.character.health?.current === 0) {
+      return res.status(409).json({ message: 'Your character has died. Start a new character to begin again.' });
+    }
     if (input.data.roomId !== current.character.locationId) {
       return res.status(409).json({ message: 'You have moved to a different room.' });
     }
@@ -454,6 +467,10 @@ app.post('/api/commands', createRateLimiter({ windowMs: 60_000, maxRequests: 120
       if (typeof command?.characterId === 'string' && command.characterId !== current.characterId) {
         return res.status(403).json({ message: 'This world session is bound to a different character.' });
       }
+      const currentCharacter = replayCharacter(await store.readStream(current.worldInstanceId, current.characterId));
+      if (currentCharacter?.combat?.status === 'defeat' || currentCharacter?.health?.current === 0) {
+        return res.status(409).json({ message: 'Your character has died. Start a new character to begin again.' });
+      }
       context = worldContext(identity, current);
     }
 
@@ -501,6 +518,9 @@ app.post('/api/queries', async (req, res, next) => {
     const character = replayCharacter(await store.readStream(current.worldInstanceId, current.characterId));
     if (!character || character.archived) {
       return res.status(409).json({ message: 'Enter the world with an active character before making a query.' });
+    }
+    if (character.combat?.status === 'defeat' || character.health?.current === 0) {
+      return res.status(409).json({ message: 'Your character has died. Start a new character to begin again.' });
     }
     const result = await engine.query(query, worldContext(identity, current), {
       characterProjection: character,

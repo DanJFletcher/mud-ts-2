@@ -18,7 +18,7 @@ import type {
 } from '@mudd/engine-core';
 import { RuleViolationError } from '@mudd/engine-core';
 import type { CharacterStateCapability } from './character.js';
-import { characterStateCapability } from './character.js';
+import { assertCharacterAlive, characterStateCapability } from './character.js';
 import { projectQuestJournal, questObjectivesAreComplete } from '@mudd/engine-core';
 
 function currentNpc(
@@ -142,6 +142,7 @@ export const npcDialoguePlugin: EnginePlugin = {
     registerCommand('npc.dialogue.choose', NpcDialogueChoiceCommandSchema, async (command, context) => {
       const character = await characterState.load(context, command.characterId);
       if (!character) throw new RuleViolationError('That character is no longer available.');
+      assertCharacterAlive(character);
       const npc = currentNpc(context, character, command.payload.npcId);
       const choice = npc.dialogue?.choices.find((candidate) => candidate.id === command.payload.choiceId);
       if (!choice) throw new RuleViolationError('That choice is not available here.');

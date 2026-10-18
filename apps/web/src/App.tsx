@@ -1047,6 +1047,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     [activeMerchantCatalog],
   );
   const currentCombat = snapshot?.character?.combat;
+  const isGameOver = currentCombat?.status === "defeat" || snapshot?.character?.health?.current === 0;
   const visibleCombat = currentCombat?.locationId === snapshot?.location?.locationId
     ? currentCombat
     : undefined;
@@ -1225,7 +1226,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
         key={screen}
         ref={contentRef}
         tabIndex={-1}
-        aria-label={screen === "notes" ? "Field notes screen" : `${screen === "play" ? "Play" : "Traveler"} screen`}
+        aria-label={isGameOver ? "Game over screen" : screen === "notes" ? "Field notes screen" : `${screen === "play" ? "Play" : "Traveler"} screen`}
         onTouchStart={handleContentTouchStart}
         onTouchEnd={handleContentTouchEnd}
         onTouchCancel={() => { swipeStartRef.current = null; }}
@@ -1236,7 +1237,18 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
             <p>{connectionError} <Button type="button" variant="quiet" onClick={() => void loadGame()}>Retry</Button></p>
           </div>
         )}
-        {screen === "play" && (
+        {isGameOver && (
+          <div className="focused-screen focused-screen--game-over" aria-label="Game over">
+            <Panel className="focused-room focused-connection" eyebrow="Character lost" title="Game over">
+              <Text variant="muted">Your character has died. This journey is over. Create a new character to begin again.</Text>
+              <div className="focused-session-recovery-actions">
+                <Button type="button" onClick={() => void handleLeaveWorld()} disabled={leaving}>Start a new character</Button>
+              </div>
+            </Panel>
+          </div>
+        )}
+
+        {!isGameOver && screen === "play" && (
           <div className="focused-screen focused-screen--play" aria-label="Play">
             {loading && !snapshot ? (
               <Panel className="focused-room focused-loading" aria-label="Loading location">
@@ -1833,7 +1845,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
           </div>
         )}
 
-        {screen === "traveler" && (
+        {!isGameOver && screen === "traveler" && (
           <div className="focused-screen" aria-label="Traveler">
             <div className="focused-screen-heading">
               <div><div className="focused-kicker">Character</div><h1 className="focused-screen-title">Traveler</h1></div>
@@ -1931,7 +1943,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
           </div>
         )}
 
-        {screen === "notes" && (
+        {!isGameOver && screen === "notes" && (
           <div className="focused-screen" aria-label="Field notes">
             <div className="focused-screen-heading">
               <div><div className="focused-kicker">Progress and session history</div><h1 className="focused-screen-title">Field notes</h1></div>
@@ -2021,11 +2033,13 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
         )}
       </section>
 
-      <nav className="focused-bottom-nav" aria-label="Game screens">
-        <a href="#/play" className="focused-tab" aria-current={screen === "play" ? "page" : undefined}><Compass aria-hidden="true" /><span>Play</span></a>
-        <a href="#/traveler" className="focused-tab" aria-current={screen === "traveler" ? "page" : undefined}><UserRound aria-hidden="true" /><span>Traveler</span></a>
-        <a href="#/notes" className="focused-tab" aria-current={screen === "notes" ? "page" : undefined}><NotebookText aria-hidden="true" /><span>Field notes</span></a>
-      </nav>
+      {!isGameOver && (
+        <nav className="focused-bottom-nav" aria-label="Game screens">
+          <a href="#/play" className="focused-tab" aria-current={screen === "play" ? "page" : undefined}><Compass aria-hidden="true" /><span>Play</span></a>
+          <a href="#/traveler" className="focused-tab" aria-current={screen === "traveler" ? "page" : undefined}><UserRound aria-hidden="true" /><span>Traveler</span></a>
+          <a href="#/notes" className="focused-tab" aria-current={screen === "notes" ? "page" : undefined}><NotebookText aria-hidden="true" /><span>Field notes</span></a>
+        </nav>
+      )}
     </main>
   );
 }

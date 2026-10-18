@@ -6,7 +6,7 @@ import {
 } from '@mudd/contracts';
 import type { EnginePlugin, ProposedDomainEvent } from '@mudd/engine-core';
 import { RuleViolationError } from '@mudd/engine-core';
-import { characterStateCapability, type CharacterStateCapability } from './character.js';
+import { assertCharacterAlive, characterStateCapability, type CharacterStateCapability } from './character.js';
 
 const PLAYER_BASE_MAX_HEALTH = 6;
 const PLAYER_HEALTH_PER_LEVEL = 2;
@@ -42,6 +42,7 @@ export const combatPlugin: EnginePlugin = {
     registerCommand('combat.action', CombatActionCommandSchema, async (command, context) => {
       const character = await characterState.load(context, command.characterId);
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
+      assertCharacterAlive(character);
 
       if (command.payload.action === 'use-item' && character.combat?.status !== 'active') {
         if (command.payload.encounterId) {
