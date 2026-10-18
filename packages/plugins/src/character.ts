@@ -193,12 +193,15 @@ export const characterPlugin: EnginePlugin = {
         const roomDescription = roomDescriptionByItemId.get(item.id);
         return roomDescription ? [roomDescription] : [];
       });
+      const roomNpcDescriptions = (location.npcs ?? []).map(
+        ({ name, description }) => `${name} is here. ${description}`,
+      );
       return LocationProjectionSchema.parse({
         worldInstanceId: context.worldInstanceId,
         locationId: location.id,
         revision: character.revision,
         title: location.name,
-        description: [location.description, ...roomItemDescriptions].join(' '),
+        description: [location.description, ...roomItemDescriptions, ...roomNpcDescriptions].join(' '),
         exits: location.exits.map((exit) => ({
           id: exit.id,
           label: exit.label,

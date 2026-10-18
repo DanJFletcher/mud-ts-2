@@ -357,6 +357,14 @@ describe('MUDD engine host', () => {
       characterId,
       payload: {},
     }, session);
+    expect(originalRoom).toMatchObject({
+      ok: true,
+      value: {
+        description: expect.stringContaining(
+          'Mara is here. A path keeper stands beside the weathered marker, watching the northern trail.',
+        ),
+      },
+    });
     expect(originalRoom).not.toMatchObject({
       ok: true,
       value: { objects: expect.arrayContaining([expect.objectContaining({ id: 'mossgate-loose-stone' })]) },
