@@ -14,9 +14,10 @@ describe('MuddHttpClient', () => {
       grantedPermissions: [],
       authenticated: true,
     } as const;
+    const store = new InMemoryEventStore();
     const engine = new EngineHost(
       [characterPlugin, movementPlugin, npcDialoguePlugin],
-      new InMemoryEventStore(),
+      store,
       { canAccessInstance: async () => true, ownsCharacter: async () => true },
       demoWorld,
     );
@@ -153,6 +154,66 @@ describe('MuddHttpClient', () => {
       .rejects.toThrow('That person is not here.');
     await expect(client.chooseNpcDialogue(characterId, 'mara-waykeeper', 'ask-tower', nextRoom.revision, 'sdk-choice-away'))
       .rejects.toThrow('That person is not here.');
+    await expect(client.use(
+      characterId,
+      'mossgate-loose-stone',
+      'tower-cracked-bell',
+      nextRoom.revision,
+      'sdk-use-target-away',
+    )).rejects.toThrow('That is not a usable target in this room.');
+    const movedToTower = await client.move(characterId, 'bridge-to-tower', nextRoom.revision, 'sdk-move-tower');
+    expect(movedToTower.receipt.ok).toBe(true);
+    const tower = await client.look(characterId, 'sdk-look-tower');
+    expect(tower.objects).toContainEqual(expect.objectContaining({
+      id: 'tower-cracked-bell',
+      readable: false,
+      takeable: false,
+    }));
+    const firstUse = await client.use(
+      characterId,
+      'mossgate-loose-stone',
+      'tower-cracked-bell',
+      tower.revision,
+      'sdk-use-bell',
+    );
+    expect(firstUse).toEqual({
+      interactionId: 'ring-tower-bell-with-stone',
+      response: 'You strike the cracked bell with the smooth stone. A low, uneven note rolls through the tower.',
+    });
+    const afterFirstUse = await client.look(characterId, 'sdk-look-after-use');
+    const characterAfterFirstUse = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId));
+    expect(characterAfterFirstUse?.itemUseObservations).toContainEqual({
+      interactionId: 'ring-tower-bell-with-stone',
+      itemId: 'mossgate-loose-stone',
+      targetId: 'tower-cracked-bell',
+      locationId: 'bell-tower',
+    });
+    expect(characterAfterFirstUse?.inventory).toContainEqual(expect.objectContaining({ id: 'mossgate-loose-stone' }));
+    await expect(client.use(
+      characterId,
+      'mossgate-loose-stone',
+      'tower-cracked-bell',
+      afterFirstUse.revision,
+      'sdk-use-bell-again',
+    )).resolves.toEqual({
+      interactionId: 'ring-tower-bell-with-stone',
+      response: 'You strike the bell again. Its low note echoes through the stonework.',
+    });
+    const afterRepeatUse = await client.look(characterId, 'sdk-look-after-repeat-use');
+    await expect(client.use(
+      characterId,
+      'mossgate-marker',
+      'tower-cracked-bell',
+      afterRepeatUse.revision,
+      'sdk-use-unowned-item',
+    )).rejects.toThrow('You are not carrying that item.');
+    await expect(client.use(
+      characterId,
+      'mossgate-loose-stone',
+      'mossgate-marker',
+      afterRepeatUse.revision,
+      'sdk-use-unknown-target',
+    )).rejects.toThrow('That is not a usable target in this room.');
     await engine.stop();
   });
 

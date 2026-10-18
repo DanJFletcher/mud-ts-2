@@ -2,6 +2,7 @@ import {
   CharacterCreatedEventSchema,
   CharacterItemTakenEventSchema,
   CharacterItemDroppedEventSchema,
+  CharacterItemUsedEventSchema,
   CharacterObjectReadEventSchema,
   CharacterRenamedEventSchema,
   CharacterArchivedEventSchema,
@@ -12,6 +13,7 @@ import {
   CreateCharacterCommandSchema,
   TakeCharacterItemCommandSchema,
   DropCharacterItemCommandSchema,
+  UseCharacterItemCommandSchema,
   ReadCharacterObjectCommandSchema,
   LocationDescribeQuerySchema,
   ObjectReadQuerySchema,
@@ -111,6 +113,40 @@ export const characterPlugin: EnginePlugin = {
       };
     });
 
+    registerCommand('character.use', UseCharacterItemCommandSchema, async (command, context) => {
+      const character = await state.load(context, command.characterId);
+      if (!character || character.archived) throw new Error('That character is no longer available.');
+      const item = character.inventory.find((candidate) => candidate.id === command.payload.itemId);
+      if (!item) throw new Error('You are not carrying that item.');
+      const location = context.world.locations.find((candidate) => candidate.id === character.locationId);
+      if (!location) throw new Error('The character location is not present in this world version.');
+      const target = (location.interactables ?? []).find((candidate) => candidate.id === command.payload.targetId);
+      if (!target) throw new Error('That is not a usable target in this room.');
+      const interaction = (location.itemUses ?? []).find((candidate) =>
+        candidate.itemId === item.id && candidate.targetId === target.id,
+      );
+      if (!interaction) {
+        throw new Error(`You cannot use the ${item.label.toLocaleLowerCase()} on the ${target.label.toLocaleLowerCase()} here.`);
+      }
+      const alreadyUsed = character.itemUseObservations.some((observation) =>
+        observation.interactionId === interaction.id && observation.locationId === location.id,
+      );
+      const payload = {
+        characterId: character.characterId,
+        locationId: location.id,
+        itemId: item.id,
+        targetId: target.id,
+        interactionId: interaction.id,
+        response: alreadyUsed ? interaction.repeatResponse ?? interaction.response : interaction.response,
+      };
+      CharacterItemUsedEventSchema.shape.payload.parse(payload);
+      return {
+        streamId: command.characterId,
+        expectedVersion: command.expectedVersion,
+        events: [{ type: 'character.item_used', version: 1, payload }],
+      };
+    });
+
     registerCommand('character.read', ReadCharacterObjectCommandSchema, async (command, context) => {
       const character = await state.load(context, command.characterId);
       if (!character || character.archived) throw new Error('That character is no longer available.');
@@ -196,12 +232,15 @@ export const characterPlugin: EnginePlugin = {
       const roomNpcDescriptions = (location.npcs ?? []).map(
         ({ name, description }) => `${name} is here. ${description}`,
       );
+      const interactableRoomDescriptions = (location.interactables ?? []).flatMap(({ roomDescription }) =>
+        roomDescription ? [roomDescription] : [],
+      );
       return LocationProjectionSchema.parse({
         worldInstanceId: context.worldInstanceId,
         locationId: location.id,
         revision: character.revision,
         title: location.name,
-        description: [location.description, ...roomItemDescriptions, ...roomNpcDescriptions].join(' '),
+        description: [location.description, ...roomItemDescriptions, ...interactableRoomDescriptions, ...roomNpcDescriptions].join(' '),
         exits: location.exits.map((exit) => ({
           id: exit.id,
           label: exit.label,
@@ -214,6 +253,9 @@ export const characterPlugin: EnginePlugin = {
           })),
           ...roomTakeables.map(({ id, label, description }) => ({
               id, label, description, readable: false, takeable: true,
+          })),
+          ...(location.interactables ?? []).map(({ id, label, description }) => ({
+            id, label, description, readable: false, takeable: false,
           })),
         ],
         occupants: [],
@@ -248,6 +290,7 @@ export const characterPlugin: EnginePlugin = {
       const objectInRoom = [
         ...(location.readables ?? []),
         ...(location.takeables ?? []).filter((item) => !trackedItemIds.has(item.id)),
+        ...(location.interactables ?? []),
         ...character.itemLocations
           .filter((entry) => entry.locationId === location.id)
           .map(({ item }) => item),

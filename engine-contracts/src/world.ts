@@ -31,6 +31,21 @@ export const TakeableObjectDefinitionSchema = z.object({
   roomDescription: z.string().min(1).max(1000).optional(),
 }).strict();
 
+export const InteractableObjectDefinitionSchema = z.object({
+  id: IdSchema,
+  label: z.string().min(1).max(120),
+  description: z.string().min(1).max(1000),
+  roomDescription: z.string().min(1).max(1000).optional(),
+}).strict();
+
+export const ItemUseInteractionDefinitionSchema = z.object({
+  id: IdSchema,
+  itemId: IdSchema,
+  targetId: IdSchema,
+  response: z.string().min(1).max(2000),
+  repeatResponse: z.string().min(1).max(2000).optional(),
+}).strict();
+
 export const NpcQuestResponseDefinitionSchema = z.object({
   questId: IdSchema,
   status: z.enum(['active', 'completed']),
@@ -145,6 +160,8 @@ export const LocationDefinitionSchema = z.object({
   exits: z.array(ExitDefinitionSchema),
   readables: z.array(ReadableObjectDefinitionSchema).optional(),
   takeables: z.array(TakeableObjectDefinitionSchema).optional(),
+  interactables: z.array(InteractableObjectDefinitionSchema).optional(),
+  itemUses: z.array(ItemUseInteractionDefinitionSchema).max(100).optional(),
   npcs: z.array(NpcDefinitionSchema).optional(),
 }).strict();
 
@@ -262,6 +279,8 @@ export type ObjectReadQuery = z.infer<typeof ObjectReadQuerySchema>;
 export type ObjectInspectQuery = z.infer<typeof ObjectInspectQuerySchema>;
 export type ReadableObjectDefinition = z.infer<typeof ReadableObjectDefinitionSchema>;
 export type TakeableObjectDefinition = z.infer<typeof TakeableObjectDefinitionSchema>;
+export type InteractableObjectDefinition = z.infer<typeof InteractableObjectDefinitionSchema>;
+export type ItemUseInteractionDefinition = z.infer<typeof ItemUseInteractionDefinitionSchema>;
 export type NpcDefinition = z.infer<typeof NpcDefinitionSchema>;
 export type NpcDialogueDefinition = z.infer<typeof NpcDialogueDefinitionSchema>;
 export type NpcQuestResponseDefinition = z.infer<typeof NpcQuestResponseDefinitionSchema>;
@@ -280,14 +299,26 @@ export type WorldMapProjection = z.infer<typeof WorldMapProjectionSchema>;
 export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
   const errors: string[] = [];
   const ids = new Set(pack.locations.map((room) => room.id));
+  const itemIds = new Set(pack.locations.flatMap((room) => (room.takeables ?? []).map((item) => item.id)));
   if (ids.size !== pack.locations.length) errors.push('Duplicate location ID');
   const exits = new Set<string>();
+  const itemUseIds = new Set<string>();
   for (const room of pack.locations) {
     for (const exit of room.exits) {
       if (exit.fromLocationId !== room.id) errors.push(`Exit ${exit.id} does not originate from its containing location`);
       if (!ids.has(exit.toLocationId)) errors.push(`Exit ${exit.id} points to missing location ${exit.toLocationId}`);
       if (exits.has(exit.id)) errors.push(`Duplicate exit ID ${exit.id}`);
       exits.add(exit.id);
+    }
+    for (const interaction of room.itemUses ?? []) {
+      if (itemUseIds.has(interaction.id)) errors.push(`Duplicate item-use interaction ID ${interaction.id}`);
+      itemUseIds.add(interaction.id);
+      if (!itemIds.has(interaction.itemId)) {
+        errors.push(`Item-use interaction ${interaction.id} references missing takeable item ${interaction.itemId}`);
+      }
+      if (!room.interactables?.some((target) => target.id === interaction.targetId)) {
+        errors.push(`Item-use interaction ${interaction.id} references missing interactable target ${interaction.targetId} in ${room.id}`);
+      }
     }
   }
 

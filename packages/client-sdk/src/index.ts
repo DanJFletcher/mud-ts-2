@@ -10,6 +10,8 @@ import {
   MoveCharacterCommandSchema,
   TakeCharacterItemCommandSchema,
   DropCharacterItemCommandSchema,
+  UseCharacterItemCommandSchema,
+  CharacterItemUsedEventSchema,
   ReadCharacterObjectCommandSchema,
   CharacterObjectReadEventSchema,
   type CharacterProjection,
@@ -282,6 +284,29 @@ export class MuddHttpClient {
       payload: { itemId },
     });
     return this.send(command);
+  }
+
+  async use(
+    characterId: string,
+    itemId: string,
+    targetId: string,
+    expectedVersion: number,
+    commandId = crypto.randomUUID(),
+  ): Promise<{ interactionId: string; response: string }> {
+    const command = UseCharacterItemCommandSchema.parse({
+      type: 'character.use',
+      version: 1,
+      commandId,
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      expectedVersion,
+      payload: { itemId, targetId },
+    });
+    const result = await this.send(command);
+    const useEvent = result.events?.find((event) => event.type === 'character.item_used');
+    const payload = CharacterItemUsedEventSchema.shape.payload.safeParse(useEvent?.payload);
+    if (!payload.success) throw new Error('The use action completed without returning its response.');
+    return { interactionId: payload.data.interactionId, response: payload.data.response };
   }
 
   private async send(command: unknown): Promise<CommandResponse> {

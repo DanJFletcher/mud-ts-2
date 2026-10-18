@@ -32,6 +32,7 @@ const firstCharacter = {
   itemLocations: [],
   npcProgress: [],
   readableObservations: [],
+  itemUseObservations: [],
   questProgress: [],
   archived: false,
 };

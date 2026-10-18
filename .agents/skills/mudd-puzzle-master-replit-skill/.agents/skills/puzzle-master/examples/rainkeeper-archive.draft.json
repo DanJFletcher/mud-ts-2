@@ -1,0 +1,55 @@
+{
+  "draftFormat": "puzzle-master/editorial-draft/v1",
+  "status": "NONCANONICAL_NOT_AN_ENGINE_API",
+  "id": "example.rainkeeper-archive",
+  "title": "The Rainkeeper's Archive",
+  "difficulty": 3,
+  "gateType": "side-route",
+  "goal": "Open the archive by restoring the correct flow of rainwater, or locate its maintenance access.",
+  "worldPurpose": "An old canal guild secured flood-control records behind an apparatus that requires knowledge of the waterworks.",
+  "scope": {"mechanism": "world-instance", "discovery": "character", "completion": "world-instance"},
+  "state": {
+    "pattern_known": false,
+    "dial_aligned": false,
+    "hatch_located": false,
+    "hatch_open": false,
+    "exit_accessible": false
+  },
+  "completion": {"exit_accessible": true},
+  "clues": [
+    {"id": "mural", "inference": "water-routes-to-reservoir", "channel": "text", "independent": true, "playerText": "A weathered mural shows the oldest channel feeding the reservoir before the spillway."},
+    {"id": "gear", "inference": "water-routes-to-reservoir", "channel": "text", "independent": true, "playerText": "The gear teeth are polished only where the reservoir mark would align."},
+    {"id": "ledger", "inference": "water-routes-to-reservoir", "channel": "text", "independent": true, "playerText": "A maintenance ledger says the reservoir always receives the first flow."},
+    {"id": "hatch-seam", "inference": "maintenance-route", "channel": "text", "independent": true, "playerText": "A rectangular seam runs behind a loose line of copper rivets."}
+  ],
+  "actions": [
+    {"id": "inspect-mural", "aliases": ["examine mural", "read mural"], "requires": {}, "effects": {"pattern_known": true}, "feedback": "The mural's river route becomes clear; the first flow belongs to the reservoir."},
+    {"id": "inspect-gear", "aliases": ["look at gear", "examine gear"], "requires": {}, "effects": {"pattern_known": true}, "feedback": "The gear wear confirms a preferred direction toward the reservoir."},
+    {"id": "read-ledger", "aliases": ["inspect ledger", "read notes"], "requires": {}, "effects": {"pattern_known": true}, "feedback": "The maintenance record names the reservoir as the first destination."},
+    {"id": "align-dial", "aliases": ["turn dial", "set reservoir dial"], "requires": {"pattern_known": true}, "effects": {"dial_aligned": true}, "feedback": "The dial settles into its worn track with a quiet click."},
+    {"id": "pull-chain", "aliases": ["pull release", "use chain"], "requires": {"dial_aligned": true}, "effects": {"exit_accessible": true}, "feedback": "A concealed lock lifts. The archive doors open."},
+    {"id": "inspect-rivets", "aliases": ["examine seam", "inspect wall"], "requires": {}, "effects": {"hatch_located": true}, "feedback": "Behind the copper rivets is a human-sized maintenance hatch."},
+    {"id": "unfasten-hatch", "aliases": ["open hatch", "remove rivets"], "requires": {"hatch_located": true}, "effects": {"hatch_open": true}, "feedback": "The hatch swings inward, revealing a service crawlspace."},
+    {"id": "crawl-hatch", "aliases": ["enter hatch", "use crawlspace"], "requires": {"hatch_open": true}, "effects": {"exit_accessible": true}, "feedback": "You reach the archive from the maintenance side."}
+  ],
+  "clueToActions": {
+    "mural": ["inspect-mural"],
+    "gear": ["inspect-gear"],
+    "ledger": ["read-ledger"],
+    "hatch-seam": ["inspect-rivets"]
+  },
+  "solutions": [
+    {"id": "waterworks", "actions": ["inspect-mural", "align-dial", "pull-chain"]},
+    {"id": "maintenance", "actions": ["inspect-rivets", "unfasten-hatch", "crawl-hatch"]}
+  ],
+  "hints": [
+    {"level": 1, "text": "The engraved river and the dial's worn track seem related."},
+    {"level": 2, "text": "The reservoir symbol marks the intended first destination of the flow."},
+    {"level": 3, "text": "Try aligning the dial to the reservoir mark before pulling the release."}
+  ],
+  "feedbackOnInvalidAction": "That approach has no effect here. You can inspect the mural, gear, ledger, rivets, dial or chain.",
+  "fallback": "Players can discover and open the service hatch; no timed input or scarce unique item is needed.",
+  "resets": "Persistent within a world instance until an explicitly approved content/instance reset.",
+  "confidentiality": "The example stores simple flags for finite-state testing; production must separate character discoveries from shared apparatus state.",
+  "notes": "Editorial test fixture only. NOT importable by MUDD unless a real compatible public authoring API is separately implemented."
+}

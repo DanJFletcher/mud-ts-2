@@ -43,6 +43,24 @@ export const DropCharacterItemCommandSchema = ClientCommandBaseSchema.extend({
   payload: z.object({ itemId: IdSchema }).strict(),
 }).strict();
 
+export const UseCharacterItemCommandSchema = ClientCommandBaseSchema.extend({
+  type: z.literal('character.use'),
+  expectedVersion: NonNegativeIntSchema,
+  payload: z.object({ itemId: IdSchema, targetId: IdSchema }).strict(),
+}).strict();
+
+export const CharacterItemUsedEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('character.item_used'),
+  payload: z.object({
+    characterId: IdSchema,
+    locationId: IdSchema,
+    itemId: IdSchema,
+    targetId: IdSchema,
+    interactionId: IdSchema,
+    response: z.string().min(1).max(2000),
+  }).strict(),
+}).strict();
+
 export const ReadCharacterObjectCommandSchema = ClientCommandBaseSchema.extend({
   type: z.literal('character.read'),
   expectedVersion: NonNegativeIntSchema,
@@ -145,6 +163,12 @@ export const CharacterProjectionSchema = z.object({
     objectId: IdSchema,
     locationId: IdSchema,
   }).strict()).default([]),
+  itemUseObservations: z.array(z.object({
+    interactionId: IdSchema,
+    itemId: IdSchema,
+    targetId: IdSchema,
+    locationId: IdSchema,
+  }).strict()).default([]),
   questProgress: z.array(z.object({
     questId: IdSchema,
     definitionVersion: z.string().min(1).max(40),
@@ -158,6 +182,8 @@ export type CharacterCreatedEvent = z.infer<typeof CharacterCreatedEventSchema>;
 export type TakeCharacterItemCommand = z.infer<typeof TakeCharacterItemCommandSchema>;
 export type CharacterItemTakenEvent = z.infer<typeof CharacterItemTakenEventSchema>;
 export type DropCharacterItemCommand = z.infer<typeof DropCharacterItemCommandSchema>;
+export type UseCharacterItemCommand = z.infer<typeof UseCharacterItemCommandSchema>;
+export type CharacterItemUsedEvent = z.infer<typeof CharacterItemUsedEventSchema>;
 export type ReadCharacterObjectCommand = z.infer<typeof ReadCharacterObjectCommandSchema>;
 export type CharacterObjectReadEvent = z.infer<typeof CharacterObjectReadEventSchema>;
 export type CharacterItemDroppedEvent = z.infer<typeof CharacterItemDroppedEventSchema>;

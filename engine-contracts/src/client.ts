@@ -13,6 +13,7 @@ import type {
 import type { MoveCharacterCommand } from './movement.js';
 import type {
   DropCharacterItemCommand,
+  UseCharacterItemCommand,
   ReadCharacterObjectCommand,
   TakeCharacterItemCommand,
 } from './character.js';
@@ -25,6 +26,7 @@ export type ClientCommand =
   | MoveCharacterCommand
   | TakeCharacterItemCommand
   | DropCharacterItemCommand
+  | UseCharacterItemCommand
   | ReadCharacterObjectCommand
   | SayCommand
   | CreateCharacterCommand

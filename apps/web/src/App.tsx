@@ -76,6 +76,10 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
     "Usage: take <item> | take all",
     "Pick up an item in the current room, or take all available items there.",
   ],
+  use: [
+    "Usage: use <item> on <target>",
+    "Use a carried item on an interactive target in the current room.",
+  ],
   drop: [
     "Usage: drop <item>",
     "Put down an item you carry in the current room.",
@@ -94,8 +98,9 @@ const GENERAL_HELP = [
   "go <direction> — Travel through an available exit.",
   "read <object> — Read text on an object in the current room.",
   "take <item> | take all — Pick up one or all items in the current room.",
+  "use <item> on <target> — Use a carried item on an interactive target here.",
   "drop <item> — Put down an item you carry.",
-  "Quick actions: Look, Read, Take, Drop, Go, Talk, and Help.",
+  "Quick actions: Look, Read, Take, Use, Drop, Go, and Talk.",
 ];
 
 function getCommandHelp(topic: string): readonly string[] {
@@ -128,10 +133,11 @@ function completedQuestObjectiveKeys(snapshot: GameSnapshot): string[] {
 export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"look" | "read" | "take" | "drop" | "move" | "talk" | null>(null);
+  const [pending, setPending] = useState<"look" | "read" | "take" | "use" | "drop" | "move" | "talk" | null>(null);
   const [command, setCommand] = useState("");
   const [quickCommandPage, setQuickCommandPage] = useState<"main" | "more">("main");
-  const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "go" | "look" | "read" | "drop" | "take" | "talk">("quick");
+  const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "go" | "look" | "read" | "drop" | "take" | "talk" | "use" | "use-target">("quick");
+  const [quickUseItemId, setQuickUseItemId] = useState<string | null>(null);
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [collapsedQuestGroups, setCollapsedQuestGroups] = useState({ active: false, completed: false });
   const [collapsedQuestCards, setCollapsedQuestCards] = useState<Set<string>>(() => new Set());
@@ -431,6 +437,27 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     }
   }, [addEntry, pending, refreshAfterMutation, snapshot]);
 
+  const performItemUse = useCallback(async (itemId: string, targetId: string) => {
+    if (!snapshot?.character || !snapshot.location || pending) return;
+    setPending("use");
+    try {
+      const result = await client.use(
+        snapshot.character.characterId,
+        itemId,
+        targetId,
+        snapshot.location.revision,
+      );
+      const nextSnapshot = await client.getGame();
+      setSnapshot(nextSnapshot);
+      setConnectionError("");
+      addEntry("narration", result.response);
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "You cannot use that item here.");
+    } finally {
+      setPending(null);
+    }
+  }, [addEntry, pending, snapshot]);
+
   const move = useCallback(async (exitId: string) => {
     if (!snapshot?.character || !snapshot.location || pending) return;
     const exit = snapshot.location.exits.find((item) => item.id === exitId);
@@ -542,6 +569,43 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
       await takeObject(object.id, object.label);
       return;
     }
+    if (verb.toLowerCase() === "use") {
+      addEntry("system", `> ${value}`);
+      const useMatch = /^(.+?)\s+on\s+(.+)$/i.exec(target);
+      if (!useMatch) {
+        addEntry("error", "Use what on what? Try “use stone on bell”.");
+        return;
+      }
+      const itemTarget = useMatch[1]!.replace(/^(?:the|a|an)\s+/i, "").trim();
+      const objectTarget = useMatch[2]!.replace(/^(?:the|a|an)\s+/i, "").trim();
+      if (!itemTarget || !objectTarget) {
+        addEntry("error", "Use what on what? Try “use stone on bell”.");
+        return;
+      }
+      const carriedItems = (snapshot?.character?.inventory ?? []).map((item) => ({
+        ...item, readable: false, takeable: true,
+      }));
+      const itemMatches = findObjectMatches(itemTarget, carriedItems);
+      if (itemMatches.length === 0) {
+        addEntry("error", `You are not carrying anything called “${itemTarget}”.`);
+        return;
+      }
+      if (itemMatches.length > 1) {
+        addEntry("error", `Which item do you mean: ${itemMatches.map((item) => item.label).join(", ")}?`);
+        return;
+      }
+      const targetMatches = findObjectMatches(objectTarget, snapshot?.location?.objects ?? []);
+      if (targetMatches.length === 0) {
+        addEntry("error", `There is no object called “${objectTarget}” in this room.`);
+        return;
+      }
+      if (targetMatches.length > 1) {
+        addEntry("error", `Which target do you mean: ${targetMatches.map((object) => object.label).join(", ")}?`);
+        return;
+      }
+      await performItemUse(itemMatches[0]!.id, targetMatches[0]!.id);
+      return;
+    }
     if (verb.toLowerCase() === "drop") {
       addEntry("system", `> ${value}`);
       if (!target) {
@@ -579,11 +643,12 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     }
     addEntry("system", `> ${value}`);
     addEntry("error", 'Unknown command. Try "help" for the command list.');
-  }, [addEntry, dropObject, inspect, move, pending, readObject, snapshot, takeAllObjects, takeObject, talkToNpc]);
+  }, [addEntry, dropObject, inspect, move, pending, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse]);
 
   const submitQuickCommand = useCallback((rawCommand: string) => {
     setQuickCommandMode("quick");
     setQuickCommandPage("main");
+    setQuickUseItemId(null);
     void executeCommand(rawCommand);
   }, [executeCommand]);
 
@@ -767,7 +832,8 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                           : quickCommandMode === "look" ? "Look"
                             : quickCommandMode === "read" ? "Read"
                               : quickCommandMode === "drop" ? "Drop"
-                                : quickCommandMode === "take" ? "Take" : "Talk"}
+                                : quickCommandMode === "take" ? "Take"
+                                  : quickCommandMode === "use" || quickCommandMode === "use-target" ? "Use" : "Talk"}
                       </span>
                     )}
                     <div
@@ -780,7 +846,9 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                             : quickCommandMode === "look" ? "Things to look at"
                               : quickCommandMode === "read" ? "Readable objects"
                                 : quickCommandMode === "drop" ? "Items to drop"
-                                  : quickCommandMode === "talk" ? "People here" : "Items to take"
+                                : quickCommandMode === "talk" ? "People here"
+                                  : quickCommandMode === "use" ? "Items to use"
+                                    : quickCommandMode === "use-target" ? "Use target" : "Items to take"
                       }
                     >
                       {quickCommandMode === "go" ? (
@@ -929,6 +997,65 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                             </>
                           ) : <span className="focused-quick-commands__empty">Nothing to take here</span>}
                         </>
+                      ) : quickCommandMode === "use" ? (
+                        <>
+                          <button
+                            type="button"
+                            className="focused-quick-command focused-quick-command--back"
+                            onClick={() => setQuickCommandMode("quick")}
+                            aria-label={quickReturnLabel}
+                            disabled={pending !== null}
+                          >
+                            ‹
+                          </button>
+                          {(snapshot.character?.inventory ?? []).length ? (
+                            (snapshot.character?.inventory ?? []).map((item) => (
+                              <button
+                                key={item.id}
+                                type="button"
+                                className="focused-quick-command"
+                                onClick={() => {
+                                  setQuickUseItemId(item.id);
+                                  setQuickCommandMode("use-target");
+                                }}
+                                aria-label={`Choose ${item.label} to use`}
+                                disabled={pending !== null}
+                              >
+                                {item.label.toLocaleLowerCase()}
+                              </button>
+                            ))
+                          ) : <span className="focused-quick-commands__empty">Nothing to use</span>}
+                        </>
+                      ) : quickCommandMode === "use-target" ? (
+                        <>
+                          <button
+                            type="button"
+                            className="focused-quick-command focused-quick-command--back"
+                            onClick={() => setQuickCommandMode("use")}
+                            aria-label="Return to items to use"
+                            disabled={pending !== null}
+                          >
+                            ‹
+                          </button>
+                          {(() => {
+                            const item = snapshot.character?.inventory.find((candidate) => candidate.id === quickUseItemId);
+                            const targets = (snapshot.location.objects ?? []).filter((object) => !object.readable && !object.takeable);
+                            return item && targets.length ? targets.map((target) => (
+                              <button
+                                key={target.id}
+                                type="button"
+                                className="focused-quick-command"
+                                onClick={() => submitQuickCommand(`use ${item.label} on ${target.label}`)}
+                                aria-label={`Use ${item.label} on ${target.label}`}
+                                disabled={pending !== null}
+                              >
+                                {target.label.toLocaleLowerCase()}
+                              </button>
+                            )) : <span className="focused-quick-commands__empty">
+                              {item ? "No usable targets here" : "Choose an item to use"}
+                            </span>;
+                          })()}
+                        </>
                       ) : quickCommandMode === "talk" ? (
                         <>
                           <button
@@ -978,20 +1105,20 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                           <button
                             type="button"
                             className="focused-quick-command"
+                            onClick={() => setQuickCommandMode("use")}
+                            aria-label="Show items to use"
+                            disabled={pending !== null}
+                          >
+                            use <span aria-hidden="true">›</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="focused-quick-command"
                             onClick={() => setQuickCommandMode("talk")}
                             aria-label="Show people to talk to"
                             disabled={pending !== null}
                           >
                             talk <span aria-hidden="true">›</span>
-                          </button>
-                          <button
-                            type="button"
-                            className="focused-quick-command"
-                            onClick={() => submitQuickCommand("help")}
-                            aria-label="Quick help"
-                            disabled={pending !== null}
-                          >
-                            help
                           </button>
                         </>
                       ) : (

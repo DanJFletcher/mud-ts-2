@@ -2,6 +2,7 @@ import type { StoredGameEvent } from './types.js';
 import {
   CharacterItemTakenEventSchema,
   CharacterItemDroppedEventSchema,
+  CharacterItemUsedEventSchema,
   CharacterObjectReadEventSchema,
   CharacterNpcDialogueChoiceMadeEventSchema,
   QuestAcceptedEventSchema,
@@ -88,6 +89,32 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         itemLocations: state.itemLocations.map((entry) => entry.item.id === dropped.payload.item.id
           ? { ...entry, locationId: dropped.payload.locationId }
           : entry),
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.item_used') {
+      if (!state) throw new Error('Item use event encountered before character creation.');
+      const used = CharacterItemUsedEventSchema.parse(publicEvent);
+      if (
+        used.payload.characterId !== state.characterId ||
+        used.payload.locationId !== state.locationId ||
+        !state.inventory.some((item) => item.id === used.payload.itemId)
+      ) {
+        throw new Error(`Invalid item use event at revision ${event.aggregateVersion}.`);
+      }
+      const alreadyUsed = state.itemUseObservations.some((observation) =>
+        observation.interactionId === used.payload.interactionId &&
+        observation.locationId === used.payload.locationId,
+      );
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        itemUseObservations: alreadyUsed
+          ? state.itemUseObservations
+          : [...state.itemUseObservations, {
+            interactionId: used.payload.interactionId,
+            itemId: used.payload.itemId,
+            targetId: used.payload.targetId,
+            locationId: used.payload.locationId,
+          }],
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'character.object_read') {

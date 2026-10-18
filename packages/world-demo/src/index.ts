@@ -198,6 +198,22 @@ const draft = {
       mapPosition: { x: 1, y: 0 },
       description:
         'The roofless tower stands quiet above the trees. Its cracked bell hangs still; paths lead west to the clearing and north to the bridge.',
+      interactables: [
+        {
+          id: 'tower-cracked-bell',
+          label: 'Cracked bell',
+          description: 'A heavy bronze bell hangs from a weathered frame. A long crack runs down its side.',
+        },
+      ],
+      itemUses: [
+        {
+          id: 'ring-tower-bell-with-stone',
+          itemId: 'mossgate-loose-stone',
+          targetId: 'tower-cracked-bell',
+          response: 'You strike the cracked bell with the smooth stone. A low, uneven note rolls through the tower.',
+          repeatResponse: 'You strike the bell again. Its low note echoes through the stonework.',
+        },
+      ],
       exits: [
         { id: 'tower-to-clearing', fromLocationId: 'bell-tower', toLocationId: 'mossgate-clearing', label: 'West to Mossgate Clearing', direction: 'west' },
         { id: 'tower-to-bridge', fromLocationId: 'bell-tower', toLocationId: 'glasswater-bridge', label: 'North to Glasswater Bridge', direction: 'north' },

@@ -70,7 +70,13 @@ function currentLocation() {
         readable: false,
         takeable: true,
       }] : []),
-    ] : [],
+    ] : [{
+      id: 'tower-cracked-bell',
+      label: 'Cracked bell',
+      description: 'A heavy bronze bell hangs from a weathered frame.',
+      readable: false,
+      takeable: false,
+    }],
     exits: [{
       id: room === 'clearing' ? 'clearing-to-bridge' : 'bridge-to-clearing',
       label: room === 'clearing' ? 'North to Glasswater Bridge' : 'South to Mossgate Clearing',
@@ -268,7 +274,7 @@ beforeEach(() => {
     if (path === '/api/commands') {
       const command = JSON.parse(String(init?.body ?? '{}')) as {
         type?: string;
-        payload?: { itemId?: string; choiceId?: string; objectId?: string };
+        payload?: { itemId?: string; targetId?: string; choiceId?: string; objectId?: string };
       };
       if (command.type === 'character.read' && command.payload?.objectId === 'mossgate-marker') {
         const readObjective = questJournal.find((quest) => quest.questId === 'mara-wayfinding')
@@ -306,6 +312,24 @@ beforeEach(() => {
         if (command.payload?.itemId === 'mossgate-lost-feather') secondItemTaken = false;
         revision += 1;
         return json({ receipt: { ok: true, newAggregateVersion: revision }, streamId: characterId });
+      }
+      if (command.type === 'character.use') {
+        revision += 1;
+        return json({
+          receipt: { ok: true, newAggregateVersion: revision },
+          streamId: characterId,
+          events: [{
+            type: 'character.item_used',
+            payload: {
+              characterId,
+              locationId: currentLocation().locationId,
+              itemId: command.payload?.itemId,
+              targetId: command.payload?.targetId,
+              interactionId: 'test-item-use',
+              response: 'The mock interaction succeeds.',
+            },
+          }],
+        });
       }
       if (moveError) return json({ message: moveError }, 409);
       room = room === 'clearing' ? 'bridge' : 'clearing';
@@ -694,7 +718,8 @@ describe('single-character world session client', () => {
     expect(history).toHaveTextContent('> help');
     expect(history).toHaveTextContent('take <item> | take all — Pick up one or all items in the current room.');
     expect(history).toHaveTextContent('talk <npc> [about <topic>] — Speak privately with someone in the current room.');
-    expect(history).toHaveTextContent('Quick actions: Look, Read, Take, Drop, Go, Talk, and Help.');
+    expect(history).toHaveTextContent('use <item> on <target> — Use a carried item on an interactive target here.');
+    expect(history).toHaveTextContent('Quick actions: Look, Read, Take, Use, Drop, Go, and Talk.');
 
     fireEvent.change(commandInput, { target: { value: 'help LOOK' } });
     fireEvent.submit(commandInput.closest('form')!);
@@ -706,6 +731,52 @@ describe('single-character world session client', () => {
     await screen.findByText('No help is available for "unknown".');
     expect(history).toHaveTextContent('Try "help" for the command list.');
     expect(apiFetch.mock.calls.some(([path]) => path === '/api/commands' || path === '/api/queries')).toBe(false);
+  });
+
+  it('uses a carried item on a room target from the terminal', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
+
+    fireEvent.change(commandInput, { target: { value: 'take loose stone' } });
+    fireEvent.submit(commandInput.closest('form')!);
+    await screen.findByText('You pick up the loose stone.');
+
+    fireEvent.change(commandInput, { target: { value: 'use the loose stone on the marker' } });
+    fireEvent.submit(commandInput.closest('form')!);
+    await screen.findByText('The mock interaction succeeds.');
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'character.use' &&
+      JSON.parse(String(init?.body ?? '{}')).payload.itemId === 'mossgate-loose-stone' &&
+      JSON.parse(String(init?.body ?? '{}')).payload.targetId === 'mossgate-marker'
+    )).toBe(true);
+  });
+
+  it('offers item use through the secondary quick actions page', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
+    fireEvent.change(commandInput, { target: { value: 'take loose stone' } });
+    fireEvent.submit(commandInput.closest('form')!);
+    await screen.findByText('You pick up the loose stone.');
+    quickGo('north');
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show more quick actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show items to use' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Choose Loose stone to use' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Use Loose stone on Cracked bell' }));
+    await screen.findByText('The mock interaction succeeds.');
+
+    expect(apiFetch.mock.calls.some(([path, init]) => {
+      if (path !== '/api/commands') return false;
+      const body = JSON.parse(String(init?.body ?? '{}'));
+      return body.type === 'character.use' &&
+        body.payload.itemId === 'mossgate-loose-stone' &&
+        body.payload.targetId === 'tower-cracked-bell';
+    })).toBe(true);
   });
 
   it('keeps NPC choices private in the terminal and exposes them as persistent actions', async () => {
@@ -1026,7 +1097,7 @@ describe('single-character world session client', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show more quick actions' }));
     const moreQuickActions = screen.getByRole('group', { name: 'More quick actions' });
     expect(screen.queryByText('More', { exact: true })).not.toBeInTheDocument();
-    expect(moreQuickActions).toContainElement(screen.getByRole('button', { name: 'Quick help' }));
+    expect(moreQuickActions).toContainElement(screen.getByRole('button', { name: 'Show items to use' }));
     expect(moreQuickActions).toContainElement(screen.getByRole('button', { name: 'Show items to take' }));
     fireEvent.click(screen.getByRole('button', { name: 'Show items to take' }));
     const itemsToTake = screen.getByRole('group', { name: 'Items to take' });
@@ -1065,18 +1136,14 @@ describe('single-character world session client', () => {
     expect(screen.getByRole('button', { name: 'Show more quick actions' })).toBeVisible();
   });
 
-  it('shows Help on the second quick-action page and lets Take all pick up every room item', async () => {
+  it('offers Take all on the second quick-action page and picks up every room item', async () => {
     includeSecondTakeable = true;
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     const history = screen.getByRole('region', { name: 'Terminal output' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Show more quick actions' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Quick help' }));
-    expect(history).toHaveTextContent('> help');
-    expect(history).toHaveTextContent('Commands');
-    expect(screen.getByRole('button', { name: 'Show look targets' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Show more quick actions' }));
+    expect(screen.queryByRole('button', { name: 'Quick help' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Show items to take' }));
     const itemsToTake = screen.getByRole('group', { name: 'Items to take' });
