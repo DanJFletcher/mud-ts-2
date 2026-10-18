@@ -157,6 +157,7 @@ export const NpcPresenceProjectionSchema = z.object({
   name: z.string().min(1).max(120),
   description: z.string().min(1).max(1000),
   canChallenge: z.boolean().default(false),
+  canShop: z.boolean().default(false),
 }).strict();
 
 export const LocationDefinitionSchema = z.object({

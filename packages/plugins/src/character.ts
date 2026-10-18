@@ -288,11 +288,12 @@ export const characterPlugin: EnginePlugin = {
         occupants: [],
         ...(location.npcs?.length
           ? {
-            npcs: location.npcs.map(({ id, name, description, combatProfile }) => ({
+            npcs: location.npcs.map(({ id, name, description, combatProfile, shop }) => ({
               id,
               name,
               description,
               canChallenge: Boolean(combatProfile),
+              canShop: Boolean(shop),
             })),
           }
           : {}),

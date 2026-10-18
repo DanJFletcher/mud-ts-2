@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { apiFetch } = vi.hoisted(() => {
@@ -117,16 +117,19 @@ function currentLocation() {
       name: 'Mara',
       description: 'A path keeper stands beside the weathered marker, watching the northern trail.',
       canChallenge: false,
+      canShop: false,
     }, {
       id: 'mossgate-training-sentinel',
       name: 'Practice Sentinel',
       description: 'A knee-high wooden sentinel waits beside the trail. Its padded arms lift as you approach.',
       canChallenge: true,
+      canShop: false,
     }] : room === 'market' ? [{
       id: 'sella-reedbank-merchant',
       name: 'Sella',
       description: 'A careful trader sorts travel goods beneath a green awning.',
       canChallenge: false,
+      canShop: true,
     }] : [],
   };
 }
@@ -491,9 +494,50 @@ beforeEach(() => {
 });
 
 describe('single-character world session client', () => {
+  it('shows every quick command across pages with no more than four command actions per page', async () => {
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+
+    const pageActions: string[][] = [];
+    for (let page = 1; page <= 4; page += 1) {
+      const group = await screen.findByRole('group', { name: `Quick commands, page ${page}` });
+      const buttons = within(group).getAllByRole('button');
+      pageActions.push(buttons
+        .filter((button) =>
+          !button.classList.contains('focused-quick-command--back') &&
+          !button.classList.contains('focused-quick-command--next')
+        )
+        .map((button) => button.getAttribute('aria-label') ?? button.textContent ?? ''));
+      expect(pageActions.at(-1)).toHaveLength(page === 4 ? 1 : 4);
+
+      if (page < 4) {
+        fireEvent.click(screen.getByRole('button', {
+          name: page === 1 ? 'Show more quick actions' : `Show quick actions page ${page + 1}`,
+        }));
+      }
+    }
+
+    expect(pageActions.flat()).toEqual([
+      'Show look targets',
+      'Show readable objects',
+      'Show items to drop',
+      'Show available exits',
+      'Show items to take',
+      'Show items to use',
+      'Show people to talk to',
+      'Show merchants',
+      'Show items to buy',
+      'Show opponents to attack',
+      'Defend',
+      'Flee',
+      'Show command help',
+    ]);
+  });
+
   it('starts and controls combat through terminal actions backed by SDK commands', async () => {
     render(<WorldClient onLeaveWorld={async () => undefined} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Show opponents to attack' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Show more quick actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show quick actions page 3' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show opponents to attack' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Attack Practice Sentinel' }));
     await screen.findByText('Round 1 · Practice Sentinel');
     fireEvent.click(screen.getByRole('button', { name: 'defend' }));
@@ -1265,7 +1309,7 @@ describe('single-character world session client', () => {
     expect(screen.getByRole('button', { name: 'Show more quick actions' })).toBeVisible();
 
     fireEvent.click(screen.getByRole('button', { name: 'Show more quick actions' }));
-    const moreQuickActions = screen.getByRole('group', { name: 'More quick actions' });
+    const moreQuickActions = screen.getByRole('group', { name: 'Quick commands, page 2' });
     expect(screen.queryByText('More', { exact: true })).not.toBeInTheDocument();
     expect(moreQuickActions).toContainElement(screen.getByRole('button', { name: 'Show items to use' }));
     expect(moreQuickActions).toContainElement(screen.getByRole('button', { name: 'Show items to take' }));
