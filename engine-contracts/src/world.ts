@@ -37,6 +37,26 @@ export const NpcDialogueTopicDefinitionSchema = z.object({
   response: z.string().min(1).max(2000),
 }).strict();
 
+export const NpcQuestResponseDefinitionSchema = z.object({
+  questId: IdSchema,
+  status: z.enum(['active', 'completed']),
+  requiresCompletedObjectiveIds: z.array(IdSchema).max(12).default([]),
+  requiresIncompleteObjectiveIds: z.array(IdSchema).max(12).default([]),
+  response: z.string().min(1).max(2000),
+}).strict().superRefine((questResponse, context) => {
+  const completedIds = new Set(questResponse.requiresCompletedObjectiveIds);
+  for (const objectiveId of questResponse.requiresIncompleteObjectiveIds) {
+    if (completedIds.has(objectiveId)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['requiresIncompleteObjectiveIds'],
+        message: 'An objective cannot be required as both completed and incomplete.',
+      });
+      break;
+    }
+  }
+});
+
 export const NpcDialogueChoiceDefinitionSchema = z.object({
   id: IdSchema,
   label: z.string().min(1).max(120),
@@ -48,6 +68,7 @@ export const NpcDialogueChoiceDefinitionSchema = z.object({
 export const NpcDialogueDefinitionSchema = z.object({
   prompt: z.string().min(1).max(2000),
   choices: z.array(NpcDialogueChoiceDefinitionSchema).min(1).max(8),
+  questResponses: z.array(NpcQuestResponseDefinitionSchema).max(24).optional(),
 }).strict().superRefine((dialogue, context) => {
   const choiceIds = new Set<string>();
   const progressFlagIds = new Set<string>();
@@ -266,6 +287,23 @@ export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
     }
   }
   for (const { npc } of npcs) {
+    for (const questResponse of npc.dialogue?.questResponses ?? []) {
+      const quest = quests.find((candidate) => candidate.id === questResponse.questId);
+      if (!quest) {
+        errors.push(`NPC ${npc.id} dialogue response references missing quest ${questResponse.questId}`);
+        continue;
+      }
+      for (const objectiveId of [
+        ...questResponse.requiresCompletedObjectiveIds,
+        ...questResponse.requiresIncompleteObjectiveIds,
+      ]) {
+        if (!quest.objectives.some((objective) => objective.id === objectiveId)) {
+          errors.push(
+            `NPC ${npc.id} dialogue response references missing objective ${objectiveId} in quest ${quest.id}`,
+          );
+        }
+      }
+    }
     for (const choice of npc.dialogue?.choices ?? []) {
       if (!choice.questAction) continue;
       const quest = quests.find((candidate) => candidate.id === choice.questAction?.questId);

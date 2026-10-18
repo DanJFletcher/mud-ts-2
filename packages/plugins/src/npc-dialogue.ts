@@ -62,6 +62,20 @@ function dialogueProjection(
   const progress = character.npcProgress.find((entry) => entry.npcId === npc.id);
   const lastChoice = dialogue.choices.find((choice) => choice.id === progress?.lastChoiceId);
   const questJournal = projectQuestJournal(character, world);
+  const matchingQuestResponses = (dialogue.questResponses ?? []).filter((candidate) => {
+    const quest = questJournal.find((entry) => entry.questId === candidate.questId);
+    if (!quest || quest.status !== candidate.status) return false;
+    const completedObjectiveIds = new Set(
+      quest.objectives.filter((objective) => objective.completed).map((objective) => objective.id),
+    );
+    return candidate.requiresCompletedObjectiveIds.every((id) => completedObjectiveIds.has(id)) &&
+      candidate.requiresIncompleteObjectiveIds.every((id) => !completedObjectiveIds.has(id));
+  });
+  const questResponse = matchingQuestResponses
+    .sort((left, right) =>
+      right.requiresCompletedObjectiveIds.length + right.requiresIncompleteObjectiveIds.length -
+      left.requiresCompletedObjectiveIds.length - left.requiresIncompleteObjectiveIds.length,
+    )[0];
   const choices = dialogue.choices
     .filter((choice) => {
       if (progress?.progressFlagIds.includes(choice.progressFlagId)) return false;
@@ -82,7 +96,7 @@ function dialogueProjection(
   return NpcDialogueProjectionSchema.parse({
     npcId: npc.id,
     npcName: npc.name,
-    text: lastChoice?.response ?? dialogue.prompt,
+    text: questResponse?.response ?? lastChoice?.response ?? dialogue.prompt,
     choices,
   });
 }

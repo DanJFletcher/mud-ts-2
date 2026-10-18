@@ -195,6 +195,10 @@ describe('MuddHttpClient', () => {
       'quest-accept',
     );
     const afterAccept = await client.look(characterId, 'quest-look-after-accept');
+    await expect(client.talk(characterId, 'mara-waykeeper', undefined, 'quest-talk-after-accept'))
+      .resolves.toMatchObject({
+        text: 'I’ll mark the way for you. Read the weathered marker beside me to start.',
+      });
     const acceptedState = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
     expect(projectQuestJournal(acceptedState, demoWorld)).toMatchObject([{
       questId: 'mara-wayfinding',
@@ -215,6 +219,10 @@ describe('MuddHttpClient', () => {
     const marker = await client.read(characterId, 'mossgate-marker', afterAccept.revision, 'quest-read-marker');
     expect(marker.text).toBe('OLD BELL TOWER — EAST');
     const afterRead = await client.look(characterId, 'quest-look-after-read');
+    await expect(client.talk(characterId, 'mara-waykeeper', undefined, 'quest-talk-after-read'))
+      .resolves.toMatchObject({
+        text: 'You read the marker. Its arrow points east to the Old Bell Tower. Visit the tower, then come back and tell me what you found.',
+      });
     await client.move(characterId, 'clearing-to-tower', afterRead.revision, 'quest-visit-tower');
     const atTower = await client.look(characterId, 'quest-look-at-tower');
     expect(atTower.title).toBe('Old Bell Tower');
@@ -225,6 +233,8 @@ describe('MuddHttpClient', () => {
     await client.move(characterId, 'tower-to-clearing', atTower.revision, 'quest-return-to-mara');
     const backAtMara = await client.look(characterId, 'quest-look-back-at-mara');
     const reportDialogue = await client.talk(characterId, 'mara-waykeeper', undefined, 'quest-report-dialogue');
+    expect(reportDialogue.text)
+      .toBe('You reached the Old Bell Tower. Tell me what you found when you are ready to report.');
     expect(reportDialogue.choices).toContainEqual({
       id: 'report-wayfinding-quest',
       label: 'I visited the Old Bell Tower',
@@ -250,10 +260,26 @@ describe('MuddHttpClient', () => {
       ],
     }]);
 
+    const completedDialogue = await client.talk(
+      characterId,
+      'mara-waykeeper',
+      undefined,
+      'quest-talk-after-turn-in',
+    );
+    expect(completedDialogue.text).toBe('You brought back the story of the path. Thank you; I will remember it.');
+    expect(completedDialogue.choices).not.toContainEqual({
+      id: 'report-wayfinding-quest',
+      label: 'I visited the Old Bell Tower',
+    });
+
     const anotherCreated = await client.createCharacter('Cedar', 'quest-create-second-character');
     const anotherCharacterId = anotherCreated.streamId!;
     const anotherState = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, anotherCharacterId))!;
     expect(projectQuestJournal(anotherState, demoWorld)).toEqual([]);
+    await expect(client.talk(anotherCharacterId, 'mara-waykeeper', undefined, 'quest-talk-second-character'))
+      .resolves.toMatchObject({
+        text: 'The old paths still have their stories. What would you like to ask?',
+      });
     await engine.stop();
   });
 });

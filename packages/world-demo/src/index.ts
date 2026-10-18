@@ -66,6 +66,36 @@ const draft = {
           greeting: 'The north bridge is open. The marker points east to the Old Bell Tower.',
           dialogue: {
             prompt: 'The old paths still have their stories. What would you like to ask?',
+            questResponses: [
+              {
+                questId: 'mara-wayfinding',
+                status: 'active',
+                requiresCompletedObjectiveIds: [],
+                requiresIncompleteObjectiveIds: ['read-marker'],
+                response: 'I’ll mark the way for you. Read the weathered marker beside me to start.',
+              },
+              {
+                questId: 'mara-wayfinding',
+                status: 'active',
+                requiresCompletedObjectiveIds: ['read-marker'],
+                requiresIncompleteObjectiveIds: ['visit-bell-tower'],
+                response: 'You read the marker. Its arrow points east to the Old Bell Tower. Visit the tower, then come back and tell me what you found.',
+              },
+              {
+                questId: 'mara-wayfinding',
+                status: 'active',
+                requiresCompletedObjectiveIds: ['read-marker', 'visit-bell-tower'],
+                requiresIncompleteObjectiveIds: [],
+                response: 'You reached the Old Bell Tower. Tell me what you found when you are ready to report.',
+              },
+              {
+                questId: 'mara-wayfinding',
+                status: 'completed',
+                requiresCompletedObjectiveIds: [],
+                requiresIncompleteObjectiveIds: [],
+                response: 'You brought back the story of the path. Thank you; I will remember it.',
+              },
+            ],
             choices: [
               {
                 id: 'ask-marker',
