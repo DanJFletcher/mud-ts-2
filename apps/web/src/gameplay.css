@@ -158,17 +158,64 @@
   --terminal-warm: #dfb27d;
 }
 
+.focused-terminal--collapsed {
+  height: auto;
+  min-height: 0;
+  max-height: none;
+}
+
 .focused-terminal-room {
+  display: flex;
   flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 13px 17px;
   border-bottom: 1px solid var(--terminal-border);
 }
 
 .focused-terminal-location {
+  min-width: 0;
+  flex: 1 1 auto;
   margin: 0;
   color: var(--terminal-text);
   font: 500 1rem/1.4 "DM Mono", monospace;
   letter-spacing: .02em;
+  overflow-wrap: anywhere;
+}
+
+.focused-terminal-toggle {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  color: var(--terminal-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.focused-terminal-toggle:hover {
+  color: var(--terminal-text);
+  background: color-mix(in srgb, var(--terminal-accent) 10%, transparent);
+}
+
+.focused-terminal-toggle:focus-visible {
+  outline: 2px solid var(--terminal-accent);
+  outline-offset: -2px;
+}
+
+.focused-terminal-body {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.focused-terminal--collapsed .focused-terminal-body {
+  display: none;
 }
 
 .focused-terminal-history {

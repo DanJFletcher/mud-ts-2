@@ -303,6 +303,23 @@ describe('single-character world session client', () => {
     expect(onLeaveWorld).toHaveBeenCalledOnce();
   });
 
+  it('collapses the terminal to its room header and restores the command history', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const terminal = screen.getByRole('heading', { name: 'Mossgate Clearing' }).closest('.focused-terminal');
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+    expect(terminal).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse terminal' }));
+    expect(terminal).toHaveClass('focused-terminal--collapsed');
+    expect(screen.getByRole('button', { name: 'Expand terminal' })).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand terminal' }));
+    expect(terminal).not.toHaveClass('focused-terminal--collapsed');
+    expect(history).toHaveTextContent('> look');
+    expect(screen.getByRole('textbox', { name: 'Enter a command' })).toBeInTheDocument();
+  });
+
   it('tracks the current room and rooms already visited on the map', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     const map = await screen.findByRole('region', { name: 'World map' });

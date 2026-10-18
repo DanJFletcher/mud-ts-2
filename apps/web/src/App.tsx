@@ -16,7 +16,7 @@ import {
   TextInput,
   type ActivityEntry,
 } from "@mudd/ui";
-import { Compass, Moon, NotebookText, Sun, UserRound, Users } from "lucide-react";
+import { ChevronDown, ChevronUp, Compass, Moon, NotebookText, Sun, UserRound, Users } from "lucide-react";
 import { RoomChatPanel } from "./RoomChatPanel.js";
 import { WorldMapPanel } from "./WorldMapPanel.js";
 
@@ -132,6 +132,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     window.localStorage.getItem("mudd-theme") === "dark" ? "dark" : "light"
   );
   const [screen, setScreen] = useState<Screen>(currentScreen);
+  const [terminalCollapsed, setTerminalCollapsed] = useState(false);
   const [chatFullscreen, setChatFullscreen] = useState(false);
   const [mapFullscreen, setMapFullscreen] = useState(false);
   const contentRef = useRef<HTMLElement>(null);
@@ -681,23 +682,40 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
               </Panel>
             ) : snapshot?.location ? (
               <>
-                <Panel className="focused-room focused-terminal" aria-busy={pending !== null}>
+                <Panel
+                  className={`focused-room focused-terminal${terminalCollapsed ? " focused-terminal--collapsed" : ""}`}
+                  aria-busy={pending !== null}
+                >
                   <div className="focused-terminal-room">
                     <h1 className="focused-terminal-location">{snapshot.location.title}</h1>
+                    <button
+                      className="focused-terminal-toggle"
+                      type="button"
+                      onClick={() => setTerminalCollapsed((current) => !current)}
+                      aria-label={terminalCollapsed ? "Expand terminal" : "Collapse terminal"}
+                      aria-expanded={!terminalCollapsed}
+                      aria-controls="focused-terminal-body"
+                      title={terminalCollapsed ? "Expand terminal" : "Collapse terminal"}
+                    >
+                      {terminalCollapsed
+                        ? <ChevronDown size={17} aria-hidden="true" />
+                        : <ChevronUp size={17} aria-hidden="true" />}
+                    </button>
                   </div>
-                  <div
-                    className="focused-terminal-history"
-                    ref={terminalHistoryRef}
-                    role="region"
-                    aria-label="Terminal output"
-                    tabIndex={0}
-                    onScroll={(event) => {
-                      const history = event.currentTarget;
-                      terminalFollowsLatestRef.current = history.scrollHeight - history.scrollTop - history.clientHeight < 32;
-                    }}
-                  >
-                    {entries.length > 0 && <ActivityLog entries={entries} label="Terminal transcript" />}
-                  </div>
+                  <div className="focused-terminal-body" id="focused-terminal-body">
+                    <div
+                      className="focused-terminal-history"
+                      ref={terminalHistoryRef}
+                      role="region"
+                      aria-label="Terminal output"
+                      tabIndex={0}
+                      onScroll={(event) => {
+                        const history = event.currentTarget;
+                        terminalFollowsLatestRef.current = history.scrollHeight - history.scrollTop - history.clientHeight < 32;
+                      }}
+                    >
+                      {entries.length > 0 && <ActivityLog entries={entries} label="Terminal transcript" />}
+                    </div>
                   {activeDialogue?.choices.length ? (
                     <div className="focused-terminal-dialogue">
                       <div
@@ -1021,6 +1039,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                       </Button>
                     </form>
                   </section>
+                  </div>
                 </Panel>
                 <RoomChatPanel
                   roomId={snapshot.location.locationId}
