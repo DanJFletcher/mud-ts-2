@@ -184,7 +184,8 @@
   overflow-wrap: anywhere;
 }
 
-.focused-terminal-toggle {
+.focused-terminal-toggle,
+.focused-terminal-fullscreen-button {
   display: grid;
   width: 40px;
   height: 40px;
@@ -197,14 +198,60 @@
   cursor: pointer;
 }
 
-.focused-terminal-toggle:hover {
+.focused-terminal-toggle:hover,
+.focused-terminal-fullscreen-button:hover {
   color: var(--terminal-text);
   background: color-mix(in srgb, var(--terminal-accent) 10%, transparent);
 }
 
-.focused-terminal-toggle:focus-visible {
+.focused-terminal-toggle:focus-visible,
+.focused-terminal-fullscreen-button:focus-visible {
   outline: 2px solid var(--terminal-accent);
   outline-offset: -2px;
+}
+
+.focused-terminal--fullscreen {
+  position: fixed;
+  z-index: 1002;
+  inset: 0;
+  width: 100%;
+  height: 100dvh;
+  min-height: 100dvh;
+  max-height: 100dvh;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  border: 0;
+  border-radius: 0;
+  background: var(--terminal-surface);
+  touch-action: pan-y;
+  animation: focused-terminal-enter 240ms cubic-bezier(.2, .8, .2, 1) both;
+}
+
+.focused-terminal--closing {
+  animation: focused-terminal-exit 240ms cubic-bezier(.4, 0, .6, 1) both;
+}
+
+.focused-terminal--fullscreen .focused-terminal-room {
+  min-height: 52px;
+  padding: 4px 12px;
+}
+
+.focused-terminal--fullscreen .focused-terminal-location {
+  font-size: 1.1rem;
+}
+
+.focused-terminal--fullscreen .focused-terminal-body {
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+@keyframes focused-terminal-enter {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes focused-terminal-exit {
+  from { transform: translateY(0); }
+  to { transform: translateY(-100%); }
 }
 
 .focused-terminal-body {
@@ -578,7 +625,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   .focused-room-chat--fullscreen,
-  .focused-room-chat--closing {
+  .focused-room-chat--closing,
+  .focused-terminal--fullscreen,
+  .focused-terminal--closing {
     animation-duration: 0.01ms;
   }
 }

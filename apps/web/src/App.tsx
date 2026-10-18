@@ -16,8 +16,9 @@ import {
   TextInput,
   type ActivityEntry,
 } from "@mudd/ui";
-import { ChevronDown, ChevronUp, Compass, Moon, NotebookText, Sun, UserRound, Users } from "lucide-react";
+import { Compass, Moon, NotebookText, Sun, UserRound, Users } from "lucide-react";
 import { RoomChatPanel } from "./RoomChatPanel.js";
+import { TerminalPanel } from "./TerminalPanel.js";
 import { WorldMapPanel } from "./WorldMapPanel.js";
 
 const client = new MuddHttpClient({ worldInstanceId: "mudd-demo-instance" });
@@ -132,7 +133,6 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     window.localStorage.getItem("mudd-theme") === "dark" ? "dark" : "light"
   );
   const [screen, setScreen] = useState<Screen>(currentScreen);
-  const [terminalCollapsed, setTerminalCollapsed] = useState(false);
   const [chatFullscreen, setChatFullscreen] = useState(false);
   const [mapFullscreen, setMapFullscreen] = useState(false);
   const contentRef = useRef<HTMLElement>(null);
@@ -682,27 +682,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
               </Panel>
             ) : snapshot?.location ? (
               <>
-                <Panel
-                  className={`focused-room focused-terminal${terminalCollapsed ? " focused-terminal--collapsed" : ""}`}
-                  aria-busy={pending !== null}
-                >
-                  <div className="focused-terminal-room">
-                    <h1 className="focused-terminal-location">{snapshot.location.title}</h1>
-                    <button
-                      className="focused-terminal-toggle"
-                      type="button"
-                      onClick={() => setTerminalCollapsed((current) => !current)}
-                      aria-label={terminalCollapsed ? "Expand terminal" : "Collapse terminal"}
-                      aria-expanded={!terminalCollapsed}
-                      aria-controls="focused-terminal-body"
-                      title={terminalCollapsed ? "Expand terminal" : "Collapse terminal"}
-                    >
-                      {terminalCollapsed
-                        ? <ChevronDown size={17} aria-hidden="true" />
-                        : <ChevronUp size={17} aria-hidden="true" />}
-                    </button>
-                  </div>
-                  <div className="focused-terminal-body" id="focused-terminal-body">
+                <TerminalPanel title={snapshot.location.title} busy={pending !== null}>
                     <div
                       className="focused-terminal-history"
                       ref={terminalHistoryRef}
@@ -1039,8 +1019,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                       </Button>
                     </form>
                   </section>
-                  </div>
-                </Panel>
+                </TerminalPanel>
                 <RoomChatPanel
                   roomId={snapshot.location.locationId}
                   fullscreen={chatFullscreen}
