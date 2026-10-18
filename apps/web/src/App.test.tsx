@@ -259,6 +259,9 @@ beforeEach(() => {
         payload?: { itemId?: string; choiceId?: string; objectId?: string };
       };
       if (command.type === 'character.read' && command.payload?.objectId === 'mossgate-marker') {
+        const readObjective = questJournal.find((quest) => quest.questId === 'mara-wayfinding')
+          ?.objectives.find((objective) => objective.id === 'read-marker');
+        if (readObjective) readObjective.completed = true;
         revision += 1;
         return json({
           receipt: { ok: true, newAggregateVersion: revision },
@@ -296,6 +299,11 @@ beforeEach(() => {
       room = room === 'clearing' ? 'bridge' : 'clearing';
       const newLocationId = currentLocation().locationId;
       if (!visitedLocationIds.includes(newLocationId)) visitedLocationIds.push(newLocationId);
+      if (newLocationId === 'glasswater-bridge') {
+        const visitObjective = questJournal.find((quest) => quest.questId === 'mara-wayfinding')
+          ?.objectives.find((objective) => objective.id === 'visit-bridge');
+        if (visitObjective) visitObjective.completed = true;
+      }
       revision += 1;
       return json({ receipt: { ok: true, newAggregateVersion: revision }, streamId: characterId });
     }
@@ -788,6 +796,43 @@ describe('single-character world session client', () => {
       path === '/api/commands' &&
       JSON.parse(String(init?.body ?? '{}')).type === 'character.read'
     )).toHaveLength(1);
+  });
+
+  it('announces newly completed quest objectives once and does not replay them after reload', async () => {
+    questJournal = [{
+      questId: 'mara-wayfinding',
+      title: 'The Waystone Path',
+      summary: 'Read the marker and visit Glasswater Bridge.',
+      status: 'active',
+      objectives: [
+        { id: 'read-marker', label: 'Read the weathered marker', completed: false },
+        { id: 'visit-bridge', label: 'Visit Glasswater Bridge', completed: false },
+      ],
+    }];
+    const firstRun = render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+    expect(history).not.toHaveTextContent('Objective complete:');
+
+    const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
+    fireEvent.change(commandInput, { target: { value: 'read marker' } });
+    fireEvent.submit(commandInput.closest('form')!);
+    const markerNotice = 'Objective complete: Read the weathered marker — The Waystone Path.';
+    await screen.findByText(markerNotice);
+    fireEvent.change(commandInput, { target: { value: 'read marker' } });
+    fireEvent.submit(commandInput.closest('form')!);
+    await waitFor(() => expect(screen.getAllByText('OLD BELL TOWER — EAST')).toHaveLength(2));
+    expect(screen.getAllByText(markerNotice)).toHaveLength(1);
+
+    quickGo('north');
+    const visitNotice = 'Objective complete: Visit Glasswater Bridge — The Waystone Path.';
+    await screen.findByText(visitNotice);
+    expect(screen.getAllByText(visitNotice)).toHaveLength(1);
+
+    firstRun.unmount();
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    expect(screen.queryByText(/Objective complete:/)).not.toBeInTheDocument();
   });
 
   it('takes a loose stone, drops it in the room, and can take it again', async () => {

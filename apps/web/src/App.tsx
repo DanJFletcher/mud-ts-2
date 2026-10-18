@@ -117,6 +117,14 @@ function makeEntry(kind: ActivityEntry["kind"], text: string): ActivityEntry {
   return { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, kind, text };
 }
 
+function completedQuestObjectiveKeys(snapshot: GameSnapshot): string[] {
+  return (snapshot.questJournal ?? []).flatMap((quest) =>
+    quest.objectives
+      .filter((objective) => objective.completed)
+      .map((objective) => `${quest.questId}\u0000${objective.id}`),
+  );
+}
+
 export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
@@ -142,6 +150,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const terminalHistoryRef = useRef<HTMLDivElement>(null);
   const terminalFollowsLatestRef = useRef(true);
   const lastRoomLookIdRef = useRef<string | null>(null);
+  const knownQuestObjectiveCompletionsRef = useRef<Set<string>>(new Set());
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const handleChatFullscreenChange = useCallback((fullscreen: boolean) => {
@@ -157,6 +166,25 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     terminalFollowsLatestRef.current = true;
     setEntries((current) => [...current, makeEntry(kind, text)]);
   }, []);
+
+  const rememberCompletedQuestObjectives = useCallback((nextSnapshot: GameSnapshot) => {
+    for (const key of completedQuestObjectiveKeys(nextSnapshot)) {
+      knownQuestObjectiveCompletionsRef.current.add(key);
+    }
+  }, []);
+
+  const announceNewQuestObjectives = useCallback((nextSnapshot: GameSnapshot) => {
+    for (const quest of nextSnapshot.questJournal ?? []) {
+      if (quest.status !== "active") continue;
+      for (const objective of quest.objectives) {
+        if (!objective.completed) continue;
+        const key = `${quest.questId}\u0000${objective.id}`;
+        if (knownQuestObjectiveCompletionsRef.current.has(key)) continue;
+        knownQuestObjectiveCompletionsRef.current.add(key);
+        addEntry("system", `Objective complete: ${objective.label} — ${quest.title}.`);
+      }
+    }
+  }, [addEntry]);
 
   const addDefaultLook = useCallback((location: GameSnapshot["location"]) => {
     if (!location || lastRoomLookIdRef.current === location.locationId) return;
@@ -192,6 +220,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     setConnectionError("");
     try {
       const nextSnapshot = await client.getGame();
+      rememberCompletedQuestObjectives(nextSnapshot);
       setSnapshot(nextSnapshot);
       addDefaultLook(nextSnapshot.location);
     } catch (error) {
@@ -201,19 +230,21 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     } finally {
       setLoading(false);
     }
-  }, [addDefaultLook, addEntry]);
+  }, [addDefaultLook, addEntry, rememberCompletedQuestObjectives]);
 
   useEffect(() => {
     void loadGame();
   }, [loadGame]);
 
-  const refreshAfterMutation = useCallback(async (message: string) => {
+  const refreshAfterMutation = useCallback(async (message: string, announceQuestObjectives = false) => {
     addEntry("system", message);
     const nextSnapshot = await client.getGame();
     setSnapshot(nextSnapshot);
     setConnectionError("");
     addDefaultLook(nextSnapshot.location);
-  }, [addDefaultLook, addEntry]);
+    if (announceQuestObjectives) announceNewQuestObjectives(nextSnapshot);
+    else rememberCompletedQuestObjectives(nextSnapshot);
+  }, [addDefaultLook, addEntry, announceNewQuestObjectives, rememberCompletedQuestObjectives]);
 
   const inspect = useCallback(async (target?: string) => {
     if (!snapshot?.character || pending) return;
@@ -282,12 +313,13 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
       setSnapshot(nextSnapshot);
       setConnectionError("");
       addEntry("narration", readable.text);
+      announceNewQuestObjectives(nextSnapshot);
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "You cannot read that just now.");
     } finally {
       setPending(null);
     }
-  }, [addEntry, pending, snapshot]);
+  }, [addEntry, announceNewQuestObjectives, pending, snapshot]);
 
   const talkToNpc = useCallback(async (npcId: string, topic?: string) => {
     if (!snapshot?.character || pending) return;
@@ -321,6 +353,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
         client.getGame(),
         client.talk(snapshot.character.characterId, activeDialogue.npcId),
       ]);
+      rememberCompletedQuestObjectives(nextSnapshot);
       setSnapshot(nextSnapshot);
       setConnectionError("");
       setActiveDialogue(dialogue.choices.length ? dialogue : null);
@@ -330,7 +363,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     } finally {
       setPending(null);
     }
-  }, [activeDialogue, addEntry, pending, snapshot]);
+  }, [activeDialogue, addEntry, pending, rememberCompletedQuestObjectives, snapshot]);
 
   const takeObject = useCallback(async (itemId: string, label: string) => {
     if (!snapshot?.character || !snapshot.location || pending) return;
@@ -408,7 +441,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     setPending("move");
     try {
       await client.move(snapshot.character.characterId, exit.id, snapshot.location.revision);
-      await refreshAfterMutation(`You travel ${exit.direction || exit.label}.`);
+      await refreshAfterMutation(`You travel ${exit.direction || exit.label}.`, true);
       setActiveDialogue(null);
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "Unable to move.");
