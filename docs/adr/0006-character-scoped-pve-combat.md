@@ -12,12 +12,12 @@ The engine exposes only a draft combat command shape and has no combat runtime, 
 - The first encounter is one character against one authored NPC, with the character's combat state stored in that character's event stream.
 - Each character receives an independent encounter against the same authored NPC. NPC definitions and combat profiles remain immutable world content; combat does not mutate shared NPC or location state.
 - The combat plugin owns encounter validation, turn resolution, and a deterministic starter ruleset. The generic engine core remains rules-agnostic.
-- The first ruleset supports attack, defend, and flee. It uses authored opponent health/damage and fixed player values; it does not roll dice or persist combat injuries.
+- The first ruleset supports attack, defend, flee, and healing-item use. It uses authored opponent health/damage and fixed player values; it does not roll dice.
 - Equipment is character-owned: inventory, equipped slots, and their changes live in the character event stream. Gear modifiers are immutable item attributes authored in world/merchant content; combat reads only the character's currently equipped items and records resolved damage in the combat event.
 - One active encounter is permitted per character. Movement is blocked while it is active; fleeing or resolving the encounter clears that restriction.
 - The existing one-active-character-per-world-session rule is unchanged.
-- The combat plugin owns victory XP, level thresholds, and max-health rewards. A victory writes the combat result followed by a character advancement event in one character-stream append; leveling increases max health for future encounters.
-- The generic engine stores the resulting experience and level but does not calculate advancement rules. Injury remains encounter-local in this slice.
+- The combat plugin owns victory XP, level thresholds, and max-health rewards. A victory writes the combat result followed by a character advancement event in one character-stream append; leveling increases persistent max health without silently restoring current health.
+- The generic engine stores the resulting experience, level, and health but does not calculate combat or advancement rules.
 
 ## Alternatives considered
 
@@ -31,7 +31,7 @@ The engine exposes only a draft combat command shape and has no combat runtime, 
 
 - **Positive:** Commands, outcomes, and replay stay authoritative and character-scoped; retries and concurrent actions use the existing aggregate revision and command receipt behavior.
 - **Negative:** Fighting an NPC does not change what another character sees, and the deterministic starter rules are intentionally simple.
-- **Compatibility/migration:** Advancement is optional in the character projection so legacy streams replay unchanged. Replay accepts combat event versions 1 and 2; version 1 defaults missing opponent style to `steady`. `character.advancement_awarded` is a new version-1 event. No database migration is required.
+- **Compatibility/migration:** Advancement and health are optional in the character projection so legacy streams replay unchanged. Replay accepts combat event versions 1–3; older combat events initialize character health from their recorded encounter. Advancement events support versions 1 and 2. No database migration is required.
 - **Security/abuse/trust:** The server resolves the NPC, location, stats, current encounter, damage, and outcome from trusted world content and replayed character state. Client commands express only an action and target.
 - **Performance/operational:** Combat is stored in the existing character stream; no new table, aggregate writer, or migration is required.
 - **Rollback/reversibility:** Remove the combat plugin and authored combat profile; historical combat events remain readable by replay code. Do not remove their schemas after they have been persisted.
@@ -45,25 +45,27 @@ The engine exposes only a draft combat command shape and has no combat runtime, 
 
 ## Addendum: character advancement
 
-- Each victory awards the combat plugin's configured experience reward. The plugin applies cumulative thresholds and caps advancement at its configured maximum level; each level adds max health to future encounters.
+- Each victory awards the combat plugin's configured experience reward. The plugin applies cumulative thresholds and caps advancement at its configured maximum level; each level adds max health to the character's persistent health projection without healing current health.
 - The resolved combat event and its advancement reward are appended atomically to the same character stream. Duplicate command IDs use the engine's existing receipt; replay verifies the reward matches a victory, prevents duplicate encounter rewards, and uses recorded level/experience rather than recalculating thresholds.
 - One active character per world session remains unchanged. Progression belongs to the character aggregate, so another character's victories cannot affect it.
-- Persistent injuries, healing, loot, shared NPC state, and random rolls remain deferred; injury stays local to an encounter in this slice.
+- Health persists between encounters. Loot, shared NPC state, and random rolls remain deferred.
 
 ## Addendum: authored opponent styles
 
 - NPC combat profiles may author a `steady`, `heavy`, or `guardian` style. Missing style means `steady`.
 - `steady` opponents strike after each player attack as before. `heavy` opponents telegraph on odd-numbered encounter rounds and strike on even-numbered rounds; defending still blocks the strike. `guardian` opponents reduce each incoming player hit by their authored defense value (default 1) and counterattack after attacks.
 - The encounter projection snapshots the opponent style. The character-scoped combat event records the resolved damage and narration, so replay never re-runs the style logic. NPC definitions remain immutable shared world content; encounters and health remain character-specific.
-- The combat event advances to schema version 2. Replay continues to accept version-1 events and interprets their missing style as `steady`.
-- This adds no shared NPC health, random rolls, persistent injuries, or database migration.
+- Combat events advance through schema version 3. Replay continues to accept version-1 events and interprets their missing style as `steady`; version 2 remains readable.
+- This adds no shared NPC health, random rolls, or database migration.
 
-## Addendum: combat healing items
+## Addendum: character-owned health and healing items
 
-- Consumable healing items are character-owned inventory entries with authored healing amounts. A combat `use-item` action requires an active encounter and a carried healing item.
-- The combat event records the consumed item and healing amount atomically with the updated encounter. Replay validates ownership and effect limits, then removes the item from inventory and item-location tracking.
-- Healing is capped at the active encounter's max health. Using an item consumes the player's turn, so the opponent still responds according to its authored style. At full health, or outside combat, the item is not consumed.
-- This heals encounter-local health only; it does not add persistent injuries or change future encounters' starting health. Existing version-1 and version-2 combat events remain readable; consumable combat actions use event version 3.
+- Current and maximum health are character projections backed by the character event stream. Combat action events persist the resolved health; the next encounter begins at that current health rather than silently restoring it.
+- Healing consumables remain character-owned inventory entries. During combat, `use-item` records item consumption and healing atomically with the resolved encounter turn; the opponent still responds according to its authored style.
+- Outside combat, the same combat-plugin command emits `character.combat_item_used`, which records health restoration and consumes the carried item in one character-stream event. Replay validates the item, caps healing at the recorded maximum, and removes it from inventory and item-location tracking.
+- Healing cannot be consumed at full health. Defeat leaves health at zero, but a potion can restore it outside combat; a character at zero health cannot start another encounter until healed.
+- Level-up events advance to version 2 and record the new maximum health without restoring current health. Replay retains version-1 advancement and version-1/version-2 combat event compatibility; active combat consumables use combat event version 3.
+- Health, items, encounters, and advancement remain character-owned. NPC definitions and shop listings remain immutable world content; this adds no shared state or database migration.
 
 ## Verification
 
@@ -71,4 +73,4 @@ The initial implementation must test invalid targets and locations, attack/defen
 
 ## Follow-up / revisit trigger
 
-Revisit this decision before introducing shared NPC health, party combat, PvP, persistent injuries, loot/rewards, or a probabilistic ruleset. Those features need explicit scope and concurrency decisions.
+Revisit this decision before introducing shared NPC health, party combat, PvP, health regeneration/resting, loot/rewards, or a probabilistic ruleset. Those features need explicit scope and concurrency decisions.

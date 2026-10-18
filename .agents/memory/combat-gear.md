@@ -1,10 +1,10 @@
 ---
-name: Character-owned combat gear
-description: Ownership and event boundaries for character equipment and combat effects.
+name: Character-owned combat state
+description: Ownership and event boundaries for equipment, health, consumables, and combat progression.
 ---
 
-Keep equipment owned by the character aggregate: item attributes are immutable authored content, equipment changes are character events, and combat consumes equipped stats and records resolved outcomes on the same character stream. Read `docs/adr/0006-character-scoped-pve-combat.md` before extending this model.
+Keep equipment, current/max health, consumables, combat outcomes, and advancement owned by the character aggregate. Item attributes and NPC/shop definitions remain immutable authored content. Combat resolves health changes; item use records consumption on that same character stream. Read `docs/adr/0006-character-scoped-pve-combat.md` before extending this model.
 
-**Why:** Character-scoped ownership avoids introducing cross-aggregate consistency for gear while combat remains independent per character.
+**Why:** The user chose health persistence between fights, so combat injuries and potion healing must replay consistently without introducing shared-world ownership or cross-aggregate writes.
 
-**How to apply:** Preserve character-stream authority for personal equipment and progression. Revisit the ADR before adding shared loot, shared NPC health, party combat, or world-owned items.
+**How to apply:** Preserve character-stream authority for personal equipment, health, consumables, and progression. Revisit the ADR before adding resting/regeneration, shared loot, shared NPC health, party combat, or world-owned items.

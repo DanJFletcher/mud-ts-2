@@ -16,6 +16,7 @@ import {
   CharacterRestoredEventSchema,
   CharacterWalletInitializedEventSchema,
   CharacterAdvancementAwardedEventSchema,
+  CharacterCombatItemUsedEventSchema,
   MerchantItemPurchasedEventSchema,
   CombatActionResolvedEventSchema,
 } from '@mudd/contracts';
@@ -95,6 +96,11 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
           state.equipment.weaponItemId !== consumedItemId &&
           state.equipment.armorItemId !== consumedItemId
         : !consumedItemId && healingDone === 0;
+      const expectedStartingHealth = previous?.status === 'active'
+        ? previous.playerHealth
+        : event.version >= 3
+          ? Math.min(state.health?.current ?? combat.playerMaxHealth, combat.playerMaxHealth)
+          : combat.playerMaxHealth;
       if (
         resolved.payload.characterId !== state.characterId ||
         combat.locationId !== state.locationId ||
@@ -104,11 +110,12 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
           combat.opponentNpcId !== previous.opponentNpcId ||
           combat.opponentStyle !== previous.opponentStyle ||
           combat.round !== previous.round + 1 ||
+          combat.playerMaxHealth !== previous.playerMaxHealth ||
           combat.opponentHealth > previous.opponentHealth ||
           (combat.lastAction === 'use-item' && !consumedItem) ||
           (combat.lastAction === 'use-item'
             ? healingDone !== Math.min(
-              consumedItem.consumable?.amount ?? 0,
+              consumedItem?.consumable?.amount ?? 0,
               previous.playerMaxHealth - previous.playerHealth,
             )
             : healingDone !== 0) ||
@@ -118,15 +125,21 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
           combat.lastAction !== 'attack' ||
           combat.round !== 1 ||
           combat.encounterId === previous?.encounterId ||
+          (event.version >= 3 && state.health !== undefined && combat.playerMaxHealth < state.health.maximum) ||
           healingDone !== 0 ||
           Boolean(consumedItemId)
-        ))
+        )) ||
+        combat.playerHealth !== expectedStartingHealth + healingDone - resolved.payload.damageTaken
       ) {
         throw new Error(`Invalid combat action at revision ${event.aggregateVersion}.`);
       }
       state = CharacterProjectionSchema.parse({
         ...state,
         combat,
+        health: {
+          current: combat.playerHealth,
+          maximum: combat.playerMaxHealth,
+        },
         ...(consumedItemId ? {
           inventory: state.inventory.filter((item) => item.id !== consumedItemId),
           itemLocations: state.itemLocations.filter((entry) => entry.item.id !== consumedItemId),
@@ -144,13 +157,50 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         state.combat.encounterId !== encounterId ||
         previousAdvancement?.lastRewardedEncounterId === encounterId ||
         totalExperience !== (previousAdvancement?.experience ?? 0) + experienceAwarded ||
-        level < (previousAdvancement?.level ?? 1)
+        level < (previousAdvancement?.level ?? 1) ||
+        (awarded.version === 2 && state.health !== undefined &&
+          awarded.payload.maximumHealth < state.health.maximum)
       ) {
         throw new Error(`Invalid character advancement event at revision ${event.aggregateVersion}.`);
       }
       state = CharacterProjectionSchema.parse({
         ...state,
         advancement: { experience: totalExperience, level, lastRewardedEncounterId: encounterId },
+        ...(awarded.version === 2 ? {
+          health: state.health
+            ? { ...state.health, maximum: awarded.payload.maximumHealth }
+            : undefined,
+        } : {}),
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.combat_item_used') {
+      if (!state) throw new Error('Combat item use encountered before character creation.');
+      const used = CharacterCombatItemUsedEventSchema.parse(publicEvent);
+      const item = state.inventory.find((candidate) => candidate.id === used.payload.itemId);
+      const previousHealth = state.health;
+      const expectedHealing = item?.consumable && previousHealth
+        ? Math.min(item.consumable.amount, used.payload.health.maximum - previousHealth.current)
+        : 0;
+      if (
+        used.payload.characterId !== state.characterId ||
+        state.combat?.status === 'active' ||
+        !item?.consumable ||
+        item.equipment ||
+        state.equipment.weaponItemId === used.payload.itemId ||
+        state.equipment.armorItemId === used.payload.itemId ||
+        !previousHealth ||
+        expectedHealing <= 0 ||
+        used.payload.healingDone !== expectedHealing ||
+        used.payload.health.maximum < previousHealth.maximum ||
+        used.payload.health.current !== previousHealth.current + expectedHealing
+      ) {
+        throw new Error(`Invalid combat item use event at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        health: used.payload.health,
+        inventory: state.inventory.filter((candidate) => candidate.id !== used.payload.itemId),
+        itemLocations: state.itemLocations.filter((entry) => entry.item.id !== used.payload.itemId),
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'character.moved') {

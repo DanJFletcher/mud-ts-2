@@ -182,6 +182,9 @@ export const characterPlugin: EnginePlugin = {
     registerCommand('character.use', UseCharacterItemCommandSchema, async (command, context) => {
       const character = await state.load(context, command.characterId);
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
+      if (character.combat?.status === 'active') {
+        throw new RuleViolationError('Use a healing item through your combat action while a fight is active.');
+      }
       const item = character.inventory.find((candidate) => candidate.id === command.payload.itemId);
       if (!item) throw new RuleViolationError('You are not carrying that item.');
       const location = context.world.locations.find((candidate) => candidate.id === character.locationId);

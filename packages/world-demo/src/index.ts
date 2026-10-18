@@ -548,7 +548,7 @@ const draft = {
                 item: {
                   id: 'item-reedbank-healing-draught',
                   label: 'Small healing draught',
-                  description: 'A stoppered green glass vial of herbal tonic. During combat, drink it to recover up to 3 health.',
+                  description: 'A stoppered green glass vial of herbal tonic. Drink it during or between encounters to recover up to 3 health.',
                   consumable: { effect: 'heal', amount: 3 },
                 },
                 price: 3,

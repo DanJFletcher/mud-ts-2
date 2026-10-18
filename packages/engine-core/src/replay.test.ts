@@ -6,10 +6,11 @@ function event(
   type: string,
   aggregateVersion: number,
   payload: Record<string, unknown>,
+  version = 1,
 ): StoredGameEvent {
   return {
     type,
-    version: 1,
+    version,
     eventId: `event-${aggregateVersion}`,
     worldInstanceId: 'world-test',
     streamId: 'character-test',
@@ -125,5 +126,68 @@ describe('character event replay validation', () => {
       encounterId: 'combat-legacy',
       opponentStyle: 'steady',
     });
+  });
+
+  it('replays legacy encounters that restarted at full health before persistent health was introduced', () => {
+    const firstRound = event('character.combat_action_resolved', 2, {
+      characterId: 'character-test',
+      damageDealt: 2,
+      damageTaken: 1,
+      encounter: {
+        encounterId: 'combat-legacy-first',
+        locationId: 'mossgate-clearing',
+        opponentNpcId: 'sentinel',
+        opponentName: 'Practice Sentinel',
+        round: 1,
+        playerHealth: 5,
+        playerMaxHealth: 6,
+        opponentHealth: 2,
+        opponentMaxHealth: 4,
+        status: 'active',
+        lastAction: 'attack',
+        lastNarration: 'The practice begins.',
+      },
+    }, 2);
+    const firstVictory = event('character.combat_action_resolved', 3, {
+      characterId: 'character-test',
+      damageDealt: 2,
+      damageTaken: 0,
+      encounter: {
+        encounterId: 'combat-legacy-first',
+        locationId: 'mossgate-clearing',
+        opponentNpcId: 'sentinel',
+        opponentName: 'Practice Sentinel',
+        round: 2,
+        playerHealth: 5,
+        playerMaxHealth: 6,
+        opponentHealth: 0,
+        opponentMaxHealth: 4,
+        status: 'victory',
+        lastAction: 'attack',
+        lastNarration: 'You defeat the sentinel.',
+      },
+    }, 2);
+    const secondEncounter = event('character.combat_action_resolved', 4, {
+      characterId: 'character-test',
+      damageDealt: 2,
+      damageTaken: 1,
+      encounter: {
+        encounterId: 'combat-legacy-second',
+        locationId: 'mossgate-clearing',
+        opponentNpcId: 'sentinel',
+        opponentName: 'Practice Sentinel',
+        round: 1,
+        playerHealth: 5,
+        playerMaxHealth: 6,
+        opponentHealth: 2,
+        opponentMaxHealth: 4,
+        status: 'active',
+        lastAction: 'attack',
+        lastNarration: 'The practice begins again.',
+      },
+    }, 2);
+
+    expect(replayCharacter([created, firstRound, firstVictory, secondEncounter])?.combat)
+      .toMatchObject({ encounterId: 'combat-legacy-second', playerHealth: 5 });
   });
 });

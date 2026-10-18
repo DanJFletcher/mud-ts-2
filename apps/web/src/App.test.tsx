@@ -39,6 +39,7 @@ let nextRoomChatMessageId: number;
 let walletBalance: number;
 let merchantLanternPurchased: boolean;
 let healingDraughtCarried: boolean;
+let characterHealth: { current: number; maximum: number } | null;
 let combatEncounter: {
   encounterId: string;
   locationId: string;
@@ -259,6 +260,7 @@ beforeEach(() => {
   walletBalance = 12;
   merchantLanternPurchased = false;
   healingDraughtCarried = false;
+  characterHealth = null;
   combatEncounter = null;
   apiFetch.mockReset();
   apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
@@ -312,6 +314,7 @@ beforeEach(() => {
           visitedLocationIds,
           revision,
           wallet: { currencyId: 'moss-mark', balance: walletBalance },
+          ...(characterHealth ? { health: characterHealth } : {}),
           ...(combatEncounter ? { combat: combatEncounter } : {}),
           inventory: [
             ...(itemTaken ? [{
@@ -435,11 +438,26 @@ beforeEach(() => {
           action?: 'attack' | 'defend' | 'flee' | 'use-item';
           encounterId?: string;
           targetNpcId?: string;
-          itemId?: string;
         };
       };
       if (command.type === 'combat.action') {
         const action = command.payload?.action;
+        if (action === 'use-item' && combatEncounter?.status !== 'active') {
+          if (!healingDraughtCarried ||
+            command.payload?.itemId !== 'item-reedbank-healing-draught' ||
+            !characterHealth ||
+            characterHealth.current >= characterHealth.maximum) {
+            return json({ receipt: { ok: false, commandId: command.commandId ?? 'mock-command', code: 'RULE_VIOLATION', message: 'You are already at full health.' } });
+          }
+          const healing = Math.min(3, characterHealth.maximum - characterHealth.current);
+          characterHealth = { ...characterHealth, current: characterHealth.current + healing };
+          healingDraughtCarried = false;
+          revision += 1;
+          return json({
+            receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision },
+            streamId: characterId,
+          });
+        }
         if (!combatEncounter) {
           if (action !== 'attack' || command.payload?.targetNpcId !== 'mossgate-training-sentinel') {
             return json({ receipt: { ok: false, commandId: command.commandId ?? 'mock-command', code: 'RULE_VIOLATION', message: 'That opponent is not available here.' } });
@@ -1003,7 +1021,7 @@ describe('single-character world session client', () => {
     expect(history).toHaveTextContent('> help');
     expect(history).toHaveTextContent('take <item> | take all — Pick up one or all items in the current room.');
     expect(history).toHaveTextContent('talk <npc> [about <topic>] — Speak privately with someone in the current room.');
-    expect(history).toHaveTextContent('use <item> on <target> | use <healing item> — Use a room item or heal during combat.');
+    expect(history).toHaveTextContent('use <item> on <target> | use <healing item> — Use a room item or restore health during or between encounters.');
     expect(history).toHaveTextContent('Quick actions include available movement, item, equipment, merchant, dialogue, and combat actions.');
     expect(history).toHaveTextContent('equip <item> — Equip a carried weapon or armor item.');
 
@@ -1095,6 +1113,41 @@ describe('single-character world session client', () => {
         body.payload.itemId === 'item-reedbank-healing-draught' &&
         body.payload.encounterId === 'combat-ui-encounter';
     })).toBe(true);
+  });
+
+  it('uses a healing potion outside combat and displays persistent character health', async () => {
+    healingDraughtCarried = true;
+    characterHealth = { current: 2, maximum: 6 };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    expect(screen.getByLabelText('Character health')).toHaveTextContent('Health 2/6');
+    const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
+    fireEvent.change(commandInput, { target: { value: 'use Small healing draught' } });
+    fireEvent.submit(commandInput.closest('form')!);
+
+    await screen.findByText(/You use the small healing draught and recover 3 health/);
+    expect(screen.getByLabelText('Character health')).toHaveTextContent('Health 5/6');
+    expect(healingDraughtCarried).toBe(false);
+    expect(apiFetch.mock.calls.some(([path, init]) => {
+      if (path !== '/api/commands') return false;
+      const body = JSON.parse(String(init?.body ?? '{}'));
+      return body.type === 'combat.action' &&
+        body.payload.action === 'use-item' &&
+        body.payload.itemId === 'item-reedbank-healing-draught' &&
+        !body.payload.encounterId;
+    })).toBe(true);
+  });
+
+  it('offers between-fight potion use in quick actions only when health is missing', async () => {
+    healingDraughtCarried = true;
+    characterHealth = { current: 4, maximum: 6 };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    clickQuickAction('Show items to use');
+    fireEvent.click(screen.getByRole('button', { name: 'Use Small healing draught' }));
+    await screen.findByText(/You use the small healing draught and recover 2 health/);
+    expect(screen.getByLabelText('Character health')).toHaveTextContent('Health 6/6');
+    expect(healingDraughtCarried).toBe(false);
   });
 
   it('offers carried healing items as combat quick actions only when health is missing', async () => {

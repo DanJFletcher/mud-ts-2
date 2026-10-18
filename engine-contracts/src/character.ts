@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ClientCommandBaseSchema, DomainEventBaseSchema } from './protocol.js';
 import { IdSchema, NonEmptyNameSchema, NonNegativeIntSchema, PositiveIntSchema, ContractVersionSchema } from './ids.js';
 import { CombatEncounterProjectionSchema } from './combat.js';
+import { CharacterHealthSchema } from './health.js';
 
 export const ConsumableItemSchema = z.object({
   effect: z.literal('heal'),
@@ -54,16 +55,32 @@ export const CharacterAdvancementProjectionSchema = z.object({
   lastRewardedEncounterId: IdSchema.optional(),
 }).strict();
 
-export const CharacterAdvancementAwardedEventSchema = DomainEventBaseSchema.extend({
+const CharacterAdvancementAwardPayloadV1Schema = z.object({
+  characterId: IdSchema,
+  encounterId: IdSchema,
+  experienceAwarded: PositiveIntSchema,
+  totalExperience: NonNegativeIntSchema.max(2_147_483_647),
+  level: PositiveIntSchema,
+}).strict();
+
+export const CharacterAdvancementAwardedEventV1Schema = DomainEventBaseSchema.extend({
   type: z.literal('character.advancement_awarded'),
-  payload: z.object({
-    characterId: IdSchema,
-    encounterId: IdSchema,
-    experienceAwarded: PositiveIntSchema,
-    totalExperience: NonNegativeIntSchema.max(2_147_483_647),
-    level: PositiveIntSchema,
+  version: z.literal(1),
+  payload: CharacterAdvancementAwardPayloadV1Schema,
+}).strict();
+
+export const CharacterAdvancementAwardedEventV2Schema = DomainEventBaseSchema.extend({
+  type: z.literal('character.advancement_awarded'),
+  version: z.literal(2),
+  payload: CharacterAdvancementAwardPayloadV1Schema.extend({
+    maximumHealth: PositiveIntSchema.max(1000),
   }).strict(),
 }).strict();
+
+export const CharacterAdvancementAwardedEventSchema = z.discriminatedUnion('version', [
+  CharacterAdvancementAwardedEventV1Schema,
+  CharacterAdvancementAwardedEventV2Schema,
+]);
 
 export const CreateCharacterCommandSchema = z.object({
   type: z.literal('character.create'),
@@ -250,6 +267,7 @@ export const CharacterProjectionSchema = z.object({
   equipment: CharacterEquipmentSchema.default({ weaponItemId: null, armorItemId: null }),
   wallet: CharacterWalletSchema.optional(),
   advancement: CharacterAdvancementProjectionSchema.optional(),
+  health: CharacterHealthSchema.optional(),
   combat: CombatEncounterProjectionSchema.optional(),
   purchasedMerchantListingIds: z.array(IdSchema).default([]),
   itemLocations: z.array(z.object({

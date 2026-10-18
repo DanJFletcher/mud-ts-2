@@ -27,10 +27,12 @@ type DialogueProjection = Awaited<ReturnType<MuddHttpClient["talk"]>>;
 type MerchantCatalog = Awaited<ReturnType<MuddHttpClient["getMerchantCatalog"]>>;
 type Screen = "play" | "traveler" | "notes";
 type WorldClientProps = { onLeaveWorld: () => Promise<void> };
-type VisibleRoomObject = NonNullable<GameSnapshot["location"]>["objects"][number];
 type VisibleNpc = NonNullable<NonNullable<GameSnapshot["location"]>["npcs"]>[number];
 
-function findObjectMatches(target: string, objects: VisibleRoomObject[]) {
+function findObjectMatches<T extends { id: string; label: string }>(
+  target: string,
+  objects: readonly T[],
+): T[] {
   const normalizedTarget = target.toLocaleLowerCase();
   const exactMatch = objects.find((object) =>
     object.id.toLocaleLowerCase() === normalizedTarget ||
@@ -95,7 +97,7 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
   ],
   use: [
     "Usage: use <item> on <target> | use <healing item>",
-    "Use an item on a room object, or use a carried healing item during combat.",
+    "Use an item on a room object, or restore health during or between encounters.",
   ],
   drop: [
     "Usage: drop <item>",
@@ -111,7 +113,7 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
   ],
   flee: [
     "Usage: flee",
-    "End an active encounter and return to the room without lasting injury.",
+    "End an active encounter and return to the room with your current health.",
   ],
   inspect: [
     "There is no separate inspect command.",
@@ -131,7 +133,7 @@ const GENERAL_HELP = [
   "take <item> | take all — Pick up one or all items in the current room.",
   "equip <item> — Equip a carried weapon or armor item.",
   "unequip <weapon|armor> — Remove equipped gear from a slot.",
-  "use <item> on <target> | use <healing item> — Use a room item or heal during combat.",
+  "use <item> on <target> | use <healing item> — Use a room item or restore health during or between encounters.",
   "drop <item> — Put down an item you carry.",
   "attack <opponent> — Begin an encounter or attack during combat.",
   "defend — Guard against the opponent’s next strike.",
@@ -620,14 +622,26 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
           ? { encounterId: activeEncounter.encounterId, ...(itemId ? { itemId } : {}) }
           : targetNpcId
             ? { targetNpcId }
-            : {},
+            : itemId
+              ? { itemId }
+              : {},
       );
       if (!result.receipt.ok) throw new Error(result.receipt.message);
       const nextSnapshot = await client.getGame();
       setSnapshot(nextSnapshot);
       setConnectionError("");
       const encounter = nextSnapshot.character?.combat;
-      if (encounter) {
+      if (action === "use-item" && !activeEncounter) {
+        const nextHealth = nextSnapshot.character?.health;
+        const previousHealth = snapshot.character.health;
+        const label = snapshot.character.inventory.find((item) => item.id === itemId)?.label ?? "item";
+        const recovered = nextHealth && previousHealth
+          ? nextHealth.current - previousHealth.current
+          : 0;
+        if (nextHealth) {
+          addEntry("narration", `You use the ${label.toLocaleLowerCase()} and recover ${recovered} health. You: ${nextHealth.current}/${nextHealth.maximum}.`);
+        }
+      } else if (encounter) {
         const advancement = nextSnapshot.character?.advancement;
         const rewardNarration = encounter.status === "victory" &&
           advancement?.lastRewardedEncounterId === encounter.encounterId
@@ -882,7 +896,18 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
       }
       const useMatch = /^(.+?)\s+on\s+(.+)$/i.exec(target);
       if (!useMatch) {
-        addEntry("error", "Use what on what? Try “use stone on bell”.");
+        const itemTarget = target.replace(/^(?:the|a|an)\s+/i, "").trim();
+        const itemMatches = findObjectMatches(itemTarget, snapshot?.character?.inventory ?? []);
+        if (itemMatches.length > 1) {
+          addEntry("error", `Which item do you mean: ${itemMatches.map((item) => item.label).join(", ")}?`);
+          return;
+        }
+        const item = itemMatches[0];
+        if (item?.consumable?.effect === "heal") {
+          await performCombatAction("use-item", undefined, false, item.id);
+          return;
+        }
+        addEntry("error", "Use a healing item by name, or use a carried item on a room target.");
         return;
       }
       const itemTarget = useMatch[1]!.replace(/^(?:the|a|an)\s+/i, "").trim();
@@ -1025,11 +1050,20 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const visibleCombat = currentCombat?.locationId === snapshot?.location?.locationId
     ? currentCombat
     : undefined;
-  const quickUseItems = visibleCombat?.status === "active"
-    ? visibleCombat.playerHealth < visibleCombat.playerMaxHealth
-      ? (snapshot?.character?.inventory ?? []).filter((item) => item.consumable?.effect === "heal")
-      : []
-    : (snapshot?.character?.inventory ?? []);
+  const quickInventory = snapshot?.character?.inventory ?? [];
+  const outsideCombatHealth = snapshot?.character?.health;
+  const canHealOutsideCombat = Boolean(
+    outsideCombatHealth && outsideCombatHealth.current < outsideCombatHealth.maximum,
+  );
+  const quickUseItems = quickInventory.filter((item) => {
+    if (item.consumable?.effect === "heal") {
+      return visibleCombat?.status === "active"
+        ? visibleCombat.playerHealth < visibleCombat.playerMaxHealth
+        : canHealOutsideCombat;
+    }
+    return visibleCombat?.status !== "active" &&
+      (snapshot?.location?.objects ?? []).some((object) => !object.readable && !object.takeable);
+  });
   const quickCommandItems = useMemo(() => {
     type QuickAction = {
       id: string;
@@ -1052,14 +1086,13 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     const gearToEquip = inventory.filter((item) => item.equipment &&
       (item.equipment.slot === "weapon" ? equipment?.weaponItemId : equipment?.armorItemId) !== item.id);
     const readableObjects = (snapshot?.location?.objects ?? []).filter((object) => object.readable);
-    const usableTargets = (snapshot?.location?.objects ?? []).filter((object) => !object.readable && !object.takeable);
 
     addMode("look", "look", "Show look targets");
     if (readableObjects.length > 0) addMode("read", "read", "Show readable objects");
     if (unequippedInventory.length > 0) addMode("drop", "drop", "Show items to drop");
     if (quickDirections.length > 0) addMode("go", "go", "Show available exits");
     if (quickTakeableObjects.length > 0) addMode("take", "take", "Show items to take");
-    if (visibleCombat?.status === "active" ? quickUseItems.length > 0 : inventory.length > 0 && usableTargets.length > 0) {
+    if (quickUseItems.length > 0) {
       addMode("use", "use", "Show items to use");
     }
     if ((snapshot?.location?.npcs?.length ?? 0) > 0) addMode("talk", "talk", "Show people to talk to");
@@ -1223,6 +1256,11 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
             ) : snapshot?.location ? (
               <>
                 <TerminalPanel title={snapshot.location.title} busy={pending !== null}>
+                    {snapshot.character?.health && visibleCombat?.status !== "active" && (
+                      <div className="focused-terminal-health" aria-label="Character health">
+                        Health {snapshot.character.health.current}/{snapshot.character.health.maximum}
+                      </div>
+                    )}
                     <div
                       className="focused-terminal-history"
                       ref={terminalHistoryRef}
@@ -1547,15 +1585,15 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                                 type="button"
                                 className="focused-quick-command"
                                 onClick={() => {
-                                  if (visibleCombat?.status === "active") {
-                                    void performCombatAction("use-item", undefined, true, item.id);
+                                  if (item.consumable?.effect === "heal") {
+                                    submitQuickCommand(`use ${item.label}`);
                                   } else {
                                     setQuickUseItemId(item.id);
                                     setQuickCommandMode("use-target");
                                   }
                                 }}
-                                aria-label={visibleCombat?.status === "active"
-                                  ? `Use ${item.label} during combat`
+                                aria-label={item.consumable?.effect === "heal"
+                                  ? `Use ${item.label}${visibleCombat?.status === "active" ? " during combat" : ""}`
                                   : `Choose ${item.label} to use`}
                                 disabled={pending !== null}
                               >

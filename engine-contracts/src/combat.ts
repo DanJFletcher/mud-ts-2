@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ClientCommandBaseSchema, DomainEventBaseSchema } from './protocol.js';
 import { IdSchema, NonNegativeIntSchema, PositiveIntSchema } from './ids.js';
+import { CharacterHealthSchema } from './health.js';
 
 export const CombatActionIdSchema = z.enum(['attack', 'defend', 'flee', 'use-item']);
 export const CombatOutcomeSchema = z.enum(['active', 'victory', 'defeat', 'fled']);
@@ -59,7 +60,7 @@ export const CombatActionCommandSchema = ClientCommandBaseSchema.extend({
         message: 'An initial attack must identify its target.',
       });
     }
-    if (payload.action !== 'attack' && !payload.encounterId) {
+    if (payload.action !== 'attack' && payload.action !== 'use-item' && !payload.encounterId) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['encounterId'],
@@ -71,6 +72,13 @@ export const CombatActionCommandSchema = ClientCommandBaseSchema.extend({
         code: z.ZodIssueCode.custom,
         path: ['itemId'],
         message: 'Using an item requires an item ID.',
+      });
+    }
+    if (payload.action === 'use-item' && payload.targetNpcId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['targetNpcId'],
+        message: 'Using a healing item does not accept a combatant target.',
       });
     }
     if (payload.action !== 'use-item' && payload.itemId) {
@@ -134,6 +142,17 @@ export const CombatActionResolvedEventV3Schema = DomainEventBaseSchema.extend({
   type: z.literal('character.combat_action_resolved'),
   version: z.literal(3),
   payload: CombatActionResolvedPayloadV3Schema,
+}).strict();
+
+export const CharacterCombatItemUsedEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('character.combat_item_used'),
+  version: z.literal(1),
+  payload: z.object({
+    characterId: IdSchema,
+    itemId: IdSchema,
+    healingDone: PositiveIntSchema.max(1000),
+    health: CharacterHealthSchema,
+  }).strict(),
 }).strict();
 
 export const CombatActionResolvedEventSchema = z.discriminatedUnion('version', [

@@ -1,5 +1,6 @@
 import {
-  CharacterAdvancementAwardedEventSchema,
+  CharacterAdvancementAwardedEventV2Schema,
+  CharacterCombatItemUsedEventSchema,
   CombatActionCommandSchema,
   CombatActionResolvedEventV3Schema,
 } from '@mudd/contracts';
@@ -17,6 +18,10 @@ function experienceRequiredForNextLevel(level: number): number {
   return level * 20;
 }
 
+function maximumHealthForLevel(level: number): number {
+  return PLAYER_BASE_MAX_HEALTH + (level - 1) * PLAYER_HEALTH_PER_LEVEL;
+}
+
 export const combatPlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.combat',
@@ -27,7 +32,8 @@ export const combatPlugin: EnginePlugin = {
     requiredPlugins: { 'mudd.character': '^1.0.0' },
     eventSchemaVersions: {
       'character.combat_action_resolved': 3,
-      'character.advancement_awarded': 1,
+      'character.advancement_awarded': 2,
+      'character.combat_item_used': 1,
     },
   },
   register({ registerCommand, requireCapability }) {
@@ -36,6 +42,33 @@ export const combatPlugin: EnginePlugin = {
     registerCommand('combat.action', CombatActionCommandSchema, async (command, context) => {
       const character = await characterState.load(context, command.characterId);
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
+
+      if (command.payload.action === 'use-item' && character.combat?.status !== 'active') {
+        if (command.payload.encounterId) {
+          throw new RuleViolationError('That combat encounter is no longer active.');
+        }
+        const item = character.inventory.find((candidate) => candidate.id === command.payload.itemId);
+        if (!item) throw new RuleViolationError('You are not carrying that item.');
+        if (!item.consumable || item.equipment) {
+          throw new RuleViolationError(`${item.label} cannot be used as a healing item.`);
+        }
+        const maximum = maximumHealthForLevel(character.advancement?.level ?? 1);
+        const current = Math.min(character.health?.current ?? maximum, maximum);
+        if (current >= maximum) throw new RuleViolationError('You are already at full health.');
+        const healingDone = Math.min(item.consumable.amount, maximum - current);
+        const payload = {
+          characterId: character.characterId,
+          itemId: item.id,
+          healingDone,
+          health: { current: current + healingDone, maximum },
+        };
+        CharacterCombatItemUsedEventSchema.shape.payload.parse(payload);
+        return {
+          streamId: character.characterId,
+          expectedVersion: command.expectedVersion,
+          events: [{ type: 'character.combat_item_used', version: 1, payload }],
+        };
+      }
 
       let encounter = character.combat;
       if (encounter?.status === 'active') {
@@ -56,8 +89,11 @@ export const combatPlugin: EnginePlugin = {
         if (!npc?.combatProfile) {
           throw new RuleViolationError('That opponent is not available here.');
         }
-        const playerMaxHealth = PLAYER_BASE_MAX_HEALTH
-          + ((character.advancement?.level ?? 1) - 1) * PLAYER_HEALTH_PER_LEVEL;
+        const playerMaxHealth = maximumHealthForLevel(character.advancement?.level ?? 1);
+        const playerHealth = Math.min(character.health?.current ?? playerMaxHealth, playerMaxHealth);
+        if (playerHealth <= 0) {
+          throw new RuleViolationError('You are too hurt to begin another encounter. Use a healing item first.');
+        }
         encounter = {
           encounterId: context.makeId(),
           locationId: character.locationId,
@@ -65,7 +101,7 @@ export const combatPlugin: EnginePlugin = {
           opponentName: npc.name,
           opponentStyle: npc.combatProfile.style ?? 'steady',
           round: 0,
-          playerHealth: playerMaxHealth,
+          playerHealth,
           playerMaxHealth,
           opponentHealth: npc.combatProfile.maxHealth,
           opponentMaxHealth: npc.combatProfile.maxHealth,
@@ -99,7 +135,7 @@ export const combatPlugin: EnginePlugin = {
 
       if (action === 'flee') {
         status = 'fled';
-        narration = `You retreat from ${npc.name}. The encounter ends without lasting injury.`;
+        narration = `You retreat from ${npc.name}. The encounter ends.`;
       } else {
         if (action === 'use-item') {
           const item = character.inventory.find((candidate) => candidate.id === command.payload.itemId);
@@ -123,7 +159,7 @@ export const combatPlugin: EnginePlugin = {
 
         if (opponentHealth === 0) {
           status = 'victory';
-          narration = `You defeat ${npc.name}. The practice ends without lasting injury.`;
+          narration = `You defeat ${npc.name}.`;
         } else if (action === 'defend') {
           narration = opponentStyle === 'heavy' && round % 2 === 1
             ? `You hold your guard while ${npc.name} winds up a heavy strike.`
@@ -132,15 +168,14 @@ export const combatPlugin: EnginePlugin = {
               : `You guard against ${npc.name}'s strike and take no damage.`;
         } else if (opponentStyle === 'heavy' && round % 2 === 1) {
           const actionNarration = healingNarration || `You deal ${damageDealt} damage to ${npc.name}.`;
-          narration = `${actionNarration} ${npc.name} winds up for a heavy strike.`;
+          narration = `${actionNarration} ${action === 'attack' ? 'It' : npc.name} winds up for a heavy strike.`;
         } else {
-          const heavyDamage = opponentStyle === 'heavy' ? npc.combatProfile.attackDamage : 0;
-          const incomingDamage = heavyDamage || npc.combatProfile.attackDamage;
+          const incomingDamage = npc.combatProfile.attackDamage;
           damageTaken = Math.min(Math.max(0, incomingDamage - damageReduction), playerHealth);
           playerHealth -= damageTaken;
           if (playerHealth === 0) {
             status = 'defeat';
-            narration = `${healingNarration ? `${healingNarration} ` : ''}${npc.name} lands a ${opponentStyle === 'heavy' ? 'heavy ' : ''}strike. You are down; the practice ends without lasting injury.`;
+            narration = `${healingNarration ? `${healingNarration} ` : ''}${npc.name} lands a ${opponentStyle === 'heavy' ? 'heavy ' : ''}strike. You are down.`;
           } else {
             const actionNarration = healingNarration || `You deal ${damageDealt} damage to ${npc.name}.`;
             const guardText = action === 'attack' && opponentStyle === 'guardian' ? ' Its guard softens your blow.' : '';
@@ -185,11 +220,15 @@ export const combatPlugin: EnginePlugin = {
           totalExperience,
           level,
         };
-        CharacterAdvancementAwardedEventSchema.shape.payload.parse(advancementPayload);
+        const advancementWithHealth = {
+          ...advancementPayload,
+          maximumHealth: maximumHealthForLevel(level),
+        };
+        CharacterAdvancementAwardedEventV2Schema.shape.payload.parse(advancementWithHealth);
         events.push({
           type: 'character.advancement_awarded',
-          version: 1,
-          payload: advancementPayload,
+          version: 2,
+          payload: advancementWithHealth,
         });
       }
       return {
