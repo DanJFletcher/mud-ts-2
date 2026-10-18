@@ -162,7 +162,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const [pending, setPending] = useState<"look" | "read" | "take" | "use" | "drop" | "move" | "talk" | "shop" | "buy" | "combat" | null>(null);
   const [command, setCommand] = useState("");
   const [quickCommandPage, setQuickCommandPage] = useState<"main" | "more">("main");
-  const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "go" | "look" | "read" | "drop" | "take" | "talk" | "use" | "use-target">("quick");
+  const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "go" | "look" | "read" | "drop" | "take" | "talk" | "attack" | "use" | "use-target">("quick");
   const [quickUseItemId, setQuickUseItemId] = useState<string | null>(null);
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [collapsedQuestGroups, setCollapsedQuestGroups] = useState({ active: false, completed: false });
@@ -1085,7 +1085,6 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                         <span>You {visibleCombat.playerHealth}/{visibleCombat.playerMaxHealth} · {visibleCombat.opponentName} {visibleCombat.opponentHealth}/{visibleCombat.opponentMaxHealth}</span>
                       </div>
                       <div className="focused-terminal-combat__actions" role="group" aria-label="Combat actions">
-                        <button type="button" className="focused-quick-command" onClick={() => void performCombatAction("attack", undefined, true)} disabled={pending !== null}>attack</button>
                         <button type="button" className="focused-quick-command" onClick={() => void performCombatAction("defend", undefined, true)} disabled={pending !== null}>defend</button>
                         <button type="button" className="focused-quick-command" onClick={() => void performCombatAction("flee", undefined, true)} disabled={pending !== null}>flee</button>
                       </div>
@@ -1097,22 +1096,6 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                         <span>{visibleCombat.lastNarration}</span>
                       </div>
                     </section>
-                  ) : challengeableNpcs.length > 0 ? (
-                    <section className="focused-terminal-combat" aria-label="Available opponents">
-                      <div className="focused-terminal-combat__actions" role="group" aria-label="Available opponents">
-                        {challengeableNpcs.map((npc) => (
-                          <button
-                            key={npc.id}
-                            type="button"
-                            className="focused-quick-command"
-                            onClick={() => void performCombatAction("attack", npc.id, true)}
-                            disabled={pending !== null}
-                          >
-                            challenge {npc.name}
-                          </button>
-                        ))}
-                      </div>
-                    </section>
                   ) : null}
                   <section className="focused-quick-commands" aria-label="Quick commands">
                     {quickCommandMode !== "quick" && (
@@ -1122,7 +1105,8 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                             : quickCommandMode === "read" ? "Read"
                               : quickCommandMode === "drop" ? "Drop"
                                 : quickCommandMode === "take" ? "Take"
-                                  : quickCommandMode === "use" || quickCommandMode === "use-target" ? "Use" : "Talk"}
+                                  : quickCommandMode === "attack" ? "Attack"
+                                    : quickCommandMode === "use" || quickCommandMode === "use-target" ? "Use" : "Talk"}
                       </span>
                     )}
                     <div
@@ -1136,6 +1120,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                               : quickCommandMode === "read" ? "Readable objects"
                                 : quickCommandMode === "drop" ? "Items to drop"
                                 : quickCommandMode === "talk" ? "People here"
+                                  : quickCommandMode === "attack" ? "Available opponents"
                                   : quickCommandMode === "use" ? "Items to use"
                                     : quickCommandMode === "use-target" ? "Use target" : "Items to take"
                       }
@@ -1345,6 +1330,30 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                             </span>;
                           })()}
                         </>
+                      ) : quickCommandMode === "attack" ? (
+                        <>
+                          <button
+                            type="button"
+                            className="focused-quick-command focused-quick-command--back"
+                            onClick={() => setQuickCommandMode("quick")}
+                            aria-label="Return to quick commands"
+                            disabled={pending !== null}
+                          >
+                            ‹
+                          </button>
+                          {challengeableNpcs.length ? challengeableNpcs.map((npc) => (
+                            <button
+                              key={npc.id}
+                              type="button"
+                              className="focused-quick-command"
+                              onClick={() => submitQuickCommand(`attack ${npc.name}`)}
+                              aria-label={`Attack ${npc.name}`}
+                              disabled={pending !== null}
+                            >
+                              {npc.name}
+                            </button>
+                          )) : <span className="focused-quick-commands__empty">No available opponents</span>}
+                        </>
                       ) : quickCommandMode === "talk" ? (
                         <>
                           <button
@@ -1448,6 +1457,27 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                           >
                             go <span aria-hidden="true">›</span>
                           </button>
+                          {visibleCombat?.status === "active" ? (
+                            <button
+                              type="button"
+                              className="focused-quick-command"
+                              onClick={() => submitQuickCommand("attack")}
+                              aria-label="Attack during active combat"
+                              disabled={pending !== null}
+                            >
+                              attack
+                            </button>
+                          ) : challengeableNpcs.length > 0 ? (
+                            <button
+                              type="button"
+                              className="focused-quick-command"
+                              onClick={() => setQuickCommandMode("attack")}
+                              aria-label="Show opponents to attack"
+                              disabled={pending !== null}
+                            >
+                              attack <span aria-hidden="true">›</span>
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             className="focused-quick-command focused-quick-command--next"

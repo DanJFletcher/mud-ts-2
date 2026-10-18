@@ -493,7 +493,8 @@ beforeEach(() => {
 describe('single-character world session client', () => {
   it('starts and controls combat through terminal actions backed by SDK commands', async () => {
     render(<WorldClient onLeaveWorld={async () => undefined} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'challenge Practice Sentinel' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Show opponents to attack' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Attack Practice Sentinel' }));
     await screen.findByText('Round 1 · Practice Sentinel');
     fireEvent.click(screen.getByRole('button', { name: 'defend' }));
     await screen.findByText('Round 2 · Practice Sentinel');
