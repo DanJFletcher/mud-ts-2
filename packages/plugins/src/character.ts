@@ -3,6 +3,7 @@ import {
   CharacterItemTakenEventSchema,
   CharacterItemDroppedEventSchema,
   CharacterItemUsedEventSchema,
+  CharacterEquipmentChangedEventSchema,
   CharacterObjectReadEventSchema,
   CharacterRenamedEventSchema,
   CharacterArchivedEventSchema,
@@ -13,6 +14,8 @@ import {
   CreateCharacterCommandSchema,
   TakeCharacterItemCommandSchema,
   DropCharacterItemCommandSchema,
+  EquipCharacterItemCommandSchema,
+  UnequipCharacterItemCommandSchema,
   UseCharacterItemCommandSchema,
   ReadCharacterObjectCommandSchema,
   LocationDescribeQuerySchema,
@@ -43,6 +46,7 @@ export const characterPlugin: EnginePlugin = {
     apiVersion: '1.0',
     category: 'core',
     provides: ['mudd.character.state.v1'],
+    eventSchemaVersions: { 'character.equipment_changed': 1 },
   },
   register({ registerCommand, registerQuery, provideCapability }) {
     const state: CharacterStateCapability = {
@@ -114,6 +118,9 @@ export const characterPlugin: EnginePlugin = {
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
       const item = character.inventory.find((candidate) => candidate.id === command.payload.itemId);
       if (!item) throw new RuleViolationError('You are not carrying that item.');
+      if (character.equipment.weaponItemId === item.id || character.equipment.armorItemId === item.id) {
+        throw new RuleViolationError('Unequip that item before dropping it.');
+      }
       CharacterItemDroppedEventSchema.shape.payload.parse({
         characterId: character.characterId,
         locationId: character.locationId,
@@ -127,6 +134,48 @@ export const characterPlugin: EnginePlugin = {
           version: 1,
           payload: { characterId: character.characterId, locationId: character.locationId, item },
         }],
+      };
+    });
+
+    registerCommand('character.equip', EquipCharacterItemCommandSchema, async (command, context) => {
+      const character = await state.load(context, command.characterId);
+      if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
+      if (character.combat?.status === 'active') {
+        throw new RuleViolationError('You cannot change equipment during an active encounter.');
+      }
+      const item = character.inventory.find((candidate) => candidate.id === command.payload.itemId);
+      if (!item) throw new RuleViolationError('You are not carrying that item.');
+      if (!item.equipment) throw new RuleViolationError(`${item.label} cannot be equipped.`);
+      const { slot } = item.equipment;
+      const currentItemId = slot === 'weapon'
+        ? character.equipment.weaponItemId
+        : character.equipment.armorItemId;
+      if (currentItemId === item.id) throw new RuleViolationError(`${item.label} is already equipped.`);
+      const payload = { characterId: character.characterId, slot, itemId: item.id };
+      CharacterEquipmentChangedEventSchema.shape.payload.parse(payload);
+      return {
+        streamId: character.characterId,
+        expectedVersion: command.expectedVersion,
+        events: [{ type: 'character.equipment_changed', version: 1, payload }],
+      };
+    });
+
+    registerCommand('character.unequip', UnequipCharacterItemCommandSchema, async (command, context) => {
+      const character = await state.load(context, command.characterId);
+      if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
+      if (character.combat?.status === 'active') {
+        throw new RuleViolationError('You cannot change equipment during an active encounter.');
+      }
+      const currentItemId = command.payload.slot === 'weapon'
+        ? character.equipment.weaponItemId
+        : character.equipment.armorItemId;
+      if (!currentItemId) throw new RuleViolationError(`You have no ${command.payload.slot} equipped.`);
+      const payload = { characterId: character.characterId, slot: command.payload.slot, itemId: null };
+      CharacterEquipmentChangedEventSchema.shape.payload.parse(payload);
+      return {
+        streamId: character.characterId,
+        expectedVersion: command.expectedVersion,
+        events: [{ type: 'character.equipment_changed', version: 1, payload }],
       };
     });
 

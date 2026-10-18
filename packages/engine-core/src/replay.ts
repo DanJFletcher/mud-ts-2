@@ -2,6 +2,7 @@ import type { StoredGameEvent } from './types.js';
 import {
   CharacterItemTakenEventSchema,
   CharacterItemDroppedEventSchema,
+  CharacterEquipmentChangedEventSchema,
   CharacterItemUsedEventSchema,
   CharacterObjectReadEventSchema,
   CharacterNpcDialogueChoiceMadeEventSchema,
@@ -67,6 +68,7 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         ...state,
         wallet: { ...state.wallet, balance: state.wallet.balance - price },
         inventory: [...state.inventory, item],
+        itemLocations: [...state.itemLocations, { item, locationId: null }],
         purchasedMerchantListingIds: [...state.purchasedMerchantListingIds, listingId],
         revision: event.aggregateVersion,
       });
@@ -148,6 +150,8 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         dropped.payload.characterId !== state.characterId ||
         dropped.payload.locationId !== state.locationId ||
         !carriedItem ||
+        state.equipment.weaponItemId === dropped.payload.item.id ||
+        state.equipment.armorItemId === dropped.payload.item.id ||
         itemLocation?.locationId !== null ||
         carriedItem.label !== dropped.payload.item.label ||
         carriedItem.description !== dropped.payload.item.description
@@ -160,6 +164,29 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         itemLocations: state.itemLocations.map((entry) => entry.item.id === dropped.payload.item.id
           ? { ...entry, locationId: dropped.payload.locationId }
           : entry),
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.equipment_changed') {
+      if (!state) throw new Error('Equipment event encountered before character creation.');
+      const changed = CharacterEquipmentChangedEventSchema.parse(publicEvent);
+      const { characterId, slot, itemId } = changed.payload;
+      const item = itemId ? state.inventory.find((candidate) => candidate.id === itemId) : undefined;
+      const previousItemId = slot === 'weapon'
+        ? state.equipment.weaponItemId
+        : state.equipment.armorItemId;
+      if (
+        characterId !== state.characterId ||
+        previousItemId === itemId ||
+        (itemId !== null && (!item || item.equipment?.slot !== slot))
+      ) {
+        throw new Error(`Invalid equipment event at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        equipment: {
+          ...state.equipment,
+          [slot === 'weapon' ? 'weaponItemId' : 'armorItemId']: itemId,
+        },
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'character.item_used') {

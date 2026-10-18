@@ -651,6 +651,8 @@ describe('MuddHttpClient', () => {
       listings: [
         { id: 'reedbank-brass-lantern', price: 8, purchased: false },
         { id: 'reedbank-waxed-cord', price: 5, purchased: false },
+        { id: 'reedbank-practice-blade', price: 5, purchased: false },
+        { id: 'reedbank-padded-vest', price: 5, purchased: false },
       ],
     });
     const firstRoom = await client.look(firstId, 'merchant-first-room');

@@ -1133,6 +1133,11 @@
 .focused-detail span { color: var(--mudd-muted); font: 500 .65rem "DM Mono", monospace; letter-spacing: .1em; text-transform: uppercase; }
 .focused-detail strong { font-size: .9rem; font-weight: 600; }
 .focused-inventory { display: flex; flex-wrap: wrap; gap: 8px; }
+.focused-inventory-entry { display: flex; flex-wrap: wrap; gap: 6px; }
+.focused-equipment { display: grid; gap: 8px; }
+.focused-equipment-slot { display: flex; align-items: center; gap: 10px; }
+.focused-equipment-slot > span { min-width: 52px; }
+.focused-equipment-slot strong { flex: 1; }
 .focused-inventory-item {
   min-height: 40px;
   padding: 8px 12px;

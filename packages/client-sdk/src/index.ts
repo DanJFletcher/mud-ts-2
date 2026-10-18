@@ -12,6 +12,8 @@ import {
   MoveCharacterCommandSchema,
   TakeCharacterItemCommandSchema,
   DropCharacterItemCommandSchema,
+  EquipCharacterItemCommandSchema,
+  UnequipCharacterItemCommandSchema,
   UseCharacterItemCommandSchema,
   CharacterItemUsedEventSchema,
   ReadCharacterObjectCommandSchema,
@@ -32,6 +34,7 @@ import {
   type ObjectInspectionProjection,
   type MerchantCatalogProjection,
   type CombatActionId,
+  type EquipmentSlot,
 } from '@mudd/contracts';
 import { z } from 'zod';
 
@@ -362,6 +365,32 @@ export class MuddHttpClient {
       characterId,
       expectedVersion,
       payload: { itemId },
+    });
+    return this.send(command);
+  }
+
+  async equip(characterId: string, itemId: string, expectedVersion: number, commandId = crypto.randomUUID()): Promise<CommandResponse> {
+    const command = EquipCharacterItemCommandSchema.parse({
+      type: 'character.equip',
+      version: 1,
+      commandId,
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      expectedVersion,
+      payload: { itemId },
+    });
+    return this.send(command);
+  }
+
+  async unequip(characterId: string, slot: EquipmentSlot, expectedVersion: number, commandId = crypto.randomUUID()): Promise<CommandResponse> {
+    const command = UnequipCharacterItemCommandSchema.parse({
+      type: 'character.unequip',
+      version: 1,
+      commandId,
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      expectedVersion,
+      payload: { slot },
     });
     return this.send(command);
   }

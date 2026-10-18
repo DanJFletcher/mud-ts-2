@@ -983,7 +983,8 @@ describe('single-character world session client', () => {
     expect(history).toHaveTextContent('take <item> | take all — Pick up one or all items in the current room.');
     expect(history).toHaveTextContent('talk <npc> [about <topic>] — Speak privately with someone in the current room.');
     expect(history).toHaveTextContent('use <item> on <target> — Use a carried item on an interactive target here.');
-    expect(history).toHaveTextContent('Quick actions: Look, Read, Take, Use, Drop, Go, and Talk.');
+    expect(history).toHaveTextContent('Quick actions include available movement, item, equipment, merchant, dialogue, and combat actions.');
+    expect(history).toHaveTextContent('equip <item> — Equip a carried weapon or armor item.');
 
     fireEvent.change(commandInput, { target: { value: 'help LOOK' } });
     fireEvent.submit(commandInput.closest('form')!);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { EngineHost, InMemoryEventStore, replayCharacter } from '@mudd/engine-core';
-import { characterPlugin, combatPlugin, movementPlugin } from '@mudd/core-plugins';
+import { characterPlugin, combatPlugin, merchantPlugin, movementPlugin } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import { MuddHttpClient } from './index.js';
 
@@ -16,7 +16,7 @@ const session = {
 function makeClient(world = demoWorld) {
   const store = new InMemoryEventStore();
   const engine = new EngineHost(
-    [characterPlugin, combatPlugin, movementPlugin],
+    [characterPlugin, combatPlugin, merchantPlugin, movementPlugin],
     store,
     { canAccessInstance: async () => true, ownsCharacter: async () => true },
     world,
@@ -159,5 +159,48 @@ describe('turn-based PvE combat', () => {
       opponentHealth: 6,
       lastAction: 'attack',
     });
+  });
+
+  it('persists character equipment and applies weapon and armor bonuses to combat', async () => {
+    const { client, store } = makeClient();
+    const created = await client.createCharacter('Briar', 'combat-gear-create');
+    const characterId = created.streamId!;
+    let state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+
+    await client.move(characterId, 'clearing-to-bridge', state.revision, 'combat-gear-to-bridge');
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    await client.move(characterId, 'bridge-to-reedbank', state.revision, 'combat-gear-to-stalls');
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+
+    await client.purchaseMerchantListing(characterId, 'sella-reedbank-merchant', 'reedbank-practice-blade', state.revision, 'combat-buy-blade');
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    await client.purchaseMerchantListing(characterId, 'sella-reedbank-merchant', 'reedbank-padded-vest', state.revision, 'combat-buy-vest');
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    const blade = state.inventory.find((item) => item.equipment?.slot === 'weapon')!;
+    const vest = state.inventory.find((item) => item.equipment?.slot === 'armor')!;
+
+    await client.equip(characterId, blade.id, state.revision, 'combat-equip-blade');
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    await client.equip(characterId, vest.id, state.revision, 'combat-equip-vest');
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(state.equipment).toEqual({ weaponItemId: blade.id, armorItemId: vest.id });
+    await expect(client.drop(characterId, vest.id, state.revision, 'combat-drop-equipped-vest'))
+      .rejects.toThrow('Unequip that item before dropping it.');
+
+    await client.move(characterId, 'reedbank-to-bridge', state.revision, 'combat-gear-return-bridge');
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    await client.move(characterId, 'bridge-to-clearing', state.revision, 'combat-gear-return-clearing');
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    await client.performCombatAction(characterId, 'attack', state.revision, { targetNpcId: 'mossgate-training-sentinel' }, 'combat-gear-first-attack');
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(state.combat).toMatchObject({
+      opponentHealth: 1,
+      playerHealth: 6,
+      lastNarration: 'You deal 3 damage to Practice Sentinel. It strikes back for 0 after your armor absorbs 1.',
+    });
+    await expect(client.equip(characterId, blade.id, state.revision, 'combat-equip-mid-fight'))
+      .rejects.toThrow('You cannot change equipment during an active encounter.');
+    await client.performCombatAction(characterId, 'attack', state.revision, { encounterId: state.combat!.encounterId }, 'combat-gear-final-attack');
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))?.combat?.status).toBe('victory');
   });
 });

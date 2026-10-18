@@ -85,6 +85,14 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
     "Usage: take <item> | take all",
     "Pick up an item in the current room, or take all available items there.",
   ],
+  equip: [
+    "Usage: equip <item>",
+    "Equip a carried weapon or armor item. Equipped gear changes combat damage.",
+  ],
+  unequip: [
+    "Usage: unequip <weapon|armor>",
+    "Remove the item from an equipment slot. Gear cannot be changed during combat.",
+  ],
   use: [
     "Usage: use <item> on <target>",
     "Use a carried item on an interactive target in the current room.",
@@ -121,12 +129,14 @@ const GENERAL_HELP = [
   "go <direction> — Travel through an available exit.",
   "read <object> — Read text on an object in the current room.",
   "take <item> | take all — Pick up one or all items in the current room.",
+  "equip <item> — Equip a carried weapon or armor item.",
+  "unequip <weapon|armor> — Remove equipped gear from a slot.",
   "use <item> on <target> — Use a carried item on an interactive target here.",
   "drop <item> — Put down an item you carry.",
   "attack <opponent> — Begin an encounter or attack during combat.",
   "defend — Guard against the opponent’s next strike.",
   "flee — End the current encounter.",
-  "Quick actions: Look, Read, Take, Use, Drop, Go, and Talk.",
+  "Quick actions include available movement, item, equipment, merchant, dialogue, and combat actions.",
 ];
 
 function getCommandHelp(topic: string): readonly string[] {
@@ -159,10 +169,10 @@ function completedQuestObjectiveKeys(snapshot: GameSnapshot): string[] {
 export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"look" | "read" | "take" | "use" | "drop" | "move" | "talk" | "shop" | "buy" | "combat" | null>(null);
+  const [pending, setPending] = useState<"look" | "read" | "take" | "use" | "drop" | "move" | "talk" | "shop" | "buy" | "combat" | "equip" | null>(null);
   const [command, setCommand] = useState("");
   const [quickCommandPage, setQuickCommandPage] = useState(1);
-  const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "go" | "look" | "read" | "drop" | "take" | "talk" | "attack" | "shop" | "buy" | "use" | "use-target">("quick");
+  const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "go" | "look" | "read" | "drop" | "take" | "talk" | "attack" | "shop" | "buy" | "use" | "use-target" | "equip" | "unequip">("quick");
   const [quickUseItemId, setQuickUseItemId] = useState<string | null>(null);
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [collapsedQuestGroups, setCollapsedQuestGroups] = useState({ active: false, completed: false });
@@ -464,6 +474,36 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     }
   }, [addEntry, pending, refreshAfterMutation, snapshot]);
 
+  const changeEquipment = useCallback(async (
+    action: "equip" | "unequip",
+    itemOrSlot: string,
+  ) => {
+    if (!snapshot?.character || pending) return;
+    const item = action === "equip"
+      ? snapshot.character.inventory.find((candidate) => candidate.id === itemOrSlot)
+      : undefined;
+    const slot = action === "equip" ? item?.equipment?.slot : itemOrSlot as "weapon" | "armor";
+    if (!slot) return;
+    setPending("equip");
+    try {
+      if (action === "equip") {
+        await client.equip(snapshot.character.characterId, item!.id, snapshot.character.revision);
+      } else {
+        await client.unequip(snapshot.character.characterId, slot, snapshot.character.revision);
+      }
+      const nextSnapshot = await client.getGame();
+      setSnapshot(nextSnapshot);
+      setConnectionError("");
+      addEntry("narration", action === "equip"
+        ? `You equip the ${item!.label.toLocaleLowerCase()} as your ${slot}.`
+        : `You unequip your ${slot}.`);
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "Your equipment could not be changed.");
+    } finally {
+      setPending(null);
+    }
+  }, [addEntry, pending, snapshot]);
+
   const performItemUse = useCallback(async (itemId: string, targetId: string) => {
     if (!snapshot?.character || !snapshot.location || pending) return;
     setPending("use");
@@ -712,6 +752,40 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
       await purchaseMerchantListing(matches[0]!.id);
       return;
     }
+    if (verb.toLowerCase() === "equip") {
+      addEntry("system", `> ${value}`);
+      if (!target) {
+        addEntry("error", "Equip what? Try “equip practice blade”.");
+        return;
+      }
+      const inventory = snapshot?.character?.inventory ?? [];
+      const matches = findObjectMatches(target, inventory.map((item) => ({
+        ...item, readable: false, takeable: true,
+      })));
+      if (matches.length !== 1) {
+        addEntry("error", matches.length
+          ? `Which item do you mean: ${matches.map((item) => item.label).join(", ")}?`
+          : `You are not carrying an item called “${target}”.`);
+        return;
+      }
+      const item = inventory.find((candidate) => candidate.id === matches[0]!.id);
+      if (!item?.equipment) {
+        addEntry("error", `The ${matches[0]!.label.toLocaleLowerCase()} cannot be equipped.`);
+        return;
+      }
+      await changeEquipment("equip", item.id);
+      return;
+    }
+    if (verb.toLowerCase() === "unequip") {
+      addEntry("system", `> ${value}`);
+      const slot = target.toLocaleLowerCase();
+      if (slot !== "weapon" && slot !== "armor") {
+        addEntry("error", "Unequip which slot? Use “unequip weapon” or “unequip armor”.");
+        return;
+      }
+      await changeEquipment("unequip", slot);
+      return;
+    }
     if (verb.toLowerCase() === "look") {
       addEntry("system", `> ${value}`);
       const lookTarget = target.replace(/^at\s+/i, "").replace(/^the\s+/i, "").trim();
@@ -843,7 +917,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     }
     addEntry("system", `> ${value}`);
     addEntry("error", 'Unknown command. Try "help" for the command list.');
-  }, [addEntry, browseMerchant, dropObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, activeMerchantCatalog, performCombatAction]);
+  }, [addEntry, browseMerchant, changeEquipment, dropObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, activeMerchantCatalog, performCombatAction]);
 
   const submitQuickCommand = useCallback((rawCommand: string) => {
     setQuickCommandMode("quick");
@@ -927,22 +1001,32 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     const actions: QuickAction[] = [];
     const addMode = (
       id: string,
-      mode: "look" | "read" | "drop" | "go" | "take" | "use" | "talk" | "shop" | "buy" | "attack",
+      mode: "look" | "read" | "drop" | "go" | "take" | "use" | "talk" | "shop" | "buy" | "attack" | "equip" | "unequip",
       ariaLabel: string,
     ) => actions.push({ id, label: id, ariaLabel, opensMenu: true, onSelect: () => setQuickCommandMode(mode) });
     const inventory = snapshot?.character?.inventory ?? [];
+    const equipment = snapshot?.character?.equipment;
+    const unequippedInventory = inventory.filter((item) =>
+      item.id !== equipment?.weaponItemId && item.id !== equipment?.armorItemId,
+    );
+    const gearToEquip = inventory.filter((item) => item.equipment &&
+      (item.equipment.slot === "weapon" ? equipment?.weaponItemId : equipment?.armorItemId) !== item.id);
     const readableObjects = (snapshot?.location?.objects ?? []).filter((object) => object.readable);
     const usableTargets = (snapshot?.location?.objects ?? []).filter((object) => !object.readable && !object.takeable);
 
     addMode("look", "look", "Show look targets");
     if (readableObjects.length > 0) addMode("read", "read", "Show readable objects");
-    if (inventory.length > 0) addMode("drop", "drop", "Show items to drop");
+    if (unequippedInventory.length > 0) addMode("drop", "drop", "Show items to drop");
     if (quickDirections.length > 0) addMode("go", "go", "Show available exits");
     if (quickTakeableObjects.length > 0) addMode("take", "take", "Show items to take");
     if (inventory.length > 0 && usableTargets.length > 0) addMode("use", "use", "Show items to use");
     if ((snapshot?.location?.npcs?.length ?? 0) > 0) addMode("talk", "talk", "Show people to talk to");
     if (quickShopNpcs.length > 0) addMode("shop", "shop", "Show merchants");
     if (quickBuyListings.length > 0) addMode("buy", "buy", "Show items to buy");
+    if (gearToEquip.length > 0 && visibleCombat?.status !== "active") addMode("equip", "equip", "Show gear to equip");
+    if ((equipment?.weaponItemId || equipment?.armorItemId) && visibleCombat?.status !== "active") {
+      addMode("unequip", "unequip", "Show equipped gear to remove");
+    }
 
     if (visibleCombat?.status === "active") {
       actions.push({
@@ -985,6 +1069,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     quickTakeableObjects.length,
     setQuickCommandMode,
     snapshot?.character?.inventory,
+    snapshot?.character?.equipment,
     snapshot?.location?.npcs,
     snapshot?.location?.objects,
     submitQuickCommand,
@@ -1202,6 +1287,8 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                               : quickCommandMode === "drop" ? "Drop"
                                 : quickCommandMode === "take" ? "Take"
                                   : quickCommandMode === "attack" ? "Attack"
+                                  : quickCommandMode === "equip" ? "Equip"
+                                    : quickCommandMode === "unequip" ? "Unequip"
                                     : quickCommandMode === "shop" ? "Shop"
                                       : quickCommandMode === "buy" ? "Buy"
                                         : quickCommandMode === "use" || quickCommandMode === "use-target" ? "Use" : "Talk"}
@@ -1219,13 +1306,35 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                                 : quickCommandMode === "drop" ? "Items to drop"
                                 : quickCommandMode === "talk" ? "People here"
                                   : quickCommandMode === "attack" ? "Available opponents"
+                                : quickCommandMode === "equip" ? "Gear to equip"
+                                  : quickCommandMode === "unequip" ? "Equipped gear"
                                     : quickCommandMode === "shop" ? "Merchants here"
                                       : quickCommandMode === "buy" ? "Items to buy"
                                         : quickCommandMode === "use" ? "Items to use"
                                           : quickCommandMode === "use-target" ? "Use target" : "Items to take"
                       }
                     >
-                      {quickCommandMode === "go" ? (
+                      {quickCommandMode === "equip" ? (
+                        <>
+                          <button type="button" className="focused-quick-command focused-quick-command--back" onClick={() => setQuickCommandMode("quick")} aria-label={quickReturnLabel} disabled={pending !== null}>‹</button>
+                          {(snapshot.character?.inventory ?? []).filter((item) => item.equipment && (
+                            item.equipment.slot === "weapon"
+                              ? snapshot.character?.equipment.weaponItemId !== item.id
+                              : snapshot.character?.equipment.armorItemId !== item.id
+                          )).map((item) => (
+                            <button key={item.id} type="button" className="focused-quick-command" onClick={() => submitQuickCommand(`equip ${item.label}`)} aria-label={`Equip ${item.label}`} disabled={pending !== null}>{item.label.toLocaleLowerCase()}</button>
+                          ))}
+                        </>
+                      ) : quickCommandMode === "unequip" ? (
+                        <>
+                          <button type="button" className="focused-quick-command focused-quick-command--back" onClick={() => setQuickCommandMode("quick")} aria-label={quickReturnLabel} disabled={pending !== null}>‹</button>
+                          {(["weapon", "armor"] as const).filter((slot) => slot === "weapon"
+                            ? snapshot.character?.equipment.weaponItemId
+                            : snapshot.character?.equipment.armorItemId).map((slot) => (
+                            <button key={slot} type="button" className="focused-quick-command" onClick={() => submitQuickCommand(`unequip ${slot}`)} aria-label={`Unequip ${slot}`} disabled={pending !== null}>{slot}</button>
+                          ))}
+                        </>
+                      ) : quickCommandMode === "go" ? (
                         <>
                           <button
                             type="button"
@@ -1319,8 +1428,14 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                           >
                             ‹
                           </button>
-                          {(snapshot.character?.inventory ?? []).length ? (
-                            (snapshot.character?.inventory ?? []).map((item) => (
+                          {(snapshot.character?.inventory ?? []).filter((item) =>
+                            item.id !== snapshot.character?.equipment.weaponItemId &&
+                            item.id !== snapshot.character?.equipment.armorItemId,
+                          ).length ? (
+                            (snapshot.character?.inventory ?? []).filter((item) =>
+                              item.id !== snapshot.character?.equipment.weaponItemId &&
+                              item.id !== snapshot.character?.equipment.armorItemId,
+                            ).map((item) => (
                               <button
                                 key={item.id}
                                 type="button"
@@ -1595,7 +1710,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                         spellCheck={false}
                       />
                       <Button type="submit" variant="secondary" disabled={!command.trim() || pending !== null}>
-                        {pending === "look" ? "Looking" : pending === "read" ? "Reading" : pending === "take" ? "Taking" : pending === "drop" ? "Dropping" : pending === "move" ? "Moving" : pending === "talk" ? "Talking" : pending === "shop" ? "Browsing" : pending === "buy" ? "Buying" : pending === "combat" ? "Acting" : "Send"}
+                        {pending === "look" ? "Looking" : pending === "read" ? "Reading" : pending === "take" ? "Taking" : pending === "drop" ? "Dropping" : pending === "move" ? "Moving" : pending === "talk" ? "Talking" : pending === "shop" ? "Browsing" : pending === "buy" ? "Buying" : pending === "combat" ? "Acting" : pending === "equip" ? "Changing gear" : "Send"}
                       </Button>
                     </form>
                   </section>
@@ -1648,21 +1763,58 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                    <div className="focused-detail"><span>World</span><strong>The Waystone Path</strong></div>
                    <div className="focused-detail focused-detail--wide"><span>Current location</span><strong>{snapshot.location?.title || "—"}</strong></div>
                     <div className="focused-detail focused-detail--wide">
+                      <span>Equipment</span>
+                      <div className="focused-equipment">
+                        {(["weapon", "armor"] as const).map((slot) => {
+                          const itemId = slot === "weapon"
+                            ? snapshot.character?.equipment.weaponItemId
+                            : snapshot.character?.equipment.armorItemId;
+                          const item = snapshot.character?.inventory.find((candidate) => candidate.id === itemId);
+                          return (
+                            <div className="focused-equipment-slot" key={slot}>
+                              <span>{slot}</span>
+                              <strong>{item?.label ?? "None"}</strong>
+                              {item && (
+                                <button type="button" className="focused-inventory-item" aria-label={`Unequip ${slot}`} disabled={pending !== null || snapshot.character?.combat?.status === "active"} onClick={() => void changeEquipment("unequip", slot)}>
+                                  Unequip
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="focused-detail focused-detail--wide">
                       <span>Carried items</span>
                       {snapshot.character?.inventory.length ? (
                         <div className="focused-inventory">
-                          {snapshot.character.inventory.map((item) => (
-                            <button
-                              key={item.id}
-                              type="button"
-                              className="focused-inventory-item"
-                              aria-label={`Inspect ${item.label}`}
-                              disabled={pending !== null}
-                              onClick={() => void inspectCarriedItem(item)}
-                            >
-                              {item.label}
-                            </button>
-                          ))}
+                          {snapshot.character.inventory.map((item) => {
+                            const slotKey = item.equipment?.slot === "weapon" ? "weaponItemId" : "armorItemId";
+                            const isEquipped = snapshot.character?.equipment[slotKey] === item.id;
+                            return (
+                            <div className="focused-inventory-entry" key={item.id}>
+                              <button
+                                type="button"
+                                className="focused-inventory-item"
+                                aria-label={`Inspect ${item.label}`}
+                                disabled={pending !== null}
+                                onClick={() => void inspectCarriedItem(item)}
+                              >
+                                {item.label}
+                              </button>
+                              {item.equipment && (
+                                <button
+                                  type="button"
+                                  className="focused-inventory-item"
+                                  aria-label={`${isEquipped ? "Equipped" : "Equip"} ${item.label}`}
+                                  disabled={pending !== null || snapshot.character?.combat?.status === "active" || isEquipped}
+                                  onClick={() => void changeEquipment("equip", item.id)}
+                                >
+                                  {isEquipped ? "Equipped" : `Equip ${item.equipment.slot}`}
+                                </button>
+                              )}
+                            </div>
+                          );})}
                         </div>
                       ) : <strong>None</strong>}
                       {inspectedCarriedItem && snapshot.character?.inventory.some((item) => item.id === inspectedCarriedItem.id) && (

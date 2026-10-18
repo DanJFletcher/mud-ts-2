@@ -8,6 +8,25 @@ export const InventoryItemProjectionSchema = z.object({
   id: IdSchema,
   label: z.string().min(1).max(120),
   description: z.string().min(1).max(1000),
+  equipment: z.object({
+    slot: z.enum(['weapon', 'armor']),
+    attackBonus: NonNegativeIntSchema.max(10).default(0),
+    defenseBonus: NonNegativeIntSchema.max(10).default(0),
+  }).strict().optional().superRefine((equipment, context) => {
+    if (!equipment) return;
+    if (equipment.slot === 'weapon' && equipment.defenseBonus > 0) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['defenseBonus'], message: 'Weapons cannot provide armor.' });
+    }
+    if (equipment.slot === 'armor' && equipment.attackBonus > 0) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['attackBonus'], message: 'Armor cannot provide weapon damage.' });
+    }
+  }),
+}).strict();
+
+export const EquipmentSlotSchema = z.enum(['weapon', 'armor']);
+export const CharacterEquipmentSchema = z.object({
+  weaponItemId: IdSchema.nullable(),
+  armorItemId: IdSchema.nullable(),
 }).strict();
 
 export const CharacterWalletSchema = z.object({
@@ -67,6 +86,27 @@ export const DropCharacterItemCommandSchema = ClientCommandBaseSchema.extend({
   type: z.literal('character.drop'),
   expectedVersion: NonNegativeIntSchema,
   payload: z.object({ itemId: IdSchema }).strict(),
+}).strict();
+
+export const EquipCharacterItemCommandSchema = ClientCommandBaseSchema.extend({
+  type: z.literal('character.equip'),
+  expectedVersion: NonNegativeIntSchema,
+  payload: z.object({ itemId: IdSchema }).strict(),
+}).strict();
+
+export const UnequipCharacterItemCommandSchema = ClientCommandBaseSchema.extend({
+  type: z.literal('character.unequip'),
+  expectedVersion: NonNegativeIntSchema,
+  payload: z.object({ slot: EquipmentSlotSchema }).strict(),
+}).strict();
+
+export const CharacterEquipmentChangedEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('character.equipment_changed'),
+  payload: z.object({
+    characterId: IdSchema,
+    slot: EquipmentSlotSchema,
+    itemId: IdSchema.nullable(),
+  }).strict(),
 }).strict();
 
 export const UseCharacterItemCommandSchema = ClientCommandBaseSchema.extend({
@@ -176,6 +216,7 @@ export const CharacterProjectionSchema = z.object({
   visitedLocationIds: z.array(IdSchema).default([]),
   revision: NonNegativeIntSchema,
   inventory: z.array(InventoryItemProjectionSchema).default([]),
+  equipment: CharacterEquipmentSchema.default({ weaponItemId: null, armorItemId: null }),
   wallet: CharacterWalletSchema.optional(),
   combat: CombatEncounterProjectionSchema.optional(),
   purchasedMerchantListingIds: z.array(IdSchema).default([]),
@@ -211,6 +252,10 @@ export type CharacterCreatedEvent = z.infer<typeof CharacterCreatedEventSchema>;
 export type TakeCharacterItemCommand = z.infer<typeof TakeCharacterItemCommandSchema>;
 export type CharacterItemTakenEvent = z.infer<typeof CharacterItemTakenEventSchema>;
 export type DropCharacterItemCommand = z.infer<typeof DropCharacterItemCommandSchema>;
+export type EquipCharacterItemCommand = z.infer<typeof EquipCharacterItemCommandSchema>;
+export type UnequipCharacterItemCommand = z.infer<typeof UnequipCharacterItemCommandSchema>;
+export type CharacterEquipmentChangedEvent = z.infer<typeof CharacterEquipmentChangedEventSchema>;
+export type EquipmentSlot = z.infer<typeof EquipmentSlotSchema>;
 export type UseCharacterItemCommand = z.infer<typeof UseCharacterItemCommandSchema>;
 export type CharacterItemUsedEvent = z.infer<typeof CharacterItemUsedEventSchema>;
 export type ReadCharacterObjectCommand = z.infer<typeof ReadCharacterObjectCommandSchema>;

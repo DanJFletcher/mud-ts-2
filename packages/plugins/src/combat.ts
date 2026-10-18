@@ -67,6 +67,10 @@ export const combatPlugin: EnginePlugin = {
       if (!npc?.combatProfile) throw new RuleViolationError('That opponent is no longer available.');
 
       const action = command.payload.action;
+      const weapon = character.inventory.find((item) => item.id === character.equipment.weaponItemId);
+      const armor = character.inventory.find((item) => item.id === character.equipment.armorItemId);
+      const attackDamage = PLAYER_ATTACK_DAMAGE + (weapon?.equipment?.attackBonus ?? 0);
+      const damageReduction = armor?.equipment?.defenseBonus ?? 0;
       let damageDealt = 0;
       let damageTaken = 0;
       let opponentHealth = encounter.opponentHealth;
@@ -80,7 +84,7 @@ export const combatPlugin: EnginePlugin = {
         narration = `You retreat from ${npc.name}. The encounter ends without lasting injury.`;
       } else {
         if (action === 'attack') {
-          damageDealt = Math.min(PLAYER_ATTACK_DAMAGE, opponentHealth);
+          damageDealt = Math.min(attackDamage, opponentHealth);
           opponentHealth -= damageDealt;
         }
 
@@ -90,13 +94,13 @@ export const combatPlugin: EnginePlugin = {
         } else if (action === 'defend') {
           narration = `You guard against ${npc.name}'s padded strike and take no damage.`;
         } else {
-          damageTaken = Math.min(npc.combatProfile.attackDamage, playerHealth);
+          damageTaken = Math.min(Math.max(0, npc.combatProfile.attackDamage - damageReduction), playerHealth);
           playerHealth -= damageTaken;
           if (playerHealth === 0) {
             status = 'defeat';
             narration = `${npc.name} lands a padded strike. You are down; the practice ends without lasting injury.`;
           } else {
-            narration = `You deal ${damageDealt} damage to ${npc.name}. It strikes back for ${damageTaken}.`;
+            narration = `You deal ${damageDealt} damage to ${npc.name}. It strikes back for ${damageTaken}${damageReduction ? ` after your armor absorbs ${damageReduction}` : ''}.`;
           }
         }
       }

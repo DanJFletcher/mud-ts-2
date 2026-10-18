@@ -481,7 +481,7 @@ const draft = {
             {
               id: 'reedbank-wares',
               keywords: ['wares', 'goods', 'shop', 'prices', 'price'],
-              response: 'The lantern is eight moss marks; the waxed cord is five. Each traveler has their own allotment.',
+              response: 'The lantern is eight moss marks and the waxed cord is five. I also have a practice blade and a padded vest for five marks each. Each traveler has their own allotment.',
             },
           ],
           unknownTopicResponse: 'Ask me about the wares or use the shop command to browse.',
@@ -502,6 +502,26 @@ const draft = {
                   id: 'item-reedbank-waxed-cord',
                   label: 'Waxed cord',
                   description: 'A coil of tough linen cord sealed with beeswax against damp.',
+                },
+                price: 5,
+              },
+              {
+                id: 'reedbank-practice-blade',
+                item: {
+                  id: 'item-reedbank-practice-blade',
+                  label: 'Practice blade',
+                  description: 'A balanced ashwood blade wrapped in soft leather for safe sparring.',
+                  equipment: { slot: 'weapon', attackBonus: 1, defenseBonus: 0 },
+                },
+                price: 5,
+              },
+              {
+                id: 'reedbank-padded-vest',
+                item: {
+                  id: 'item-reedbank-padded-vest',
+                  label: 'Padded vest',
+                  description: 'A quilted vest that softens the force of practice blows.',
+                  equipment: { slot: 'armor', attackBonus: 0, defenseBonus: 1 },
                 },
                 price: 5,
               },
