@@ -22,6 +22,11 @@ import { characters, worldSessions } from './db/schema.js';
 import { PostgresEventStore } from './persistence/postgres-event-store.js';
 import { expiredGuestCookie, getAccountIdentity, type AccountIdentity } from './session-service.js';
 import { CLERK_PROXY_PATH, clerkProxyMiddleware, getClerkProxyHost } from './middlewares/clerkProxyMiddleware.js';
+import {
+  createPlayerRoomChatMessage,
+  listRoomChatMessages,
+  MAX_ROOM_CHAT_MESSAGE_LENGTH,
+} from './room-chat-service.js';
 
 const store = new PostgresEventStore();
 const authorization = {
@@ -64,6 +69,14 @@ async function activeSession(identity: AccountIdentity) {
     eq(worldSessions.worldInstanceId, DEMO_WORLD_INSTANCE_ID),
   )).limit(1);
   return session;
+}
+
+async function activeCharacter(identity: AccountIdentity) {
+  const session = await activeSession(identity);
+  if (!session) return undefined;
+  const character = replayCharacter(await store.readStream(session.worldInstanceId, session.characterId));
+  if (!character || character.archived) return undefined;
+  return { session, character };
 }
 
 function worldContext(identity: AccountIdentity, session: typeof worldSessions.$inferSelect) {
@@ -189,6 +202,68 @@ app.get('/api/game', async (req, res, next) => {
       character,
       location: result.value,
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/chat', async (req, res, next) => {
+  try {
+    const identity = await accountFor(req, res);
+    if (!identity) return;
+
+    const roomId = z.string().trim().min(1).max(120).safeParse(req.query.roomId);
+    const parsedAfterId = req.query.afterId === undefined
+      ? undefined
+      : z.coerce.number().int().nonnegative().safeParse(req.query.afterId);
+    if (!roomId.success || (parsedAfterId && !parsedAfterId.success)) {
+      return res.status(400).json({ message: 'Invalid room chat request.' });
+    }
+
+    const current = await activeCharacter(identity);
+    if (!current) return res.status(409).json({ message: 'Enter the world with a character before using room chat.' });
+    if (roomId.data !== current.character.locationId) {
+      return res.status(409).json({ message: 'You have moved to a different room.' });
+    }
+
+    const messages = await listRoomChatMessages({
+      worldInstanceId: current.session.worldInstanceId,
+      roomId: current.character.locationId,
+      afterId: parsedAfterId?.success ? parsedAfterId.data : undefined,
+    });
+    return res.json({ roomId: current.character.locationId, messages });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/chat', async (req, res, next) => {
+  try {
+    const identity = await accountFor(req, res);
+    if (!identity) return;
+
+    const input = z.object({
+      roomId: z.string().trim().min(1).max(120),
+      text: z.string().trim().min(1).max(MAX_ROOM_CHAT_MESSAGE_LENGTH),
+    }).strict().safeParse(req.body);
+    if (!input.success) {
+      return res.status(400).json({ message: `Enter a message up to ${MAX_ROOM_CHAT_MESSAGE_LENGTH} characters.` });
+    }
+
+    const current = await activeCharacter(identity);
+    if (!current) return res.status(409).json({ message: 'Enter the world with a character before using room chat.' });
+    if (input.data.roomId !== current.character.locationId) {
+      return res.status(409).json({ message: 'You have moved to a different room.' });
+    }
+
+    const message = await createPlayerRoomChatMessage({
+      worldInstanceId: current.session.worldInstanceId,
+      roomId: current.character.locationId,
+      characterId: current.character.characterId,
+      characterName: current.character.name,
+      text: input.data.text,
+    });
+    return res.status(201).json({ message });
   } catch (error) {
     next(error);
   }

@@ -4,6 +4,7 @@ import {
   jsonb,
   pgTable,
   primaryKey,
+  serial,
   text,
   timestamp,
   uniqueIndex,
@@ -78,4 +79,17 @@ export const commandReceipts = pgTable('command_receipts', {
     name: 'command_receipts_pk',
     columns: [table.worldInstanceId, table.actorId, table.commandId],
   }),
+]);
+
+export const roomChatMessages = pgTable('room_chat_messages', {
+  id: serial('id').primaryKey(),
+  worldInstanceId: text('world_instance_id').notNull(),
+  roomId: text('room_id').notNull(),
+  speakerType: text('speaker_type').$type<'player' | 'npc'>().notNull(),
+  speakerId: text('speaker_id').notNull(),
+  speakerName: text('speaker_name').notNull(),
+  message: text('message').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('room_chat_messages_world_room_id_idx').on(table.worldInstanceId, table.roomId, table.id),
 ]);

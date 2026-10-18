@@ -15,6 +15,13 @@
       "when": 1792269590218,
       "tag": "0001_woozy_selene",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792282084057,
+      "tag": "0002_loose_epoch",
+      "breakpoints": true
     }
   ]
 }

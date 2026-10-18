@@ -16,6 +16,17 @@ let moveError: string | null;
 let itemTaken: boolean;
 let includeSecondTakeable: boolean;
 let secondItemTaken: boolean;
+type TestRoomChatMessage = {
+  id: number;
+  roomId: string;
+  speakerType: 'player' | 'npc';
+  speakerId: string;
+  speakerName: string;
+  text: string;
+  createdAt: string;
+};
+let roomChatMessages: TestRoomChatMessage[];
+let nextRoomChatMessageId: number;
 
 function currentLocation() {
   return {
@@ -64,6 +75,11 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
+function quickGo(direction: 'north' | 'south') {
+  fireEvent.click(screen.getByRole('button', { name: 'Show available exits' }));
+  fireEvent.click(screen.getByRole('button', { name: `Go ${direction}` }));
+}
+
 beforeEach(() => {
   window.history.replaceState(null, '', '/');
   window.localStorage.clear();
@@ -74,8 +90,37 @@ beforeEach(() => {
   itemTaken = false;
   includeSecondTakeable = false;
   secondItemTaken = false;
+  roomChatMessages = [];
+  nextRoomChatMessageId = 1;
   apiFetch.mockReset();
   apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
+    if (path.startsWith('/api/chat')) {
+      const url = new URL(path, 'http://mudd.test');
+      const roomId = currentLocation().locationId;
+      if (init?.method === 'POST') {
+        const payload = JSON.parse(String(init.body ?? '{}')) as { roomId?: string; text?: string };
+        if (payload.roomId !== roomId) return json({ message: 'You have moved to a different room.' }, 409);
+        const message: TestRoomChatMessage = {
+          id: nextRoomChatMessageId++,
+          roomId,
+          speakerType: 'player',
+          speakerId: characterId,
+          speakerName: 'Rowan',
+          text: payload.text ?? '',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        };
+        roomChatMessages.push(message);
+        return json({ message }, 201);
+      }
+      if (url.searchParams.get('roomId') !== roomId) {
+        return json({ message: 'You have moved to a different room.' }, 409);
+      }
+      const afterId = url.searchParams.get('afterId');
+      const messages = afterId === null
+        ? roomChatMessages.filter((message) => message.roomId === roomId).slice(-50)
+        : roomChatMessages.filter((message) => message.roomId === roomId && message.id > Number(afterId));
+      return json({ roomId, messages });
+    }
     if (path === '/api/game') {
       return json({
         player: { id: 'account-1', displayName: 'Traveler' },
@@ -170,14 +215,60 @@ describe('single-character world session client', () => {
     expect(onLeaveWorld).toHaveBeenCalledOnce();
   });
 
+  it('replaces available paths with shared room chat for player and NPC messages', async () => {
+    roomChatMessages = [
+      {
+        id: 4,
+        roomId: 'mossgate-clearing',
+        speakerType: 'npc',
+        speakerId: 'old-keeper',
+        speakerName: 'Old Keeper',
+        text: 'The east bell rings once.',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 5,
+        roomId: 'mossgate-clearing',
+        speakerType: 'player',
+        speakerId: 'other-character',
+        speakerName: 'Mira',
+        text: 'I heard it too.',
+        createdAt: '2026-01-01T00:00:01.000Z',
+      },
+    ];
+    nextRoomChatMessageId = 6;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    const chat = await screen.findByRole('region', { name: 'Room chat' });
+
+    expect(await screen.findByText('The east bell rings once.')).toBeVisible();
+    expect(chat).toHaveTextContent('Old Keeper');
+    expect(chat).toHaveTextContent('Mira');
+    expect(screen.queryByText('Available paths')).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Available exits' })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Message the room' }), {
+      target: { value: 'The way is clear.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Send room message' }));
+    expect(await screen.findByText('The way is clear.')).toBeVisible();
+    const sentMessage = apiFetch.mock.calls.find(([path, init]) =>
+      path === '/api/chat' && init?.method === 'POST'
+    );
+    expect(JSON.parse(String(sentMessage?.[1]?.body ?? '{}'))).toEqual({
+      roomId: 'mossgate-clearing',
+      text: 'The way is clear.',
+    });
+  });
+
   it('uses real character-bound commands and retains the action history on Field notes', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     const history = screen.getByRole('region', { name: 'Terminal output' });
     expect(history).toHaveClass('focused-terminal-history');
     expect(screen.getByRole('region', { name: 'Text command' })).toBeInTheDocument();
-    expect(screen.getByText('Available paths')).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'North to Glasswater Bridge' }));
+    expect(screen.queryByText('Available paths')).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Room chat' })).toBeVisible();
+    quickGo('north');
     await screen.findByRole('heading', { name: 'Glasswater Bridge' });
     expect(history).toHaveTextContent('You travel north.');
     expect(history).toHaveTextContent('A stone bridge crosses clear water.');
@@ -210,8 +301,9 @@ describe('single-character world session client', () => {
     });
     expect(apiFetch.mock.calls.some(([path]) => path === '/api/queries')).toBe(true);
     expect(history).toHaveTextContent('> look');
-    expect(screen.getByRole('region', { name: 'Available exits' })).toContainElement(
-      screen.getByRole('button', { name: 'North to Glasswater Bridge' }),
+    fireEvent.click(screen.getByRole('button', { name: 'Show available exits' }));
+    expect(screen.getByRole('group', { name: 'Available directions' })).toContainElement(
+      screen.getByRole('button', { name: 'Go north' }),
     );
   });
 
@@ -259,7 +351,7 @@ describe('single-character world session client', () => {
     await waitFor(() => expect(screen.getAllByText(appearance)).toHaveLength(2));
     await waitFor(() => expect(terminal).toHaveAttribute('aria-busy', 'false'));
 
-    fireEvent.click(screen.getByRole('button', { name: 'North to Glasswater Bridge' }));
+    quickGo('north');
     await screen.findByRole('heading', { name: 'Glasswater Bridge' });
     await waitFor(() => expect(terminal).toHaveAttribute('aria-busy', 'false'));
     fireEvent.change(commandInput, { target: { value: 'look marker' } });
@@ -374,7 +466,7 @@ describe('single-character world session client', () => {
     await waitFor(() => expect(commandHistory).toHaveTextContent('> look at stone'));
     expect(commandHistory).toHaveTextContent('A smooth, palm-sized stone with a pale stripe running through it.');
 
-    fireEvent.click(screen.getByRole('button', { name: 'North to Glasswater Bridge' }));
+    quickGo('north');
     await screen.findByRole('heading', { name: 'Glasswater Bridge' });
     fireEvent.change(commandInputAfterReturn, { target: { value: 'look stone' } });
     fireEvent.submit(commandInputAfterReturn.closest('form')!);
@@ -549,10 +641,10 @@ describe('single-character world session client', () => {
     moveError = 'Exit is blocked.';
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
-    fireEvent.click(screen.getByRole('button', { name: 'North to Glasswater Bridge' }));
+    quickGo('north');
     await screen.findByText('Exit is blocked.');
     expect(screen.getByRole('heading', { name: 'Mossgate Clearing' })).toBeVisible();
-    expect(screen.getByRole('button', { name: 'North to Glasswater Bridge' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Show available exits' })).toBeEnabled();
   });
 
   it('restores and persists the selected theme', async () => {

@@ -3,13 +3,13 @@ import { MuddHttpClient, type GameSnapshot } from "@mudd/client-sdk";
 import {
   ActivityLog,
   Button,
-  NavigationControls,
   Panel,
   Text,
   TextInput,
   type ActivityEntry,
 } from "@mudd/ui";
 import { Compass, Moon, NotebookText, Sun, UserRound, Users } from "lucide-react";
+import { RoomChatPanel } from "./RoomChatPanel.js";
 
 const client = new MuddHttpClient({ worldInstanceId: "mudd-demo-instance" });
 type Screen = "play" | "traveler" | "notes";
@@ -92,7 +92,6 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<"look" | "read" | "take" | "drop" | "move" | null>(null);
-  const [pendingExitId, setPendingExitId] = useState<string>();
   const [command, setCommand] = useState("");
   const [quickCommandPage, setQuickCommandPage] = useState<"main" | "more">("main");
   const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "go" | "look" | "read" | "drop" | "take">("quick");
@@ -304,7 +303,6 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
       return;
     }
     setPending("move");
-    setPendingExitId(exit.id);
     try {
       await client.move(snapshot.character.characterId, exit.id, snapshot.location.revision);
       await refreshAfterMutation(`You travel ${exit.direction || exit.label}.`);
@@ -312,7 +310,6 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
       addEntry("error", error instanceof Error ? error.message : "Unable to move.");
     } finally {
       setPending(null);
-      setPendingExitId(undefined);
     }
   }, [addEntry, pending, refreshAfterMutation, snapshot]);
 
@@ -804,19 +801,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                     </form>
                   </section>
                 </Panel>
-                <section className="focused-paths" aria-label="Available exits">
-                  <div className="focused-kicker focused-paths-heading">Available paths</div>
-                  {exits.length ? (
-                    <NavigationControls
-                      exits={exits}
-                      onMove={(exitId) => void move(exitId)}
-                      disabled={pending !== null}
-                      pendingExitId={pendingExitId}
-                    />
-                  ) : (
-                    <p className="focused-feedback focused-feedback--empty">No open paths from here.</p>
-                  )}
-                </section>
+                <RoomChatPanel roomId={snapshot.location.locationId} />
               </>
             ) : (
               <Panel className="focused-room focused-connection" eyebrow="World session" title="Character unavailable">
