@@ -73,7 +73,7 @@
   width: min(100%, 880px);
   margin: 0 auto;
   flex: 1;
-  padding: 20px 0 16px;
+  padding: 8px 0 16px;
   animation: focused-enter 220ms ease both;
 }
 
@@ -625,7 +625,7 @@
 
 @media (min-width: 700px) {
   .focused-client { padding-inline: 28px; padding-bottom: 28px; }
-  .focused-content { padding-top: 30px; }
+  .focused-content { padding-top: 12px; }
   .focused-screen--play { grid-template-columns: minmax(0, 1.2fr) minmax(260px, .8fr); align-items: start; gap: 14px; }
   .focused-screen--play .focused-screen-heading,
   .focused-screen--play .focused-feedback { grid-column: 1 / -1; }
@@ -645,7 +645,7 @@
 
 @media (max-width: 360px) {
   .focused-client { padding-right: 12px; padding-left: 12px; }
-  .focused-content { padding-top: 15px; }
+  .focused-content { padding-top: 8px; }
   .focused-room { padding: 19px 16px 16px; }
   .focused-command { padding: 12px; }
 }
