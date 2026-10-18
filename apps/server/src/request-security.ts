@@ -31,6 +31,7 @@ export function parseAllowedOrigins(value: string | undefined, replitDevDomains?
       throw new Error('Replit development domains must be hostnames without a scheme, path, or port.');
     }
     origins.add(parsed.origin);
+    origins.add(`${parsed.origin}:5000`);
   }
   return origins;
 }

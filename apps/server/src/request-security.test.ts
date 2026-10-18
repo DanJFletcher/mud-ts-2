@@ -45,6 +45,8 @@ describe('request security policy', () => {
     const origins = parseAllowedOrigins('https://play.example.test', 'mudd-demo.replit.dev,preview.replit.dev');
     const proxiedRequest = makeRequest({ host: '127.0.0.1:5001' });
     expect(originIsAllowed('https://mudd-demo.replit.dev', proxiedRequest, origins)).toBe(true);
+    expect(originIsAllowed('https://mudd-demo.replit.dev:5000', proxiedRequest, origins)).toBe(true);
+    expect(originIsAllowed('https://mudd-demo.replit.dev:5001', proxiedRequest, origins)).toBe(false);
     expect(originIsAllowed('https://other.replit.dev', proxiedRequest, origins)).toBe(false);
     expect(() => parseAllowedOrigins(undefined, 'mudd-demo.replit.dev/path')).toThrow(/hostname/i);
   });
