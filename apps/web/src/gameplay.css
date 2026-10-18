@@ -984,6 +984,8 @@
   font-family: var(--mudd-display-font);
   font-size: 1.1rem;
 }
+.focused-quest-group { display: grid; gap: 8px; margin-top: 14px; }
+.focused-quest-group-title { margin: 0; color: var(--mudd-text); font-size: .9rem; }
 .focused-quest-list { display: grid; gap: 10px; }
 .focused-quest-card {
   padding: 12px;
@@ -992,7 +994,7 @@
   background: var(--mudd-bg);
 }
 .focused-quest-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-.focused-quest-heading h3 { margin: 0; color: var(--mudd-text); font-size: .98rem; }
+.focused-quest-heading h4 { margin: 0; color: var(--mudd-text); font-size: .98rem; }
 .focused-quest-status {
   flex: 0 0 auto;
   padding: 3px 7px;

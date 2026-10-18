@@ -324,6 +324,8 @@ describe('single-character world session client', () => {
     expect(screen.getByRole('heading', { name: 'Rowan' })).toBeVisible();
     fireEvent.click(screen.getByRole('link', { name: 'Field notes' }));
     await screen.findByRole('heading', { name: 'Field notes' });
+    expect(screen.getByText('No current quests.')).toBeVisible();
+    expect(screen.getByText('No completed quests yet.')).toBeVisible();
     expect(screen.getByText('A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east. One loose stone bears a pale stripe.')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: /Characters/ }));
     expect(onLeaveWorld).toHaveBeenCalledOnce();
@@ -354,6 +356,8 @@ describe('single-character world session client', () => {
     fireEvent.click(screen.getByRole('link', { name: 'Field notes' }));
 
     expect(await screen.findByRole('heading', { name: 'Quest journal' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Current quests' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Completed quests' })).toBeVisible();
     expect(screen.getByText('The Waystone Path')).toBeVisible();
     expect(screen.getByText('Visit the Old Bell Tower')).toBeVisible();
     expect(screen.getByText('Completed')).toBeVisible();

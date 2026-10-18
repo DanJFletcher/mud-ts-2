@@ -1118,34 +1118,44 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
             <div className="focused-notes-layout">
               <section className="focused-quest-journal" aria-labelledby="quest-journal-title">
                 <h2 id="quest-journal-title">Quest journal</h2>
-                {snapshot?.questJournal?.length ? (
-                  <div className="focused-quest-list">
-                    {snapshot.questJournal.map((quest) => (
-                      <article className="focused-quest-card" key={quest.questId}>
-                        <div className="focused-quest-heading">
-                          <h3>{quest.title}</h3>
-                          <span className={`focused-quest-status focused-quest-status--${quest.status}`}>
-                            {quest.status === "completed" ? "Completed" : "Active"}
-                          </span>
-                        </div>
-                        <p className="focused-quest-summary">{quest.summary}</p>
-                        <ol className="focused-quest-objectives">
-                          {quest.objectives.map((objective) => (
-                            <li
-                              className={objective.completed ? "focused-quest-objective focused-quest-objective--complete" : "focused-quest-objective"}
-                              key={objective.id}
-                            >
-                              <span aria-hidden="true">{objective.completed ? "✓" : "○"}</span>
-                              <span>{objective.label}</span>
-                            </li>
+                {(["active", "completed"] as const).map((status) => {
+                  const quests = snapshot?.questJournal?.filter((quest) => quest.status === status) ?? [];
+                  const heading = status === "active" ? "Current quests" : "Completed quests";
+                  const emptyMessage = status === "active" ? "No current quests." : "No completed quests yet.";
+                  return (
+                    <div className="focused-quest-group" key={status}>
+                      <h3 className="focused-quest-group-title">{heading}</h3>
+                      {quests.length ? (
+                        <div className="focused-quest-list">
+                          {quests.map((quest) => (
+                            <article className="focused-quest-card" key={quest.questId}>
+                              <div className="focused-quest-heading">
+                                <h4>{quest.title}</h4>
+                                <span className={`focused-quest-status focused-quest-status--${quest.status}`}>
+                                  {quest.status === "completed" ? "Completed" : "Active"}
+                                </span>
+                              </div>
+                              <p className="focused-quest-summary">{quest.summary}</p>
+                              <ol className="focused-quest-objectives">
+                                {quest.objectives.map((objective) => (
+                                  <li
+                                    className={objective.completed ? "focused-quest-objective focused-quest-objective--complete" : "focused-quest-objective"}
+                                    key={objective.id}
+                                  >
+                                    <span aria-hidden="true">{objective.completed ? "✓" : "○"}</span>
+                                    <span>{objective.label}</span>
+                                  </li>
+                                ))}
+                              </ol>
+                            </article>
                           ))}
-                        </ol>
-                      </article>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="focused-quest-empty">No quests accepted.</p>
-                )}
+                        </div>
+                      ) : (
+                        <p className="focused-quest-empty">{emptyMessage}</p>
+                      )}
+                    </div>
+                  );
+                })}
               </section>
               <div className="focused-log">
                 {entries.length ? (
