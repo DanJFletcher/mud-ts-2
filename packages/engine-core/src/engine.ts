@@ -1,6 +1,7 @@
 import {
   CommandReceiptSchema,
   PluginManifestSchema,
+  type CapabilityToken,
   type CommandReceipt,
   type SessionContext,
 } from '@mudd/contracts';
@@ -16,6 +17,8 @@ import type {
   QueryContext,
 } from './types.js';
 import type { WorldPackDraft } from '@mudd/contracts';
+import type { CharacterProjection } from '@mudd/contracts';
+import { isRuleViolationError } from './domain-error.js';
 
 const apiVersion = '1.0';
 const failure = (
@@ -47,17 +50,40 @@ async function hashPayload(payload: unknown): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
+type StableVersion = readonly [major: number, minor: number, patch: number];
+
+function parseStableVersion(value: string, label: string): StableVersion {
+  const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(value);
+  if (!match) throw new Error(`Unsupported ${label} "${value}"; use stable x.y.z versions.`);
+  const parts = match.slice(1).map(Number);
+  if (parts.some((part) => !Number.isSafeInteger(part))) {
+    throw new Error(`Unsupported ${label} "${value}"; version components must be safe integers.`);
+  }
+  return parts as unknown as StableVersion;
+}
+
 function dependencyVersionMatches(actual: string, range: string): boolean {
-  if (range === '*' || range === actual) return true;
-  const required = /^\^?(\d+)\.\d+\.\d+$/.exec(range);
-  const found = /^(\d+)\.\d+\.\d+$/.exec(actual);
-  return Boolean(required && found && required[1] === found[1]);
+  const found = parseStableVersion(actual, 'plugin version');
+  if (range === '*') return true;
+
+  const isCaretRange = range.startsWith('^');
+  const required = parseStableVersion(isCaretRange ? range.slice(1) : range, 'plugin dependency range');
+  if (!isCaretRange) return found.every((part, index) => part === required[index]);
+
+  const [major, minor, patch] = required;
+  const [foundMajor, foundMinor, foundPatch] = found;
+  const atLeastRequired = foundMajor > major ||
+    (foundMajor === major && (foundMinor > minor || (foundMinor === minor && foundPatch >= patch)));
+  if (!atLeastRequired) return false;
+  if (major > 0) return foundMajor === major;
+  if (minor > 0) return foundMajor === 0 && foundMinor === minor;
+  return foundMajor === 0 && foundMinor === 0 && foundPatch === patch;
 }
 
 export class EngineHost {
   private readonly commands = new Map<string, CommandDefinition>();
   private readonly queries = new Map<string, QueryDefinition>();
-  private readonly capabilities = new Map<string, unknown>();
+  private readonly capabilities = new Map<string, { version: string; implementation: unknown }>();
   private readonly orderedPlugins: EnginePlugin[];
   private started = false;
 
@@ -79,13 +105,17 @@ export class EngineHost {
         if (this.queries.has(type)) throw new Error(`Duplicate query registration: ${type}`);
         this.queries.set(type, { schema, handle } as QueryDefinition);
       },
-      provideCapability: (id, implementation) => {
-        if (this.capabilities.has(id)) throw new Error(`Duplicate capability provider: ${id}`);
-        this.capabilities.set(id, implementation);
+      provideCapability: <T>(token: CapabilityToken<T>, implementation: T) => {
+        if (this.capabilities.has(token.id)) throw new Error(`Duplicate capability provider: ${token.id}`);
+        this.capabilities.set(token.id, { version: token.version, implementation });
       },
-      requireCapability: <T>(id: string): T => {
-        if (!this.capabilities.has(id)) throw new Error(`Missing capability: ${id}`);
-        return this.capabilities.get(id) as T;
+      requireCapability: <T>(token: CapabilityToken<T>): T => {
+        const capability = this.capabilities.get(token.id);
+        if (!capability) throw new Error(`Missing capability: ${token.id}`);
+        if (capability.version !== token.version) {
+          throw new Error(`Capability ${token.id} requires version ${token.version}, found ${capability.version}.`);
+        }
+        return capability.implementation as T;
       },
     };
     for (const plugin of this.orderedPlugins) plugin.register(context);
@@ -152,7 +182,7 @@ export class EngineHost {
     this.started = false;
   }
 
-  async dispatch(raw: unknown, session: SessionContext): Promise<DispatchResult> {
+  async dispatch(raw: unknown, session: SessionContext, correlationId = globalThis.crypto.randomUUID()): Promise<DispatchResult> {
     const untrusted = typeof raw === 'object' && raw !== null ? raw as Record<string, unknown> : {};
     const commandId = typeof untrusted.commandId === 'string' ? untrusted.commandId : this.makeId();
     const type = typeof untrusted.type === 'string' ? untrusted.type : '';
@@ -180,6 +210,7 @@ export class EngineHost {
           receipt: CommandReceiptSchema.parse(prior.receipt),
           streamId: prior.streamId,
           events: prior.events,
+          commitOutcome: prior.kind,
         };
       }
       if (typeof characterId === 'string' && typeof command.expectedVersion === 'number') {
@@ -190,6 +221,7 @@ export class EngineHost {
             receipt: failure(commandId, 'VERSION_CONFLICT', `Expected revision ${command.expectedVersion}; current revision is ${currentVersion}.`),
             streamId: characterId,
             events: [],
+            commitOutcome: 'conflict',
           };
         }
       }
@@ -217,16 +249,29 @@ export class EngineHost {
         receipt: CommandReceiptSchema.parse(outcome.receipt),
         streamId: outcome.streamId,
         events: outcome.events,
+        commitOutcome: outcome.kind,
       };
     } catch (error) {
+      if (isRuleViolationError(error)) {
+        return { receipt: failure(commandId, 'RULE_VIOLATION', error.message), events: [] };
+      }
+      console.error(`[${correlationId}] Engine command failed`, error);
       return {
-        receipt: failure(commandId, 'RULE_VIOLATION', error instanceof Error ? error.message : 'The command was rejected.'),
+        receipt: failure(commandId, 'INTERNAL_ERROR', 'The server could not complete that command.'),
         events: [],
+        correlationId,
       };
     }
   }
 
-  async query(raw: unknown, session: SessionContext): Promise<{ ok: true; value: unknown } | { ok: false; code: string; message: string }> {
+  async query(
+    raw: unknown,
+    session: SessionContext,
+    options: { characterProjection?: CharacterProjection; correlationId?: string } = {},
+  ): Promise<
+    | { ok: true; value: unknown }
+    | { ok: false; code: string; message: string; correlationId?: string }
+  > {
     const untrusted = typeof raw === 'object' && raw !== null ? raw as Record<string, unknown> : {};
     const type = typeof untrusted.type === 'string' ? untrusted.type : '';
     const definition = this.queries.get(type);
@@ -243,10 +288,21 @@ export class EngineHost {
       return { ok: false, code: 'FORBIDDEN', message: 'This character does not belong to this guest.' };
     }
     try {
-      const context: QueryContext = { session, worldInstanceId, store: this.store, world: this.world };
+      const context: QueryContext = {
+        session,
+        worldInstanceId,
+        store: this.store,
+        world: this.world,
+        ...(options.characterProjection ? { characterProjection: options.characterProjection } : {}),
+      };
       return { ok: true, value: await definition.handle(query, context) };
     } catch (error) {
-      return { ok: false, code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'The request could not be completed.' };
+      if (isRuleViolationError(error)) {
+        return { ok: false, code: 'RULE_VIOLATION', message: error.message };
+      }
+      const correlationId = options.correlationId ?? globalThis.crypto.randomUUID();
+      console.error(`[${correlationId}] Engine query failed`, error);
+      return { ok: false, code: 'INTERNAL_ERROR', message: 'The server could not complete that request.', correlationId };
     }
   }
 }

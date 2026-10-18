@@ -2,6 +2,8 @@ import type { CommandReceipt } from '@mudd/contracts';
 import type { WorldPackDraft } from '@mudd/contracts';
 import type { SessionContext } from '@mudd/contracts';
 import type { z } from 'zod';
+import type { CharacterProjection } from '@mudd/contracts';
+import type { CapabilityToken, PluginManifestInput } from '@mudd/contracts';
 
 export interface ProposedDomainEvent {
   readonly type: string;
@@ -73,6 +75,7 @@ export interface QueryContext {
   readonly worldInstanceId: string;
   readonly store: EventStorePort;
   readonly world: WorldPackDraft;
+  readonly characterProjection?: CharacterProjection;
 }
 
 export type CommandHandler<T = unknown> = (
@@ -98,22 +101,12 @@ export interface QueryDefinition<T = unknown, R = unknown> {
 export interface PluginContext {
   registerCommand<T>(type: string, schema: z.ZodType<T>, handler: CommandHandler<T>): void;
   registerQuery<T, R>(type: string, schema: z.ZodType<T>, handler: QueryHandler<T, R>): void;
-  provideCapability<T>(id: string, implementation: T): void;
-  requireCapability<T>(id: string): T;
+  provideCapability<T>(token: CapabilityToken<T>, implementation: T): void;
+  requireCapability<T>(token: CapabilityToken<T>): T;
 }
 
 export interface EnginePlugin {
-  readonly manifest: {
-    readonly id: string;
-    readonly version: string;
-    readonly apiVersion: string;
-    readonly category: 'core' | 'first-party' | 'ruleset' | 'third-party';
-    readonly requires?: readonly string[];
-    readonly provides?: readonly string[];
-    readonly requiredPlugins?: Readonly<Record<string, string>>;
-    readonly optionalPlugins?: Readonly<Record<string, string>>;
-    readonly permissions?: readonly string[];
-  };
+  readonly manifest: PluginManifestInput;
   register(context: PluginContext): void;
   initialize?(): Promise<void>;
   start?(): Promise<void>;
@@ -124,4 +117,6 @@ export interface DispatchResult {
   readonly receipt: CommandReceipt;
   readonly streamId?: string;
   readonly events: readonly StoredGameEvent[];
+  readonly commitOutcome?: AppendOutcome['kind'];
+  readonly correlationId?: string;
 }

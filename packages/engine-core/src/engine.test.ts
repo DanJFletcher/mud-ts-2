@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { EngineHost, InMemoryEventStore, replayCharacter, type EnginePlugin } from './index.js';
 import { characterPlugin, movementPlugin } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
+import type { CapabilityToken } from '@mudd/contracts';
 
 const session = {
   sessionId: 'session-1',
@@ -32,8 +33,40 @@ function makeEngine() {
 }
 
 describe('MUDD engine host', () => {
+  it('returns generic internal failures with a request-correlatable ID', async () => {
+    const { engine, store } = makeEngine();
+    await engine.start();
+    const lookup = vi.spyOn(store, 'lookupCommand').mockRejectedValue(new Error('database password must not reach clients'));
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const result = await engine.dispatch({
+      type: 'character.create',
+      version: 1,
+      commandId: 'internal-error-command',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      payload: { name: 'Rill' },
+    }, session, 'request-correlation-id');
+
+    expect(result.receipt).toMatchObject({
+      ok: false,
+      code: 'INTERNAL_ERROR',
+      message: 'The server could not complete that command.',
+    });
+    expect(result.receipt.message).not.toContain('password');
+    expect(result.correlationId).toBe('request-correlation-id');
+    expect(log).toHaveBeenCalledWith(
+      '[request-correlation-id] Engine command failed',
+      expect.any(Error),
+    );
+
+    lookup.mockRestore();
+    log.mockRestore();
+    await engine.stop();
+  });
+
   it('registers typed commands and capabilities before initializing a plugin', async () => {
     let initialized = false;
+    const testCapability = { id: 'mudd.test.capability.v1', version: '1' } satisfies CapabilityToken<{ ready: boolean }>;
     const plugin: EnginePlugin = {
       manifest: {
         id: 'mudd.lifecycle-test',
@@ -43,8 +76,8 @@ describe('MUDD engine host', () => {
         provides: ['mudd.test.capability.v1'],
       },
       register(context) {
-        context.provideCapability('mudd.test.capability.v1', { ready: true });
-        const capability = context.requireCapability<{ ready: boolean }>('mudd.test.capability.v1');
+        context.provideCapability(testCapability, { ready: true });
+        const capability = context.requireCapability<{ ready: boolean }>(testCapability);
         context.registerCommand('test.echo', z.object({
           type: z.literal('test.echo'),
           version: z.literal(1),
@@ -176,6 +209,34 @@ describe('MUDD engine host', () => {
     expect(returned.receipt).toMatchObject({ ok: true, newAggregateVersion: 4 });
     expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, created.streamId!))?.visitedLocationIds)
       .toEqual(['mossgate-clearing', 'glasswater-bridge']);
+    await engine.stop();
+  });
+
+  it('uses a supplied character projection for a consistent game snapshot', async () => {
+    const { engine, store } = makeEngine();
+    await engine.start();
+    const createdCharacter = await engine.dispatch({
+      type: 'character.create',
+      version: 1,
+      commandId: 'snapshot-create',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      payload: { name: 'Snapshot' },
+    }, session);
+    const characterId = createdCharacter.streamId!;
+    const projection = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    const readStream = vi.spyOn(store, 'readStream');
+
+    const location = await engine.query({
+      type: 'location.describe',
+      version: 1,
+      queryId: 'snapshot-query',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      payload: {},
+    }, session, { characterProjection: projection });
+
+    expect(location.ok).toBe(true);
+    expect(readStream).not.toHaveBeenCalled();
     await engine.stop();
   });
 
@@ -505,6 +566,8 @@ describe('MUDD engine host', () => {
     ]);
     expect(first.receipt.ok).toBe(true);
     expect(duplicate.receipt).toMatchObject({ ok: true, newAggregateVersion: 2 });
+    expect(duplicate.commitOutcome).toBe('duplicate');
+    expect(first.commitOutcome).toBe('committed');
     const competing = await engine.dispatch({ ...command, commandId: 'move-race-b', payload: { exitId: 'clearing-to-tower' } }, session);
     expect(competing.receipt).toMatchObject({ ok: false, code: 'VERSION_CONFLICT' });
     expect((await store.readStream(DEMO_WORLD_INSTANCE_ID, created.streamId!))).toHaveLength(2);
@@ -524,5 +587,82 @@ describe('MUDD engine host', () => {
     };
     expect(() => new EngineHost([plugin], new InMemoryEventStore(), authorization, demoWorld))
       .toThrow(/missing plugin/i);
+  });
+
+  it.each([
+    { version: '1.0.0', range: '1.5.0', label: 'exact ranges reject an older minor' },
+    { version: '1.0.0', range: '^1.5.0', label: 'caret ranges reject an older minor' },
+    { version: '1.5.0', range: '^1.5.1', label: 'caret ranges reject a lower patch' },
+    { version: '2.0.0', range: '^1.5.0', label: 'caret ranges reject a newer major' },
+    { version: '0.3.0', range: '^0.2.3', label: 'zero-major caret ranges stay within the minor' },
+    { version: '0.0.4', range: '^0.0.3', label: 'zero-major caret ranges stay within the patch' },
+    { version: '1.5.0', range: '~1.5.0', label: 'unsupported range syntax is rejected' },
+  ])('$label', ({ version, range }) => {
+    const dependency: EnginePlugin = {
+      manifest: { id: 'mudd.range-dependency', version, apiVersion: '1.0', category: 'core' },
+      register() {},
+    };
+    const dependent: EnginePlugin = {
+      manifest: {
+        id: 'mudd.range-dependent',
+        version: '1.0.0',
+        apiVersion: '1.0',
+        category: 'core',
+        requiredPlugins: { 'mudd.range-dependency': range },
+      },
+      register() {},
+    };
+    expect(() => new EngineHost([dependency, dependent], new InMemoryEventStore(), authorization, demoWorld))
+      .toThrow(version === '1.5.0' && range.startsWith('~')
+        ? /unsupported plugin dependency range/i
+        : /requires mudd\.range-dependency/i);
+  });
+
+  it('accepts compatible exact, caret, wildcard, and zero-major dependency versions', () => {
+    const makeDependency = (version: string): EnginePlugin => ({
+      manifest: { id: 'mudd.range-dependency', version, apiVersion: '1.0', category: 'core' },
+      register() {},
+    });
+    const makeDependent = (range: string): EnginePlugin => ({
+      manifest: {
+        id: 'mudd.range-dependent',
+        version: '1.0.0',
+        apiVersion: '1.0',
+        category: 'core',
+        requiredPlugins: { 'mudd.range-dependency': range },
+      },
+      register() {},
+    });
+
+    expect(() => new EngineHost([makeDependency('1.5.0'), makeDependent('1.5.0')], new InMemoryEventStore(), authorization, demoWorld)).not.toThrow();
+    expect(() => new EngineHost([makeDependency('1.6.2'), makeDependent('^1.5.0')], new InMemoryEventStore(), authorization, demoWorld)).not.toThrow();
+    expect(() => new EngineHost([makeDependency('0.2.9'), makeDependent('^0.2.3')], new InMemoryEventStore(), authorization, demoWorld)).not.toThrow();
+    expect(() => new EngineHost([makeDependency('9.9.9'), makeDependent('*')], new InMemoryEventStore(), authorization, demoWorld)).not.toThrow();
+  });
+
+  it('rejects plugin dependency cycles', () => {
+    const first: EnginePlugin = {
+      manifest: {
+        id: 'mudd.cycle-first',
+        version: '1.0.0',
+        apiVersion: '1.0',
+        category: 'core',
+        requiredPlugins: { 'mudd.cycle-second': '^1.0.0' },
+      },
+      register() {},
+    };
+    const second: EnginePlugin = {
+      manifest: {
+        id: 'mudd.cycle-second',
+        version: '1.0.0',
+        apiVersion: '1.0',
+        category: 'core',
+        requiredPlugins: { 'mudd.cycle-first': '^1.0.0' },
+      },
+      register() {},
+    };
+
+    expect(() => new EngineHost([first, second], new InMemoryEventStore(), authorization, demoWorld))
+      .toThrow(/dependency cycle/i);
   });
 });

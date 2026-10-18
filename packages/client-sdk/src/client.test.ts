@@ -5,6 +5,15 @@ import { characterPlugin, movementPlugin, npcDialoguePlugin } from '@mudd/core-p
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 
 describe('MuddHttpClient', () => {
+  it('rejects malformed successful HTTP responses instead of trusting a TypeScript cast', async () => {
+    const client = new MuddHttpClient({
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      fetcher: async () => Response.json({ player: { id: 42, displayName: null } }),
+    });
+
+    await expect(client.getGame()).rejects.toThrow('The server returned an invalid response.');
+  });
+
   it('sends Zod-validated commands and queries to the authoritative engine', async () => {
     const session = {
       sessionId: 'session-1',

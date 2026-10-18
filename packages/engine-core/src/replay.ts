@@ -10,6 +10,9 @@ import {
   CharacterProjectionSchema,
   CharacterCreatedEventSchema,
   CharacterMovedEventSchema,
+  CharacterRenamedEventSchema,
+  CharacterArchivedEventSchema,
+  CharacterRestoredEventSchema,
 } from '@mudd/contracts';
 
 export function replayCharacter(events: readonly StoredGameEvent[]) {
@@ -17,6 +20,9 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
 
   for (const event of events) {
     const { streamId: _streamId, ...publicEvent } = event;
+    if (event.aggregateVersion !== (state?.revision ?? 0) + 1) {
+      throw new Error(`Non-contiguous aggregate revision at ${event.aggregateVersion}.`);
+    }
     if (event.type === 'character.created') {
       const created = CharacterCreatedEventSchema.parse(publicEvent);
       state = CharacterProjectionSchema.parse({
@@ -200,13 +206,21 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
       });
     } else if (event.type === 'character.renamed') {
       if (!state) throw new Error('Rename event encountered before character creation.');
+      const renamed = CharacterRenamedEventSchema.parse(publicEvent);
+      if (renamed.payload.characterId !== state.characterId || state.archived) {
+        throw new Error(`Invalid rename event at revision ${event.aggregateVersion}.`);
+      }
       state = CharacterProjectionSchema.parse({
         ...state,
-        name: String(event.payload.name),
+        name: renamed.payload.name,
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'character.archived') {
       if (!state) throw new Error('Archive event encountered before character creation.');
+      const archived = CharacterArchivedEventSchema.parse(publicEvent);
+      if (archived.payload.characterId !== state.characterId || state.archived) {
+        throw new Error(`Invalid archive event at revision ${event.aggregateVersion}.`);
+      }
       state = CharacterProjectionSchema.parse({
         ...state,
         archived: true,
@@ -214,11 +228,17 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
       });
     } else if (event.type === 'character.restored') {
       if (!state) throw new Error('Restore event encountered before character creation.');
+      const restored = CharacterRestoredEventSchema.parse(publicEvent);
+      if (restored.payload.characterId !== state.characterId || !state.archived) {
+        throw new Error(`Invalid restore event at revision ${event.aggregateVersion}.`);
+      }
       state = CharacterProjectionSchema.parse({
         ...state,
         archived: false,
         revision: event.aggregateVersion,
       });
+    } else {
+      throw new Error(`Unsupported event type "${event.type}" at revision ${event.aggregateVersion}.`);
     }
   }
   return state;

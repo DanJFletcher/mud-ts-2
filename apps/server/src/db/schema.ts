@@ -84,6 +84,8 @@ export const commandReceipts = pgTable('command_receipts', {
 export const roomChatMessages = pgTable('room_chat_messages', {
   id: serial('id').primaryKey(),
   worldInstanceId: text('world_instance_id').notNull(),
+  playerId: uuid('player_id').references(() => players.id, { onDelete: 'cascade' }),
+  submissionId: text('submission_id'),
   roomId: text('room_id').notNull(),
   speakerType: text('speaker_type').$type<'player' | 'npc'>().notNull(),
   speakerId: text('speaker_id').notNull(),
@@ -92,4 +94,9 @@ export const roomChatMessages = pgTable('room_chat_messages', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('room_chat_messages_world_room_id_idx').on(table.worldInstanceId, table.roomId, table.id),
+  uniqueIndex('room_chat_messages_player_submission_idx').on(
+    table.worldInstanceId,
+    table.playerId,
+    table.submissionId,
+  ),
 ]);

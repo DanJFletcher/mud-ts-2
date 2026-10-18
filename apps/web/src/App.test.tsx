@@ -77,6 +77,7 @@ function currentLocation() {
       readable: false,
       takeable: false,
     }],
+    occupants: [],
     exits: [{
       id: room === 'clearing' ? 'clearing-to-bridge' : 'bridge-to-clearing',
       label: room === 'clearing' ? 'North to Glasswater Bridge' : 'South to Mossgate Clearing',
@@ -274,6 +275,7 @@ beforeEach(() => {
     if (path === '/api/commands') {
       const command = JSON.parse(String(init?.body ?? '{}')) as {
         type?: string;
+        commandId?: string;
         payload?: { itemId?: string; targetId?: string; choiceId?: string; objectId?: string };
       };
       if (command.type === 'character.read' && command.payload?.objectId === 'mossgate-marker') {
@@ -282,7 +284,7 @@ beforeEach(() => {
         if (readObjective) readObjective.completed = true;
         revision += 1;
         return json({
-          receipt: { ok: true, newAggregateVersion: revision },
+          receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision },
           streamId: characterId,
           events: [{
             type: 'character.object_read',
@@ -299,24 +301,24 @@ beforeEach(() => {
       if (command.type === 'npc.dialogue.choose') {
         maraChoice = command.payload?.choiceId ?? null;
         revision += 1;
-        return json({ receipt: { ok: true, newAggregateVersion: revision }, streamId: characterId });
+        return json({ receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision }, streamId: characterId });
       }
       if (command.type === 'character.take') {
         if (command.payload?.itemId === 'mossgate-loose-stone') itemTaken = true;
         if (command.payload?.itemId === 'mossgate-lost-feather') secondItemTaken = true;
         revision += 1;
-        return json({ receipt: { ok: true, newAggregateVersion: revision }, streamId: characterId });
+        return json({ receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision }, streamId: characterId });
       }
       if (command.type === 'character.drop') {
         if (command.payload?.itemId === 'mossgate-loose-stone') itemTaken = false;
         if (command.payload?.itemId === 'mossgate-lost-feather') secondItemTaken = false;
         revision += 1;
-        return json({ receipt: { ok: true, newAggregateVersion: revision }, streamId: characterId });
+        return json({ receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision }, streamId: characterId });
       }
       if (command.type === 'character.use') {
         revision += 1;
         return json({
-          receipt: { ok: true, newAggregateVersion: revision },
+          receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision },
           streamId: characterId,
           events: [{
             type: 'character.item_used',
@@ -341,7 +343,7 @@ beforeEach(() => {
         if (visitObjective) visitObjective.completed = true;
       }
       revision += 1;
-      return json({ receipt: { ok: true, newAggregateVersion: revision }, streamId: characterId });
+      return json({ receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision }, streamId: characterId });
     }
     return json({ message: 'Not found.' }, 404);
   });
@@ -587,6 +589,7 @@ describe('single-character world session client', () => {
     expect(JSON.parse(String(sentMessage?.[1]?.body ?? '{}'))).toEqual({
       roomId: 'mossgate-clearing',
       text: 'The way is clear.',
+      clientMessageId: expect.any(String),
     });
   });
 

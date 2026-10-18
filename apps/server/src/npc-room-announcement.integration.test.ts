@@ -38,8 +38,13 @@ const state = vi.hoisted(() => ({
   sessions: new Map(),
   messages: [],
   nextMessageId: 1,
+  chatSubmissions: new Map(),
+  nextChatSubmissionId: 1,
+  moveReceipts: new Map(),
+  nextMoveId: 1,
 }));
 
+const announcementState = vi.hoisted(() => ({ attempts: 0 }));
 const instanceId = 'npc-announcement-test-world';
 const playersByAuthId: Record<string, { playerId: string; displayName: string }> = {
   alice: { playerId: 'player-alice', displayName: 'Alice' },
@@ -88,10 +93,13 @@ vi.mock('@mudd/engine-core', () => ({
     async stop() {}
     async dispatch(command: {
       type?: string;
+      commandId?: string;
       characterId?: string;
       payload?: { exitId?: string };
     }) {
       if (command.type === 'character.move' && command.characterId && command.payload?.exitId) {
+        const prior = state.moveReceipts.get(command.commandId ?? '');
+        if (prior) return { ...prior, commitOutcome: 'duplicate' };
         const character = state.characters[command.characterId as keyof typeof state.characters];
         const destination = character
           ? {
@@ -104,12 +112,29 @@ vi.mock('@mudd/engine-core', () => ({
           }[character.locationId]?.[command.payload.exitId]
           : undefined;
         if (character && destination) character.locationId = destination;
+        const result = { receipt: { ok: true }, commitOutcome: 'committed' };
+        state.moveReceipts.set(command.commandId ?? '', result);
+        return result;
       }
-      return { receipt: { ok: true } };
+      return { receipt: { ok: true }, commitOutcome: 'committed' };
     }
   },
   replayCharacter: (character: unknown) => character,
 }));
+
+vi.mock('./npc-announcer.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./npc-announcer.js')>();
+  return {
+    ...actual,
+    createNpcRoomAnnouncer: (publish: Parameters<typeof actual.createNpcRoomAnnouncer>[0], cooldownMs?: number, now?: () => number) => {
+      const announce = actual.createNpcRoomAnnouncer(publish, cooldownMs, now);
+      return async (input: Parameters<typeof announce>[0]) => {
+        announcementState.attempts += 1;
+        return announce(input);
+      };
+    },
+  };
+});
 
 vi.mock('@mudd/world-demo', () => ({
   DEMO_WORLD_INSTANCE_ID: instanceId,
@@ -260,6 +285,107 @@ vi.mock('./db/client.js', async () => {
   return { db, pool: { end: async () => undefined } };
 });
 
+vi.mock('./room-chat-service.js', () => ({
+  MAX_ROOM_CHAT_MESSAGE_LENGTH: 500,
+  createPlayerRoomChatMessage: async (input: {
+    worldInstanceId: string;
+    playerId: string;
+    roomId: string;
+    characterId: string;
+    clientMessageId: string;
+    text: string;
+  }) => {
+    const key = `${input.worldInstanceId}:${input.playerId}:${input.clientMessageId}`;
+    const prior = state.chatSubmissions.get(key);
+    if (prior) {
+      const matches = prior.roomId === input.roomId &&
+        prior.speakerId === input.characterId &&
+        prior.message === input.text;
+      return matches ? { kind: 'duplicate', message: prior.publicMessage } : { kind: 'conflict' };
+    }
+    const character = state.characters[input.characterId as keyof typeof state.characters];
+    const session = state.sessions.get(input.playerId);
+    if (!character || character.locationId !== input.roomId || session?.characterId !== input.characterId) {
+      return { kind: 'unavailable' };
+    }
+    const row = {
+      id: state.nextMessageId++,
+      worldInstanceId: input.worldInstanceId,
+      playerId: input.playerId,
+      submissionId: input.clientMessageId,
+      roomId: input.roomId,
+      speakerType: 'player',
+      speakerId: input.characterId,
+      speakerName: character.name,
+      message: input.text,
+      createdAt: new Date('2026-10-18T12:00:00.000Z'),
+    };
+    const publicMessage = {
+      id: row.id,
+      roomId: row.roomId,
+      speakerType: row.speakerType,
+      speakerName: row.speakerName,
+      text: row.message,
+      createdAt: row.createdAt.toISOString(),
+    };
+    state.messages.push(row);
+    state.chatSubmissions.set(key, { ...row, publicMessage });
+    return { kind: 'created', message: publicMessage };
+  },
+  listRoomChatMessages: async (input: {
+    worldInstanceId: string;
+    playerId: string;
+    characterId: string;
+    roomId: string;
+    afterId?: number;
+  }) => {
+    const character = state.characters[input.characterId as keyof typeof state.characters];
+    const session = state.sessions.get(input.playerId);
+    if (!character || character.locationId !== input.roomId || session?.characterId !== input.characterId) return undefined;
+    return state.messages.filter((message) =>
+      message.worldInstanceId === input.worldInstanceId &&
+      message.roomId === input.roomId &&
+      (input.afterId === undefined || message.id > input.afterId))
+      .map((message) => ({
+        id: message.id,
+        roomId: message.roomId,
+        speakerType: message.speakerType,
+        speakerName: message.speakerName,
+        text: message.message,
+        createdAt: message.createdAt.toISOString(),
+      }));
+  },
+  publishNpcRoomMessage: async (input: {
+    worldInstanceId: string;
+    roomId: string;
+    npcId: string;
+    npcName: string;
+    text: string;
+  }) => {
+    const row = {
+      id: state.nextMessageId++,
+      worldInstanceId: input.worldInstanceId,
+      playerId: null,
+      submissionId: null,
+      roomId: input.roomId,
+      speakerType: 'npc',
+      speakerId: input.npcId,
+      speakerName: input.npcName,
+      message: input.text,
+      createdAt: new Date('2026-10-18T12:00:00.000Z'),
+    };
+    state.messages.push(row);
+    return {
+      id: row.id,
+      roomId: row.roomId,
+      speakerType: row.speakerType,
+      speakerName: row.speakerName,
+      text: row.message,
+      createdAt: row.createdAt.toISOString(),
+    };
+  },
+}));
+
 vi.mock('./middlewares/clerkProxyMiddleware.js', () => ({
   CLERK_PROXY_PATH: '/api/__clerk',
   clerkProxyMiddleware: () => (_request: unknown, _response: unknown, next: () => void) => next(),
@@ -320,6 +446,11 @@ describe('NPC room announcements through the server', () => {
     state.sessions.clear();
     state.messages.length = 0;
     state.nextMessageId = 1;
+    state.chatSubmissions.clear();
+    state.nextChatSubmissionId = 1;
+    state.moveReceipts.clear();
+    state.nextMoveId = 1;
+    announcementState.attempts = 0;
     state.characters['character-alice'].locationId = 'npc-room';
     state.characters['character-bob'].locationId = 'npc-room';
     state.characters['character-elsewhere'].locationId = 'other-room';
@@ -346,7 +477,7 @@ describe('NPC room announcements through the server', () => {
     expect(response.status).toBe(200);
   }
 
-  async function move(userId: string, characterId: string, exitId: string) {
+  async function move(userId: string, characterId: string, exitId: string, commandId?: string) {
     return fetch(`${baseUrl}/api/commands`, {
       method: 'POST',
       headers: {
@@ -356,7 +487,7 @@ describe('NPC room announcements through the server', () => {
       body: JSON.stringify({
         type: 'character.move',
         version: 1,
-        commandId: `move-${characterId}-${exitId}`,
+        commandId: commandId ?? `move-${characterId}-${exitId}-${state.nextMoveId++}`,
         worldInstanceId: instanceId,
         characterId,
         expectedVersion: 0,
@@ -375,14 +506,19 @@ describe('NPC room announcements through the server', () => {
     } };
   }
 
-  async function sendRoomMessage(userId: string, roomId: string, text: string) {
+  async function sendRoomMessage(
+    userId: string,
+    roomId: string,
+    text: string,
+    clientMessageId = `chat-${state.nextChatSubmissionId++}`,
+  ) {
     return fetch(`${baseUrl}/api/chat`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         'x-test-user': userId,
       },
-      body: JSON.stringify({ roomId, text }),
+      body: JSON.stringify({ roomId, text, clientMessageId }),
     });
   }
 
@@ -422,7 +558,7 @@ describe('NPC room announcements through the server', () => {
     expect(unmatched.status).toBe(201);
     expect((await unmatched.json() as { npcMessage?: unknown }).npcMessage).toBeUndefined();
 
-    const matching = await sendRoomMessage('alice', 'npc-room', 'Where is the marker?');
+    const matching = await sendRoomMessage('alice', 'npc-room', 'Where is the marker?', 'matching-marker-question');
     expect(matching.status).toBe(201);
     const matchingBody = await matching.json() as {
       message?: { speakerType: string; text: string };
@@ -435,6 +571,23 @@ describe('NPC room announcements through the server', () => {
       text: 'The marker still points east.',
       roomId: 'npc-room',
     });
+    const matchingRetry = await sendRoomMessage(
+      'alice',
+      'npc-room',
+      'Where is the marker?',
+      'matching-marker-question',
+    );
+    expect(matchingRetry.status).toBe(200);
+    expect((await matchingRetry.json() as { npcMessage?: unknown }).npcMessage).toBeUndefined();
+    expect(state.messages.filter((message) => message.speakerType === 'player')).toHaveLength(2);
+    expect(state.messages.filter((message) => message.speakerType === 'npc')).toHaveLength(1);
+    const reusedSubmissionId = await sendRoomMessage(
+      'alice',
+      'npc-room',
+      'A different message',
+      'matching-marker-question',
+    );
+    expect(reusedSubmissionId.status).toBe(409);
 
     const bobChat = await readRoom('bob', 'npc-room');
     expect(bobChat.body.messages).toContainEqual(expect.objectContaining({
@@ -451,6 +604,40 @@ describe('NPC room announcements through the server', () => {
       message.speakerName === 'Mara' &&
       message.text === 'The marker still points east.',
     )).toHaveLength(1);
+  });
+
+  it('rejects cross-origin state-changing requests before they mutate room chat', async () => {
+    await enterWorld('alice', 'character-alice');
+    const response = await fetch(`${baseUrl}/api/chat`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        origin: 'https://attacker.example',
+        'x-test-user': 'alice',
+      },
+      body: JSON.stringify({ roomId: 'npc-room', text: 'forged message' }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(state.messages).toEqual([]);
+  });
+
+  it('returns a bounded request-body error with a request ID', async () => {
+    const response = await fetch(`${baseUrl}/api/chat`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        origin: baseUrl,
+        'x-test-user': 'alice',
+      },
+      body: JSON.stringify({ roomId: 'npc-room', text: 'x'.repeat(20_000) }),
+    });
+    const body = await response.json() as { message?: string; requestId?: string };
+
+    expect(response.status).toBe(413);
+    expect(body.message).toBe('The request body is too large.');
+    expect(body.requestId).toEqual(expect.any(String));
+    expect(response.headers.get('x-request-id')).toBe(body.requestId);
   });
 
   it('announces on successful movement into an NPC room and applies the arrival cooldown', async () => {
@@ -482,5 +669,17 @@ describe('NPC room announcements through the server', () => {
     expect(quietChat.response.status).toBe(200);
     expect(quietChat.body.messages).toEqual([]);
     expect(state.messages).toEqual([]);
+  });
+
+  it('does not re-run NPC entry effects for a successful idempotent movement retry', async () => {
+    await enterWorld('mover', 'character-mover');
+    const commandId = 'same-move-retried';
+
+    expect((await move('mover', 'character-mover', 'to-arrival-room', commandId)).status).toBe(200);
+    expect(announcementState.attempts).toBe(1);
+
+    expect((await move('mover', 'character-mover', 'to-arrival-room', commandId)).status).toBe(200);
+
+    expect(announcementState.attempts).toBe(1);
   });
 });

@@ -1,10 +1,13 @@
-import { and, asc, desc, eq, gt } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, isNull, sql } from 'drizzle-orm';
+import { replayCharacter } from '@mudd/engine-core';
 import { db } from './db/client.js';
-import { roomChatMessages } from './db/schema.js';
+import { characters, gameEvents, roomChatMessages, worldSessions } from './db/schema.js';
+import { toStoredGameEvent } from './persistence/postgres-event-store.js';
 
 export const MAX_ROOM_CHAT_MESSAGE_LENGTH = 500;
 const INITIAL_ROOM_CHAT_LIMIT = 50;
 const ROOM_CHAT_POLL_LIMIT = 100;
+type CharacterProjection = NonNullable<ReturnType<typeof replayCharacter>>;
 
 export type RoomChatSpeakerType = 'player' | 'npc';
 
@@ -19,12 +22,21 @@ export type RoomChatMessage = Readonly<{
 
 type NewRoomChatMessage = Readonly<{
   worldInstanceId: string;
+  playerId?: string | null;
+  submissionId?: string | null;
   roomId: string;
   speakerType: RoomChatSpeakerType;
   speakerId: string;
   speakerName: string;
   text: string;
 }>;
+
+type ChatTransaction = Pick<typeof db, 'select' | 'insert' | 'execute'>;
+
+export type PlayerChatSubmission =
+  | { kind: 'created' | 'duplicate'; message: RoomChatMessage }
+  | { kind: 'conflict' }
+  | { kind: 'unavailable' };
 
 function normalizeMessage(value: string): string {
   const message = value.trim();
@@ -45,9 +57,11 @@ function toRoomChatMessage(row: typeof roomChatMessages.$inferSelect): RoomChatM
   };
 }
 
-async function insertRoomChatMessage(input: NewRoomChatMessage): Promise<RoomChatMessage> {
+async function insertRoomChatMessage(tx: ChatTransaction, input: NewRoomChatMessage): Promise<RoomChatMessage> {
+  await tx.execute(sql`
+    SELECT pg_advisory_xact_lock(hashtext(${input.worldInstanceId}), hashtext(${input.roomId}))`);
   const { text, ...messageFields } = input;
-  const [row] = await db.insert(roomChatMessages).values({
+  const [row] = await tx.insert(roomChatMessages).values({
     ...messageFields,
     message: normalizeMessage(text),
   }).returning();
@@ -55,20 +69,131 @@ async function insertRoomChatMessage(input: NewRoomChatMessage): Promise<RoomCha
   return toRoomChatMessage(row);
 }
 
+async function lockCharacterStream(tx: ChatTransaction, worldInstanceId: string, characterId: string): Promise<void> {
+  // Uses the same advisory-lock key as PostgresEventStore.append so movement and
+  // chat authorization have one well-defined ordering point.
+  await tx.execute(sql`
+    SELECT pg_advisory_xact_lock(hashtext(${worldInstanceId}), hashtext(${characterId}))`);
+}
+
+async function readAuthorizedRoomCharacter(
+  tx: ChatTransaction,
+  input: Readonly<{ worldInstanceId: string; playerId: string; characterId: string; roomId: string }>,
+): Promise<CharacterProjection | undefined> {
+  await tx.execute(sql`
+    SELECT id FROM world_sessions
+    WHERE player_id = ${input.playerId}
+      AND world_instance_id = ${input.worldInstanceId}
+      AND character_id = ${input.characterId}
+    FOR UPDATE`);
+  const [session] = await tx.select({ id: worldSessions.id }).from(worldSessions).where(and(
+    eq(worldSessions.playerId, input.playerId),
+    eq(worldSessions.worldInstanceId, input.worldInstanceId),
+    eq(worldSessions.characterId, input.characterId),
+  )).limit(1);
+  if (!session) return undefined;
+
+  await tx.execute(sql`
+    SELECT id FROM characters
+    WHERE id = ${input.characterId}
+      AND player_id = ${input.playerId}
+      AND world_instance_id = ${input.worldInstanceId}
+      AND archived_at IS NULL
+    FOR UPDATE`);
+  const [characterRow] = await tx.select({ id: characters.id }).from(characters).where(and(
+    eq(characters.id, input.characterId),
+    eq(characters.playerId, input.playerId),
+    eq(characters.worldInstanceId, input.worldInstanceId),
+    isNull(characters.archivedAt),
+  )).limit(1);
+  if (!characterRow) return undefined;
+
+  const rows = await tx.select().from(gameEvents).where(and(
+    eq(gameEvents.worldInstanceId, input.worldInstanceId),
+    eq(gameEvents.streamId, input.characterId),
+  )).orderBy(asc(gameEvents.streamVersion));
+  const projection = replayCharacter(rows.map(toStoredGameEvent));
+  if (!projection || projection.archived || projection.locationId !== input.roomId) return undefined;
+  return projection;
+}
+
+async function findSubmission(
+  tx: ChatTransaction,
+  input: Readonly<{ worldInstanceId: string; playerId: string; submissionId: string }>,
+) {
+  const [existing] = await tx.select().from(roomChatMessages).where(and(
+    eq(roomChatMessages.worldInstanceId, input.worldInstanceId),
+    eq(roomChatMessages.playerId, input.playerId),
+    eq(roomChatMessages.submissionId, input.submissionId),
+  )).limit(1);
+  return existing;
+}
+
 export async function createPlayerRoomChatMessage(input: Readonly<{
   worldInstanceId: string;
+  playerId: string;
   roomId: string;
   characterId: string;
-  characterName: string;
+  clientMessageId: string;
   text: string;
-}>): Promise<RoomChatMessage> {
-  return insertRoomChatMessage({
-    worldInstanceId: input.worldInstanceId,
-    roomId: input.roomId,
-    speakerType: 'player',
-    speakerId: input.characterId,
-    speakerName: input.characterName,
-    text: input.text,
+}>): Promise<PlayerChatSubmission> {
+  const normalizedText = normalizeMessage(input.text);
+  return db.transaction(async (tx) => {
+    await lockCharacterStream(tx, input.worldInstanceId, input.characterId);
+
+    const existing = await findSubmission(tx, {
+      worldInstanceId: input.worldInstanceId,
+      playerId: input.playerId,
+      submissionId: input.clientMessageId,
+    });
+    if (existing) {
+      const isSameSubmission = existing.roomId === input.roomId &&
+        existing.speakerId === input.characterId &&
+        existing.message === normalizedText;
+      return isSameSubmission
+        ? { kind: 'duplicate', message: toRoomChatMessage(existing) }
+        : { kind: 'conflict' };
+    }
+
+    const character = await readAuthorizedRoomCharacter(tx, input);
+    if (!character) return { kind: 'unavailable' };
+
+    const candidate = {
+      worldInstanceId: input.worldInstanceId,
+      playerId: input.playerId,
+      submissionId: input.clientMessageId,
+      roomId: input.roomId,
+      speakerType: 'player' as const,
+      speakerId: input.characterId,
+      speakerName: character.name,
+      text: normalizedText,
+    };
+    await tx.execute(sql`
+      SELECT pg_advisory_xact_lock(hashtext(${input.worldInstanceId}), hashtext(${input.roomId}))`);
+    const [row] = await tx.insert(roomChatMessages).values({
+      worldInstanceId: candidate.worldInstanceId,
+      playerId: candidate.playerId,
+      submissionId: candidate.submissionId,
+      roomId: candidate.roomId,
+      speakerType: candidate.speakerType,
+      speakerId: candidate.speakerId,
+      speakerName: candidate.speakerName,
+      message: candidate.text,
+    }).onConflictDoNothing().returning();
+    if (row) return { kind: 'created', message: toRoomChatMessage(row) };
+
+    const racedSubmission = await findSubmission(tx, {
+      worldInstanceId: input.worldInstanceId,
+      playerId: input.playerId,
+      submissionId: input.clientMessageId,
+    });
+    if (!racedSubmission) throw new Error('Chat submission conflicted without a stored receipt.');
+    const isSameSubmission = racedSubmission.roomId === input.roomId &&
+      racedSubmission.speakerId === input.characterId &&
+      racedSubmission.message === normalizedText;
+    return isSameSubmission
+      ? { kind: 'duplicate', message: toRoomChatMessage(racedSubmission) }
+      : { kind: 'conflict' };
   });
 }
 
@@ -83,37 +208,47 @@ export async function publishNpcRoomMessage(input: Readonly<{
   npcName: string;
   text: string;
 }>): Promise<RoomChatMessage> {
-  return insertRoomChatMessage({
+  return db.transaction(async (tx) => insertRoomChatMessage(tx, {
     worldInstanceId: input.worldInstanceId,
+    playerId: null,
+    submissionId: null,
     roomId: input.roomId,
     speakerType: 'npc',
     speakerId: input.npcId,
     speakerName: input.npcName,
     text: input.text,
-  });
+  }));
 }
 
 export async function listRoomChatMessages(input: Readonly<{
   worldInstanceId: string;
+  playerId: string;
+  characterId: string;
   roomId: string;
   afterId?: number;
-}>): Promise<readonly RoomChatMessage[]> {
-  const conditions = [
-    eq(roomChatMessages.worldInstanceId, input.worldInstanceId),
-    eq(roomChatMessages.roomId, input.roomId),
-  ];
+}>): Promise<readonly RoomChatMessage[] | undefined> {
+  return db.transaction(async (tx) => {
+    await lockCharacterStream(tx, input.worldInstanceId, input.characterId);
+    const character = await readAuthorizedRoomCharacter(tx, input);
+    if (!character) return undefined;
 
-  if (input.afterId !== undefined) {
-    const rows = await db.select().from(roomChatMessages)
-      .where(and(...conditions, gt(roomChatMessages.id, input.afterId)))
-      .orderBy(asc(roomChatMessages.id))
-      .limit(ROOM_CHAT_POLL_LIMIT);
-    return rows.map(toRoomChatMessage);
-  }
+    const conditions = [
+      eq(roomChatMessages.worldInstanceId, input.worldInstanceId),
+      eq(roomChatMessages.roomId, input.roomId),
+    ];
 
-  const rows = await db.select().from(roomChatMessages)
-    .where(and(...conditions))
-    .orderBy(desc(roomChatMessages.id))
-    .limit(INITIAL_ROOM_CHAT_LIMIT);
-  return rows.reverse().map(toRoomChatMessage);
+    if (input.afterId !== undefined) {
+      const rows = await tx.select().from(roomChatMessages)
+        .where(and(...conditions, gt(roomChatMessages.id, input.afterId)))
+        .orderBy(asc(roomChatMessages.id))
+        .limit(ROOM_CHAT_POLL_LIMIT);
+      return rows.map(toRoomChatMessage);
+    }
+
+    const rows = await tx.select().from(roomChatMessages)
+      .where(and(...conditions))
+      .orderBy(desc(roomChatMessages.id))
+      .limit(INITIAL_ROOM_CHAT_LIMIT);
+    return rows.reverse().map(toRoomChatMessage);
+  });
 }

@@ -1,3 +1,4 @@
 - [Client design priorities](client-design.md) — Mobile-first gameplay without marketing filler; Traveler info and Field notes belong on separate navigable screens.
 - [Account and character sessions](account-character-model.md) — Accounts can manage multiple characters; each world session plays as one character at a time.
 - [Puzzle-master skill source](puzzle-master-skill-source.md) — If local skill search misses it, inspect the nested Git bundle read-only rather than restoring deleted skill files.
+- [Cross-package error identity](workspace-package-error-identity.md) — Workspace source/dist resolution can create multiple class constructors; use stable error discriminants across package boundaries.

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type TouchEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, ChevronUp, Maximize2, X } from 'lucide-react';
 import type { WorldMapProjection } from '@mudd/contracts';
+import { trapDialogTab } from './dialog-focus.js';
 import { DisclosureButton } from '@mudd/ui';
 
 type WorldMapPanelProps = Readonly<{
@@ -76,6 +77,7 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
     document.documentElement.style.overflow = 'hidden';
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onFullscreenChange(false);
+      trapDialogTab(event, document.querySelector<HTMLElement>('[aria-modal="true"]'));
     };
     document.addEventListener('keydown', closeOnEscape);
     closeButtonRef.current?.focus();

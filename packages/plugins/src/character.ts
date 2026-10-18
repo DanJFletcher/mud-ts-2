@@ -21,14 +21,20 @@ import {
   LocationProjectionSchema,
   ReadableObjectProjectionSchema,
   ObjectInspectionProjectionSchema,
+  type CapabilityToken,
 } from '@mudd/contracts';
-import type { EngineCommandContext, EnginePlugin, QueryContext } from '@mudd/engine-core';
+import { RuleViolationError, type EngineCommandContext, type EnginePlugin, type QueryContext } from '@mudd/engine-core';
 import { replayCharacter } from '@mudd/engine-core';
 import type { CharacterProjection } from '@mudd/contracts';
 
 export interface CharacterStateCapability {
   load(context: EngineCommandContext | QueryContext, characterId: string): Promise<CharacterProjection | undefined>;
 }
+
+export const characterStateCapability = Object.freeze({
+  id: 'mudd.character.state.v1',
+  version: '1',
+}) satisfies CapabilityToken<CharacterStateCapability>;
 
 export const characterPlugin: EnginePlugin = {
   manifest: {
@@ -41,14 +47,17 @@ export const characterPlugin: EnginePlugin = {
   register({ registerCommand, registerQuery, provideCapability }) {
     const state: CharacterStateCapability = {
       async load(context, characterId) {
+        if ('characterProjection' in context && context.characterProjection?.characterId === characterId) {
+          return context.characterProjection;
+        }
         return replayCharacter(await context.store.readStream(context.worldInstanceId, characterId));
       },
     };
-    provideCapability<CharacterStateCapability>('mudd.character.state.v1', state);
+    provideCapability(characterStateCapability, state);
 
     registerCommand('character.create', CreateCharacterCommandSchema, async (command, context) => {
       const name = command.payload.name.trim();
-      if (!name || name.length > 48) throw new Error('Choose a character name between 1 and 48 characters.');
+      if (!name || name.length > 48) throw new RuleViolationError('Choose a character name between 1 and 48 characters.');
       const startingLocationId = context.world.locations[0]?.id;
       if (!startingLocationId) throw new Error('This world has no starting location.');
       const characterId = context.makeId();
@@ -68,9 +77,9 @@ export const characterPlugin: EnginePlugin = {
 
     registerCommand('character.take', TakeCharacterItemCommandSchema, async (command, context) => {
       const character = await state.load(context, command.characterId);
-      if (!character || character.archived) throw new Error('That character is no longer available.');
+      if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
       if (character.inventory.some((item) => item.id === command.payload.itemId)) {
-        throw new Error('You are already carrying that item.');
+        throw new RuleViolationError('You are already carrying that item.');
       }
       const location = context.world.locations.find((item) => item.id === character.locationId);
       if (!location) throw new Error('The character location is not present in this world version.');
@@ -78,7 +87,7 @@ export const characterPlugin: EnginePlugin = {
       const item = trackedItem
         ? trackedItem.locationId === character.locationId ? trackedItem.item : undefined
         : (location.takeables ?? []).find((candidate) => candidate.id === command.payload.itemId);
-      if (!item) throw new Error('That item is not available to take here.');
+      if (!item) throw new RuleViolationError('That item is not available to take here.');
       const payload = {
         characterId: character.characterId,
         locationId: character.locationId,
@@ -94,9 +103,9 @@ export const characterPlugin: EnginePlugin = {
 
     registerCommand('character.drop', DropCharacterItemCommandSchema, async (command, context) => {
       const character = await state.load(context, command.characterId);
-      if (!character || character.archived) throw new Error('That character is no longer available.');
+      if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
       const item = character.inventory.find((candidate) => candidate.id === command.payload.itemId);
-      if (!item) throw new Error('You are not carrying that item.');
+      if (!item) throw new RuleViolationError('You are not carrying that item.');
       CharacterItemDroppedEventSchema.shape.payload.parse({
         characterId: character.characterId,
         locationId: character.locationId,
@@ -115,18 +124,18 @@ export const characterPlugin: EnginePlugin = {
 
     registerCommand('character.use', UseCharacterItemCommandSchema, async (command, context) => {
       const character = await state.load(context, command.characterId);
-      if (!character || character.archived) throw new Error('That character is no longer available.');
+      if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
       const item = character.inventory.find((candidate) => candidate.id === command.payload.itemId);
-      if (!item) throw new Error('You are not carrying that item.');
+      if (!item) throw new RuleViolationError('You are not carrying that item.');
       const location = context.world.locations.find((candidate) => candidate.id === character.locationId);
       if (!location) throw new Error('The character location is not present in this world version.');
       const target = (location.interactables ?? []).find((candidate) => candidate.id === command.payload.targetId);
-      if (!target) throw new Error('That is not a usable target in this room.');
+      if (!target) throw new RuleViolationError('That is not a usable target in this room.');
       const interaction = (location.itemUses ?? []).find((candidate) =>
         candidate.itemId === item.id && candidate.targetId === target.id,
       );
       if (!interaction) {
-        throw new Error(`You cannot use the ${item.label.toLocaleLowerCase()} on the ${target.label.toLocaleLowerCase()} here.`);
+        throw new RuleViolationError(`You cannot use the ${item.label.toLocaleLowerCase()} on the ${target.label.toLocaleLowerCase()} here.`);
       }
       const missingPrerequisite = (interaction.requiresInteractionIds ?? []).some((interactionId) =>
         !character.itemUseObservations.some((observation) =>
@@ -134,7 +143,7 @@ export const characterPlugin: EnginePlugin = {
         ),
       );
       if (missingPrerequisite) {
-        throw new Error(interaction.requiresInteractionMessage ?? 'That interaction is not ready yet.');
+        throw new RuleViolationError(interaction.requiresInteractionMessage ?? 'That interaction is not ready yet.');
       }
       const alreadyUsed = character.itemUseObservations.some((observation) =>
         observation.interactionId === interaction.id && observation.locationId === location.id,
@@ -157,11 +166,11 @@ export const characterPlugin: EnginePlugin = {
 
     registerCommand('character.read', ReadCharacterObjectCommandSchema, async (command, context) => {
       const character = await state.load(context, command.characterId);
-      if (!character || character.archived) throw new Error('That character is no longer available.');
+      if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
       const location = context.world.locations.find((item) => item.id === character.locationId);
       if (!location) throw new Error('The character location is not present in this world version.');
       const readable = (location.readables ?? []).find((item) => item.id === command.payload.objectId);
-      if (!readable) throw new Error('That object is not readable from here.');
+      if (!readable) throw new RuleViolationError('That object is not readable from here.');
       const payload = {
         characterId: character.characterId,
         locationId: character.locationId,
@@ -179,9 +188,9 @@ export const characterPlugin: EnginePlugin = {
 
     registerCommand('character.rename', RenameCharacterCommandSchema, async (command, context) => {
       const character = await state.load(context, command.characterId);
-      if (!character || character.archived) throw new Error('That character is no longer available.');
+      if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
       const name = command.payload.name.trim();
-      if (!name || name.length > 48) throw new Error('Choose a character name between 1 and 48 characters.');
+      if (!name || name.length > 48) throw new RuleViolationError('Choose a character name between 1 and 48 characters.');
       CharacterRenamedEventSchema.shape.payload.parse({ characterId: character.characterId, name });
       return {
         streamId: command.characterId,
@@ -192,7 +201,7 @@ export const characterPlugin: EnginePlugin = {
 
     registerCommand('character.archive', ArchiveCharacterCommandSchema, async (command, context) => {
       const character = await state.load(context, command.characterId);
-      if (!character || character.archived) throw new Error('That character is no longer available.');
+      if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
       CharacterArchivedEventSchema.shape.payload.parse({ characterId: character.characterId });
       return {
         streamId: command.characterId,
@@ -203,7 +212,7 @@ export const characterPlugin: EnginePlugin = {
 
     registerCommand('character.restore', RestoreCharacterCommandSchema, async (command, context) => {
       const character = await state.load(context, command.characterId);
-      if (!character || !character.archived) throw new Error('That archived character is no longer available.');
+      if (!character || !character.archived) throw new RuleViolationError('That archived character is no longer available.');
       CharacterRestoredEventSchema.shape.payload.parse({ characterId: character.characterId });
       return {
         streamId: command.characterId,
@@ -214,10 +223,10 @@ export const characterPlugin: EnginePlugin = {
 
     registerQuery('location.describe', LocationDescribeQuerySchema, async (query, context) => {
       const character = await state.load(context, query.characterId);
-      if (!character || character.archived) throw new Error('That character is no longer available.');
+      if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
       const requestedLocationId = query.payload.locationId;
       if (requestedLocationId && requestedLocationId !== character.locationId) {
-        throw new Error('You can only inspect your current location.');
+        throw new RuleViolationError('You can only inspect your current location.');
       }
       const location = context.world.locations.find((item) => item.id === character.locationId);
       if (!location) throw new Error('The character location is not present in this world version.');
@@ -279,11 +288,11 @@ export const characterPlugin: EnginePlugin = {
 
     registerQuery('object.read', ObjectReadQuerySchema, async (query, context) => {
       const character = await state.load(context, query.characterId);
-      if (!character || character.archived) throw new Error('That character is no longer available.');
+      if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
       const location = context.world.locations.find((item) => item.id === character.locationId);
       if (!location) throw new Error('The character location is not present in this world version.');
       const readable = (location.readables ?? []).find((item) => item.id === query.payload.objectId);
-      if (!readable) throw new Error('That object is not readable from here.');
+      if (!readable) throw new RuleViolationError('That object is not readable from here.');
       return ReadableObjectProjectionSchema.parse({
         id: readable.id,
         label: readable.label,
@@ -293,7 +302,7 @@ export const characterPlugin: EnginePlugin = {
 
     registerQuery('object.inspect', ObjectInspectQuerySchema, async (query, context) => {
       const character = await state.load(context, query.characterId);
-      if (!character || character.archived) throw new Error('That character is no longer available.');
+      if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
       const location = context.world.locations.find((item) => item.id === character.locationId);
       if (!location) throw new Error('The character location is not present in this world version.');
       const trackedItemIds = new Set(character.itemLocations.map((entry) => entry.item.id));
@@ -307,7 +316,7 @@ export const characterPlugin: EnginePlugin = {
       ].find((item) => item.id === query.payload.objectId);
       const objectInPack = character.inventory.find((item) => item.id === query.payload.objectId);
       const object = objectInRoom ?? objectInPack;
-      if (!object) throw new Error('That object is not here or in your pack.');
+      if (!object) throw new RuleViolationError('That object is not here or in your pack.');
       return ObjectInspectionProjectionSchema.parse({
         id: object.id,
         label: object.label,

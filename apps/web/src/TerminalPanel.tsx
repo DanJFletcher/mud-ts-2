@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode, type TouchEvent } from 're
 import { createPortal } from 'react-dom';
 import { ChevronDown, ChevronUp, Maximize2, X } from 'lucide-react';
 import { DisclosureButton, Panel } from '@mudd/ui';
+import { trapDialogTab } from './dialog-focus.js';
 
 type TerminalPanelProps = Readonly<{
   title: string;
@@ -50,6 +51,7 @@ export function TerminalPanel({ title, busy, children }: TerminalPanelProps) {
     document.documentElement.style.overflow = 'hidden';
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setFullscreen(false);
+      trapDialogTab(event, document.querySelector<HTMLElement>('[aria-modal="true"]'));
     };
     document.addEventListener('keydown', closeOnEscape);
     closeButtonRef.current?.focus();

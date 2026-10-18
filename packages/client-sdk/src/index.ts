@@ -1,4 +1,6 @@
 import {
+  CharacterProjectionSchema,
+  CommandReceiptSchema,
   CreateCharacterCommandSchema,
   RenameCharacterCommandSchema,
   ArchiveCharacterCommandSchema,
@@ -14,35 +16,49 @@ import {
   CharacterItemUsedEventSchema,
   ReadCharacterObjectCommandSchema,
   CharacterObjectReadEventSchema,
-  type CharacterProjection,
-  type CommandReceipt,
+  IdSchema,
+  LocationProjectionSchema,
+  QuestJournalSchema,
+  WorldMapProjectionSchema,
+  ObjectInspectionProjectionSchema,
+  NpcDialogueProjectionSchema,
   type LocationProjection,
   type NpcDialogueProjection,
   type ReadableObjectProjection,
   type ObjectInspectionProjection,
-  type WorldMapProjection,
-  type QuestJournalEntry,
 } from '@mudd/contracts';
+import { z } from 'zod';
 
-export interface GameSnapshot {
-  player: { id: string; displayName: string };
-  character?: CharacterProjection;
-  location?: LocationProjection;
-  map?: WorldMapProjection;
-  questJournal?: QuestJournalEntry[];
-}
+export const GameSnapshotSchema = z.object({
+  player: z.object({ id: IdSchema, displayName: z.string() }),
+  character: CharacterProjectionSchema.optional(),
+  location: LocationProjectionSchema.optional(),
+  map: WorldMapProjectionSchema.optional(),
+  questJournal: QuestJournalSchema.optional(),
+});
+export type GameSnapshot = z.infer<typeof GameSnapshotSchema>;
 
-export interface CharacterRosterSnapshot {
-  player: { id: string; displayName: string };
-  characters: Array<CharacterProjection & { locationTitle: string }>;
-  activeWorldSession: { id: string; characterId: string } | null;
-}
+export const CharacterRosterSnapshotSchema = z.object({
+  player: z.object({ id: IdSchema, displayName: z.string() }),
+  characters: z.array(CharacterProjectionSchema.extend({ locationTitle: z.string() })),
+  activeWorldSession: z.object({ id: IdSchema, characterId: IdSchema }).nullable(),
+});
+export type CharacterRosterSnapshot = z.infer<typeof CharacterRosterSnapshotSchema>;
 
-export interface CommandResponse {
-  receipt: CommandReceipt;
-  streamId?: string;
-  events?: Array<{ type: string; payload?: unknown }>;
-}
+export const CommandResponseSchema = z.object({
+  receipt: CommandReceiptSchema,
+  streamId: IdSchema.optional(),
+  events: z.array(z.object({ type: z.string().min(1), payload: z.unknown().optional() })).optional(),
+});
+export type CommandResponse = z.infer<typeof CommandResponseSchema>;
+
+const WorldSessionResponseSchema = z.object({ sessionId: IdSchema, characterId: IdSchema });
+const queryResultSchema = <T extends z.ZodType>(value: T) => z.object({
+  ok: z.boolean(),
+  value: value.optional(),
+  message: z.string().optional(),
+  code: z.string().optional(),
+});
 
 export interface ClientOptions {
   worldInstanceId: string;
@@ -57,18 +73,18 @@ export class MuddHttpClient {
   }
 
   async getGame(): Promise<GameSnapshot> {
-    return this.request<GameSnapshot>('/api/game');
+    return this.request('/api/game', {}, GameSnapshotSchema);
   }
 
   async getCharacters(): Promise<CharacterRosterSnapshot> {
-    return this.request<CharacterRosterSnapshot>('/api/characters');
+    return this.request('/api/characters', {}, CharacterRosterSnapshotSchema);
   }
 
   async joinWorld(characterId: string): Promise<{ sessionId: string; characterId: string }> {
     return this.request('/api/world-session', {
       method: 'POST',
       body: JSON.stringify({ characterId }),
-    });
+    }, WorldSessionResponseSchema);
   }
 
   async leaveWorld(): Promise<void> {
@@ -78,8 +94,11 @@ export class MuddHttpClient {
       headers: { 'content-type': 'application/json' },
     });
     if (!response.ok) {
-      const body = await response.json() as { message?: string };
-      throw new Error(body.message ?? `Request failed (${response.status}).`);
+      const body: unknown = await response.json().catch(() => undefined);
+      const message = body && typeof body === 'object' && 'message' in body && typeof body.message === 'string'
+        ? body.message
+        : undefined;
+      throw new Error(message ?? `Request failed (${response.status}).`);
     }
   }
 
@@ -155,10 +174,10 @@ export class MuddHttpClient {
       characterId,
       payload: {},
     });
-    const result = await this.request<{ ok: boolean; value?: LocationProjection; message?: string }>('/api/queries', {
+    const result = await this.request('/api/queries', {
       method: 'POST',
       body: JSON.stringify(query),
-    });
+    }, queryResultSchema(LocationProjectionSchema));
     if (!result.ok || !result.value) throw new Error(result.message ?? 'Unable to inspect the current location.');
     return result.value;
   }
@@ -194,10 +213,10 @@ export class MuddHttpClient {
       characterId,
       payload: { objectId },
     });
-    const result = await this.request<{ ok: boolean; value?: ObjectInspectionProjection; message?: string }>('/api/queries', {
+    const result = await this.request('/api/queries', {
       method: 'POST',
       body: JSON.stringify(query),
-    });
+    }, queryResultSchema(ObjectInspectionProjectionSchema));
     if (!result.ok || !result.value) throw new Error(result.message ?? 'Unable to inspect that object.');
     return result.value;
   }
@@ -216,14 +235,10 @@ export class MuddHttpClient {
       characterId,
       payload: { npcId, ...(topic ? { topic } : {}) },
     });
-    const result = await this.request<{
-      ok: boolean;
-      value?: NpcDialogueProjection;
-      message?: string;
-    }>('/api/queries', {
+    const result = await this.request('/api/queries', {
       method: 'POST',
       body: JSON.stringify(query),
-    });
+    }, queryResultSchema(NpcDialogueProjectionSchema));
     if (!result.ok || !result.value) throw new Error(result.message ?? 'Unable to speak to that person.');
     return result.value;
   }
@@ -310,15 +325,19 @@ export class MuddHttpClient {
   }
 
   private async send(command: unknown): Promise<CommandResponse> {
-    const result = await this.request<CommandResponse>('/api/commands', {
+    const result = await this.request('/api/commands', {
       method: 'POST',
       body: JSON.stringify(command),
-    });
+    }, CommandResponseSchema);
     if (!result.receipt.ok) throw new Error(result.receipt.message);
     return result;
   }
 
-  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  private async request<Schema extends z.ZodTypeAny>(
+    path: string,
+    init: RequestInit,
+    schema: Schema,
+  ): Promise<z.output<Schema>> {
     const response = await this.fetcher(path, {
       ...init,
       credentials: 'same-origin',
@@ -327,8 +346,15 @@ export class MuddHttpClient {
         ...init.headers,
       },
     });
-    const body = await response.json() as T & { message?: string };
-    if (!response.ok) throw new Error(body.message ?? `Request failed (${response.status}).`);
-    return body;
+    const body: unknown = await response.json().catch(() => undefined);
+    if (!response.ok) {
+      const message = body && typeof body === 'object' && 'message' in body && typeof body.message === 'string'
+        ? body.message
+        : undefined;
+      throw new Error(message ?? `Request failed (${response.status}).`);
+    }
+    const parsed = schema.safeParse(body);
+    if (!parsed.success) throw new Error('The server returned an invalid response.');
+    return parsed.data;
   }
 }

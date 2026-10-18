@@ -5,6 +5,23 @@ import type { AppendOutcome, AppendRequest, EventStorePort, StoredGameEvent } fr
 import { characters, commandReceipts, gameEvents, worldSessions } from '../db/schema.js';
 import { db } from '../db/client.js';
 
+export function toStoredGameEvent(row: typeof gameEvents.$inferSelect): StoredGameEvent {
+  return {
+    type: row.type,
+    version: row.contractVersion,
+    payload: row.payload,
+    eventId: row.eventId,
+    worldInstanceId: row.worldInstanceId,
+    streamId: row.streamId,
+    aggregateId: row.streamId,
+    aggregateVersion: row.streamVersion,
+    causationCommandId: row.causationCommandId,
+    actorId: row.actorId,
+    occurredAt: row.occurredAt.toISOString(),
+    tick: row.tick,
+  };
+}
+
 function conflict(
   commandId: string,
   message: string,
@@ -18,20 +35,7 @@ export class PostgresEventStore implements EventStorePort {
     const rows = await db.select().from(gameEvents)
       .where(and(eq(gameEvents.worldInstanceId, worldInstanceId), eq(gameEvents.streamId, streamId)))
       .orderBy(gameEvents.streamVersion);
-    return rows.map((row) => ({
-      type: row.type,
-      version: row.contractVersion,
-      payload: row.payload,
-      eventId: row.eventId,
-      worldInstanceId: row.worldInstanceId,
-      streamId: row.streamId,
-      aggregateId: row.streamId,
-      aggregateVersion: row.streamVersion,
-      causationCommandId: row.causationCommandId,
-      actorId: row.actorId,
-      occurredAt: row.occurredAt.toISOString(),
-      tick: row.tick,
-    }));
+    return rows.map(toStoredGameEvent);
   }
 
   async lookupCommand(

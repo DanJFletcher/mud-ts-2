@@ -32,6 +32,24 @@ import {
 } from './room-chat-service.js';
 import { createNpcRoomAnnouncer } from './npc-announcer.js';
 import { createNpcRoomChatReactor } from './npc-chat-reactor.js';
+import {
+  createOriginGuard,
+  createRateLimiter,
+  createRequestId,
+  createTrustedHostGuard,
+  parseAllowedOrigins,
+  parseTrustedHosts,
+} from './request-security.js';
+
+const trustedProxyHops = Number(process.env.TRUSTED_PROXY_HOPS ?? (process.env.NODE_ENV === 'production' ? '1' : '0'));
+if (!Number.isInteger(trustedProxyHops) || trustedProxyHops < 0) {
+  throw new Error('TRUSTED_PROXY_HOPS must be a non-negative integer.');
+}
+const allowedOrigins = parseAllowedOrigins(process.env.CORS_ALLOWED_ORIGINS);
+const trustedHosts = parseTrustedHosts(process.env.TRUSTED_HOSTS);
+if (process.env.NODE_ENV === 'production' && trustedHosts.size === 0) {
+  throw new Error('TRUSTED_HOSTS must be configured before starting the production server.');
+}
 
 const store = new PostgresEventStore();
 const authorization = {
@@ -117,9 +135,15 @@ function projectWorldMap(character: NonNullable<ReturnType<typeof replayCharacte
 }
 
 const app = express();
-app.set('trust proxy', 1);
+app.set('trust proxy', trustedProxyHops);
+app.use(createRequestId());
+app.use(createTrustedHostGuard(trustedHosts));
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
-app.use(cors({ credentials: true, origin: true }));
+app.use(cors({
+  credentials: true,
+  origin: (origin, callback) => callback(null, Boolean(origin && allowedOrigins.has(origin))),
+}));
+app.use(createOriginGuard(allowedOrigins));
 app.use(express.json({ limit: '16kb' }));
 app.use(clerkMiddleware((req) => ({
   publishableKey: publishableKeyFromHost(getClerkProxyHost(req) ?? '', process.env.CLERK_PUBLISHABLE_KEY),
@@ -272,8 +296,17 @@ app.get('/api/game', async (req, res, next) => {
       characterId: current.characterId,
       payload: {},
     });
-    const result = await engine.query(query, worldContext(identity, current));
-    if (!result.ok) return res.status(403).json({ message: result.message });
+    const result = await engine.query(query, worldContext(identity, current), {
+      characterProjection: character,
+      correlationId: res.locals.requestId,
+    });
+    if (!result.ok) {
+      const status = result.code === 'INTERNAL_ERROR' ? 500 : result.code === 'NOT_FOUND' ? 404 : 403;
+      return res.status(status).json({
+        message: result.message,
+        ...(result.code === 'INTERNAL_ERROR' ? { requestId: result.correlationId ?? res.locals.requestId } : {}),
+      });
+    }
     return res.json({
       player: { id: identity.playerId, displayName: identity.displayName },
       character,
@@ -301,28 +334,28 @@ app.get('/api/chat', async (req, res, next) => {
 
     const current = await activeCharacter(identity);
     if (!current) return res.status(409).json({ message: 'Enter the world with a character before using room chat.' });
-    if (roomId.data !== current.character.locationId) {
-      return res.status(409).json({ message: 'You have moved to a different room.' });
-    }
-
     const messages = await listRoomChatMessages({
       worldInstanceId: current.session.worldInstanceId,
-      roomId: current.character.locationId,
+      playerId: identity.playerId,
+      characterId: current.character.characterId,
+      roomId: roomId.data,
       afterId: parsedAfterId?.success ? parsedAfterId.data : undefined,
     });
-    return res.json({ roomId: current.character.locationId, messages });
+    if (!messages) return res.status(409).json({ message: 'You have moved to a different room.' });
+    return res.json({ roomId: roomId.data, messages });
   } catch (error) {
     next(error);
   }
 });
 
-app.post('/api/chat', async (req, res, next) => {
+app.post('/api/chat', createRateLimiter({ windowMs: 60_000, maxRequests: 30 }), async (req, res, next) => {
   try {
     const identity = await accountFor(req, res);
     if (!identity) return;
 
     const input = z.object({
       roomId: z.string().trim().min(1).max(120),
+      clientMessageId: IdSchema,
       text: z.string().trim().min(1).max(MAX_ROOM_CHAT_MESSAGE_LENGTH),
     }).strict().safeParse(req.body);
     if (!input.success) {
@@ -335,25 +368,33 @@ app.post('/api/chat', async (req, res, next) => {
       return res.status(409).json({ message: 'You have moved to a different room.' });
     }
 
-    const message = await createPlayerRoomChatMessage({
+    const submission = await createPlayerRoomChatMessage({
       worldInstanceId: current.session.worldInstanceId,
-      roomId: current.character.locationId,
+      playerId: identity.playerId,
+      roomId: input.data.roomId,
       characterId: current.character.characterId,
-      characterName: current.character.name,
+      clientMessageId: input.data.clientMessageId,
       text: input.data.text,
     });
-    const npcMessage = await reactToNpcsInRoomChat(
-      current.session.worldInstanceId,
-      current.character.locationId,
-      input.data.text,
-    );
-    return res.status(201).json({ message, ...(npcMessage ? { npcMessage } : {}) });
+    if (submission.kind === 'unavailable') {
+      return res.status(409).json({ message: 'You have moved to a different room or left the world.' });
+    }
+    if (submission.kind === 'conflict') {
+      return res.status(409).json({ message: 'This message ID was already used for a different message.' });
+    }
+    const npcMessage = submission.kind === 'created'
+      ? await reactToNpcsInRoomChat(current.session.worldInstanceId, input.data.roomId, input.data.text)
+      : undefined;
+    return res.status(submission.kind === 'created' ? 201 : 200).json({
+      message: submission.message,
+      ...(npcMessage ? { npcMessage } : {}),
+    });
   } catch (error) {
     next(error);
   }
 });
 
-app.post('/api/commands', async (req, res, next) => {
+app.post('/api/commands', createRateLimiter({ windowMs: 60_000, maxRequests: 120 }), async (req, res, next) => {
   try {
     const identity = await accountFor(req, res);
     if (!identity) return;
@@ -385,8 +426,8 @@ app.post('/api/commands', async (req, res, next) => {
       context = worldContext(identity, current);
     }
 
-    const result = await engine.dispatch(req.body, context);
-    if (result.receipt.ok && command?.type === 'character.move') {
+    const result = await engine.dispatch(req.body, context, res.locals.requestId);
+    if (result.receipt.ok && result.commitOutcome === 'committed' && command?.type === 'character.move') {
       const current = await activeSession(identity);
       if (current) {
         const character = replayCharacter(await store.readStream(current.worldInstanceId, current.characterId));
@@ -394,6 +435,13 @@ app.post('/api/commands', async (req, res, next) => {
           await announceNpcsOnEntry(current.worldInstanceId, character.locationId);
         }
       }
+    }
+    if (!result.receipt.ok && result.receipt.code === 'INTERNAL_ERROR') {
+      return res.status(500).json({
+        ...result,
+        message: result.receipt.message,
+        requestId: res.locals.requestId,
+      });
     }
     return res.json(result);
   } catch (error) {
@@ -424,8 +472,29 @@ app.post('/api/queries', async (req, res, next) => {
     if (query.characterId !== current.characterId) {
       return res.status(403).json({ message: 'This world session is bound to a different character.' });
     }
-    const result = await engine.query(query, worldContext(identity, current));
-    return res.status(result.ok ? 200 : 403).json(result);
+    const character = replayCharacter(await store.readStream(current.worldInstanceId, current.characterId));
+    if (!character || character.archived) {
+      return res.status(409).json({ message: 'Enter the world with an active character before making a query.' });
+    }
+    const result = await engine.query(query, worldContext(identity, current), {
+      characterProjection: character,
+      correlationId: res.locals.requestId,
+    });
+    const status = result.ok
+      ? 200
+      : result.code === 'INTERNAL_ERROR'
+        ? 500
+        : result.code === 'NOT_FOUND'
+          ? 404
+          : result.code === 'RULE_VIOLATION'
+            ? 422
+            : 403;
+    return res.status(status).json({
+      ...result,
+      ...(!result.ok && result.code === 'INTERNAL_ERROR'
+        ? { requestId: result.correlationId ?? res.locals.requestId }
+        : {}),
+    });
   } catch (error) {
     next(error);
   }
@@ -433,8 +502,18 @@ app.post('/api/queries', async (req, res, next) => {
 
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 app.use((error: unknown, _req: Request, res: Response, _next: express.NextFunction) => {
-  console.error('Request failed:', error instanceof Error ? error.message : 'unknown error');
-  res.status(500).json({ message: 'The game server could not complete that request.' });
+  const requestId = String(res.locals.requestId ?? 'unknown');
+  console.error(`[${requestId}] Request failed`, error);
+  const status = error && typeof error === 'object' && 'status' in error &&
+    typeof error.status === 'number' && error.status >= 400 && error.status <= 599
+    ? error.status
+    : 500;
+  res.status(status).json({
+    message: status === 413
+      ? 'The request body is too large.'
+      : 'The game server could not complete that request.',
+    requestId,
+  });
 });
 
 const port = Number(process.env.API_PORT ?? 5001);

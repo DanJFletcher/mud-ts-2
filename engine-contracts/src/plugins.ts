@@ -1,6 +1,7 @@
 /**
- * PROPOSED v0.1 plugin manifest and lifecycle.
- * Formalization of the architect skill's illustrative plugin contract.
+ * Shared plugin-manifest validation and proposed extension contracts.
+ * PluginManifestSchema is the validated manifest contract used by the live engine.
+ * GamePlugin below remains a design proposal and is not the live runtime interface.
  * Manifest permissions are requested grants, NOT a code sandbox.
  */
 import { z } from 'zod';
@@ -26,6 +27,7 @@ export const PluginManifestSchema = z.object({
 }).strict();
 
 export type PluginManifest = z.infer<typeof PluginManifestSchema>;
+export type PluginManifestInput = z.input<typeof PluginManifestSchema>;
 
 export interface CommandContext {
   readonly session: SessionContext;

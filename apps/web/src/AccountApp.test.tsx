@@ -82,7 +82,14 @@ function commandRequest(body: Record<string, unknown>) {
       character.revision += 1;
     }
   }
-  return json({ receipt: { ok: true, newAggregateVersion: 2 } });
+  return json({
+    receipt: {
+      ok: true,
+      commandId: String(body.commandId),
+      eventIds: [],
+      newAggregateVersion: 2,
+    },
+  });
 }
 
 beforeEach(() => {

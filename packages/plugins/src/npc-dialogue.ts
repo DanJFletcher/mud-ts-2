@@ -16,7 +16,9 @@ import type {
   ProposedDomainEvent,
   QueryContext,
 } from '@mudd/engine-core';
+import { RuleViolationError } from '@mudd/engine-core';
 import type { CharacterStateCapability } from './character.js';
+import { characterStateCapability } from './character.js';
 import { projectQuestJournal, questObjectivesAreComplete } from '@mudd/engine-core';
 
 function currentNpc(
@@ -24,11 +26,11 @@ function currentNpc(
   character: CharacterProjection,
   npcId: string,
 ): NpcDefinition {
-  if (character.archived) throw new Error('That character is no longer available.');
+  if (character.archived) throw new RuleViolationError('That character is no longer available.');
   const location = context.world.locations.find((candidate) => candidate.id === character.locationId);
   if (!location) throw new Error('The character location is not present in this world version.');
   const npc = location.npcs?.find((candidate) => candidate.id === npcId);
-  if (!npc) throw new Error('That person is not here.');
+  if (!npc) throw new RuleViolationError('That person is not here.');
   return npc;
 }
 
@@ -128,32 +130,32 @@ export const npcDialoguePlugin: EnginePlugin = {
     requires: ['mudd.character.state.v1'],
   },
   register({ registerQuery, registerCommand, requireCapability }) {
-    const characterState = requireCapability<CharacterStateCapability>('mudd.character.state.v1');
+    const characterState = requireCapability<CharacterStateCapability>(characterStateCapability);
 
     registerQuery('npc.talk', NpcTalkQuerySchema, async (query, context) => {
       const character = await characterState.load(context, query.characterId);
-      if (!character) throw new Error('That character is no longer available.');
+      if (!character) throw new RuleViolationError('That character is no longer available.');
       const npc = currentNpc(context, character, query.payload.npcId);
       return dialogueProjection(npc, character, context.world, query.payload.topic);
     });
 
     registerCommand('npc.dialogue.choose', NpcDialogueChoiceCommandSchema, async (command, context) => {
       const character = await characterState.load(context, command.characterId);
-      if (!character) throw new Error('That character is no longer available.');
+      if (!character) throw new RuleViolationError('That character is no longer available.');
       const npc = currentNpc(context, character, command.payload.npcId);
       const choice = npc.dialogue?.choices.find((candidate) => candidate.id === command.payload.choiceId);
-      if (!choice) throw new Error('That choice is not available here.');
+      if (!choice) throw new RuleViolationError('That choice is not available here.');
 
       if (
         choice.questCondition &&
         !questConditionMatches(choice.questCondition, projectQuestJournal(character, context.world))
       ) {
-        throw new Error('That choice is not available here.');
+        throw new RuleViolationError('That choice is not available here.');
       }
 
       const progress = character.npcProgress.find((entry) => entry.npcId === npc.id);
       if (progress?.progressFlagIds.includes(choice.progressFlagId)) {
-        throw new Error('You have already asked about that.');
+        throw new RuleViolationError('You have already asked about that.');
       }
 
       const payload = {
@@ -170,10 +172,10 @@ export const npcDialoguePlugin: EnginePlugin = {
       }];
       if (choice.questAction) {
         const quest = context.world.quests.find((candidate) => candidate.id === choice.questAction?.questId);
-        if (!quest) throw new Error('That quest is not available in this world.');
+        if (!quest) throw new RuleViolationError('That quest is not available in this world.');
         const questProgress = character.questProgress.find((candidate) => candidate.questId === quest.id);
         if (choice.questAction.type === 'accept') {
-          if (quest.giverNpcId !== npc.id || questProgress) throw new Error('That quest is no longer available.');
+          if (quest.giverNpcId !== npc.id || questProgress) throw new RuleViolationError('That quest is no longer available.');
           const questPayload = {
             characterId: character.characterId,
             questId: quest.id,
@@ -187,7 +189,7 @@ export const npcDialoguePlugin: EnginePlugin = {
             questProgress?.status !== 'active' ||
             !questObjectivesAreComplete(quest, character)
           ) {
-            throw new Error('You have more to do before reporting back.');
+            throw new RuleViolationError('You have more to do before reporting back.');
           }
           const questPayload = {
             characterId: character.characterId,

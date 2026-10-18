@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, ChevronUp, Maximize2, X } from 'lucide-react';
 import { Button, DisclosureButton } from '@mudd/ui';
+import { trapDialogTab } from './dialog-focus.js';
 
 export type RoomChatMessage = Readonly<{
   id: number;
@@ -47,6 +48,7 @@ export function RoomChatPanel({ roomId, fullscreen, onFullscreenChange }: RoomCh
   const followsLatestRef = useRef(true);
   const currentRoomIdRef = useRef(roomId);
   const lastMessageIdRef = useRef(0);
+  const pendingSubmissionRef = useRef<{ text: string; id: string } | null>(null);
   const initialLoadCompleteRef = useRef(false);
   const expandButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -86,6 +88,7 @@ export function RoomChatPanel({ roomId, fullscreen, onFullscreenChange }: RoomCh
     document.documentElement.style.overflow = 'hidden';
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onFullscreenChange(false);
+      trapDialogTab(event, document.querySelector<HTMLElement>('[aria-modal="true"]'));
     };
     document.addEventListener('keydown', closeOnEscape);
     closeButtonRef.current?.focus();
@@ -165,6 +168,9 @@ export function RoomChatPanel({ roomId, fullscreen, onFullscreenChange }: RoomCh
     const text = draft.trim();
     if (!text || sending) return;
 
+    if (!pendingSubmissionRef.current || pendingSubmissionRef.current.text !== text) {
+      pendingSubmissionRef.current = { text, id: globalThis.crypto.randomUUID() };
+    }
     setSending(true);
     setSendError('');
     try {
@@ -172,7 +178,11 @@ export function RoomChatPanel({ roomId, fullscreen, onFullscreenChange }: RoomCh
         method: 'POST',
         credentials: 'include',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ roomId, text }),
+        body: JSON.stringify({
+          roomId,
+          text,
+          clientMessageId: pendingSubmissionRef.current.id,
+        }),
       });
       const body = await response.json() as unknown;
       if (!response.ok) throw new Error(errorMessage(body, 'Could not send room message.'));
@@ -187,9 +197,9 @@ export function RoomChatPanel({ roomId, fullscreen, onFullscreenChange }: RoomCh
       if (currentRoomIdRef.current !== roomId) return;
 
       const incomingMessages = [payload.message, ...(payload.npcMessage ? [payload.npcMessage] : [])];
-      lastMessageIdRef.current = Math.max(lastMessageIdRef.current, ...incomingMessages.map((message) => message.id));
       setMessages((current) => mergeMessages(current, incomingMessages));
       setDraft('');
+      pendingSubmissionRef.current = null;
     } catch (error) {
       if (currentRoomIdRef.current === roomId) {
         setSendError(error instanceof Error ? error.message : 'Could not send room message.');
