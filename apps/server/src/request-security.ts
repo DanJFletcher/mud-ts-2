@@ -52,16 +52,44 @@ export function originIsAllowed(
   return configuredOrigins.has(origin) || origin === `${request.protocol}://${request.get('host')}`;
 }
 
-export function createOriginGuard(configuredOrigins: ReadonlySet<string>): RequestHandler {
+export type OriginGuardDiagnostic = Readonly<{
+  requestId?: string;
+  method: string;
+  path: string;
+  origin: string | null;
+  host: string | null;
+  protocol: string;
+  forwardedHost: string | null;
+  forwardedProto: string | null;
+  fetchSite: string | null;
+  explicitlyAllowedOrigin: boolean;
+  originAllowed: boolean;
+}>;
+
+export function createOriginGuard(
+  configuredOrigins: ReadonlySet<string>,
+  onReject?: (diagnostic: OriginGuardDiagnostic) => void,
+): RequestHandler {
   return (request, response, next) => {
     if (['GET', 'HEAD', 'OPTIONS'].includes(request.method)) return next();
     const origin = request.get('origin');
     const fetchSite = request.get('sec-fetch-site');
     const explicitlyAllowedOrigin = Boolean(origin && configuredOrigins.has(origin));
-    if (
-      (fetchSite === 'cross-site' && !explicitlyAllowedOrigin) ||
-      !originIsAllowed(origin, request, configuredOrigins)
-    ) {
+    const allowed = originIsAllowed(origin, request, configuredOrigins);
+    if ((fetchSite === 'cross-site' && !explicitlyAllowedOrigin) || !allowed) {
+      onReject?.({
+        requestId: typeof response.locals.requestId === 'string' ? response.locals.requestId : undefined,
+        method: request.method,
+        path: request.path,
+        origin: origin ?? null,
+        host: request.get('host') ?? null,
+        protocol: request.protocol,
+        forwardedHost: request.get('x-forwarded-host') ?? null,
+        forwardedProto: request.get('x-forwarded-proto') ?? null,
+        fetchSite: fetchSite ?? null,
+        explicitlyAllowedOrigin,
+        originAllowed: allowed,
+      });
       return response.status(403).json({ message: 'This request origin is not allowed.' });
     }
     return next();

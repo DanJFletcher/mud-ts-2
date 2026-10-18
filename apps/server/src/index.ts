@@ -130,7 +130,9 @@ app.use(cors({
   credentials: true,
   origin: (origin, callback) => callback(null, Boolean(origin && allowedOrigins.has(origin))),
 }));
-app.use(createOriginGuard(allowedOrigins));
+app.use(createOriginGuard(allowedOrigins, (diagnostic) => {
+  console.warn('Rejected request by origin guard.', diagnostic);
+}));
 app.use(express.json({ limit: '16kb' }));
 app.use(clerkMiddleware((req) => ({
   publishableKey: publishableKeyFromHost(getClerkProxyHost(req) ?? '', process.env.CLERK_PUBLISHABLE_KEY),
