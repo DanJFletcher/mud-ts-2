@@ -47,7 +47,10 @@ const trustedProxyHops = Number(process.env.TRUSTED_PROXY_HOPS ?? (process.env.N
 if (!Number.isInteger(trustedProxyHops) || trustedProxyHops < 0) {
   throw new Error('TRUSTED_PROXY_HOPS must be a non-negative integer.');
 }
-const allowedOrigins = parseAllowedOrigins(process.env.CORS_ALLOWED_ORIGINS);
+const allowedOrigins = parseAllowedOrigins(
+  process.env.CORS_ALLOWED_ORIGINS,
+  process.env.NODE_ENV === 'production' ? undefined : process.env.REPLIT_DEV_DOMAIN,
+);
 const trustedHosts = parseTrustedHosts(process.env.TRUSTED_HOSTS);
 if (process.env.NODE_ENV === 'production' && trustedHosts.size === 0) {
   throw new Error('TRUSTED_HOSTS must be configured before starting the production server.');

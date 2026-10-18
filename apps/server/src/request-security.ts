@@ -18,8 +18,22 @@ function normalizedOrigins(value: string | undefined): Set<string> {
   return origins;
 }
 
-export function parseAllowedOrigins(value: string | undefined): ReadonlySet<string> {
-  return normalizedOrigins(value);
+export function parseAllowedOrigins(value: string | undefined, replitDevDomain?: string): ReadonlySet<string> {
+  const origins = normalizedOrigins(value);
+  const devDomain = replitDevDomain?.trim();
+  if (devDomain) {
+    let parsed: URL;
+    try {
+      parsed = new URL(`https://${devDomain}`);
+    } catch {
+      throw new Error('REPLIT_DEV_DOMAIN must be a hostname.');
+    }
+    if (parsed.host !== devDomain || parsed.pathname !== '/' || parsed.search || parsed.hash) {
+      throw new Error('REPLIT_DEV_DOMAIN must be a hostname without a scheme, path, or port.');
+    }
+    origins.add(parsed.origin);
+  }
+  return origins;
 }
 
 export function originIsAllowed(

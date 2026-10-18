@@ -41,6 +41,14 @@ describe('request security policy', () => {
     expect(() => parseAllowedOrigins('https://example.test/path')).toThrow(/bare HTTP\(S\) origins/i);
   });
 
+  it('includes the exact Replit development origin without widening the allowlist', () => {
+    const origins = parseAllowedOrigins('https://play.example.test', 'mudd-demo.replit.dev');
+    const proxiedRequest = makeRequest({ host: '127.0.0.1:5001' });
+    expect(originIsAllowed('https://mudd-demo.replit.dev', proxiedRequest, origins)).toBe(true);
+    expect(originIsAllowed('https://other.replit.dev', proxiedRequest, origins)).toBe(false);
+    expect(() => parseAllowedOrigins(undefined, 'mudd-demo.replit.dev/path')).toThrow(/hostname/i);
+  });
+
   it('blocks cross-site and untrusted-origin state-changing requests', () => {
     const middleware = createOriginGuard(new Set(['https://game.example.test']));
     const denied = makeResponse();
