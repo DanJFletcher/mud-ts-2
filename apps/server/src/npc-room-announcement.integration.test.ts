@@ -121,6 +121,10 @@ vi.mock('@mudd/world-demo', () => ({
           id: 'mara',
           name: 'Mara',
           announcements: ['The north bridge is open.'],
+          roomChatReactions: [{
+            keywords: ['marker', 'sign'],
+            response: 'The marker still points east.',
+          }],
         }],
       },
       { id: 'other-room', npcs: [] },
@@ -371,6 +375,17 @@ describe('NPC room announcements through the server', () => {
     } };
   }
 
+  async function sendRoomMessage(userId: string, roomId: string, text: string) {
+    return fetch(`${baseUrl}/api/chat`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-user': userId,
+      },
+      body: JSON.stringify({ roomId, text }),
+    });
+  }
+
   it('publishes once on entry, shares it with that room, and hides it from other rooms', async () => {
     await enterWorld('alice', 'character-alice');
     await enterWorld('bob', 'character-bob');
@@ -397,6 +412,45 @@ describe('NPC room announcements through the server', () => {
 
     const inaccessibleRoomChat = await readRoom('elsewhere', 'npc-room');
     expect(inaccessibleRoomChat.response.status).toBe(409);
+  });
+
+  it('lets an NPC answer a matching public room message and shares the reply with room occupants', async () => {
+    await enterWorld('alice', 'character-alice');
+    await enterWorld('bob', 'character-bob');
+
+    const unmatched = await sendRoomMessage('alice', 'npc-room', 'Good morning.');
+    expect(unmatched.status).toBe(201);
+    expect((await unmatched.json() as { npcMessage?: unknown }).npcMessage).toBeUndefined();
+
+    const matching = await sendRoomMessage('alice', 'npc-room', 'Where is the marker?');
+    expect(matching.status).toBe(201);
+    const matchingBody = await matching.json() as {
+      message?: { speakerType: string; text: string };
+      npcMessage?: { speakerType: string; speakerName: string; text: string; roomId: string };
+    };
+    expect(matchingBody.message).toMatchObject({ speakerType: 'player', text: 'Where is the marker?' });
+    expect(matchingBody.npcMessage).toMatchObject({
+      speakerType: 'npc',
+      speakerName: 'Mara',
+      text: 'The marker still points east.',
+      roomId: 'npc-room',
+    });
+
+    const bobChat = await readRoom('bob', 'npc-room');
+    expect(bobChat.body.messages).toContainEqual(expect.objectContaining({
+      speakerType: 'npc',
+      speakerName: 'Mara',
+      text: 'The marker still points east.',
+    }));
+
+    const repeated = await sendRoomMessage('bob', 'npc-room', 'The marker?');
+    expect(repeated.status).toBe(201);
+    expect((await repeated.json() as { npcMessage?: unknown }).npcMessage).toBeUndefined();
+    expect(bobChat.body.messages?.filter((message) =>
+      message.speakerType === 'npc' &&
+      message.speakerName === 'Mara' &&
+      message.text === 'The marker still points east.',
+    )).toHaveLength(1);
   });
 
   it('announces on successful movement into an NPC room and applies the arrival cooldown', async () => {

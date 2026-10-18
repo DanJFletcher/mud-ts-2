@@ -18,7 +18,7 @@ type RoomChatPanelProps = Readonly<{
   onFullscreenChange: (fullscreen: boolean) => void;
 }>;
 type RoomChatResponse = Readonly<{ roomId: string; messages: readonly RoomChatMessage[] }>;
-type MessageResponse = Readonly<{ message: RoomChatMessage }>;
+type MessageResponse = Readonly<{ message: RoomChatMessage; npcMessage?: RoomChatMessage }>;
 
 function errorMessage(body: unknown, fallback: string) {
   if (body && typeof body === 'object' && 'message' in body && typeof body.message === 'string') {
@@ -177,10 +177,18 @@ export function RoomChatPanel({ roomId, fullscreen, onFullscreenChange }: RoomCh
       const body = await response.json() as unknown;
       if (!response.ok) throw new Error(errorMessage(body, 'Could not send room message.'));
       const payload = body as MessageResponse;
-      if (!payload.message || payload.message.roomId !== roomId) throw new Error('The room chat response was invalid.');
+      if (
+        !payload.message ||
+        payload.message.roomId !== roomId ||
+        (payload.npcMessage && (payload.npcMessage.roomId !== roomId || payload.npcMessage.speakerType !== 'npc'))
+      ) {
+        throw new Error('The room chat response was invalid.');
+      }
       if (currentRoomIdRef.current !== roomId) return;
 
-      setMessages((current) => mergeMessages(current, [payload.message]));
+      const incomingMessages = [payload.message, ...(payload.npcMessage ? [payload.npcMessage] : [])];
+      lastMessageIdRef.current = Math.max(lastMessageIdRef.current, ...incomingMessages.map((message) => message.id));
+      setMessages((current) => mergeMessages(current, incomingMessages));
       setDraft('');
     } catch (error) {
       if (currentRoomIdRef.current === roomId) {

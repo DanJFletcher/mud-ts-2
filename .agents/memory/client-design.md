@@ -8,7 +8,7 @@ description: User direction for MUDD's gameplay UI, navigation, and mobile prior
 - Traveler info and Field notes should be separate screens the player navigates to.
 - Marketing language can be reserved for the main home or login page, not gameplay.
 - Play uses one terminal: show only the current room name above the transcript, emit default `look` output on room entry, include NPCs present in the room description, scroll the transcript independently, dock the command field, show no message counts, allow the terminal to collapse to its room header, and support full-screen mode.
-- Replace Available paths with a shared room-chat window for players in the same room; keep its embedded Play panel fixed-height, collapsible to the header, and independently scrolling, while full-screen mode fills the viewport. Place a collapsible map beneath chat; it tracks the current and previously visited locations. NPC room announcements belong in chat, private NPC dialogue stays in the terminal, and dialogue progress is scripted, character-specific, and only available while co-located.
+- Replace Available paths with a shared room-chat window for players in the same room; keep its embedded Play panel fixed-height, collapsible to the header, and independently scrolling, while full-screen mode fills the viewport. Place a collapsible map beneath chat; it tracks the current and previously visited locations. NPC room announcements and authored keyword-triggered reactions belong in chat, while private NPC dialogue stays in the terminal. Public reactions must not reveal character-specific quest state; dialogue progress is scripted, character-specific, and only available while co-located.
 - Quest progress belongs to the individual character and is derived from server-recorded actions. Accept and report quests through private NPC dialogue; show active and completed objectives in Field notes. The first quest slice has a narrative-only completion. Play's terminal announces newly completed active objectives once and does not replay old objective notices on load.
 - Private NPC dialogue should reflect the character's quest status and completed objectives; only offer a report choice after all quest objectives are complete.
 - On Play, a horizontal right swipe opens room chat full-screen and a left swipe opens the visited-location map full-screen. A downward swipe on the terminal header opens the terminal full-screen; an upward swipe on its header, close control, or Escape returns to gameplay. In full-screen chat, a left swipe, close control, or Escape returns to gameplay; in the map, a right swipe, close control, or Escape closes the map. Preserve vertical scrolling and do not trigger from form controls.
@@ -19,6 +19,10 @@ description: User direction for MUDD's gameplay UI, navigation, and mobile prior
 **Why:** The user asked for NPCs in the room to appear in room descriptions.
 
 **How to apply:** Include each current-room NPC's name and description in the text returned by `location.describe`; keep targeted NPC look and dialogue as separate actions.
+
+**Why:** Room chat is visible to everyone sharing the room, while quest progress belongs to an individual character.
+
+**How to apply:** Public NPC reactions may use public chat text and static world content, but never private per-character quest state.
 
 **Why:** The user approved objective-completion feedback in the terminal so progress is clear during play rather than only in Field notes.
 

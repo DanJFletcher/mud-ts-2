@@ -31,6 +31,7 @@ import {
   publishNpcRoomMessage,
 } from './room-chat-service.js';
 import { createNpcRoomAnnouncer } from './npc-announcer.js';
+import { createNpcRoomChatReactor } from './npc-chat-reactor.js';
 
 const store = new PostgresEventStore();
 const authorization = {
@@ -48,6 +49,7 @@ const engine = new EngineHost([characterPlugin, movementPlugin, npcDialoguePlugi
 await engine.start();
 
 const announceNpcRoomMessage = createNpcRoomAnnouncer(publishNpcRoomMessage);
+const reactToNpcRoomChat = createNpcRoomChatReactor(publishNpcRoomMessage);
 async function announceNpcsOnEntry(worldInstanceId: string, roomId: string) {
   const location = demoWorld.locations.find((candidate) => candidate.id === roomId);
   for (const npc of location?.npcs ?? []) {
@@ -64,6 +66,27 @@ async function announceNpcsOnEntry(worldInstanceId: string, roomId: string) {
       console.error('Could not publish NPC room announcement:', error instanceof Error ? error.message : 'unknown error');
     }
   }
+}
+
+async function reactToNpcsInRoomChat(worldInstanceId: string, roomId: string, playerMessage: string) {
+  const location = demoWorld.locations.find((candidate) => candidate.id === roomId);
+  for (const npc of location?.npcs ?? []) {
+    if (!npc.roomChatReactions?.length) continue;
+    try {
+      const response = await reactToNpcRoomChat({
+        worldInstanceId,
+        roomId,
+        npcId: npc.id,
+        npcName: npc.name,
+        playerMessage,
+        reactions: npc.roomChatReactions,
+      });
+      if (response) return response;
+    } catch (error) {
+      console.error('Could not publish NPC room-chat reaction:', error instanceof Error ? error.message : 'unknown error');
+    }
+  }
+  return undefined;
 }
 
 function projectWorldMap(character: NonNullable<ReturnType<typeof replayCharacter>>) {
@@ -319,7 +342,12 @@ app.post('/api/chat', async (req, res, next) => {
       characterName: current.character.name,
       text: input.data.text,
     });
-    return res.status(201).json({ message });
+    const npcMessage = await reactToNpcsInRoomChat(
+      current.session.worldInstanceId,
+      current.character.locationId,
+      input.data.text,
+    );
+    return res.status(201).json({ message, ...(npcMessage ? { npcMessage } : {}) });
   } catch (error) {
     next(error);
   }

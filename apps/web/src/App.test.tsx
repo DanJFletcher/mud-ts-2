@@ -168,7 +168,19 @@ beforeEach(() => {
           createdAt: '2026-01-01T00:00:00.000Z',
         };
         roomChatMessages.push(message);
-        return json({ message }, 201);
+        const npcMessage = payload.text?.toLocaleLowerCase().includes('marker')
+          ? {
+            id: nextRoomChatMessageId++,
+            roomId,
+            speakerType: 'npc' as const,
+            speakerId: 'mara-waykeeper',
+            speakerName: 'Mara',
+            text: 'The marker still points east.',
+            createdAt: '2026-01-01T00:00:01.000Z',
+          }
+          : undefined;
+        if (npcMessage) roomChatMessages.push(npcMessage);
+        return json({ message, ...(npcMessage ? { npcMessage } : {}) }, 201);
       }
       if (url.searchParams.get('roomId') !== roomId) {
         return json({ message: 'You have moved to a different room.' }, 409);
@@ -552,6 +564,20 @@ describe('single-character world session client', () => {
       roomId: 'mossgate-clearing',
       text: 'The way is clear.',
     });
+  });
+
+  it('shows an authored NPC response immediately after a matching public room message', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    const chat = await screen.findByRole('region', { name: 'Room chat' });
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Message the room' }), {
+      target: { value: 'The marker points east.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Send room message' }));
+
+    expect(await screen.findByText('The marker still points east.')).toBeVisible();
+    expect(chat).toHaveTextContent('Rowan');
+    expect(chat).toHaveTextContent('Mara');
   });
 
   it('collapses embedded room chat while keeping it openable full screen', async () => {

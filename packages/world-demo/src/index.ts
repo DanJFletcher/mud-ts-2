@@ -164,6 +164,16 @@ const draft = {
             'The north bridge is open to travelers.',
             'The marker still points east to the Old Bell Tower.',
           ],
+          roomChatReactions: [
+            {
+              keywords: ['marker', 'sign'],
+              response: 'The marker is old, but its arrow still points east.',
+            },
+            {
+              keywords: ['bell tower', 'tower', 'bell'],
+              response: 'The bell has been quiet for years. The Old Bell Tower stands east of here.',
+            },
+          ],
         },
       ],
       exits: [

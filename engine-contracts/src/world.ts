@@ -58,6 +58,11 @@ export const NpcDialogueTopicDefinitionSchema = z.object({
   questResponses: z.array(NpcQuestResponseDefinitionSchema).max(24).optional(),
 }).strict();
 
+export const NpcRoomChatReactionDefinitionSchema = z.object({
+  keywords: z.array(z.string().trim().min(1).max(80)).min(1).max(12),
+  response: z.string().min(1).max(500),
+}).strict();
+
 export const NpcQuestStateConditionSchema = z.object({
   questId: IdSchema,
   status: z.enum(['active', 'completed']).optional(),
@@ -122,6 +127,7 @@ export const NpcDefinitionSchema = z.object({
   dialogue: NpcDialogueDefinitionSchema.optional(),
   unknownTopicResponse: z.string().min(1).max(2000),
   announcements: z.array(z.string().min(1).max(500)).max(24).optional(),
+  roomChatReactions: z.array(NpcRoomChatReactionDefinitionSchema).max(24).optional(),
 }).strict();
 
 export const NpcPresenceProjectionSchema = z.object({
@@ -259,6 +265,7 @@ export type TakeableObjectDefinition = z.infer<typeof TakeableObjectDefinitionSc
 export type NpcDefinition = z.infer<typeof NpcDefinitionSchema>;
 export type NpcDialogueDefinition = z.infer<typeof NpcDialogueDefinitionSchema>;
 export type NpcQuestResponseDefinition = z.infer<typeof NpcQuestResponseDefinitionSchema>;
+export type NpcRoomChatReactionDefinition = z.infer<typeof NpcRoomChatReactionDefinitionSchema>;
 export type NpcDialogueChoiceDefinition = z.infer<typeof NpcDialogueChoiceDefinitionSchema>;
 export type NpcQuestStateCondition = z.infer<typeof NpcQuestStateConditionSchema>;
 export type NpcPresenceProjection = z.infer<typeof NpcPresenceProjectionSchema>;
