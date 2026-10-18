@@ -11,6 +11,7 @@ import { MuddHttpClient, type GameSnapshot } from "@mudd/client-sdk";
 import {
   ActivityLog,
   Button,
+  DisclosureButton,
   Panel,
   Text,
   TextInput,
@@ -1128,16 +1129,14 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                   return (
                     <div className="focused-quest-group" key={status}>
                       <h3 className="focused-quest-group-title">
-                        <button
-                          aria-expanded={!collapsed}
-                          aria-controls={`quest-group-${status}`}
+                        <DisclosureButton
+                          controls={`quest-group-${status}`}
+                          expanded={!collapsed}
                           className="focused-quest-group-toggle"
                           onClick={() => setCollapsedQuestGroups((current) => ({ ...current, [status]: !current[status] }))}
-                          type="button"
                         >
-                          <span>{heading}</span>
-                          <span aria-hidden="true">{collapsed ? "▸" : "▾"}</span>
-                        </button>
+                          {heading}
+                        </DisclosureButton>
                       </h3>
                       <div className="focused-quest-group-content" hidden={collapsed} id={`quest-group-${status}`}>
                         {quests.length ? (
@@ -1148,9 +1147,9 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                               return (
                                 <article className="focused-quest-card" key={quest.questId}>
                                   <h4 className="focused-quest-item-heading">
-                                    <button
-                                      aria-expanded={!collapsed}
-                                      aria-controls={detailsId}
+                                    <DisclosureButton
+                                      controls={detailsId}
+                                      expanded={!collapsed}
                                       className="focused-quest-toggle"
                                       onClick={() => setCollapsedQuestCards((current) => {
                                         const next = new Set(current);
@@ -1158,16 +1157,12 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                                         else next.add(quest.questId);
                                         return next;
                                       })}
-                                      type="button"
                                     >
                                       <span className="focused-quest-title">{quest.title}</span>
                                       <span className={`focused-quest-status focused-quest-status--${quest.status}`}>
                                         {quest.status === "completed" ? "Completed" : "Active"}
                                       </span>
-                                      <span aria-hidden="true" className="focused-quest-toggle-indicator">
-                                        {collapsed ? "▸" : "▾"}
-                                      </span>
-                                    </button>
+                                    </DisclosureButton>
                                   </h4>
                                   <div className="focused-quest-content" hidden={collapsed} id={detailsId}>
                                     <p className="focused-quest-summary">{quest.summary}</p>

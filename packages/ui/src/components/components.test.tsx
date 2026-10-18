@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ActivityLog } from './ActivityLog.js';
 import { Button } from './Button.js';
+import { DisclosureButton } from './DisclosureButton.js';
 import { NavigationControls } from './NavigationControls.js';
 import { Panel } from './Panel.js';
 import { RoomDescription } from './RoomDescription.js';
@@ -16,6 +17,20 @@ describe('@mudd/ui components', () => {
     expect(onClick).toHaveBeenCalledOnce();
     render(<Button disabled>Unavailable</Button>);
     expect(screen.getByRole('button', { name: 'Unavailable' })).toBeDisabled();
+  });
+
+  it('renders disclosure controls with their expanded state and controlled region', () => {
+    const onClick = vi.fn();
+    render(
+      <DisclosureButton controls="quest-details" expanded onClick={onClick}>
+        Current quests
+      </DisclosureButton>,
+    );
+    const trigger = screen.getByRole('button', { name: 'Current quests' });
+    expect(trigger).toHaveAttribute('aria-controls', 'quest-details');
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(trigger);
+    expect(onClick).toHaveBeenCalledOnce();
   });
 
   it('renders the requested semantic text element', () => {

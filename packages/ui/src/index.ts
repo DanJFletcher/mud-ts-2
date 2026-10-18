@@ -1,5 +1,7 @@
 export { Button } from './components/Button.js';
 export type { ButtonProps } from './components/Button.js';
+export { DisclosureButton } from './components/DisclosureButton.js';
+export type { DisclosureButtonProps } from './components/DisclosureButton.js';
 export { Text } from './components/Text.js';
 export type { TextProps } from './components/Text.js';
 export { Panel } from './components/Panel.js';

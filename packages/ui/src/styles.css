@@ -52,6 +52,26 @@
 .mudd-button--secondary { background: var(--mudd-surface-raised); border-color: var(--mudd-border); color: var(--mudd-text); }
 .mudd-button--quiet { background: transparent; color: var(--mudd-text); }
 
+.mudd-disclosure-button {
+  width: 100%;
+  min-height: 2.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--mudd-border);
+  border-radius: 0.75rem;
+  color: var(--mudd-text);
+  background: var(--mudd-surface);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.mudd-disclosure-button:focus-visible { outline: 3px solid var(--mudd-warm); outline-offset: 3px; }
+.mudd-disclosure-button:disabled { cursor: not-allowed; opacity: 0.58; }
+.mudd-disclosure-button__content { min-width: 0; flex: 1; display: flex; align-items: center; gap: 0.5rem; }
+.mudd-disclosure-button__indicator { flex: 0 0 auto; color: var(--mudd-muted); }
+
 .mudd-text { margin: 0; color: var(--mudd-text); line-height: 1.65; }
 .mudd-text--display { font: 600 clamp(2.3rem, 7vw, 4.5rem)/1.05 "Literata", Georgia, serif; letter-spacing: -0.045em; }
 .mudd-text--heading { font: 600 1.4rem/1.2 "Literata", Georgia, serif; }
