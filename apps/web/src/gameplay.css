@@ -198,6 +198,14 @@
   cursor: pointer;
 }
 
+.focused-terminal-toggle.mudd-disclosure-button {
+  position: relative;
+  min-height: 40px;
+  padding: 0;
+  border: 0;
+  text-align: center;
+}
+
 .focused-terminal-toggle:hover,
 .focused-terminal-fullscreen-button:hover {
   color: var(--terminal-text);
@@ -208,6 +216,27 @@
 .focused-terminal-fullscreen-button:focus-visible {
   outline: 2px solid var(--terminal-accent);
   outline-offset: -2px;
+}
+
+.focused-panel-disclosure-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.focused-terminal-toggle .mudd-disclosure-button__indicator,
+.focused-world-map__button.mudd-disclosure-button .mudd-disclosure-button__indicator,
+.focused-room-chat__collapse-button .mudd-disclosure-button__indicator {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
 }
 
 .focused-terminal--fullscreen {
@@ -485,6 +514,14 @@
   cursor: pointer;
 }
 
+.focused-room-chat__collapse-button.mudd-disclosure-button {
+  position: relative;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  text-align: center;
+}
+
 .focused-room-chat__fullscreen-button:hover {
   color: var(--mudd-text);
   background: color-mix(in srgb, var(--mudd-accent) 10%, transparent);
@@ -697,6 +734,14 @@
   color: var(--mudd-muted);
   background: transparent;
   cursor: pointer;
+}
+
+.focused-world-map__button.mudd-disclosure-button {
+  position: relative;
+  min-height: 40px;
+  padding: 0;
+  border: 0;
+  text-align: center;
 }
 
 .focused-world-map__button:hover {

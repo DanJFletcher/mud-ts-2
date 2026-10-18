@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode, type TouchEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, ChevronUp, Maximize2, X } from 'lucide-react';
-import { Panel } from '@mudd/ui';
+import { DisclosureButton, Panel } from '@mudd/ui';
 
 type TerminalPanelProps = Readonly<{
   title: string;
@@ -109,17 +109,19 @@ export function TerminalPanel({ title, busy, children }: TerminalPanelProps) {
       <div className="focused-terminal-room">
         <h1 className="focused-terminal-location">{title}</h1>
         {!fullscreenPresent && (
-          <button
+          <DisclosureButton
             className="focused-terminal-toggle"
-            type="button"
             onClick={() => setCollapsed((current) => !current)}
             aria-label={collapsed ? 'Expand terminal' : 'Collapse terminal'}
-            aria-expanded={!collapsed}
-            aria-controls="focused-terminal-body"
             title={collapsed ? 'Expand terminal' : 'Collapse terminal'}
+            controls="focused-terminal-body"
+            expanded={!collapsed}
+            indicator={collapsed ? <ChevronDown size={17} aria-hidden="true" /> : <ChevronUp size={17} aria-hidden="true" />}
           >
-            {collapsed ? <ChevronDown size={17} aria-hidden="true" /> : <ChevronUp size={17} aria-hidden="true" />}
-          </button>
+            <span className="focused-panel-disclosure-label">
+              {collapsed ? 'Expand terminal' : 'Collapse terminal'}
+            </span>
+          </DisclosureButton>
         )}
         <button
           ref={fullscreenPresent ? closeButtonRef : openButtonRef}

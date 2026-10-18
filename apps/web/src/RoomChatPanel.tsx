@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, ChevronUp, Maximize2, X } from 'lucide-react';
-import { Button } from '@mudd/ui';
+import { Button, DisclosureButton } from '@mudd/ui';
 
 export type RoomChatMessage = Readonly<{
   id: number;
@@ -209,17 +209,19 @@ export function RoomChatPanel({ roomId, fullscreen, onFullscreenChange }: RoomCh
           {loadError ? 'Reconnecting' : loading ? 'Connecting' : 'Room'}
         </span>
         {!fullscreenPresent && (
-          <button
+          <DisclosureButton
             className="focused-room-chat__fullscreen-button focused-room-chat__collapse-button"
-            type="button"
             onClick={() => setCollapsed((current) => !current)}
             aria-label={collapsed ? 'Expand room chat' : 'Collapse room chat'}
-            aria-expanded={!collapsed}
-            aria-controls="room-chat-content"
             title={collapsed ? 'Expand room chat' : 'Collapse room chat'}
+            controls="room-chat-content"
+            expanded={!collapsed}
+            indicator={collapsed ? <ChevronDown size={17} aria-hidden="true" /> : <ChevronUp size={17} aria-hidden="true" />}
           >
-            {collapsed ? <ChevronDown size={17} aria-hidden="true" /> : <ChevronUp size={17} aria-hidden="true" />}
-          </button>
+            <span className="focused-panel-disclosure-label">
+              {collapsed ? 'Expand room chat' : 'Collapse room chat'}
+            </span>
+          </DisclosureButton>
         )}
         <button
           className="focused-room-chat__fullscreen-button"

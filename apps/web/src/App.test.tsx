@@ -412,10 +412,14 @@ describe('single-character world session client', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Collapse terminal' }));
     expect(terminal).toHaveClass('focused-terminal--collapsed');
-    expect(screen.getByRole('button', { name: 'Expand terminal' })).toHaveAttribute('aria-expanded', 'false');
+    const expandTerminal = screen.getByRole('button', { name: 'Expand terminal' });
+    expect(expandTerminal).toHaveClass('mudd-disclosure-button');
+    expect(expandTerminal).toHaveAttribute('aria-expanded', 'false');
+    expect(expandTerminal).toHaveAttribute('aria-controls', 'focused-terminal-body');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Expand terminal' }));
+    fireEvent.click(expandTerminal);
     expect(terminal).not.toHaveClass('focused-terminal--collapsed');
+    expect(screen.getByRole('button', { name: 'Collapse terminal' })).toHaveAttribute('aria-expanded', 'true');
     expect(history).toHaveTextContent('> look');
     expect(screen.getByRole('textbox', { name: 'Enter a command' })).toBeInTheDocument();
   });
@@ -460,7 +464,10 @@ describe('single-character world session client', () => {
     const map = await screen.findByRole('region', { name: 'World map' });
     fireEvent.click(screen.getByRole('button', { name: 'Collapse map' }));
     expect(map).toHaveClass('focused-world-map--collapsed');
-    expect(screen.getByRole('button', { name: 'Expand map' })).toHaveAttribute('aria-expanded', 'false');
+    const expandMap = screen.getByRole('button', { name: 'Expand map' });
+    expect(expandMap).toHaveClass('mudd-disclosure-button');
+    expect(expandMap).toHaveAttribute('aria-expanded', 'false');
+    expect(expandMap).toHaveAttribute('aria-controls', 'world-map-content');
 
     fireEvent.click(screen.getByRole('button', { name: 'Open map full screen' }));
     const dialog = await screen.findByRole('dialog', { name: 'World map' });
@@ -473,6 +480,7 @@ describe('single-character world session client', () => {
     expect(collapsedMap).toHaveClass('focused-world-map--collapsed');
     fireEvent.click(screen.getByRole('button', { name: 'Expand map' }));
     expect(screen.getByRole('region', { name: 'World map' })).not.toHaveClass('focused-world-map--collapsed');
+    expect(screen.getByRole('button', { name: 'Collapse map' })).toHaveAttribute('aria-expanded', 'true');
   });
 
   it('opens the world map full screen with a left swipe and closes with a right swipe or Escape', async () => {
@@ -548,7 +556,10 @@ describe('single-character world session client', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Collapse room chat' }));
     expect(panel).toHaveClass('focused-room-chat--collapsed');
-    expect(screen.getByRole('button', { name: 'Expand room chat' })).toHaveAttribute('aria-expanded', 'false');
+    const expandChat = screen.getByRole('button', { name: 'Expand room chat' });
+    expect(expandChat).toHaveClass('mudd-disclosure-button');
+    expect(expandChat).toHaveAttribute('aria-expanded', 'false');
+    expect(expandChat).toHaveAttribute('aria-controls', 'room-chat-content');
 
     fireEvent.click(screen.getByRole('button', { name: 'Open chat full screen' }));
     const dialog = await screen.findByRole('dialog', { name: 'Room chat' });

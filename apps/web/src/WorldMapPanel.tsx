@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type TouchEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, ChevronUp, Maximize2, X } from 'lucide-react';
 import type { WorldMapProjection } from '@mudd/contracts';
+import { DisclosureButton } from '@mudd/ui';
 
 type WorldMapPanelProps = Readonly<{
   map?: WorldMapProjection;
@@ -127,17 +128,19 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
         <h2>Map</h2>
         {currentLocation && <span className="focused-world-map__current-name">{currentLocation.name}</span>}
         {!fullscreenPresent && (
-          <button
+          <DisclosureButton
             className="focused-world-map__button"
-            type="button"
             onClick={() => setCollapsed((current) => !current)}
             aria-label={collapsed ? 'Expand map' : 'Collapse map'}
-            aria-expanded={!collapsed}
-            aria-controls="world-map-content"
             title={collapsed ? 'Expand map' : 'Collapse map'}
+            controls="world-map-content"
+            expanded={!collapsed}
+            indicator={collapsed ? <ChevronDown size={17} aria-hidden="true" /> : <ChevronUp size={17} aria-hidden="true" />}
           >
-            {collapsed ? <ChevronDown size={17} aria-hidden="true" /> : <ChevronUp size={17} aria-hidden="true" />}
-          </button>
+            <span className="focused-panel-disclosure-label">
+              {collapsed ? 'Expand map' : 'Collapse map'}
+            </span>
+          </DisclosureButton>
         )}
         <button
           ref={fullscreenPresent ? closeButtonRef : expandButtonRef}
