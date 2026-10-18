@@ -42,7 +42,7 @@ describe('request security policy', () => {
   });
 
   it('includes the exact Replit development origin without widening the allowlist', () => {
-    const origins = parseAllowedOrigins('https://play.example.test', 'mudd-demo.replit.dev');
+    const origins = parseAllowedOrigins('https://play.example.test', 'mudd-demo.replit.dev,preview.replit.dev');
     const proxiedRequest = makeRequest({ host: '127.0.0.1:5001' });
     expect(originIsAllowed('https://mudd-demo.replit.dev', proxiedRequest, origins)).toBe(true);
     expect(originIsAllowed('https://other.replit.dev', proxiedRequest, origins)).toBe(false);
@@ -59,6 +59,14 @@ describe('request security policy', () => {
     );
     expect(denied.state.statusCode).toBe(403);
     expect(denied.response.json).toHaveBeenCalledWith({ message: 'This request origin is not allowed.' });
+
+    const previewNext = vi.fn();
+    middleware(
+      makeRequest({ origin: 'https://game.example.test', 'sec-fetch-site': 'cross-site' }),
+      makeResponse().response,
+      previewNext,
+    );
+    expect(previewNext).toHaveBeenCalledOnce();
 
     const allowedNext = vi.fn();
     middleware(

@@ -49,7 +49,9 @@ if (!Number.isInteger(trustedProxyHops) || trustedProxyHops < 0) {
 }
 const allowedOrigins = parseAllowedOrigins(
   process.env.CORS_ALLOWED_ORIGINS,
-  process.env.NODE_ENV === 'production' ? undefined : process.env.REPLIT_DEV_DOMAIN,
+  process.env.NODE_ENV === 'production'
+    ? undefined
+    : [process.env.REPLIT_DEV_DOMAIN, process.env.REPLIT_DOMAINS].filter(Boolean).join(','),
 );
 const trustedHosts = parseTrustedHosts(process.env.TRUSTED_HOSTS);
 if (process.env.NODE_ENV === 'production' && trustedHosts.size === 0) {

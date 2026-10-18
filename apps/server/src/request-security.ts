@@ -18,18 +18,17 @@ function normalizedOrigins(value: string | undefined): Set<string> {
   return origins;
 }
 
-export function parseAllowedOrigins(value: string | undefined, replitDevDomain?: string): ReadonlySet<string> {
+export function parseAllowedOrigins(value: string | undefined, replitDevDomains?: string): ReadonlySet<string> {
   const origins = normalizedOrigins(value);
-  const devDomain = replitDevDomain?.trim();
-  if (devDomain) {
+  for (const devDomain of replitDevDomains?.split(',').map((domain) => domain.trim()).filter(Boolean) ?? []) {
     let parsed: URL;
     try {
       parsed = new URL(`https://${devDomain}`);
     } catch {
-      throw new Error('REPLIT_DEV_DOMAIN must be a hostname.');
+      throw new Error('Replit development domains must be hostnames.');
     }
     if (parsed.host !== devDomain || parsed.pathname !== '/' || parsed.search || parsed.hash) {
-      throw new Error('REPLIT_DEV_DOMAIN must be a hostname without a scheme, path, or port.');
+      throw new Error('Replit development domains must be hostnames without a scheme, path, or port.');
     }
     origins.add(parsed.origin);
   }
@@ -58,7 +57,11 @@ export function createOriginGuard(configuredOrigins: ReadonlySet<string>): Reque
     if (['GET', 'HEAD', 'OPTIONS'].includes(request.method)) return next();
     const origin = request.get('origin');
     const fetchSite = request.get('sec-fetch-site');
-    if (fetchSite === 'cross-site' || !originIsAllowed(origin, request, configuredOrigins)) {
+    const explicitlyAllowedOrigin = Boolean(origin && configuredOrigins.has(origin));
+    if (
+      (fetchSite === 'cross-site' && !explicitlyAllowedOrigin) ||
+      !originIsAllowed(origin, request, configuredOrigins)
+    ) {
       return response.status(403).json({ message: 'This request origin is not allowed.' });
     }
     return next();
