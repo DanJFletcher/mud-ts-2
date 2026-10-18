@@ -6,6 +6,7 @@ export * from './world.js';
 export * from './session.js';
 export * from './chat.js';
 export * from './character.js';
+export * from './quests.js';
 export * from './combat.js';
 export * from './clock-rng.js';
 export * from './plugins.js';

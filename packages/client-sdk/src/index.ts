@@ -6,11 +6,12 @@ import {
   LocationDescribeQuerySchema,
   NpcDialogueChoiceCommandSchema,
   NpcTalkQuerySchema,
-  ObjectReadQuerySchema,
   ObjectInspectQuerySchema,
   MoveCharacterCommandSchema,
   TakeCharacterItemCommandSchema,
   DropCharacterItemCommandSchema,
+  ReadCharacterObjectCommandSchema,
+  CharacterObjectReadEventSchema,
   type CharacterProjection,
   type CommandReceipt,
   type LocationProjection,
@@ -18,6 +19,7 @@ import {
   type ReadableObjectProjection,
   type ObjectInspectionProjection,
   type WorldMapProjection,
+  type QuestJournalEntry,
 } from '@mudd/contracts';
 
 export interface GameSnapshot {
@@ -25,6 +27,7 @@ export interface GameSnapshot {
   character?: CharacterProjection;
   location?: LocationProjection;
   map?: WorldMapProjection;
+  questJournal?: QuestJournalEntry[];
 }
 
 export interface CharacterRosterSnapshot {
@@ -36,6 +39,7 @@ export interface CharacterRosterSnapshot {
 export interface CommandResponse {
   receipt: CommandReceipt;
   streamId?: string;
+  events?: Array<{ type: string; payload?: unknown }>;
 }
 
 export interface ClientOptions {
@@ -157,21 +161,26 @@ export class MuddHttpClient {
     return result.value;
   }
 
-  async read(characterId: string, objectId: string, queryId = crypto.randomUUID()): Promise<ReadableObjectProjection> {
-    const query = ObjectReadQuerySchema.parse({
-      type: 'object.read',
+  async read(
+    characterId: string,
+    objectId: string,
+    expectedVersion: number,
+    commandId = crypto.randomUUID(),
+  ): Promise<ReadableObjectProjection> {
+    const command = ReadCharacterObjectCommandSchema.parse({
+      type: 'character.read',
       version: 1,
-      queryId,
+      commandId,
       worldInstanceId: this.options.worldInstanceId,
       characterId,
+      expectedVersion,
       payload: { objectId },
     });
-    const result = await this.request<{ ok: boolean; value?: ReadableObjectProjection; message?: string }>('/api/queries', {
-      method: 'POST',
-      body: JSON.stringify(query),
-    });
-    if (!result.ok || !result.value) throw new Error(result.message ?? 'Unable to read that object.');
-    return result.value;
+    const result = await this.send(command);
+    const readEvent = result.events?.find((event) => event.type === 'character.object_read');
+    const payload = CharacterObjectReadEventSchema.shape.payload.safeParse(readEvent?.payload);
+    if (!payload.success) throw new Error('The read action completed without returning its text.');
+    return { id: payload.data.objectId, label: payload.data.label, text: payload.data.text };
   }
 
   async inspect(characterId: string, objectId: string, queryId = crypto.randomUUID()): Promise<ObjectInspectionProjection> {

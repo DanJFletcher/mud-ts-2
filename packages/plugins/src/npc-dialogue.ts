@@ -2,6 +2,8 @@ import {
   CharacterNpcDialogueChoiceMadeEventSchema,
   NpcDialogueChoiceCommandSchema,
   NpcDialogueProjectionSchema,
+  QuestAcceptedEventSchema,
+  QuestCompletedEventSchema,
   NpcTalkQuerySchema,
   type CharacterProjection,
   type NpcDefinition,
@@ -9,9 +11,11 @@ import {
 import type {
   EngineCommandContext,
   EnginePlugin,
+  ProposedDomainEvent,
   QueryContext,
 } from '@mudd/engine-core';
 import type { CharacterStateCapability } from './character.js';
+import { projectQuestJournal, questObjectivesAreComplete } from '@mudd/engine-core';
 
 function currentNpc(
   context: EngineCommandContext | QueryContext,
@@ -29,6 +33,7 @@ function currentNpc(
 function dialogueProjection(
   npc: NpcDefinition,
   character: CharacterProjection,
+  world: QueryContext['world'],
   topic?: string,
 ) {
   if (topic) {
@@ -56,8 +61,22 @@ function dialogueProjection(
 
   const progress = character.npcProgress.find((entry) => entry.npcId === npc.id);
   const lastChoice = dialogue.choices.find((choice) => choice.id === progress?.lastChoiceId);
+  const questJournal = projectQuestJournal(character, world);
   const choices = dialogue.choices
-    .filter((choice) => !progress?.progressFlagIds.includes(choice.progressFlagId))
+    .filter((choice) => {
+      if (progress?.progressFlagIds.includes(choice.progressFlagId)) return false;
+      if (!choice.questAction) return true;
+      const quest = world.quests.find((candidate) => candidate.id === choice.questAction?.questId);
+      if (!quest) return false;
+      const questProgress = character.questProgress.find((candidate) => candidate.questId === quest.id);
+      if (choice.questAction.type === 'accept') {
+        return quest.giverNpcId === npc.id && !questProgress;
+      }
+      return quest.turnInNpcId === npc.id &&
+        questProgress?.status === 'active' &&
+        questJournal.some((entry) => entry.questId === quest.id && entry.status === 'active') &&
+        questObjectivesAreComplete(quest, character);
+    })
     .map(({ id, label }) => ({ id, label }));
 
   return NpcDialogueProjectionSchema.parse({
@@ -84,7 +103,7 @@ export const npcDialoguePlugin: EnginePlugin = {
       const character = await characterState.load(context, query.characterId);
       if (!character) throw new Error('That character is no longer available.');
       const npc = currentNpc(context, character, query.payload.npcId);
-      return dialogueProjection(npc, character, query.payload.topic);
+      return dialogueProjection(npc, character, context.world, query.payload.topic);
     });
 
     registerCommand('npc.dialogue.choose', NpcDialogueChoiceCommandSchema, async (command, context) => {
@@ -106,14 +125,45 @@ export const npcDialoguePlugin: EnginePlugin = {
         progressFlagId: choice.progressFlagId,
       };
       CharacterNpcDialogueChoiceMadeEventSchema.shape.payload.parse(payload);
+      const events: ProposedDomainEvent[] = [{
+        type: 'character.npc_dialogue_choice_made',
+        version: 1,
+        payload,
+      }];
+      if (choice.questAction) {
+        const quest = context.world.quests.find((candidate) => candidate.id === choice.questAction?.questId);
+        if (!quest) throw new Error('That quest is not available in this world.');
+        const questProgress = character.questProgress.find((candidate) => candidate.questId === quest.id);
+        if (choice.questAction.type === 'accept') {
+          if (quest.giverNpcId !== npc.id || questProgress) throw new Error('That quest is no longer available.');
+          const questPayload = {
+            characterId: character.characterId,
+            questId: quest.id,
+            definitionVersion: quest.version,
+          };
+          QuestAcceptedEventSchema.shape.payload.parse(questPayload);
+          events.push({ type: 'quest.accepted', version: 1, payload: questPayload });
+        } else {
+          if (
+            quest.turnInNpcId !== npc.id ||
+            questProgress?.status !== 'active' ||
+            !questObjectivesAreComplete(quest, character)
+          ) {
+            throw new Error('You have more to do before reporting back.');
+          }
+          const questPayload = {
+            characterId: character.characterId,
+            questId: quest.id,
+            definitionVersion: quest.version,
+          };
+          QuestCompletedEventSchema.shape.payload.parse(questPayload);
+          events.push({ type: 'quest.completed', version: 1, payload: questPayload });
+        }
+      }
       return {
         streamId: character.characterId,
         expectedVersion: command.expectedVersion,
-        events: [{
-          type: 'character.npc_dialogue_choice_made',
-          version: 1,
-          payload,
-        }],
+        events,
       };
     });
   },

@@ -2,6 +2,7 @@
 import { z } from 'zod';
 import { ClientCommandBaseSchema, ClientQueryBaseSchema } from './protocol.js';
 import { ContractVersionSchema, IdSchema, NonNegativeIntSchema } from './ids.js';
+import { QuestDefinitionSchema, QuestDialogueActionSchema } from './quests.js';
 
 export const ExitDefinitionSchema = z.object({
   id: IdSchema,
@@ -41,6 +42,7 @@ export const NpcDialogueChoiceDefinitionSchema = z.object({
   label: z.string().min(1).max(120),
   response: z.string().min(1).max(2000),
   progressFlagId: IdSchema,
+  questAction: QuestDialogueActionSchema.optional(),
 }).strict();
 
 export const NpcDialogueDefinitionSchema = z.object({
@@ -104,6 +106,7 @@ export const WorldPackDraftSchema = z.object({
   packVersion: z.string().min(1),
   displayName: z.string().min(1),
   locations: z.array(LocationDefinitionSchema),
+  quests: z.array(QuestDefinitionSchema).default([]),
 }).strict();
 
 export const LocationDescribeQuerySchema = ClientQueryBaseSchema.extend({
@@ -234,6 +237,46 @@ export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
       if (!ids.has(exit.toLocationId)) errors.push(`Exit ${exit.id} points to missing location ${exit.toLocationId}`);
       if (exits.has(exit.id)) errors.push(`Duplicate exit ID ${exit.id}`);
       exits.add(exit.id);
+    }
+  }
+
+  const quests = pack.quests ?? [];
+  const questIds = new Set<string>();
+  const npcs = pack.locations.flatMap((location) =>
+    (location.npcs ?? []).map((npc) => ({ npc, locationId: location.id })),
+  );
+  for (const quest of quests) {
+    if (questIds.has(quest.id)) errors.push(`Duplicate quest ID ${quest.id}`);
+    questIds.add(quest.id);
+    if (!npcs.some(({ npc }) => npc.id === quest.giverNpcId)) {
+      errors.push(`Quest ${quest.id} has a missing giver NPC ${quest.giverNpcId}`);
+    }
+    if (!npcs.some(({ npc }) => npc.id === quest.turnInNpcId)) {
+      errors.push(`Quest ${quest.id} has a missing turn-in NPC ${quest.turnInNpcId}`);
+    }
+    for (const objective of quest.objectives) {
+      if (!ids.has(objective.locationId)) {
+        errors.push(`Quest ${quest.id} objective ${objective.id} points to missing location ${objective.locationId}`);
+      } else if (objective.type === 'read-object') {
+        const location = pack.locations.find((candidate) => candidate.id === objective.locationId);
+        if (!location?.readables?.some((readable) => readable.id === objective.objectId)) {
+          errors.push(`Quest ${quest.id} objective ${objective.id} points to missing readable ${objective.objectId}`);
+        }
+      }
+    }
+  }
+  for (const { npc } of npcs) {
+    for (const choice of npc.dialogue?.choices ?? []) {
+      if (!choice.questAction) continue;
+      const quest = quests.find((candidate) => candidate.id === choice.questAction?.questId);
+      if (!quest) {
+        errors.push(`Dialogue choice ${choice.id} references missing quest ${choice.questAction.questId}`);
+      } else if (
+        (choice.questAction.type === 'accept' && quest.giverNpcId !== npc.id) ||
+        (choice.questAction.type === 'turn-in' && quest.turnInNpcId !== npc.id)
+      ) {
+        errors.push(`Dialogue choice ${choice.id} is attached to the wrong quest NPC`);
+      }
     }
   }
   return errors;

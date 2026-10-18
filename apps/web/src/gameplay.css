@@ -971,6 +971,47 @@
 .focused-inventory-error { margin: 0; color: var(--mudd-danger); font-size: .85rem; }
 .focused-note { margin: 0; padding-top: 16px; color: var(--mudd-muted); font-size: .88rem; line-height: 1.6; }
 
+.focused-notes-layout { display: grid; gap: 16px; min-height: 0; }
+.focused-quest-journal {
+  padding: 16px;
+  border: 1px solid var(--mudd-border);
+  border-radius: 12px;
+  background: var(--mudd-surface);
+}
+.focused-quest-journal > h2 {
+  margin: 0 0 12px;
+  color: var(--mudd-text);
+  font-family: var(--mudd-display-font);
+  font-size: 1.1rem;
+}
+.focused-quest-list { display: grid; gap: 10px; }
+.focused-quest-card {
+  padding: 12px;
+  border: 1px solid var(--mudd-border);
+  border-radius: 9px;
+  background: var(--mudd-bg);
+}
+.focused-quest-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.focused-quest-heading h3 { margin: 0; color: var(--mudd-text); font-size: .98rem; }
+.focused-quest-status {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border: 1px solid var(--mudd-border);
+  border-radius: 999px;
+  color: var(--mudd-muted);
+  font-size: .68rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.focused-quest-status--active { color: var(--mudd-warm); border-color: var(--mudd-warm); }
+.focused-quest-summary { margin: 8px 0 10px; color: var(--mudd-muted); font-size: .84rem; line-height: 1.5; }
+.focused-quest-objectives { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.focused-quest-objective { display: flex; align-items: flex-start; gap: 8px; color: var(--mudd-text); font-size: .84rem; line-height: 1.45; }
+.focused-quest-objective > span:first-child { width: 1rem; flex: 0 0 1rem; color: var(--mudd-muted); text-align: center; }
+.focused-quest-objective--complete { color: var(--mudd-muted); }
+.focused-quest-objective--complete > span:first-child { color: var(--mudd-warm); }
+.focused-quest-empty { margin: 0; color: var(--mudd-muted); font-size: .86rem; }
+
 .focused-log { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .focused-log .mudd-log {
   max-height: none;

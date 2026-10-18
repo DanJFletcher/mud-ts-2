@@ -16,7 +16,7 @@ import {
   RenameCharacterCommandSchema,
   WorldMapProjectionSchema,
 } from '@mudd/contracts';
-import { EngineHost, replayCharacter } from '@mudd/engine-core';
+import { EngineHost, projectQuestJournal, replayCharacter } from '@mudd/engine-core';
 import { characterPlugin, movementPlugin, npcDialoguePlugin } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import { db, pool } from './db/client.js';
@@ -256,6 +256,7 @@ app.get('/api/game', async (req, res, next) => {
       character,
       location: result.value,
       map: projectWorldMap(character),
+      questJournal: projectQuestJournal(character, demoWorld),
     });
   } catch (error) {
     next(error);

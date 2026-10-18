@@ -267,10 +267,17 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   }, [pending, snapshot]);
 
   const readObject = useCallback(async (objectId: string) => {
-    if (!snapshot?.character || pending) return;
+    if (!snapshot?.character || !snapshot.location || pending) return;
     setPending("read");
     try {
-      const readable = await client.read(snapshot.character.characterId, objectId);
+      const readable = await client.read(
+        snapshot.character.characterId,
+        objectId,
+        snapshot.location.revision,
+      );
+      const nextSnapshot = await client.getGame();
+      setSnapshot(nextSnapshot);
+      setConnectionError("");
       addEntry("narration", readable.text);
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "You cannot read that just now.");
@@ -1105,15 +1112,48 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
         {screen === "notes" && (
           <div className="focused-screen" aria-label="Field notes">
             <div className="focused-screen-heading">
-              <div><div className="focused-kicker">Session history</div><h1 className="focused-screen-title">Field notes</h1></div>
+              <div><div className="focused-kicker">Progress and session history</div><h1 className="focused-screen-title">Field notes</h1></div>
               <span className="focused-coordinate">{entries.length} {entries.length === 1 ? "entry" : "entries"}</span>
             </div>
-            <div className="focused-log">
-               {entries.length ? (
-                 <ActivityLog entries={[...entries].reverse()} label="Field notes" />
-               ) : (
-                 <p className="focused-feedback focused-feedback--empty">No activity this session. Actions and command results will appear here.</p>
-               )}
+            <div className="focused-notes-layout">
+              <section className="focused-quest-journal" aria-labelledby="quest-journal-title">
+                <h2 id="quest-journal-title">Quest journal</h2>
+                {snapshot?.questJournal?.length ? (
+                  <div className="focused-quest-list">
+                    {snapshot.questJournal.map((quest) => (
+                      <article className="focused-quest-card" key={quest.questId}>
+                        <div className="focused-quest-heading">
+                          <h3>{quest.title}</h3>
+                          <span className={`focused-quest-status focused-quest-status--${quest.status}`}>
+                            {quest.status === "completed" ? "Completed" : "Active"}
+                          </span>
+                        </div>
+                        <p className="focused-quest-summary">{quest.summary}</p>
+                        <ol className="focused-quest-objectives">
+                          {quest.objectives.map((objective) => (
+                            <li
+                              className={objective.completed ? "focused-quest-objective focused-quest-objective--complete" : "focused-quest-objective"}
+                              key={objective.id}
+                            >
+                              <span aria-hidden="true">{objective.completed ? "✓" : "○"}</span>
+                              <span>{objective.label}</span>
+                            </li>
+                          ))}
+                        </ol>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="focused-quest-empty">No quests accepted.</p>
+                )}
+              </section>
+              <div className="focused-log">
+                {entries.length ? (
+                  <ActivityLog entries={[...entries].reverse()} label="Field notes" />
+                ) : (
+                  <p className="focused-feedback focused-feedback--empty">No activity this session. Actions and command results will appear here.</p>
+                )}
+              </div>
             </div>
           </div>
         )}

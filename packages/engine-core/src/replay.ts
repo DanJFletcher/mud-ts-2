@@ -2,7 +2,10 @@ import type { StoredGameEvent } from './types.js';
 import {
   CharacterItemTakenEventSchema,
   CharacterItemDroppedEventSchema,
+  CharacterObjectReadEventSchema,
   CharacterNpcDialogueChoiceMadeEventSchema,
+  QuestAcceptedEventSchema,
+  QuestCompletedEventSchema,
   CharacterProjectionSchema,
   CharacterCreatedEventSchema,
   CharacterMovedEventSchema,
@@ -87,6 +90,25 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
           : entry),
         revision: event.aggregateVersion,
       });
+    } else if (event.type === 'character.object_read') {
+      if (!state) throw new Error('Object read event encountered before character creation.');
+      const read = CharacterObjectReadEventSchema.parse(publicEvent);
+      if (read.payload.characterId !== state.characterId || read.payload.locationId !== state.locationId) {
+        throw new Error(`Invalid object read event at revision ${event.aggregateVersion}.`);
+      }
+      const alreadyRead = state.readableObservations.some((observation) =>
+        observation.objectId === read.payload.objectId && observation.locationId === read.payload.locationId,
+      );
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        readableObservations: alreadyRead
+          ? state.readableObservations
+          : [...state.readableObservations, {
+            objectId: read.payload.objectId,
+            locationId: read.payload.locationId,
+          }],
+        revision: event.aggregateVersion,
+      });
     } else if (event.type === 'character.npc_dialogue_choice_made') {
       if (!state) throw new Error('NPC dialogue event encountered before character creation.');
       const choice = CharacterNpcDialogueChoiceMadeEventSchema.parse(publicEvent);
@@ -112,6 +134,41 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
             progressFlagIds: [choice.payload.progressFlagId],
             lastChoiceId: choice.payload.choiceId,
           }],
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'quest.accepted') {
+      if (!state) throw new Error('Quest acceptance event encountered before character creation.');
+      const accepted = QuestAcceptedEventSchema.parse(publicEvent);
+      if (accepted.payload.characterId !== state.characterId ||
+        state.questProgress.some((progress) => progress.questId === accepted.payload.questId)) {
+        throw new Error(`Invalid quest acceptance event at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        questProgress: [...state.questProgress, {
+          questId: accepted.payload.questId,
+          definitionVersion: accepted.payload.definitionVersion,
+          status: 'active',
+        }],
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'quest.completed') {
+      if (!state) throw new Error('Quest completion event encountered before character creation.');
+      const completed = QuestCompletedEventSchema.parse(publicEvent);
+      const progress = state.questProgress.find((entry) => entry.questId === completed.payload.questId);
+      if (
+        completed.payload.characterId !== state.characterId ||
+        !progress ||
+        progress.status !== 'active' ||
+        progress.definitionVersion !== completed.payload.definitionVersion
+      ) {
+        throw new Error(`Invalid quest completion event at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        questProgress: state.questProgress.map((entry) => entry.questId === completed.payload.questId
+          ? { ...entry, status: 'completed' }
+          : entry),
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'character.renamed') {

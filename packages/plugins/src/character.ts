@@ -2,6 +2,7 @@ import {
   CharacterCreatedEventSchema,
   CharacterItemTakenEventSchema,
   CharacterItemDroppedEventSchema,
+  CharacterObjectReadEventSchema,
   CharacterRenamedEventSchema,
   CharacterArchivedEventSchema,
   CharacterRestoredEventSchema,
@@ -11,6 +12,7 @@ import {
   CreateCharacterCommandSchema,
   TakeCharacterItemCommandSchema,
   DropCharacterItemCommandSchema,
+  ReadCharacterObjectCommandSchema,
   LocationDescribeQuerySchema,
   ObjectReadQuerySchema,
   ObjectInspectQuerySchema,
@@ -106,6 +108,28 @@ export const characterPlugin: EnginePlugin = {
           version: 1,
           payload: { characterId: character.characterId, locationId: character.locationId, item },
         }],
+      };
+    });
+
+    registerCommand('character.read', ReadCharacterObjectCommandSchema, async (command, context) => {
+      const character = await state.load(context, command.characterId);
+      if (!character || character.archived) throw new Error('That character is no longer available.');
+      const location = context.world.locations.find((item) => item.id === character.locationId);
+      if (!location) throw new Error('The character location is not present in this world version.');
+      const readable = (location.readables ?? []).find((item) => item.id === command.payload.objectId);
+      if (!readable) throw new Error('That object is not readable from here.');
+      const payload = {
+        characterId: character.characterId,
+        locationId: character.locationId,
+        objectId: readable.id,
+        label: readable.label,
+        text: readable.text,
+      };
+      CharacterObjectReadEventSchema.shape.payload.parse(payload);
+      return {
+        streamId: command.characterId,
+        expectedVersion: command.expectedVersion,
+        events: [{ type: 'character.object_read', version: 1, payload }],
       };
     });
 

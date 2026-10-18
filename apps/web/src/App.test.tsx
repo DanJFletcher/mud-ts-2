@@ -18,6 +18,13 @@ let itemTaken: boolean;
 let maraChoice: string | null;
 let includeSecondTakeable: boolean;
 let secondItemTaken: boolean;
+let questJournal: Array<{
+  questId: string;
+  title: string;
+  summary: string;
+  status: 'active' | 'completed';
+  objectives: Array<{ id: string; label: string; completed: boolean }>;
+}>;
 type TestRoomChatMessage = {
   id: number;
   roomId: string;
@@ -140,6 +147,7 @@ beforeEach(() => {
   maraChoice = null;
   includeSecondTakeable = false;
   secondItemTaken = false;
+  questJournal = [];
   roomChatMessages = [];
   nextRoomChatMessageId = 1;
   apiFetch.mockReset();
@@ -196,6 +204,7 @@ beforeEach(() => {
         },
         location: currentLocation(),
         map: currentWorldMap(),
+        questJournal,
       });
     }
     if (path === '/api/queries') {
@@ -247,8 +256,25 @@ beforeEach(() => {
     if (path === '/api/commands') {
       const command = JSON.parse(String(init?.body ?? '{}')) as {
         type?: string;
-        payload?: { itemId?: string; choiceId?: string };
+        payload?: { itemId?: string; choiceId?: string; objectId?: string };
       };
+      if (command.type === 'character.read' && command.payload?.objectId === 'mossgate-marker') {
+        revision += 1;
+        return json({
+          receipt: { ok: true, newAggregateVersion: revision },
+          streamId: characterId,
+          events: [{
+            type: 'character.object_read',
+            payload: {
+              characterId,
+              locationId: 'mossgate-clearing',
+              objectId: 'mossgate-marker',
+              label: 'Weathered marker',
+              text: 'OLD BELL TOWER — EAST',
+            },
+          }],
+        });
+      }
       if (command.type === 'npc.dialogue.choose') {
         maraChoice = command.payload?.choiceId ?? null;
         revision += 1;
@@ -301,6 +327,37 @@ describe('single-character world session client', () => {
     expect(screen.getByText('A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east. One loose stone bears a pale stripe.')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: /Characters/ }));
     expect(onLeaveWorld).toHaveBeenCalledOnce();
+  });
+
+  it('shows active and completed quest objectives on Field notes', async () => {
+    questJournal = [
+      {
+        questId: 'mara-wayfinding',
+        title: 'The Waystone Path',
+        summary: 'Read the marker, visit the Old Bell Tower, and report back to Mara.',
+        status: 'active',
+        objectives: [
+          { id: 'read-marker', label: 'Read the weathered marker', completed: true },
+          { id: 'visit-bell-tower', label: 'Visit the Old Bell Tower', completed: false },
+        ],
+      },
+      {
+        questId: 'completed-sample',
+        title: 'A Completed Errand',
+        summary: 'Return a message.',
+        status: 'completed',
+        objectives: [{ id: 'deliver-message', label: 'Deliver the message', completed: true }],
+      },
+    ];
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    fireEvent.click(screen.getByRole('link', { name: 'Field notes' }));
+
+    expect(await screen.findByRole('heading', { name: 'Quest journal' })).toBeVisible();
+    expect(screen.getByText('The Waystone Path')).toBeVisible();
+    expect(screen.getByText('Visit the Old Bell Tower')).toBeVisible();
+    expect(screen.getByText('Completed')).toBeVisible();
+    expect(screen.getByText('A Completed Errand')).toBeVisible();
   });
 
   it('collapses the terminal to its room header and restores the command history', async () => {
@@ -649,7 +706,7 @@ describe('single-character world session client', () => {
     await screen.findByText('You do not see anything called “marker” here.');
   });
 
-  it('reads a current-room marker through a read-only query', async () => {
+  it('records reading a current-room marker as a character action', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     const history = screen.getByRole('region', { name: 'Terminal output' });
@@ -661,11 +718,11 @@ describe('single-character world session client', () => {
     await screen.findByText('OLD BELL TOWER — EAST');
     expect(history).toHaveTextContent('> read marker');
     const readRequest = apiFetch.mock.calls.find(([path, init]) =>
-      path === '/api/queries' &&
-      JSON.parse(String(init?.body ?? '{}')).type === 'object.read'
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'character.read'
     );
     expect(JSON.parse(String(readRequest?.[1]?.body))).toMatchObject({
-      type: 'object.read',
+      type: 'character.read',
       characterId,
       payload: { objectId: 'mossgate-marker' },
     });
@@ -674,8 +731,8 @@ describe('single-character world session client', () => {
     fireEvent.submit(commandInput.closest('form')!);
     await screen.findByText('There is nothing readable called “book” here.');
     expect(apiFetch.mock.calls.filter(([path, init]) =>
-      path === '/api/queries' &&
-      JSON.parse(String(init?.body ?? '{}')).type === 'object.read'
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'character.read'
     )).toHaveLength(1);
   });
 

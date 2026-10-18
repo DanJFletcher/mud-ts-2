@@ -10,6 +10,31 @@ const draft = {
   packId: 'mudd.first-steps',
   packVersion: '1.0.0',
   displayName: 'The Waystone Path',
+  quests: [
+    {
+      id: 'mara-wayfinding',
+      version: '1.0.0',
+      title: 'The Waystone Path',
+      summary: 'Read the marker, visit the Old Bell Tower, and report back to Mara.',
+      giverNpcId: 'mara-waykeeper',
+      turnInNpcId: 'mara-waykeeper',
+      objectives: [
+        {
+          id: 'read-marker',
+          label: 'Read the weathered marker',
+          type: 'read-object',
+          objectId: 'mossgate-marker',
+          locationId: 'mossgate-clearing',
+        },
+        {
+          id: 'visit-bell-tower',
+          label: 'Visit the Old Bell Tower',
+          type: 'visit-location',
+          locationId: 'bell-tower',
+        },
+      ],
+    },
+  ],
   locations: [
     {
       id: 'mossgate-clearing',
@@ -53,6 +78,20 @@ const draft = {
                 label: 'Ask about the bell tower',
                 response: 'The bell has been silent for years. I still hope to hear it ring again.',
                 progressFlagId: 'mara-asked-tower',
+              },
+              {
+                id: 'accept-wayfinding-quest',
+                label: "I'll follow the marker",
+                response: 'Read the marker, visit the Old Bell Tower, and come back to tell me what you found.',
+                progressFlagId: 'mara-accepted-wayfinding',
+                questAction: { type: 'accept', questId: 'mara-wayfinding' },
+              },
+              {
+                id: 'report-wayfinding-quest',
+                label: 'I visited the Old Bell Tower',
+                response: 'You followed the marker all the way to the tower. Thank you for bringing back the story of the path.',
+                progressFlagId: 'mara-reported-wayfinding',
+                questAction: { type: 'turn-in', questId: 'mara-wayfinding' },
               },
             ],
           },

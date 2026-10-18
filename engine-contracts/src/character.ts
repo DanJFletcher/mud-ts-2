@@ -43,6 +43,23 @@ export const DropCharacterItemCommandSchema = ClientCommandBaseSchema.extend({
   payload: z.object({ itemId: IdSchema }).strict(),
 }).strict();
 
+export const ReadCharacterObjectCommandSchema = ClientCommandBaseSchema.extend({
+  type: z.literal('character.read'),
+  expectedVersion: NonNegativeIntSchema,
+  payload: z.object({ objectId: IdSchema }).strict(),
+}).strict();
+
+export const CharacterObjectReadEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('character.object_read'),
+  payload: z.object({
+    characterId: IdSchema,
+    locationId: IdSchema,
+    objectId: IdSchema,
+    label: NonEmptyNameSchema,
+    text: z.string().min(1).max(4000),
+  }).strict(),
+}).strict();
+
 export const CharacterItemDroppedEventSchema = DomainEventBaseSchema.extend({
   type: z.literal('character.item_dropped'),
   payload: z.object({
@@ -124,6 +141,15 @@ export const CharacterProjectionSchema = z.object({
     progressFlagIds: z.array(IdSchema).default([]),
     lastChoiceId: IdSchema.optional(),
   }).strict()).default([]),
+  readableObservations: z.array(z.object({
+    objectId: IdSchema,
+    locationId: IdSchema,
+  }).strict()).default([]),
+  questProgress: z.array(z.object({
+    questId: IdSchema,
+    definitionVersion: z.string().min(1).max(40),
+    status: z.enum(['active', 'completed']),
+  }).strict()).default([]),
   archived: z.boolean().default(false),
 }).strict();
 
@@ -132,6 +158,8 @@ export type CharacterCreatedEvent = z.infer<typeof CharacterCreatedEventSchema>;
 export type TakeCharacterItemCommand = z.infer<typeof TakeCharacterItemCommandSchema>;
 export type CharacterItemTakenEvent = z.infer<typeof CharacterItemTakenEventSchema>;
 export type DropCharacterItemCommand = z.infer<typeof DropCharacterItemCommandSchema>;
+export type ReadCharacterObjectCommand = z.infer<typeof ReadCharacterObjectCommandSchema>;
+export type CharacterObjectReadEvent = z.infer<typeof CharacterObjectReadEventSchema>;
 export type CharacterItemDroppedEvent = z.infer<typeof CharacterItemDroppedEventSchema>;
 export type CharacterNpcDialogueChoiceMadeEvent = z.infer<typeof CharacterNpcDialogueChoiceMadeEventSchema>;
 export type InventoryItemProjection = z.infer<typeof InventoryItemProjectionSchema>;

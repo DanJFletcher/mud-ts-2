@@ -26,9 +26,13 @@ const firstCharacter = {
   name: 'Rowan',
   locationId: 'mossgate-clearing',
   locationTitle: 'Mossgate Clearing',
+  visitedLocationIds: ['mossgate-clearing'],
   revision: 1,
   inventory: [],
   itemLocations: [],
+  npcProgress: [],
+  readableObservations: [],
+  questProgress: [],
   archived: false,
 };
 const secondCharacter = {
@@ -37,6 +41,7 @@ const secondCharacter = {
   name: 'Moss',
   locationId: 'glasswater-bridge',
   locationTitle: 'Glasswater Bridge',
+  visitedLocationIds: ['mossgate-clearing', 'glasswater-bridge'],
 };
 
 let characters: CharacterRosterSnapshot['characters'];
