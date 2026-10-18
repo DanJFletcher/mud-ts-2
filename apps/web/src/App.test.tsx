@@ -362,6 +362,25 @@ describe('single-character world session client', () => {
     expect(screen.getByText('Visit the Old Bell Tower')).toBeVisible();
     expect(screen.getByText('Completed')).toBeVisible();
     expect(screen.getByText('A Completed Errand')).toBeVisible();
+
+    const currentQuestsToggle = screen.getByRole('button', { name: 'Current quests' });
+    const completedQuestsToggle = screen.getByRole('button', { name: 'Completed quests' });
+    expect(currentQuestsToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(completedQuestsToggle).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(currentQuestsToggle);
+    expect(currentQuestsToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByText('Visit the Old Bell Tower')).not.toBeVisible();
+    expect(screen.getByText('A Completed Errand')).toBeVisible();
+
+    fireEvent.click(completedQuestsToggle);
+    expect(completedQuestsToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByText('A Completed Errand')).not.toBeVisible();
+    expect(currentQuestsToggle).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(currentQuestsToggle);
+    expect(screen.getByText('Visit the Old Bell Tower')).toBeVisible();
+    expect(screen.getByText('A Completed Errand')).not.toBeVisible();
   });
 
   it('collapses the terminal to its room header and restores the command history', async () => {

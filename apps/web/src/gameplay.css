@@ -985,7 +985,25 @@
   font-size: 1.1rem;
 }
 .focused-quest-group { display: grid; gap: 8px; margin-top: 14px; }
-.focused-quest-group-title { margin: 0; color: var(--mudd-text); font-size: .9rem; }
+.focused-quest-group-title { margin: 0; font-size: .9rem; }
+.focused-quest-group-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--mudd-border);
+  border-radius: 8px;
+  color: var(--mudd-text);
+  background: var(--mudd-bg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.focused-quest-group-toggle:focus-visible { outline: 2px solid var(--mudd-accent); outline-offset: 2px; }
+.focused-quest-group-content { display: grid; gap: 8px; }
+.focused-quest-group-content[hidden] { display: none; }
 .focused-quest-list { display: grid; gap: 10px; }
 .focused-quest-card {
   padding: 12px;
