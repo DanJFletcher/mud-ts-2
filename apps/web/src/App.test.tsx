@@ -381,6 +381,26 @@ describe('single-character world session client', () => {
     fireEvent.click(currentQuestsToggle);
     expect(screen.getByText('Visit the Old Bell Tower')).toBeVisible();
     expect(screen.getByText('A Completed Errand')).not.toBeVisible();
+
+    fireEvent.click(completedQuestsToggle);
+    const currentQuestToggle = screen.getByRole('button', { name: /The Waystone Path/ });
+    const completedQuestToggle = screen.getByRole('button', { name: /A Completed Errand/ });
+    expect(currentQuestToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(completedQuestToggle).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(currentQuestToggle);
+    expect(currentQuestToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByText('Visit the Old Bell Tower')).not.toBeVisible();
+    expect(screen.getByText('Deliver the message')).toBeVisible();
+
+    fireEvent.click(completedQuestToggle);
+    expect(completedQuestToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByText('Deliver the message')).not.toBeVisible();
+    expect(currentQuestToggle).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(currentQuestToggle);
+    expect(screen.getByText('Visit the Old Bell Tower')).toBeVisible();
+    expect(screen.getByText('Deliver the message')).not.toBeVisible();
   });
 
   it('collapses the terminal to its room header and restores the command history', async () => {

@@ -125,6 +125,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "go" | "look" | "read" | "drop" | "take" | "talk">("quick");
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [collapsedQuestGroups, setCollapsedQuestGroups] = useState({ active: false, completed: false });
+  const [collapsedQuestCards, setCollapsedQuestCards] = useState<Set<string>>(() => new Set());
   const [activeDialogue, setActiveDialogue] = useState<DialogueProjection | null>(null);
   const [connectionError, setConnectionError] = useState("");
   const [inspectedCarriedItem, setInspectedCarriedItem] = useState<{ id: string; label: string; description: string }>();
@@ -1141,28 +1142,50 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                       <div className="focused-quest-group-content" hidden={collapsed} id={`quest-group-${status}`}>
                         {quests.length ? (
                           <div className="focused-quest-list">
-                            {quests.map((quest) => (
-                              <article className="focused-quest-card" key={quest.questId}>
-                                <div className="focused-quest-heading">
-                                  <h4>{quest.title}</h4>
-                                  <span className={`focused-quest-status focused-quest-status--${quest.status}`}>
-                                    {quest.status === "completed" ? "Completed" : "Active"}
-                                  </span>
-                                </div>
-                                <p className="focused-quest-summary">{quest.summary}</p>
-                                <ol className="focused-quest-objectives">
-                                  {quest.objectives.map((objective) => (
-                                    <li
-                                      className={objective.completed ? "focused-quest-objective focused-quest-objective--complete" : "focused-quest-objective"}
-                                      key={objective.id}
+                            {quests.map((quest) => {
+                              const collapsed = collapsedQuestCards.has(quest.questId);
+                              const detailsId = `quest-details-${quest.questId}`;
+                              return (
+                                <article className="focused-quest-card" key={quest.questId}>
+                                  <h4 className="focused-quest-item-heading">
+                                    <button
+                                      aria-expanded={!collapsed}
+                                      aria-controls={detailsId}
+                                      className="focused-quest-toggle"
+                                      onClick={() => setCollapsedQuestCards((current) => {
+                                        const next = new Set(current);
+                                        if (collapsed) next.delete(quest.questId);
+                                        else next.add(quest.questId);
+                                        return next;
+                                      })}
+                                      type="button"
                                     >
-                                      <span aria-hidden="true">{objective.completed ? "✓" : "○"}</span>
-                                      <span>{objective.label}</span>
-                                    </li>
-                                  ))}
-                                </ol>
-                              </article>
-                            ))}
+                                      <span className="focused-quest-title">{quest.title}</span>
+                                      <span className={`focused-quest-status focused-quest-status--${quest.status}`}>
+                                        {quest.status === "completed" ? "Completed" : "Active"}
+                                      </span>
+                                      <span aria-hidden="true" className="focused-quest-toggle-indicator">
+                                        {collapsed ? "▸" : "▾"}
+                                      </span>
+                                    </button>
+                                  </h4>
+                                  <div className="focused-quest-content" hidden={collapsed} id={detailsId}>
+                                    <p className="focused-quest-summary">{quest.summary}</p>
+                                    <ol className="focused-quest-objectives">
+                                      {quest.objectives.map((objective) => (
+                                        <li
+                                          className={objective.completed ? "focused-quest-objective focused-quest-objective--complete" : "focused-quest-objective"}
+                                          key={objective.id}
+                                        >
+                                          <span aria-hidden="true">{objective.completed ? "✓" : "○"}</span>
+                                          <span>{objective.label}</span>
+                                        </li>
+                                      ))}
+                                    </ol>
+                                  </div>
+                                </article>
+                              );
+                            })}
                           </div>
                         ) : (
                           <p className="focused-quest-empty">{emptyMessage}</p>
