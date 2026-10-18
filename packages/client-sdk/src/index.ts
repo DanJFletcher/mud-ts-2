@@ -4,6 +4,7 @@ import {
   ArchiveCharacterCommandSchema,
   RestoreCharacterCommandSchema,
   LocationDescribeQuerySchema,
+  NpcDialogueChoiceCommandSchema,
   NpcTalkQuerySchema,
   ObjectReadQuerySchema,
   ObjectInspectQuerySchema,
@@ -212,6 +213,25 @@ export class MuddHttpClient {
     });
     if (!result.ok || !result.value) throw new Error(result.message ?? 'Unable to speak to that person.');
     return result.value;
+  }
+
+  async chooseNpcDialogue(
+    characterId: string,
+    npcId: string,
+    choiceId: string,
+    expectedVersion: number,
+    commandId = crypto.randomUUID(),
+  ): Promise<CommandResponse> {
+    const command = NpcDialogueChoiceCommandSchema.parse({
+      type: 'npc.dialogue.choose',
+      version: 1,
+      commandId,
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      expectedVersion,
+      payload: { npcId, choiceId },
+    });
+    return this.send(command);
   }
 
   async move(characterId: string, exitId: string, expectedVersion: number, commandId = crypto.randomUUID()): Promise<CommandResponse> {

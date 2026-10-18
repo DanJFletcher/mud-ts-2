@@ -20,6 +20,7 @@ import { Compass, Moon, NotebookText, Sun, UserRound, Users } from "lucide-react
 import { RoomChatPanel } from "./RoomChatPanel.js";
 
 const client = new MuddHttpClient({ worldInstanceId: "mudd-demo-instance" });
+type DialogueProjection = Awaited<ReturnType<MuddHttpClient["talk"]>>;
 type Screen = "play" | "traveler" | "notes";
 type WorldClientProps = { onLeaveWorld: () => Promise<void> };
 type VisibleRoomObject = NonNullable<GameSnapshot["location"]>["objects"][number];
@@ -54,7 +55,7 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
   ],
   talk: [
     "Usage: talk <npc> [about <topic>]",
-    "Speak privately with someone in the current room. Ask about a topic to continue.",
+    "Speak privately with someone here. Choose a reply or ask about a topic.",
   ],
   look: [
     "Usage: look | look [at] <object>",
@@ -121,6 +122,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const [quickCommandPage, setQuickCommandPage] = useState<"main" | "more">("main");
   const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "go" | "look" | "read" | "drop" | "take" | "talk">("quick");
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
+  const [activeDialogue, setActiveDialogue] = useState<DialogueProjection | null>(null);
   const [connectionError, setConnectionError] = useState("");
   const [inspectedCarriedItem, setInspectedCarriedItem] = useState<{ id: string; label: string; description: string }>();
   const [inventoryInspectError, setInventoryInspectError] = useState("");
@@ -271,12 +273,42 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     try {
       const dialogue = await client.talk(snapshot.character.characterId, npcId, topic);
       addEntry("narration", `${dialogue.npcName}: ${dialogue.text}`);
+      setActiveDialogue(dialogue.choices.length ? dialogue : null);
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "That person does not answer.");
     } finally {
       setPending(null);
     }
   }, [addEntry, pending, snapshot]);
+
+  const chooseDialogueReply = useCallback(async (choiceId: string) => {
+    if (!snapshot?.character || !activeDialogue || pending) return;
+    const choice = activeDialogue.choices.find((candidate) => candidate.id === choiceId);
+    if (!choice) return;
+
+    setPending("talk");
+    addEntry("system", `> ${choice.label}`);
+    try {
+      await client.chooseNpcDialogue(
+        snapshot.character.characterId,
+        activeDialogue.npcId,
+        choice.id,
+        snapshot.character.revision,
+      );
+      const [nextSnapshot, dialogue] = await Promise.all([
+        client.getGame(),
+        client.talk(snapshot.character.characterId, activeDialogue.npcId),
+      ]);
+      setSnapshot(nextSnapshot);
+      setConnectionError("");
+      setActiveDialogue(dialogue.choices.length ? dialogue : null);
+      addEntry("narration", `${dialogue.npcName}: ${dialogue.text}`);
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "That reply is no longer available.");
+    } finally {
+      setPending(null);
+    }
+  }, [activeDialogue, addEntry, pending, snapshot]);
 
   const takeObject = useCallback(async (itemId: string, label: string) => {
     if (!snapshot?.character || !snapshot.location || pending) return;
@@ -355,6 +387,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     try {
       await client.move(snapshot.character.characterId, exit.id, snapshot.location.revision);
       await refreshAfterMutation(`You travel ${exit.direction || exit.label}.`);
+      setActiveDialogue(null);
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "Unable to move.");
     } finally {
@@ -648,6 +681,27 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                   >
                     {entries.length > 0 && <ActivityLog entries={entries} label="Terminal transcript" />}
                   </div>
+                  {activeDialogue?.choices.length ? (
+                    <div className="focused-terminal-dialogue">
+                      <div
+                        className="focused-terminal-dialogue__choices"
+                        role="group"
+                        aria-label={`${activeDialogue.npcName} dialogue choices`}
+                      >
+                        {activeDialogue.choices.map((choice) => (
+                          <button
+                            key={choice.id}
+                            type="button"
+                            className="focused-quick-command"
+                            onClick={() => void chooseDialogueReply(choice.id)}
+                            disabled={pending !== null}
+                          >
+                            {choice.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                   <section className="focused-quick-commands" aria-label="Quick commands">
                     {quickCommandMode !== "quick" && (
                       <span className="focused-quick-commands__label" aria-hidden="true">

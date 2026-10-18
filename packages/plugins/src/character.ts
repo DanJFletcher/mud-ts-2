@@ -22,7 +22,7 @@ import type { EngineCommandContext, EnginePlugin, QueryContext } from '@mudd/eng
 import { replayCharacter } from '@mudd/engine-core';
 import type { CharacterProjection } from '@mudd/contracts';
 
-interface CharacterStateCapability {
+export interface CharacterStateCapability {
   load(context: EngineCommandContext | QueryContext, characterId: string): Promise<CharacterProjection | undefined>;
 }
 

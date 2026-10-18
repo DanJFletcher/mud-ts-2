@@ -1,6 +1,6 @@
 /** PROPOSED v0.1: portable definitions vs runtime, read-only player projections. */
 import { z } from 'zod';
-import { ClientQueryBaseSchema } from './protocol.js';
+import { ClientCommandBaseSchema, ClientQueryBaseSchema } from './protocol.js';
 import { ContractVersionSchema, IdSchema, NonNegativeIntSchema } from './ids.js';
 
 export const ExitDefinitionSchema = z.object({
@@ -31,12 +31,46 @@ export const NpcDialogueTopicDefinitionSchema = z.object({
   response: z.string().min(1).max(2000),
 }).strict();
 
+export const NpcDialogueChoiceDefinitionSchema = z.object({
+  id: IdSchema,
+  label: z.string().min(1).max(120),
+  response: z.string().min(1).max(2000),
+  progressFlagId: IdSchema,
+}).strict();
+
+export const NpcDialogueDefinitionSchema = z.object({
+  prompt: z.string().min(1).max(2000),
+  choices: z.array(NpcDialogueChoiceDefinitionSchema).min(1).max(8),
+}).strict().superRefine((dialogue, context) => {
+  const choiceIds = new Set<string>();
+  const progressFlagIds = new Set<string>();
+  dialogue.choices.forEach((choice, index) => {
+    if (choiceIds.has(choice.id)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['choices', index, 'id'],
+        message: 'Dialogue choice IDs must be unique.',
+      });
+    }
+    if (progressFlagIds.has(choice.progressFlagId)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['choices', index, 'progressFlagId'],
+        message: 'Dialogue progress flags must be unique.',
+      });
+    }
+    choiceIds.add(choice.id);
+    progressFlagIds.add(choice.progressFlagId);
+  });
+});
+
 export const NpcDefinitionSchema = z.object({
   id: IdSchema,
   name: z.string().min(1).max(120),
   description: z.string().min(1).max(1000),
   greeting: z.string().min(1).max(2000),
   topics: z.array(NpcDialogueTopicDefinitionSchema).max(24),
+  dialogue: NpcDialogueDefinitionSchema.optional(),
   unknownTopicResponse: z.string().min(1).max(2000),
   announcements: z.array(z.string().min(1).max(500)).max(24).optional(),
 }).strict();
@@ -89,6 +123,15 @@ export const NpcTalkQuerySchema = ClientQueryBaseSchema.extend({
   }).strict(),
 }).strict();
 
+export const NpcDialogueChoiceCommandSchema = ClientCommandBaseSchema.extend({
+  type: z.literal('npc.dialogue.choose'),
+  expectedVersion: NonNegativeIntSchema,
+  payload: z.object({
+    npcId: IdSchema,
+    choiceId: IdSchema,
+  }).strict(),
+}).strict();
+
 export const ReadableObjectProjectionSchema = z.object({
   id: IdSchema,
   label: z.string(),
@@ -105,6 +148,10 @@ export const NpcDialogueProjectionSchema = z.object({
   npcId: IdSchema,
   npcName: z.string().min(1).max(120),
   text: z.string().min(1).max(2000),
+  choices: z.array(z.object({
+    id: IdSchema,
+    label: z.string().min(1).max(120),
+  }).strict()).max(8),
 }).strict();
 
 export const ExitProjectionSchema = z.object({
@@ -143,8 +190,11 @@ export type ObjectInspectQuery = z.infer<typeof ObjectInspectQuerySchema>;
 export type ReadableObjectDefinition = z.infer<typeof ReadableObjectDefinitionSchema>;
 export type TakeableObjectDefinition = z.infer<typeof TakeableObjectDefinitionSchema>;
 export type NpcDefinition = z.infer<typeof NpcDefinitionSchema>;
+export type NpcDialogueDefinition = z.infer<typeof NpcDialogueDefinitionSchema>;
+export type NpcDialogueChoiceDefinition = z.infer<typeof NpcDialogueChoiceDefinitionSchema>;
 export type NpcPresenceProjection = z.infer<typeof NpcPresenceProjectionSchema>;
 export type NpcTalkQuery = z.infer<typeof NpcTalkQuerySchema>;
+export type NpcDialogueChoiceCommand = z.infer<typeof NpcDialogueChoiceCommandSchema>;
 export type NpcDialogueProjection = z.infer<typeof NpcDialogueProjectionSchema>;
 export type ReadableObjectProjection = z.infer<typeof ReadableObjectProjectionSchema>;
 export type ObjectInspectionProjection = z.infer<typeof ObjectInspectionProjectionSchema>;

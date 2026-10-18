@@ -38,6 +38,23 @@ const draft = {
           name: 'Mara',
           description: 'A path keeper stands beside the weathered marker, watching the northern trail.',
           greeting: 'The north bridge is open. The marker points east to the Old Bell Tower.',
+          dialogue: {
+            prompt: 'The old paths still have their stories. What would you like to ask?',
+            choices: [
+              {
+                id: 'ask-marker',
+                label: 'Ask about the marker',
+                response: 'The marker points east to the Old Bell Tower. Its direction is still true.',
+                progressFlagId: 'mara-asked-marker',
+              },
+              {
+                id: 'ask-tower',
+                label: 'Ask about the bell tower',
+                response: 'The bell has been silent for years. I still hope to hear it ring again.',
+                progressFlagId: 'mara-asked-tower',
+              },
+            ],
+          },
           topics: [
             {
               id: 'marker',

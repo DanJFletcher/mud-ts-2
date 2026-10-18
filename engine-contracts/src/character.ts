@@ -52,6 +52,16 @@ export const CharacterItemDroppedEventSchema = DomainEventBaseSchema.extend({
   }).strict(),
 }).strict();
 
+export const CharacterNpcDialogueChoiceMadeEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('character.npc_dialogue_choice_made'),
+  payload: z.object({
+    characterId: IdSchema,
+    npcId: IdSchema,
+    choiceId: IdSchema,
+    progressFlagId: IdSchema,
+  }).strict(),
+}).strict();
+
 export const RenameCharacterCommandSchema = z.object({
   type: z.literal('character.rename'),
   version: ContractVersionSchema,
@@ -108,6 +118,11 @@ export const CharacterProjectionSchema = z.object({
     item: InventoryItemProjectionSchema,
     locationId: IdSchema.nullable(),
   }).strict()).default([]),
+  npcProgress: z.array(z.object({
+    npcId: IdSchema,
+    progressFlagIds: z.array(IdSchema).default([]),
+    lastChoiceId: IdSchema.optional(),
+  }).strict()).default([]),
   archived: z.boolean().default(false),
 }).strict();
 
@@ -117,6 +132,7 @@ export type TakeCharacterItemCommand = z.infer<typeof TakeCharacterItemCommandSc
 export type CharacterItemTakenEvent = z.infer<typeof CharacterItemTakenEventSchema>;
 export type DropCharacterItemCommand = z.infer<typeof DropCharacterItemCommandSchema>;
 export type CharacterItemDroppedEvent = z.infer<typeof CharacterItemDroppedEventSchema>;
+export type CharacterNpcDialogueChoiceMadeEvent = z.infer<typeof CharacterNpcDialogueChoiceMadeEventSchema>;
 export type InventoryItemProjection = z.infer<typeof InventoryItemProjectionSchema>;
 export type RenameCharacterCommand = z.infer<typeof RenameCharacterCommandSchema>;
 export type ArchiveCharacterCommand = z.infer<typeof ArchiveCharacterCommandSchema>;

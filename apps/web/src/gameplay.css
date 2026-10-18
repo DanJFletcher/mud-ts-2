@@ -231,6 +231,23 @@
   background: var(--terminal-inset);
 }
 
+.focused-terminal-dialogue {
+  flex: 0 0 auto;
+  overflow-x: auto;
+  border-top: 1px solid var(--terminal-line);
+  padding: .4rem .6rem;
+  background: var(--terminal-inset);
+  scrollbar-width: thin;
+}
+
+.focused-terminal-dialogue__choices {
+  display: flex;
+  width: max-content;
+  min-width: 100%;
+  align-items: center;
+  gap: .45rem;
+}
+
 .focused-quick-commands__label {
   flex: 0 0 auto;
   color: var(--terminal-muted);

@@ -2,6 +2,7 @@ import type { StoredGameEvent } from './types.js';
 import {
   CharacterItemTakenEventSchema,
   CharacterItemDroppedEventSchema,
+  CharacterNpcDialogueChoiceMadeEventSchema,
   CharacterProjectionSchema,
   CharacterCreatedEventSchema,
   CharacterMovedEventSchema,
@@ -80,6 +81,33 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         itemLocations: state.itemLocations.map((entry) => entry.item.id === dropped.payload.item.id
           ? { ...entry, locationId: dropped.payload.locationId }
           : entry),
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.npc_dialogue_choice_made') {
+      if (!state) throw new Error('NPC dialogue event encountered before character creation.');
+      const choice = CharacterNpcDialogueChoiceMadeEventSchema.parse(publicEvent);
+      if (choice.payload.characterId !== state.characterId) {
+        throw new Error(`Invalid NPC dialogue event at revision ${event.aggregateVersion}.`);
+      }
+      const existingProgress = state.npcProgress.find((entry) => entry.npcId === choice.payload.npcId);
+      if (existingProgress?.progressFlagIds.includes(choice.payload.progressFlagId)) {
+        throw new Error(`Duplicate NPC dialogue progress at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        npcProgress: existingProgress
+          ? state.npcProgress.map((entry) => entry.npcId === choice.payload.npcId
+            ? {
+              ...entry,
+              progressFlagIds: [...entry.progressFlagIds, choice.payload.progressFlagId],
+              lastChoiceId: choice.payload.choiceId,
+            }
+            : entry)
+          : [...state.npcProgress, {
+            npcId: choice.payload.npcId,
+            progressFlagIds: [choice.payload.progressFlagId],
+            lastChoiceId: choice.payload.choiceId,
+          }],
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'character.renamed') {

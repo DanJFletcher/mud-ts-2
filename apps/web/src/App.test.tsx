@@ -14,6 +14,7 @@ let room: 'clearing' | 'bridge';
 let revision: number;
 let moveError: string | null;
 let itemTaken: boolean;
+let maraChoice: string | null;
 let includeSecondTakeable: boolean;
 let secondItemTaken: boolean;
 type TestRoomChatMessage = {
@@ -115,6 +116,7 @@ beforeEach(() => {
   revision = 1;
   moveError = null;
   itemTaken = false;
+  maraChoice = null;
   includeSecondTakeable = false;
   secondItemTaken = false;
   roomChatMessages = [];
@@ -182,14 +184,24 @@ beforeEach(() => {
         const npc = currentLocation().npcs.find((candidate) => candidate.id === query.payload?.npcId);
         if (!npc) return json({ ok: false, message: 'That person is not here.' }, 403);
         const topic = query.payload?.topic?.toLocaleLowerCase();
-        const text = !topic
-          ? 'The north bridge is open. The marker points east to the Old Bell Tower.'
-          : topic.includes('bell') || topic.includes('tower')
+        const text = topic
+          ? topic.includes('bell') || topic.includes('tower')
             ? 'The bell has not rung in years. The tower stands east of this clearing.'
             : topic.includes('marker') || topic.includes('sign') || topic.includes('east')
               ? 'The marker is old, but the carving still points east toward the Old Bell Tower.'
-              : 'Ask me about the marker or the bell tower.';
-        return json({ ok: true, value: { npcId: npc.id, npcName: npc.name, text } });
+              : 'Ask me about the marker or the bell tower.'
+          : maraChoice === 'ask-marker'
+            ? 'The marker points east to the Old Bell Tower. Its direction is still true.'
+            : maraChoice === 'ask-tower'
+              ? 'The bell has been silent for years. I still hope to hear it ring again.'
+              : 'The old paths still have their stories. What would you like to ask?';
+        const choices = topic
+          ? []
+          : [
+            ...(maraChoice !== 'ask-marker' ? [{ id: 'ask-marker', label: 'Ask about the marker' }] : []),
+            ...(maraChoice !== 'ask-tower' ? [{ id: 'ask-tower', label: 'Ask about the bell tower' }] : []),
+          ];
+        return json({ ok: true, value: { npcId: npc.id, npcName: npc.name, text, choices } });
       }
       if (query.type === 'object.read' && query.payload?.objectId === 'mossgate-marker') {
         return json({ ok: true, value: { id: 'mossgate-marker', label: 'Weathered marker', text: 'OLD BELL TOWER — EAST' } });
@@ -210,7 +222,15 @@ beforeEach(() => {
       return json({ ok: true, value: currentLocation() });
     }
     if (path === '/api/commands') {
-      const command = JSON.parse(String(init?.body ?? '{}')) as { type?: string; payload?: { itemId?: string } };
+      const command = JSON.parse(String(init?.body ?? '{}')) as {
+        type?: string;
+        payload?: { itemId?: string; choiceId?: string };
+      };
+      if (command.type === 'npc.dialogue.choose') {
+        maraChoice = command.payload?.choiceId ?? null;
+        revision += 1;
+        return json({ receipt: { ok: true, newAggregateVersion: revision }, streamId: characterId });
+      }
       if (command.type === 'character.take') {
         if (command.payload?.itemId === 'mossgate-loose-stone') itemTaken = true;
         if (command.payload?.itemId === 'mossgate-lost-feather') secondItemTaken = true;
@@ -397,7 +417,7 @@ describe('single-character world session client', () => {
     expect(apiFetch.mock.calls.some(([path]) => path === '/api/commands' || path === '/api/queries')).toBe(false);
   });
 
-  it('talks privately to a nearby NPC, supports topics, and exposes Talk in quick actions', async () => {
+  it('keeps NPC choices private in the terminal and exposes them as persistent actions', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     const history = screen.getByRole('region', { name: 'Terminal output' });
@@ -406,9 +426,10 @@ describe('single-character world session client', () => {
 
     fireEvent.change(commandInput, { target: { value: 'talk Mara' } });
     fireEvent.submit(commandInput.closest('form')!);
-    await screen.findByText('Mara: The north bridge is open. The marker points east to the Old Bell Tower.');
+    await screen.findByText('Mara: The old paths still have their stories. What would you like to ask?');
     expect(history).toHaveTextContent('> talk Mara');
-    expect(chat).not.toHaveTextContent('The north bridge is open. The marker points east to the Old Bell Tower.');
+    expect(chat).not.toHaveTextContent('What would you like to ask?');
+    expect(screen.getByRole('group', { name: 'Mara dialogue choices' })).toHaveTextContent('Ask about the marker');
     const greetingRequest = apiFetch.mock.calls.find(([path, init]) =>
       path === '/api/queries' &&
       JSON.parse(String(init?.body ?? '{}')).type === 'npc.talk'
@@ -419,6 +440,13 @@ describe('single-character world session client', () => {
       payload: { npcId: 'mara-waykeeper' },
     });
 
+    fireEvent.click(screen.getByRole('button', { name: 'Ask about the marker' }));
+    await screen.findByText('Mara: The marker points east to the Old Bell Tower. Its direction is still true.');
+    const remainingChoices = screen.getByRole('group', { name: 'Mara dialogue choices' });
+    expect(remainingChoices).toHaveTextContent('Ask about the bell tower');
+    expect(remainingChoices).not.toHaveTextContent('Ask about the marker');
+    expect(chat).not.toHaveTextContent('The marker points east to the Old Bell Tower. Its direction is still true.');
+
     fireEvent.change(commandInput, { target: { value: 'talk Mara about bell' } });
     fireEvent.submit(commandInput.closest('form')!);
     await screen.findByText('Mara: The bell has not rung in years. The tower stands east of this clearing.');
@@ -428,7 +456,17 @@ describe('single-character world session client', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Talk to Mara' }));
     expect(screen.getByRole('button', { name: 'Show more quick actions' })).toBeVisible();
     await waitFor(() => {
-      expect(screen.getAllByText('Mara: The north bridge is open. The marker points east to the Old Bell Tower.')).toHaveLength(2);
+      expect(screen.getAllByText('Mara: The marker points east to the Old Bell Tower. Its direction is still true.')).toHaveLength(2);
+    });
+
+    quickGo('north');
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    quickGo('south');
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    fireEvent.change(commandInput, { target: { value: 'talk Mara' } });
+    fireEvent.submit(commandInput.closest('form')!);
+    await waitFor(() => {
+      expect(screen.getAllByText('Mara: The marker points east to the Old Bell Tower. Its direction is still true.')).toHaveLength(3);
     });
 
     quickGo('north');
