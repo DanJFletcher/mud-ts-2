@@ -74,6 +74,7 @@
   margin: 0 auto;
   flex: 1;
   padding: 8px 0 16px;
+  touch-action: pan-y;
   animation: focused-enter 220ms ease both;
 }
 
@@ -336,15 +337,59 @@
 
 .focused-room-chat__header {
   display: flex;
-  min-height: 32px;
+  min-height: 44px;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 5px 10px;
+  padding: 0 8px;
   border-bottom: 1px solid var(--mudd-border);
 }
 
 .focused-room-chat__header .focused-kicker { margin: 0; }
+
+.focused-room-chat__fullscreen-button {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  color: var(--mudd-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.focused-room-chat__fullscreen-button:hover {
+  color: var(--mudd-text);
+  background: color-mix(in srgb, var(--mudd-accent) 10%, transparent);
+}
+
+.focused-room-chat__fullscreen-button:focus-visible {
+  outline: 2px solid var(--mudd-accent);
+  outline-offset: -2px;
+}
+
+.focused-room-chat--fullscreen {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100dvh;
+  min-height: 100dvh;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  border: 0;
+  border-radius: 0;
+  background: var(--mudd-bg);
+  touch-action: pan-y;
+}
+
+.focused-room-chat--fullscreen .focused-room-chat__header {
+  min-height: 52px;
+  padding-inline: 12px;
+}
 
 .focused-room-chat__status {
   color: var(--mudd-muted);
@@ -363,6 +408,13 @@
   padding: 8px 10px;
   background: color-mix(in srgb, var(--mudd-surface-raised) 66%, transparent);
   overscroll-behavior: contain;
+}
+
+.focused-room-chat--fullscreen .focused-room-chat__messages {
+  min-height: 0;
+  max-height: none;
+  height: 100%;
+  padding: 16px;
 }
 
 .focused-room-chat__message {
@@ -426,6 +478,10 @@
   background: #34483a;
   font-size: .75rem;
 }
+
+.focused-room-chat--fullscreen .focused-room-chat__composer { padding: 12px; }
+.focused-room-chat--fullscreen .focused-room-chat__composer input,
+.focused-room-chat--fullscreen .focused-room-chat__composer .mudd-button { min-height: 48px; }
 
 .focused-room-chat__error {
   margin: 0;

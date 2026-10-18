@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type TouchEvent as ReactTouchEvent,
+} from "react";
 import { MuddHttpClient, type GameSnapshot } from "@mudd/client-sdk";
 import {
   ActivityLog,
@@ -104,10 +112,12 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     window.localStorage.getItem("mudd-theme") === "dark" ? "dark" : "light"
   );
   const [screen, setScreen] = useState<Screen>(currentScreen);
+  const [chatFullscreen, setChatFullscreen] = useState(false);
   const contentRef = useRef<HTMLElement>(null);
   const terminalHistoryRef = useRef<HTMLDivElement>(null);
   const terminalFollowsLatestRef = useRef(true);
   const lastRoomLookIdRef = useRef<string | null>(null);
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const addEntry = useCallback((kind: ActivityEntry["kind"], text: string) => {
     terminalFollowsLatestRef.current = true;
@@ -470,6 +480,33 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   );
   const quickReturnLabel = quickCommandPage === "more" ? "Return to more quick actions" : "Return to quick commands";
 
+  const handleContentTouchStart = (event: ReactTouchEvent<HTMLElement>) => {
+    const touch = event.touches[0];
+    const target = event.target;
+    if (
+      screen !== "play" ||
+      !touch ||
+      (target instanceof Element && target.closest("input, textarea, button, a, select"))
+    ) {
+      swipeStartRef.current = null;
+      return;
+    }
+    swipeStartRef.current = { x: touch.clientX, y: touch.clientY };
+  };
+
+  const handleContentTouchEnd = (event: ReactTouchEvent<HTMLElement>) => {
+    const start = swipeStartRef.current;
+    const touch = event.changedTouches[0];
+    swipeStartRef.current = null;
+    if (!start || !touch) return;
+
+    const deltaX = touch.clientX - start.x;
+    const deltaY = touch.clientY - start.y;
+    if (Math.abs(deltaX) < 80 || Math.abs(deltaY) > 60) return;
+    if (deltaX > 0 && !chatFullscreen) setChatFullscreen(true);
+    if (deltaX < 0 && chatFullscreen) setChatFullscreen(false);
+  };
+
   return (
     <main className="focused-client" data-theme={theme}>
       <header className="focused-topbar">
@@ -492,7 +529,16 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
         </div>
       </header>
 
-      <section className="focused-content" key={screen} ref={contentRef} tabIndex={-1} aria-label={screen === "notes" ? "Field notes screen" : `${screen === "play" ? "Play" : "Traveler"} screen`}>
+      <section
+        className="focused-content"
+        key={screen}
+        ref={contentRef}
+        tabIndex={-1}
+        aria-label={screen === "notes" ? "Field notes screen" : `${screen === "play" ? "Play" : "Traveler"} screen`}
+        onTouchStart={handleContentTouchStart}
+        onTouchEnd={handleContentTouchEnd}
+        onTouchCancel={() => { swipeStartRef.current = null; }}
+      >
         {connectionError && !snapshot && screen !== "play" && (
           <div className="focused-feedback focused-feedback--error" role="alert">
             <span aria-hidden="true">!</span>
@@ -801,7 +847,11 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                     </form>
                   </section>
                 </Panel>
-                <RoomChatPanel roomId={snapshot.location.locationId} />
+                <RoomChatPanel
+                  roomId={snapshot.location.locationId}
+                  fullscreen={chatFullscreen}
+                  onFullscreenChange={setChatFullscreen}
+                />
               </>
             ) : (
               <Panel className="focused-room focused-connection" eyebrow="World session" title="Character unavailable">

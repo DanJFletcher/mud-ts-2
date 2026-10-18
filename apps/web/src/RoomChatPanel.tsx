@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { createPortal } from 'react-dom';
+import { Maximize2, X } from 'lucide-react';
 import { Button } from '@mudd/ui';
 
 export type RoomChatMessage = Readonly<{
@@ -10,7 +12,11 @@ export type RoomChatMessage = Readonly<{
   createdAt: string;
 }>;
 
-type RoomChatPanelProps = Readonly<{ roomId: string }>;
+type RoomChatPanelProps = Readonly<{
+  roomId: string;
+  fullscreen: boolean;
+  onFullscreenChange: (fullscreen: boolean) => void;
+}>;
 type RoomChatResponse = Readonly<{ roomId: string; messages: readonly RoomChatMessage[] }>;
 type MessageResponse = Readonly<{ message: RoomChatMessage }>;
 
@@ -27,7 +33,7 @@ function mergeMessages(current: readonly RoomChatMessage[], incoming: readonly R
   return [...messages.values()].sort((left, right) => left.id - right.id).slice(-100);
 }
 
-export function RoomChatPanel({ roomId }: RoomChatPanelProps) {
+export function RoomChatPanel({ roomId, fullscreen, onFullscreenChange }: RoomChatPanelProps) {
   const [messages, setMessages] = useState<readonly RoomChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(true);
@@ -39,8 +45,36 @@ export function RoomChatPanel({ roomId }: RoomChatPanelProps) {
   const currentRoomIdRef = useRef(roomId);
   const lastMessageIdRef = useRef(0);
   const initialLoadCompleteRef = useRef(false);
+  const expandButtonRef = useRef<HTMLButtonElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const wasFullscreenRef = useRef(false);
 
   currentRoomIdRef.current = roomId;
+
+  useEffect(() => {
+    if (!fullscreen) {
+      if (wasFullscreenRef.current) expandButtonRef.current?.focus();
+      wasFullscreenRef.current = false;
+      return;
+    }
+
+    wasFullscreenRef.current = true;
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousDocumentOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onFullscreenChange(false);
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    closeButtonRef.current?.focus();
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousDocumentOverflow;
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [fullscreen, onFullscreenChange]);
 
   useEffect(() => {
     let active = true;
@@ -136,13 +170,28 @@ export function RoomChatPanel({ roomId }: RoomChatPanelProps) {
     }
   };
 
-  return (
-    <section className="focused-room-chat" aria-label="Room chat">
+  const panel = (
+    <section
+      className={`focused-room-chat${fullscreen ? ' focused-room-chat--fullscreen' : ''}`}
+      aria-label="Room chat"
+      role={fullscreen ? 'dialog' : undefined}
+      aria-modal={fullscreen ? true : undefined}
+    >
       <div className="focused-room-chat__header">
         <h2 className="focused-kicker">Room chat</h2>
         <span className="focused-room-chat__status" aria-live="polite">
           {loadError ? 'Reconnecting' : loading ? 'Connecting' : 'Room'}
         </span>
+        <button
+          className="focused-room-chat__fullscreen-button"
+          type="button"
+          ref={fullscreen ? closeButtonRef : expandButtonRef}
+          onClick={() => onFullscreenChange(!fullscreen)}
+          aria-label={fullscreen ? 'Close full-screen chat' : 'Open chat full screen'}
+          title={fullscreen ? 'Close chat' : 'Open full-screen chat'}
+        >
+          {fullscreen ? <X size={17} aria-hidden="true" /> : <Maximize2 size={17} aria-hidden="true" />}
+        </button>
       </div>
       <div
         className="focused-room-chat__messages"
@@ -190,4 +239,6 @@ export function RoomChatPanel({ roomId }: RoomChatPanelProps) {
       {sendError && <p className="focused-room-chat__error" role="alert">{sendError}</p>}
     </section>
   );
+
+  return fullscreen ? createPortal(panel, document.body) : panel;
 }

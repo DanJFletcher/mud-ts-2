@@ -80,6 +80,28 @@ function quickGo(direction: 'north' | 'south') {
   fireEvent.click(screen.getByRole('button', { name: `Go ${direction}` }));
 }
 
+function fireTouchSwipe(
+  target: Element,
+  start: Readonly<{ x: number; y: number }>,
+  end: Readonly<{ x: number; y: number }>,
+) {
+  const startTouch = { clientX: start.x, clientY: start.y };
+  const startEvent = new Event('touchstart', { bubbles: true, cancelable: true });
+  Object.defineProperties(startEvent, {
+    touches: { value: [startTouch] },
+    changedTouches: { value: [startTouch] },
+  });
+  fireEvent(target, startEvent);
+
+  const endTouch = { clientX: end.x, clientY: end.y };
+  const endEvent = new Event('touchend', { bubbles: true, cancelable: true });
+  Object.defineProperties(endEvent, {
+    touches: { value: [] },
+    changedTouches: { value: [endTouch] },
+  });
+  fireEvent(target, endEvent);
+}
+
 beforeEach(() => {
   window.history.replaceState(null, '', '/');
   window.localStorage.clear();
@@ -258,6 +280,26 @@ describe('single-character world session client', () => {
       roomId: 'mossgate-clearing',
       text: 'The way is clear.',
     });
+  });
+
+  it('opens room chat full screen with a right swipe and closes with a left swipe or Escape', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('region', { name: 'Room chat' });
+
+    const terminal = screen.getByRole('region', { name: 'Terminal output' });
+    fireTouchSwipe(terminal, { x: 20, y: 100 }, { x: 150, y: 105 });
+    const dialog = await screen.findByRole('dialog', { name: 'Room chat' });
+    expect(dialog).toHaveClass('focused-room-chat--fullscreen');
+    expect(screen.getByRole('button', { name: 'Close full-screen chat' })).toBeVisible();
+
+    fireTouchSwipe(screen.getByRole('log', { name: 'Room chat messages' }), { x: 220, y: 100 }, { x: 70, y: 105 });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Room chat' })).not.toBeInTheDocument());
+    expect(screen.getByRole('region', { name: 'Room chat' })).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open chat full screen' }));
+    await screen.findByRole('dialog', { name: 'Room chat' });
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Room chat' })).not.toBeInTheDocument());
   });
 
   it('uses real character-bound commands and retains the action history on Field notes', async () => {
