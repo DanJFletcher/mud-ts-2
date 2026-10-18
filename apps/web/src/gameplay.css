@@ -655,6 +655,20 @@
   font: 500 3.2px "DM Mono", monospace;
 }
 
+.focused-world-map__compass-face {
+  fill: var(--mudd-surface);
+  stroke: var(--mudd-border);
+  stroke-width: .55;
+}
+
+.focused-world-map__compass-needle--north { fill: var(--mudd-accent); }
+.focused-world-map__compass-needle--south { fill: var(--mudd-muted); }
+
+.focused-world-map__compass-direction {
+  fill: var(--mudd-text);
+  font: 600 2.5px "DM Mono", monospace;
+}
+
 .focused-world-map__legend {
   display: flex;
   justify-content: center;

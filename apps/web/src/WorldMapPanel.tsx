@@ -162,7 +162,7 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
             >
               <title>Map of visited locations</title>
               <desc>
-                {points.map((point) => `${point.name}${point.id === map?.currentLocationId ? ', current location' : ', visited'}`).join('. ')}
+                North is up. {points.map((point) => `${point.name}${point.id === map?.currentLocationId ? ', current location' : ', visited'}`).join('. ')}
               </desc>
               {map?.connections.map((connection) => {
                 const from = pointById.get(connection.fromLocationId);
@@ -179,6 +179,15 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
                   />
                 );
               })}
+              <g className="focused-world-map__compass" aria-hidden="true" transform="translate(92 12)">
+                <circle className="focused-world-map__compass-face" r="4.8" />
+                <path className="focused-world-map__compass-needle--north" d="M0 -3.7 1.4 1 0 0 -1.4 1Z" />
+                <path className="focused-world-map__compass-needle--south" d="M0 3.7 1.4 -1 0 0 -1.4 -1Z" />
+                <text className="focused-world-map__compass-direction" x="0" y="-6.5" textAnchor="middle">N</text>
+                <text className="focused-world-map__compass-direction" x="7.1" y="1" textAnchor="middle">E</text>
+                <text className="focused-world-map__compass-direction" x="0" y="8.3" textAnchor="middle">S</text>
+                <text className="focused-world-map__compass-direction" x="-7.1" y="1" textAnchor="middle">W</text>
+              </g>
               {points.map((point) => {
                 const isCurrent = point.id === map?.currentLocationId;
                 return (

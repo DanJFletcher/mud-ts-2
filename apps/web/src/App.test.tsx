@@ -306,6 +306,8 @@ describe('single-character world session client', () => {
   it('tracks the current room and rooms already visited on the map', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     const map = await screen.findByRole('region', { name: 'World map' });
+    expect(map.querySelector('.focused-world-map__compass')).toBeInTheDocument();
+    expect(map.querySelector('desc')).toHaveTextContent('North is up.');
     expect(map.querySelector('.focused-world-map__location--current')).toHaveTextContent('Mossgate Clearing');
     expect(map).not.toHaveTextContent('Glasswater Bridge');
 
