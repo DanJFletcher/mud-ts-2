@@ -229,7 +229,7 @@ const draft = {
       name: 'Glasswater Bridge',
       mapPosition: { x: 0, y: 1 },
       description:
-        'A low stone bridge crosses clear water. Reeds stir below it, and the path returns south or bends east toward a dark roofline.',
+        'A low stone bridge crosses clear water. Reeds stir below it. Paths lead south to the clearing, southeast toward the tower’s dark roofline, and northeast to Reedbank Stalls.',
       takeables: [
         {
           id: 'glasswater-reed',
@@ -378,8 +378,8 @@ const draft = {
       ],
       exits: [
         { id: 'bridge-to-clearing', fromLocationId: 'glasswater-bridge', toLocationId: 'mossgate-clearing', label: 'South to Mossgate Clearing', direction: 'south' },
-        { id: 'bridge-to-tower', fromLocationId: 'glasswater-bridge', toLocationId: 'bell-tower', label: 'East to the Old Bell Tower', direction: 'east' },
-        { id: 'bridge-to-reedbank', fromLocationId: 'glasswater-bridge', toLocationId: 'reedbank-stalls', label: 'Southeast to Reedbank Stalls', direction: 'southeast' },
+        { id: 'bridge-to-tower', fromLocationId: 'glasswater-bridge', toLocationId: 'bell-tower', label: 'Southeast to the Old Bell Tower', direction: 'southeast' },
+        { id: 'bridge-to-reedbank', fromLocationId: 'glasswater-bridge', toLocationId: 'reedbank-stalls', label: 'Northeast to Reedbank Stalls', direction: 'northeast' },
       ],
     },
     {
@@ -387,7 +387,7 @@ const draft = {
       name: 'Old Bell Tower',
       mapPosition: { x: 1, y: 0 },
       description:
-        'The roofless tower stands quiet above the trees. Its cracked bell hangs still; paths lead west to the clearing and north to the bridge.',
+        'The roofless tower stands quiet above the trees. Its cracked bell hangs still; paths lead west to the clearing and northwest to the bridge.',
       readables: [
         {
           id: 'tower-bell-inscription',
@@ -423,7 +423,7 @@ const draft = {
       ],
       exits: [
         { id: 'tower-to-clearing', fromLocationId: 'bell-tower', toLocationId: 'mossgate-clearing', label: 'West to Mossgate Clearing', direction: 'west' },
-        { id: 'tower-to-bridge', fromLocationId: 'bell-tower', toLocationId: 'glasswater-bridge', label: 'North to Glasswater Bridge', direction: 'north' },
+        { id: 'tower-to-bridge', fromLocationId: 'bell-tower', toLocationId: 'glasswater-bridge', label: 'Northwest to Glasswater Bridge', direction: 'northwest' },
         {
           id: 'tower-to-underhollow',
           fromLocationId: 'bell-tower',
@@ -461,7 +461,7 @@ const draft = {
       id: 'reedbank-stalls',
       name: 'Reedbank Stalls',
       mapPosition: { x: 1, y: 2 },
-      description: 'A row of canvas awnings faces the river. The air smells of waxed rope and lamp oil; the bridge leads west.',
+      description: 'A row of canvas awnings faces the river. The air smells of waxed rope and lamp oil; the path leads southwest to Glasswater Bridge.',
       npcs: [
         {
           id: 'sella-reedbank-merchant',
@@ -501,7 +501,7 @@ const draft = {
         },
       ],
       exits: [
-        { id: 'reedbank-to-bridge', fromLocationId: 'reedbank-stalls', toLocationId: 'glasswater-bridge', label: 'Northwest to Glasswater Bridge', direction: 'northwest' },
+        { id: 'reedbank-to-bridge', fromLocationId: 'reedbank-stalls', toLocationId: 'glasswater-bridge', label: 'Southwest to Glasswater Bridge', direction: 'southwest' },
       ],
     },
   ],

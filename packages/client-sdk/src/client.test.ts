@@ -5,6 +5,43 @@ import { characterPlugin, merchantPlugin, movementPlugin, npcDialoguePlugin } fr
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import { InitializeCharacterWalletCommandSchema } from '@mudd/contracts';
 
+describe('demo world navigation', () => {
+  const compassVectors: Record<string, readonly [number, number]> = {
+    north: [0, 1], northeast: [1, 1], east: [1, 0], southeast: [1, -1],
+    south: [0, -1], southwest: [-1, -1], west: [-1, 0], northwest: [-1, 1],
+  };
+
+  it('aligns every surface exit with its map bearing', () => {
+    for (const location of demoWorld.locations) {
+      for (const exit of location.exits) {
+        if (exit.direction === 'up' || exit.direction === 'down') continue;
+        const destination = demoWorld.locations.find((candidate) => candidate.id === exit.toLocationId)!;
+        expect(location.mapPosition, exit.id).toBeDefined();
+        expect(destination.mapPosition, exit.id).toBeDefined();
+        const bearing = [
+          Math.sign(destination.mapPosition!.x - location.mapPosition!.x),
+          Math.sign(destination.mapPosition!.y - location.mapPosition!.y),
+        ];
+        expect(compassVectors[exit.direction!], exit.id).toEqual(bearing);
+      }
+    }
+  });
+
+  it('uses opposite compass directions on return paths', () => {
+    for (const location of demoWorld.locations) {
+      for (const exit of location.exits) {
+        const vector = compassVectors[exit.direction!];
+        if (!vector) continue;
+        const destination = demoWorld.locations.find((candidate) => candidate.id === exit.toLocationId)!;
+        const reverse = destination.exits.find((candidate) => candidate.toLocationId === location.id);
+        expect(reverse, exit.id).toBeDefined();
+        expect(compassVectors[reverse!.direction!], exit.id)
+          .toEqual(vector.map((component) => component === 0 ? 0 : -component));
+      }
+    }
+  });
+});
+
 describe('MuddHttpClient', () => {
   it('rejects malformed successful HTTP responses instead of trusting a TypeScript cast', async () => {
     const client = new MuddHttpClient({

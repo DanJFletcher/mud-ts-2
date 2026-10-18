@@ -94,8 +94,8 @@ function currentLocation() {
       available: true,
     }] : [{
       id: 'reedbank-to-bridge',
-      label: 'West to Glasswater Bridge',
-      direction: 'west',
+      label: 'Southwest to Glasswater Bridge',
+      direction: 'southwest',
       available: true,
     }],
     npcs: room === 'clearing' ? [{
