@@ -161,7 +161,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<"look" | "read" | "take" | "use" | "drop" | "move" | "talk" | "shop" | "buy" | "combat" | null>(null);
   const [command, setCommand] = useState("");
-  const [quickCommandPage, setQuickCommandPage] = useState<"1" | "2" | "3" | "4">("1");
+  const [quickCommandPage, setQuickCommandPage] = useState(1);
   const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "go" | "look" | "read" | "drop" | "take" | "talk" | "attack" | "shop" | "buy" | "use" | "use-target">("quick");
   const [quickUseItemId, setQuickUseItemId] = useState<string | null>(null);
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
@@ -847,7 +847,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
 
   const submitQuickCommand = useCallback((rawCommand: string) => {
     setQuickCommandMode("quick");
-    setQuickCommandPage("1");
+    setQuickCommandPage(1);
     setQuickUseItemId(null);
     void executeCommand(rawCommand);
   }, [executeCommand]);
@@ -907,14 +907,102 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     [snapshot?.location?.npcs],
   );
   const quickBuyListings = useMemo(
-    () => activeMerchantCatalog?.listings.filter((listing) => !listing.purchased) ?? [],
-    [activeMerchantCatalog?.listings],
+    () => activeMerchantCatalog?.listings.filter((listing) =>
+      !listing.purchased && activeMerchantCatalog.currency.balance >= listing.price
+    ) ?? [],
+    [activeMerchantCatalog],
   );
   const currentCombat = snapshot?.character?.combat;
   const visibleCombat = currentCombat?.locationId === snapshot?.location?.locationId
     ? currentCombat
     : undefined;
-  const quickReturnLabel = quickCommandPage === "2" ? "Return to more quick actions" : "Return to quick commands";
+  const quickCommandItems = useMemo(() => {
+    type QuickAction = {
+      id: string;
+      label: string;
+      ariaLabel: string;
+      opensMenu: boolean;
+      onSelect: () => void;
+    };
+    const actions: QuickAction[] = [];
+    const addMode = (
+      id: string,
+      mode: "look" | "read" | "drop" | "go" | "take" | "use" | "talk" | "shop" | "buy" | "attack",
+      ariaLabel: string,
+    ) => actions.push({ id, label: id, ariaLabel, opensMenu: true, onSelect: () => setQuickCommandMode(mode) });
+    const inventory = snapshot?.character?.inventory ?? [];
+    const readableObjects = (snapshot?.location?.objects ?? []).filter((object) => object.readable);
+    const usableTargets = (snapshot?.location?.objects ?? []).filter((object) => !object.readable && !object.takeable);
+
+    addMode("look", "look", "Show look targets");
+    if (readableObjects.length > 0) addMode("read", "read", "Show readable objects");
+    if (inventory.length > 0) addMode("drop", "drop", "Show items to drop");
+    if (quickDirections.length > 0) addMode("go", "go", "Show available exits");
+    if (quickTakeableObjects.length > 0) addMode("take", "take", "Show items to take");
+    if (inventory.length > 0 && usableTargets.length > 0) addMode("use", "use", "Show items to use");
+    if ((snapshot?.location?.npcs?.length ?? 0) > 0) addMode("talk", "talk", "Show people to talk to");
+    if (quickShopNpcs.length > 0) addMode("shop", "shop", "Show merchants");
+    if (quickBuyListings.length > 0) addMode("buy", "buy", "Show items to buy");
+
+    if (visibleCombat?.status === "active") {
+      actions.push({
+        id: "attack",
+        label: "attack",
+        ariaLabel: "Attack during active combat",
+        opensMenu: false,
+        onSelect: () => submitQuickCommand("attack"),
+      });
+      actions.push({
+        id: "defend",
+        label: "defend",
+        ariaLabel: "Defend",
+        opensMenu: false,
+        onSelect: () => submitQuickCommand("defend"),
+      });
+      actions.push({
+        id: "flee",
+        label: "flee",
+        ariaLabel: "Flee",
+        opensMenu: false,
+        onSelect: () => submitQuickCommand("flee"),
+      });
+    } else if (challengeableNpcs.length > 0) {
+      addMode("attack", "attack", "Show opponents to attack");
+    }
+    actions.push({
+      id: "help",
+      label: "help",
+      ariaLabel: "Show command help",
+      opensMenu: false,
+      onSelect: () => submitQuickCommand("help"),
+    });
+    return actions;
+  }, [
+    challengeableNpcs.length,
+    quickBuyListings.length,
+    quickDirections.length,
+    quickShopNpcs.length,
+    quickTakeableObjects.length,
+    setQuickCommandMode,
+    snapshot?.character?.inventory,
+    snapshot?.location?.npcs,
+    snapshot?.location?.objects,
+    submitQuickCommand,
+    visibleCombat,
+  ]);
+  const quickCommandPages = useMemo(() => {
+    const pages: (typeof quickCommandItems)[] = [];
+    for (let index = 0; index < quickCommandItems.length; index += 4) {
+      pages.push(quickCommandItems.slice(index, index + 4));
+    }
+    return pages.length > 0 ? pages : [[]];
+  }, [quickCommandItems]);
+  const visibleQuickCommandPage = Math.min(quickCommandPage, quickCommandPages.length);
+  const visibleQuickCommandItems = quickCommandPages[visibleQuickCommandPage - 1] ?? [];
+  useEffect(() => {
+    if (quickCommandPage !== visibleQuickCommandPage) setQuickCommandPage(visibleQuickCommandPage);
+  }, [quickCommandPage, visibleQuickCommandPage]);
+  const quickReturnLabel = "Return to quick commands";
 
   const handleContentTouchStart = (event: ReactTouchEvent<HTMLElement>) => {
     const touch = event.touches[0];
@@ -1124,7 +1212,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                       role="group"
                       aria-label={
                         quickCommandMode === "quick"
-                          ? `Quick commands, page ${quickCommandPage}`
+                          ? `Quick commands, page ${visibleQuickCommandPage}`
                           : quickCommandMode === "go" ? "Available directions"
                             : quickCommandMode === "look" ? "Things to look at"
                               : quickCommandMode === "read" ? "Readable objects"
@@ -1454,44 +1542,42 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                             </>
                           )}
                         </>
-                      ) : quickCommandMode === "quick" && quickCommandPage === "1" ? (
-                        <>
-                          <button type="button" className="focused-quick-command" onClick={() => setQuickCommandMode("look")} aria-label="Show look targets" disabled={pending !== null}>look <span aria-hidden="true">›</span></button>
-                          <button type="button" className="focused-quick-command" onClick={() => setQuickCommandMode("read")} aria-label="Show readable objects" disabled={pending !== null}>read <span aria-hidden="true">›</span></button>
-                          <button type="button" className="focused-quick-command" onClick={() => setQuickCommandMode("drop")} aria-label="Show items to drop" disabled={pending !== null}>drop <span aria-hidden="true">›</span></button>
-                          <button type="button" className="focused-quick-command" onClick={() => setQuickCommandMode("go")} aria-label="Show available exits" disabled={pending !== null}>go <span aria-hidden="true">›</span></button>
-                          <button type="button" className="focused-quick-command focused-quick-command--next" onClick={() => setQuickCommandPage("2")} aria-label="Show more quick actions" disabled={pending !== null}>›</button>
-                        </>
-                      ) : quickCommandMode === "quick" && quickCommandPage === "2" ? (
-                        <>
-                          <button type="button" className="focused-quick-command focused-quick-command--back" onClick={() => setQuickCommandPage("1")} aria-label="Return to main quick actions" disabled={pending !== null}>‹</button>
-                          <button type="button" className="focused-quick-command" onClick={() => setQuickCommandMode("take")} aria-label="Show items to take" disabled={pending !== null}>take <span aria-hidden="true">›</span></button>
-                          <button type="button" className="focused-quick-command" onClick={() => setQuickCommandMode("use")} aria-label="Show items to use" disabled={pending !== null}>use <span aria-hidden="true">›</span></button>
-                          <button type="button" className="focused-quick-command" onClick={() => setQuickCommandMode("talk")} aria-label="Show people to talk to" disabled={pending !== null}>talk <span aria-hidden="true">›</span></button>
-                          <button type="button" className="focused-quick-command" onClick={() => setQuickCommandMode("shop")} aria-label="Show merchants" disabled={pending !== null}>shop <span aria-hidden="true">›</span></button>
-                          <button type="button" className="focused-quick-command focused-quick-command--next" onClick={() => setQuickCommandPage("3")} aria-label="Show quick actions page 3" disabled={pending !== null}>›</button>
-                        </>
-                      ) : quickCommandMode === "quick" && quickCommandPage === "3" ? (
-                        <>
-                          <button type="button" className="focused-quick-command focused-quick-command--back" onClick={() => setQuickCommandPage("2")} aria-label="Show quick actions page 2" disabled={pending !== null}>‹</button>
-                          <button type="button" className="focused-quick-command" onClick={() => setQuickCommandMode("buy")} aria-label="Show items to buy" disabled={pending !== null}>buy <span aria-hidden="true">›</span></button>
-                          <button
-                            type="button"
-                            className="focused-quick-command"
-                            onClick={() => visibleCombat?.status === "active" ? submitQuickCommand("attack") : setQuickCommandMode("attack")}
-                            aria-label={visibleCombat?.status === "active" ? "Attack during active combat" : "Show opponents to attack"}
-                            disabled={pending !== null}
-                          >
-                            attack{visibleCombat?.status === "active" ? "" : <span aria-hidden="true"> ›</span>}
-                          </button>
-                          <button type="button" className="focused-quick-command" onClick={() => submitQuickCommand("defend")} aria-label="Defend" disabled={pending !== null || visibleCombat?.status !== "active"}>defend</button>
-                          <button type="button" className="focused-quick-command" onClick={() => submitQuickCommand("flee")} aria-label="Flee" disabled={pending !== null || visibleCombat?.status !== "active"}>flee</button>
-                          <button type="button" className="focused-quick-command focused-quick-command--next" onClick={() => setQuickCommandPage("4")} aria-label="Show quick actions page 4" disabled={pending !== null}>›</button>
-                        </>
                       ) : quickCommandMode === "quick" ? (
                         <>
-                          <button type="button" className="focused-quick-command focused-quick-command--back" onClick={() => setQuickCommandPage("3")} aria-label="Show quick actions page 3" disabled={pending !== null}>‹</button>
-                          <button type="button" className="focused-quick-command" onClick={() => submitQuickCommand("help")} aria-label="Show command help" disabled={pending !== null}>help</button>
+                          {visibleQuickCommandPage > 1 && (
+                            <button
+                              type="button"
+                              className="focused-quick-command focused-quick-command--back"
+                              onClick={() => setQuickCommandPage(visibleQuickCommandPage - 1)}
+                              aria-label={`Show quick actions page ${visibleQuickCommandPage - 1}`}
+                              disabled={pending !== null}
+                            >
+                              ‹
+                            </button>
+                          )}
+                          {visibleQuickCommandItems.map((action) => (
+                            <button
+                              key={action.id}
+                              type="button"
+                              className="focused-quick-command"
+                              onClick={action.onSelect}
+                              aria-label={action.ariaLabel}
+                              disabled={pending !== null}
+                            >
+                              {action.label}{action.opensMenu && <span aria-hidden="true"> ›</span>}
+                            </button>
+                          ))}
+                          {visibleQuickCommandPage < quickCommandPages.length && (
+                            <button
+                              type="button"
+                              className="focused-quick-command focused-quick-command--next"
+                              onClick={() => setQuickCommandPage(visibleQuickCommandPage + 1)}
+                              aria-label={`Show quick actions page ${visibleQuickCommandPage + 1}`}
+                              disabled={pending !== null}
+                            >
+                              ›
+                            </button>
+                          )}
                         </>
                       ) : null}
                     </div>

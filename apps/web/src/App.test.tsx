@@ -158,8 +158,63 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
+function clickQuickAction(name: string) {
+  const firstPage = screen.queryByRole('button', { name: 'Show quick actions page 1' });
+  if (firstPage) fireEvent.click(firstPage);
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const action = screen.queryByRole('button', { name });
+    if (action) {
+      fireEvent.click(action);
+      return;
+    }
+    const group = screen.queryByRole('group', { name: /^Quick commands, page \d+$/ });
+    const currentPage = Number(group?.getAttribute('aria-label')?.match(/page (\d+)/)?.[1] ?? 1);
+    const nextPage = screen.queryByRole('button', { name: `Show quick actions page ${currentPage + 1}` });
+    if (!nextPage) break;
+    fireEvent.click(nextPage);
+  }
+
+  throw new Error(`Quick action "${name}" is not available.`);
+}
+
+function quickActionVisibleAnywhere(name: string) {
+  const firstPage = screen.queryByRole('button', { name: 'Show quick actions page 1' });
+  if (firstPage) fireEvent.click(firstPage);
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (screen.queryByRole('button', { name })) return true;
+    const group = screen.queryByRole('group', { name: /^Quick commands, page \d+$/ });
+    const currentPage = Number(group?.getAttribute('aria-label')?.match(/page (\d+)/)?.[1] ?? 1);
+    const nextPage = screen.queryByRole('button', { name: `Show quick actions page ${currentPage + 1}` });
+    if (!nextPage) return false;
+    fireEvent.click(nextPage);
+  }
+
+  return false;
+}
+
+async function collectQuickActionPages() {
+  const pages: string[][] = [];
+  for (let page = 1; page <= 4; page += 1) {
+    const group = await screen.findByRole('group', { name: `Quick commands, page ${page}` });
+    const buttons = within(group).getAllByRole('button');
+    pages.push(buttons
+      .filter((button) =>
+        !button.classList.contains('focused-quick-command--back') &&
+        !button.classList.contains('focused-quick-command--next')
+      )
+      .map((button) => button.getAttribute('aria-label') ?? button.textContent ?? ''));
+    expect(pages.at(-1)!.length).toBeLessThanOrEqual(4);
+    const nextPage = screen.queryByRole('button', { name: `Show quick actions page ${page + 1}` });
+    if (!nextPage) break;
+    fireEvent.click(nextPage);
+  }
+  return pages;
+}
+
 function quickGo(direction: 'north' | 'south') {
-  fireEvent.click(screen.getByRole('button', { name: 'Show available exits' }));
+  clickQuickAction('Show available exits');
   fireEvent.click(screen.getByRole('button', { name: `Go ${direction}` }));
 }
 
@@ -494,53 +549,48 @@ beforeEach(() => {
 });
 
 describe('single-character world session client', () => {
-  it('shows every quick command across pages with no more than four command actions per page', async () => {
+  it('shows only available quick commands with no more than four actions per page', async () => {
     render(<WorldClient onLeaveWorld={async () => undefined} />);
 
-    const pageActions: string[][] = [];
-    for (let page = 1; page <= 4; page += 1) {
-      const group = await screen.findByRole('group', { name: `Quick commands, page ${page}` });
-      const buttons = within(group).getAllByRole('button');
-      pageActions.push(buttons
-        .filter((button) =>
-          !button.classList.contains('focused-quick-command--back') &&
-          !button.classList.contains('focused-quick-command--next')
-        )
-        .map((button) => button.getAttribute('aria-label') ?? button.textContent ?? ''));
-      expect(pageActions.at(-1)).toHaveLength(page === 4 ? 1 : 4);
-
-      if (page < 4) {
-        fireEvent.click(screen.getByRole('button', {
-          name: page === 1 ? 'Show more quick actions' : `Show quick actions page ${page + 1}`,
-        }));
-      }
-    }
-
-    expect(pageActions.flat()).toEqual([
+    const pages = await collectQuickActionPages();
+    expect(pages.flat()).toEqual([
       'Show look targets',
       'Show readable objects',
-      'Show items to drop',
       'Show available exits',
       'Show items to take',
-      'Show items to use',
       'Show people to talk to',
-      'Show merchants',
-      'Show items to buy',
       'Show opponents to attack',
-      'Defend',
-      'Flee',
       'Show command help',
     ]);
+    expect(pages).toHaveLength(2);
+  });
+
+  it('hides target-dependent actions in a room without their targets', async () => {
+    room = 'bridge';
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+
+    expect(quickActionVisibleAnywhere('Show available exits')).toBe(true);
+    expect(quickActionVisibleAnywhere('Show items to take')).toBe(false);
+    expect(quickActionVisibleAnywhere('Show people to talk to')).toBe(false);
+    expect(quickActionVisibleAnywhere('Show opponents to attack')).toBe(false);
+    expect(quickActionVisibleAnywhere('Attack during active combat')).toBe(false);
+    expect(quickActionVisibleAnywhere('Defend')).toBe(false);
+    expect(quickActionVisibleAnywhere('Flee')).toBe(false);
+    expect(quickActionVisibleAnywhere('Show merchants')).toBe(false);
+    expect(quickActionVisibleAnywhere('Show items to buy')).toBe(false);
   });
 
   it('starts and controls combat through terminal actions backed by SDK commands', async () => {
     render(<WorldClient onLeaveWorld={async () => undefined} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Show more quick actions' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Show quick actions page 3' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Show opponents to attack' }));
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    clickQuickAction('Show opponents to attack');
     fireEvent.click(await screen.findByRole('button', { name: 'Attack Practice Sentinel' }));
     await screen.findByText('Round 1 · Practice Sentinel');
-    fireEvent.click(screen.getByRole('button', { name: 'defend' }));
+    expect(quickActionVisibleAnywhere('Attack during active combat')).toBe(true);
+    expect(quickActionVisibleAnywhere('Defend')).toBe(true);
+    expect(quickActionVisibleAnywhere('Flee')).toBe(true);
+    clickQuickAction('Defend');
     await screen.findByText('Round 2 · Practice Sentinel');
 
     const commands = apiFetch.mock.calls
@@ -914,7 +964,7 @@ describe('single-character world session client', () => {
     });
     expect(apiFetch.mock.calls.some(([path]) => path === '/api/queries')).toBe(true);
     expect(history).toHaveTextContent('> look');
-    fireEvent.click(screen.getByRole('button', { name: 'Show available exits' }));
+    clickQuickAction('Show available exits');
     expect(screen.getByRole('group', { name: 'Available directions' })).toContainElement(
       screen.getByRole('button', { name: 'Go north' }),
     );
@@ -978,8 +1028,7 @@ describe('single-character world session client', () => {
     quickGo('north');
     await screen.findByRole('heading', { name: 'Glasswater Bridge' });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show more quick actions' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Show items to use' }));
+    clickQuickAction('Show items to use');
     fireEvent.click(screen.getByRole('button', { name: 'Choose Loose stone to use' }));
     fireEvent.click(screen.getByRole('button', { name: 'Use Loose stone on Cracked bell' }));
     await screen.findByText('The mock interaction succeeds.');
@@ -1027,10 +1076,9 @@ describe('single-character world session client', () => {
     fireEvent.submit(commandInput.closest('form')!);
     await screen.findByText('Mara: The bell has not rung in years. The tower stands east of this clearing.');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show more quick actions' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Show people to talk to' }));
+    clickQuickAction('Show people to talk to');
     fireEvent.click(screen.getByRole('button', { name: 'Talk to Mara' }));
-    expect(screen.getByRole('button', { name: 'Show more quick actions' })).toBeVisible();
+    expect(screen.getByRole('group', { name: /^Quick commands, page \d+$/ })).toBeVisible();
     await waitFor(() => {
       expect(screen.getAllByText('Mara: The marker points east to the Old Bell Tower. Its direction is still true.')).toHaveLength(2);
     });
@@ -1245,7 +1293,7 @@ describe('single-character world session client', () => {
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     const history = screen.getByRole('region', { name: 'Terminal output' });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show look targets' }));
+    clickQuickAction('Show look targets');
     const lookTargets = screen.getByRole('group', { name: 'Things to look at' });
     expect(lookTargets).toContainElement(screen.getByRole('button', { name: 'Look around' }));
     expect(lookTargets).toContainElement(screen.getByRole('button', { name: 'Look at Weathered marker' }));
@@ -1253,9 +1301,9 @@ describe('single-character world session client', () => {
     await waitFor(() => expect(screen.getAllByText('> look')).toHaveLength(2));
     expect(apiFetch.mock.calls.some(([path]) => path === '/api/queries')).toBe(true);
     expect(screen.getByRole('button', { name: 'Show look targets' })).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Show more quick actions' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Show quick actions page 2' })).toBeVisible();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show available exits' }));
+    clickQuickAction('Show available exits');
     expect(screen.queryByRole('button', { name: 'Show look targets' })).not.toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Available directions' })).toContainElement(
       screen.getByRole('button', { name: 'Go north' }),
@@ -1267,7 +1315,6 @@ describe('single-character world session client', () => {
     expect(history).toHaveTextContent('You travel north.');
     expect(screen.queryByRole('button', { name: 'Go south' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Show look targets' })).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Show more quick actions' })).toBeVisible();
 
     const moveCommand = JSON.parse(
       apiFetch.mock.calls.find(([path]) => path === '/api/commands')?.[1].body as string,
@@ -1279,7 +1326,7 @@ describe('single-character world session client', () => {
       payload: { exitId: 'clearing-to-bridge' },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show available exits' }));
+    clickQuickAction('Show available exits');
     expect(screen.getByRole('group', { name: 'Available directions' })).toContainElement(
       screen.getByRole('button', { name: 'Go south' }),
     );
@@ -1296,70 +1343,53 @@ describe('single-character world session client', () => {
     expect(screen.getByRole('button', { name: 'Show look targets' })).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Quick help' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Show readable objects' })).toBeVisible();
-    expect(screen.queryByRole('button', { name: 'Show items to take' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Show more quick actions' })).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Show items to drop' })).toBeVisible();
+    expect(quickActionVisibleAnywhere('Show items to take')).toBe(true);
+    expect(quickActionVisibleAnywhere('Show items to drop')).toBe(false);
+    expect(quickActionVisibleAnywhere('Show items to use')).toBe(false);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show readable objects' }));
+    clickQuickAction('Show readable objects');
     const readableObjects = screen.getByRole('group', { name: 'Readable objects' });
     expect(readableObjects).toContainElement(screen.getByRole('button', { name: 'Read Weathered marker' }));
     fireEvent.click(screen.getByRole('button', { name: 'Read Weathered marker' }));
     await screen.findByText('OLD BELL TOWER — EAST');
     expect(history).toHaveTextContent('> read Weathered marker');
-    expect(screen.getByRole('button', { name: 'Show more quick actions' })).toBeVisible();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show more quick actions' }));
-    const moreQuickActions = screen.getByRole('group', { name: 'Quick commands, page 2' });
-    expect(screen.queryByText('More', { exact: true })).not.toBeInTheDocument();
-    expect(moreQuickActions).toContainElement(screen.getByRole('button', { name: 'Show items to use' }));
-    expect(moreQuickActions).toContainElement(screen.getByRole('button', { name: 'Show items to take' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Show items to take' }));
+    clickQuickAction('Show items to take');
     const itemsToTake = screen.getByRole('group', { name: 'Items to take' });
     expect(itemsToTake).toContainElement(screen.getByRole('button', { name: 'Take Loose stone' }));
     expect(itemsToTake).toContainElement(screen.getByRole('button', { name: 'Take all available items' }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Take Loose stone' }));
     await screen.findByText('You pick up the loose stone.');
-    expect(screen.getByRole('button', { name: 'Show look targets' })).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Show more quick actions' })).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Take Loose stone' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Take all available items' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Show more quick actions' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Show items to take' }));
-    const emptyTakeActions = screen.getByRole('group', { name: 'Items to take' });
-    expect(emptyTakeActions).toHaveTextContent('Nothing to take here');
-    fireEvent.click(screen.getByRole('button', { name: 'Return to more quick actions' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Return to main quick actions' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Show look targets' }));
+    expect(quickActionVisibleAnywhere('Show items to take')).toBe(false);
+    expect(quickActionVisibleAnywhere('Show items to drop')).toBe(true);
+
+    clickQuickAction('Show look targets');
     const updatedLookTargets = screen.getByRole('group', { name: 'Things to look at' });
     expect(updatedLookTargets).toContainElement(screen.getByRole('button', { name: 'Look at Weathered marker' }));
     expect(screen.queryByRole('button', { name: 'Look at Loose stone' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Look around' }));
     await screen.findByText('A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east.');
     expect(screen.getAllByText('A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east. One loose stone bears a pale stripe.')).toHaveLength(1);
-    expect(screen.getByRole('button', { name: 'Show more quick actions' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Show items to drop' }));
+
+    clickQuickAction('Show items to drop');
     const itemsToDrop = screen.getByRole('group', { name: 'Items to drop' });
     expect(itemsToDrop).toContainElement(screen.getByRole('button', { name: 'Drop Loose stone' }));
     fireEvent.click(screen.getByRole('button', { name: 'Drop Loose stone' }));
     await screen.findByText('You put down the loose stone.');
-    expect(screen.getByRole('button', { name: 'Show look targets' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Show items to drop' }));
-    expect(screen.getByRole('group', { name: 'Items to drop' })).toHaveTextContent('Nothing to drop');
-    fireEvent.click(screen.getByRole('button', { name: 'Return to quick commands' }));
-    expect(screen.getByRole('button', { name: 'Show more quick actions' })).toBeVisible();
+    expect(quickActionVisibleAnywhere('Show items to drop')).toBe(false);
+    expect(quickActionVisibleAnywhere('Show items to take')).toBe(true);
   });
 
-  it('offers Take all on the second quick-action page and picks up every room item', async () => {
+  it('offers Take all only while room items remain and picks up every room item', async () => {
     includeSecondTakeable = true;
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     const history = screen.getByRole('region', { name: 'Terminal output' });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show more quick actions' }));
-    expect(screen.queryByRole('button', { name: 'Quick help' })).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Show items to take' }));
+    clickQuickAction('Show items to take');
     const itemsToTake = screen.getByRole('group', { name: 'Items to take' });
     expect(itemsToTake).toContainElement(screen.getByRole('button', { name: 'Take Loose stone' }));
     expect(itemsToTake).toContainElement(screen.getByRole('button', { name: 'Take Lost feather' }));
@@ -1368,8 +1398,7 @@ describe('single-character world session client', () => {
     await screen.findByText('You pick up the loose stone.');
     await screen.findByText('You pick up the lost feather.');
     expect(history).toHaveTextContent('> take all');
-    expect(screen.getByRole('button', { name: 'Show look targets' })).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Show more quick actions' })).toBeVisible();
+    expect(quickActionVisibleAnywhere('Show items to take')).toBe(false);
 
     const takeCommands = apiFetch.mock.calls
       .filter(([path, init]) => path === '/api/commands' &&
@@ -1385,9 +1414,6 @@ describe('single-character world session client', () => {
     ]);
     expect(takeCommands.map((entry) => entry.expectedVersion)).toEqual([1, 2]);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show more quick actions' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Show items to take' }));
-    expect(screen.getByRole('group', { name: 'Items to take' })).toHaveTextContent('Nothing to take here');
   });
 
   it('surfaces rejected movement without changing rooms or leaving controls disabled', async () => {
@@ -1427,17 +1453,21 @@ describe('single-character world session client', () => {
     visitedLocationIds = ['mossgate-clearing', 'glasswater-bridge', 'reedbank-stalls'];
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Reedbank Stalls' });
+    expect(quickActionVisibleAnywhere('Show merchants')).toBe(true);
+    expect(quickActionVisibleAnywhere('Show items to buy')).toBe(false);
 
-    const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
-    fireEvent.change(commandInput, { target: { value: 'shop Sella' } });
-    fireEvent.submit(commandInput.closest('form')!);
+    clickQuickAction('Show merchants');
+    fireEvent.click(screen.getByRole('button', { name: 'Shop with Sella' }));
     await screen.findByRole('region', { name: 'Sella shop catalog' });
     expect(screen.getByText('Balance: 12 moss mark')).toBeVisible();
+    expect(quickActionVisibleAnywhere('Show items to buy')).toBe(true);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Buy Brass lantern for 8 moss mark' }));
+    clickQuickAction('Show items to buy');
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Brass lantern' }));
     await screen.findByRole('button', { name: 'Purchased Brass lantern for 8 moss mark' });
     expect(screen.getByText('Balance: 4 moss mark')).toBeVisible();
     expect(screen.getByText('You buy the brass lantern for 8 moss marks.')).toBeVisible();
+    expect(quickActionVisibleAnywhere('Show items to buy')).toBe(false);
     const purchaseRequest = apiFetch.mock.calls.find(([path, init]) =>
       path === '/api/commands' &&
       JSON.parse(String(init?.body ?? '{}')).type === 'merchant.purchase',
