@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { MuddHttpClient } from './index.js';
 import { EngineHost, InMemoryEventStore, projectQuestJournal, replayCharacter } from '@mudd/engine-core';
-import { characterPlugin, movementPlugin, npcDialoguePlugin } from '@mudd/core-plugins';
+import { characterPlugin, merchantPlugin, movementPlugin, npcDialoguePlugin } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
+import { InitializeCharacterWalletCommandSchema } from '@mudd/contracts';
 
 describe('MuddHttpClient', () => {
   it('rejects malformed successful HTTP responses instead of trusting a TypeScript cast', async () => {
@@ -25,7 +26,7 @@ describe('MuddHttpClient', () => {
     } as const;
     const store = new InMemoryEventStore();
     const engine = new EngineHost(
-      [characterPlugin, movementPlugin, npcDialoguePlugin],
+      [characterPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin],
       store,
       { canAccessInstance: async () => true, ownsCharacter: async () => true },
       demoWorld,
@@ -237,7 +238,7 @@ describe('MuddHttpClient', () => {
     } as const;
     const store = new InMemoryEventStore();
     const engine = new EngineHost(
-      [characterPlugin, movementPlugin, npcDialoguePlugin],
+      [characterPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin],
       store,
       { canAccessInstance: async () => true, ownsCharacter: async () => true },
       demoWorld,
@@ -399,7 +400,7 @@ describe('MuddHttpClient', () => {
     } as const;
     const store = new InMemoryEventStore();
     const engine = new EngineHost(
-      [characterPlugin, movementPlugin, npcDialoguePlugin],
+      [characterPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin],
       store,
       { canAccessInstance: async () => true, ownsCharacter: async () => true },
       demoWorld,
@@ -558,6 +559,161 @@ describe('MuddHttpClient', () => {
         text: 'The marker is old, but the carving still points east toward the Old Bell Tower.',
         choices: [],
       });
+    await engine.stop();
+  });
+
+  it('buys character-owned merchant stock from an authoritative catalog', async () => {
+    const session = {
+      sessionId: 'merchant-session',
+      playerId: 'merchant-player',
+      actorId: 'merchant-player',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      grantedPermissions: [],
+      authenticated: true,
+    } as const;
+    const store = new InMemoryEventStore();
+    const engine = new EngineHost(
+      [characterPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin],
+      store,
+      { canAccessInstance: async () => true, ownsCharacter: async () => true },
+      demoWorld,
+    );
+    await engine.start();
+    const fetcher: typeof fetch = async (input, init = {}) => {
+      const path = String(input);
+      const body = JSON.parse(String(init.body ?? '{}')) as unknown;
+      const result = path.endsWith('/commands')
+        ? await engine.dispatch(body, session)
+        : await engine.query(body, session);
+      return Response.json(result);
+    };
+    const client = new MuddHttpClient({ worldInstanceId: DEMO_WORLD_INSTANCE_ID, fetcher });
+
+    async function reachStalls(characterId: string, prefix: string) {
+      const clearing = await client.look(characterId, `${prefix}-clearing`);
+      await client.move(characterId, 'clearing-to-bridge', clearing.revision, `${prefix}-move-bridge`);
+      const bridge = await client.look(characterId, `${prefix}-bridge`);
+      await client.move(characterId, 'bridge-to-reedbank', bridge.revision, `${prefix}-move-stalls`);
+    }
+
+    const first = await client.createCharacter('Briar', 'merchant-create-first');
+    const firstId = first.streamId!;
+    await reachStalls(firstId, 'merchant-first');
+    const firstCatalog = await client.getMerchantCatalog(firstId, 'sella-reedbank-merchant', 'merchant-catalog-first');
+    expect(firstCatalog).toMatchObject({
+      merchantName: 'Sella',
+      currency: { id: 'moss-mark', balance: 12 },
+      listings: [
+        { id: 'reedbank-brass-lantern', price: 8, purchased: false },
+        { id: 'reedbank-waxed-cord', price: 5, purchased: false },
+      ],
+    });
+    const firstRoom = await client.look(firstId, 'merchant-first-room');
+    await client.purchaseMerchantListing(
+      firstId,
+      'sella-reedbank-merchant',
+      'reedbank-brass-lantern',
+      firstRoom.revision,
+      'merchant-buy-first-lantern',
+    );
+    const purchasedState = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, firstId))!;
+    expect(purchasedState.wallet).toEqual({ currencyId: 'moss-mark', balance: 4 });
+    expect(purchasedState.inventory).toContainEqual({
+      id: 'item-reedbank-brass-lantern',
+      label: 'Brass lantern',
+      description: 'A compact brass lantern with a sliding shutter and a soot-dark wick.',
+    });
+    expect(purchasedState.purchasedMerchantListingIds).toContain('reedbank-brass-lantern');
+    const refreshedCatalog = await client.getMerchantCatalog(firstId, 'sella-reedbank-merchant', 'merchant-catalog-refreshed');
+    expect(refreshedCatalog.listings.find((listing) => listing.id === 'reedbank-brass-lantern')?.purchased).toBe(true);
+    const afterBuy = await client.look(firstId, 'merchant-first-after-buy');
+    await expect(client.purchaseMerchantListing(
+      firstId,
+      'sella-reedbank-merchant',
+      'reedbank-brass-lantern',
+      afterBuy.revision,
+      'merchant-buy-first-again',
+    )).rejects.toThrow('You have already bought that item from this merchant.');
+    await expect(client.purchaseMerchantListing(
+      firstId,
+      'sella-reedbank-merchant',
+      'reedbank-waxed-cord',
+      afterBuy.revision,
+      'merchant-buy-first-unaffordable',
+    )).rejects.toThrow('You need 5 moss mark to buy that.');
+
+    const second = await client.createCharacter('Rowan', 'merchant-create-second');
+    const secondId = second.streamId!;
+    await reachStalls(secondId, 'merchant-second');
+    const secondCatalog = await client.getMerchantCatalog(secondId, 'sella-reedbank-merchant', 'merchant-catalog-second');
+    expect(secondCatalog.currency.balance).toBe(12);
+    expect(secondCatalog.listings[0]?.purchased).toBe(false);
+    const secondRoom = await client.look(secondId, 'merchant-second-room');
+    const secondPurchase = await client.purchaseMerchantListing(
+      secondId,
+      'sella-reedbank-merchant',
+      'reedbank-brass-lantern',
+      secondRoom.revision,
+      'merchant-buy-second-lantern',
+    );
+    expect(secondPurchase.receipt.ok).toBe(true);
+    await engine.stop();
+  });
+
+  it('grants a legacy character wallet through one explicit initialization event', async () => {
+    const store = new InMemoryEventStore();
+    const engine = new EngineHost(
+      [characterPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin],
+      store,
+      { canAccessInstance: async () => true, ownsCharacter: async () => true },
+      demoWorld,
+    );
+    await engine.start();
+    const legacyCharacterId = 'legacy-character';
+    await store.append({
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      streamId: legacyCharacterId,
+      actorId: 'legacy-player',
+      commandId: 'legacy-character-create',
+      payloadHash: 'legacy-character-create-hash',
+      expectedVersion: 0,
+      events: [{
+        type: 'character.created',
+        version: 1,
+        payload: {
+          characterId: legacyCharacterId,
+          playerId: 'legacy-player',
+          name: 'Legacy',
+          startingLocationId: 'mossgate-clearing',
+        },
+      }],
+    });
+    const session = {
+      sessionId: 'legacy-session',
+      playerId: 'legacy-player',
+      actorId: 'legacy-player',
+      selectedCharacterId: legacyCharacterId,
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      grantedPermissions: [],
+      authenticated: true,
+    } as const;
+    const initialize = (commandId: string, expectedVersion: number) =>
+      InitializeCharacterWalletCommandSchema.parse({
+        type: 'character.wallet.initialize',
+        version: 1,
+        commandId,
+        worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+        characterId: legacyCharacterId,
+        expectedVersion,
+        payload: {},
+      });
+    const initialized = await engine.dispatch(initialize('legacy-wallet-init', 1), session);
+    expect(initialized.receipt.ok).toBe(true);
+    const duplicate = await engine.dispatch(initialize('legacy-wallet-init-again', 2), session);
+    expect(duplicate.receipt).toMatchObject({ ok: false, code: 'RULE_VIOLATION' });
+    const events = await store.readStream(DEMO_WORLD_INSTANCE_ID, legacyCharacterId);
+    expect(events.filter((event) => event.type === 'character.wallet_initialized')).toHaveLength(1);
+    expect(replayCharacter(events)?.wallet).toEqual({ currencyId: 'moss-mark', balance: 12 });
     await engine.stop();
   });
 });

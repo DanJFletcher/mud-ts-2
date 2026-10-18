@@ -22,10 +22,14 @@ import {
   WorldMapProjectionSchema,
   ObjectInspectionProjectionSchema,
   NpcDialogueProjectionSchema,
+  MerchantCatalogProjectionSchema,
+  MerchantCatalogQuerySchema,
+  MerchantPurchaseCommandSchema,
   type LocationProjection,
   type NpcDialogueProjection,
   type ReadableObjectProjection,
   type ObjectInspectionProjection,
+  type MerchantCatalogProjection,
 } from '@mudd/contracts';
 import { z } from 'zod';
 
@@ -241,6 +245,46 @@ export class MuddHttpClient {
     }, queryResultSchema(NpcDialogueProjectionSchema));
     if (!result.ok || !result.value) throw new Error(result.message ?? 'Unable to speak to that person.');
     return result.value;
+  }
+
+  async getMerchantCatalog(
+    characterId: string,
+    merchantNpcId: string,
+    queryId = crypto.randomUUID(),
+  ): Promise<MerchantCatalogProjection> {
+    const query = MerchantCatalogQuerySchema.parse({
+      type: 'merchant.catalog',
+      version: 1,
+      queryId,
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      payload: { merchantNpcId },
+    });
+    const result = await this.request('/api/queries', {
+      method: 'POST',
+      body: JSON.stringify(query),
+    }, queryResultSchema(MerchantCatalogProjectionSchema));
+    if (!result.ok || !result.value) throw new Error(result.message ?? 'Unable to view this merchant’s goods.');
+    return result.value;
+  }
+
+  async purchaseMerchantListing(
+    characterId: string,
+    merchantNpcId: string,
+    listingId: string,
+    expectedVersion: number,
+    commandId = crypto.randomUUID(),
+  ): Promise<CommandResponse> {
+    const command = MerchantPurchaseCommandSchema.parse({
+      type: 'merchant.purchase',
+      version: 1,
+      commandId,
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      expectedVersion,
+      payload: { merchantNpcId, listingId },
+    });
+    return this.send(command);
   }
 
   async chooseNpcDialogue(

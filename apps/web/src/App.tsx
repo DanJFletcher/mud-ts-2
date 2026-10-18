@@ -24,6 +24,7 @@ import { WorldMapPanel } from "./WorldMapPanel.js";
 
 const client = new MuddHttpClient({ worldInstanceId: "mudd-demo-instance" });
 type DialogueProjection = Awaited<ReturnType<MuddHttpClient["talk"]>>;
+type MerchantCatalog = Awaited<ReturnType<MuddHttpClient["getMerchantCatalog"]>>;
 type Screen = "play" | "traveler" | "notes";
 type WorldClientProps = { onLeaveWorld: () => Promise<void> };
 type VisibleRoomObject = NonNullable<GameSnapshot["location"]>["objects"][number];
@@ -60,6 +61,14 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
     "Usage: talk <npc> [about <topic>]",
     "Speak privately with someone here. Choose a reply or ask about a topic.",
   ],
+  shop: [
+    "Usage: shop <merchant>",
+    "Browse the current merchant’s character-specific stock.",
+  ],
+  buy: [
+    "Usage: buy <item>",
+    "Buy an item from a merchant catalog you have opened in this room.",
+  ],
   look: [
     "Usage: look | look [at] <object>",
     "Look describes the current room. Add an object to inspect it here or in your inventory.",
@@ -94,6 +103,8 @@ const GENERAL_HELP = [
   "Commands",
   "help [command] — List commands or show instructions for one.",
   "talk <npc> [about <topic>] — Speak privately with someone in the current room.",
+  "shop <merchant> — Browse a merchant’s goods and your balance.",
+  "buy <item> — Purchase an item from the open merchant catalog.",
   "look [at] <object> — Describe the room or inspect an object here or in your inventory.",
   "go <direction> — Travel through an available exit.",
   "read <object> — Read text on an object in the current room.",
@@ -133,7 +144,7 @@ function completedQuestObjectiveKeys(snapshot: GameSnapshot): string[] {
 export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"look" | "read" | "take" | "use" | "drop" | "move" | "talk" | null>(null);
+  const [pending, setPending] = useState<"look" | "read" | "take" | "use" | "drop" | "move" | "talk" | "shop" | "buy" | null>(null);
   const [command, setCommand] = useState("");
   const [quickCommandPage, setQuickCommandPage] = useState<"main" | "more">("main");
   const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "go" | "look" | "read" | "drop" | "take" | "talk" | "use" | "use-target">("quick");
@@ -142,6 +153,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const [collapsedQuestGroups, setCollapsedQuestGroups] = useState({ active: false, completed: false });
   const [collapsedQuestCards, setCollapsedQuestCards] = useState<Set<string>>(() => new Set());
   const [activeDialogue, setActiveDialogue] = useState<DialogueProjection | null>(null);
+  const [activeMerchantCatalog, setActiveMerchantCatalog] = useState<MerchantCatalog | null>(null);
   const [connectionError, setConnectionError] = useState("");
   const [inspectedCarriedItem, setInspectedCarriedItem] = useState<{ id: string; label: string; description: string }>();
   const [inventoryInspectError, setInventoryInspectError] = useState("");
@@ -470,12 +482,59 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
       await client.move(snapshot.character.characterId, exit.id, snapshot.location.revision);
       await refreshAfterMutation(`You travel ${exit.direction || exit.label}.`, true);
       setActiveDialogue(null);
+      setActiveMerchantCatalog(null);
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "Unable to move.");
     } finally {
       setPending(null);
     }
   }, [addEntry, pending, refreshAfterMutation, snapshot]);
+
+  const browseMerchant = useCallback(async (merchantNpcId: string) => {
+    if (!snapshot?.character || pending) return;
+    setPending("shop");
+    try {
+      const catalog = await client.getMerchantCatalog(snapshot.character.characterId, merchantNpcId);
+      setActiveMerchantCatalog(catalog);
+      addEntry("narration", `${catalog.merchantName} has the following goods for sale.`);
+    } catch (error) {
+      setActiveMerchantCatalog(null);
+      addEntry("error", error instanceof Error ? error.message : "You cannot browse that merchant’s goods.");
+    } finally {
+      setPending(null);
+    }
+  }, [addEntry, pending, snapshot]);
+
+  const purchaseMerchantListing = useCallback(async (listingId: string, recordCommand = false) => {
+    if (!snapshot?.character || !snapshot.location || !activeMerchantCatalog || pending) return;
+    const listing = activeMerchantCatalog.listings.find((candidate) => candidate.id === listingId);
+    if (!listing) return;
+    if (recordCommand) addEntry("system", `> buy ${listing.item.label.toLocaleLowerCase()}`);
+    setPending("buy");
+    try {
+      await client.purchaseMerchantListing(
+        snapshot.character.characterId,
+        activeMerchantCatalog.merchantNpcId,
+        listing.id,
+        snapshot.location.revision,
+      );
+      const [nextSnapshot, nextCatalog] = await Promise.all([
+        client.getGame(),
+        client.getMerchantCatalog(snapshot.character.characterId, activeMerchantCatalog.merchantNpcId),
+      ]);
+      setSnapshot(nextSnapshot);
+      setActiveMerchantCatalog(nextCatalog);
+      setConnectionError("");
+      addEntry(
+        "narration",
+        `You buy the ${listing.item.label.toLocaleLowerCase()} for ${listing.price} ${nextCatalog.currency.name}${listing.price === 1 ? "" : "s"}.`,
+      );
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "The purchase could not be completed.");
+    } finally {
+      setPending(null);
+    }
+  }, [activeMerchantCatalog, addEntry, pending, snapshot]);
 
   const executeCommand = useCallback(async (rawCommand: string) => {
     const value = rawCommand.trim();
@@ -510,6 +569,55 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
         return;
       }
       await talkToNpc(matches[0]!.id, topic);
+      return;
+    }
+    if (verb.toLowerCase() === "shop") {
+      addEntry("system", `> ${value}`);
+      if (!target) {
+        addEntry("error", "Browse whose goods? Try “shop Sella”.");
+        return;
+      }
+      const matches = findNpcMatches(target, snapshot?.location?.npcs ?? []);
+      if (matches.length === 0) {
+        addEntry("error", `You do not see anyone called “${target}” here.`);
+        return;
+      }
+      if (matches.length > 1) {
+        addEntry("error", `Who do you mean: ${matches.map((npc) => npc.name).join(", ")}?`);
+        return;
+      }
+      await browseMerchant(matches[0]!.id);
+      return;
+    }
+    if (verb.toLowerCase() === "buy") {
+      addEntry("system", `> ${value}`);
+      if (!target) {
+        addEntry("error", "Buy what? Browse the shop, then try “buy lantern”.");
+        return;
+      }
+      if (!activeMerchantCatalog) {
+        addEntry("error", "Open a merchant’s catalog first with “shop <merchant>”.");
+        return;
+      }
+      const normalizedTarget = target.toLocaleLowerCase();
+      const exactMatch = activeMerchantCatalog.listings.find((listing) =>
+        listing.id.toLocaleLowerCase() === normalizedTarget ||
+        listing.item.label.toLocaleLowerCase() === normalizedTarget
+      );
+      const matches = exactMatch
+        ? [exactMatch]
+        : activeMerchantCatalog.listings.filter((listing) =>
+          listing.item.label.toLocaleLowerCase().includes(normalizedTarget)
+        );
+      if (matches.length === 0) {
+        addEntry("error", `The open catalog has no item called “${target}”.`);
+        return;
+      }
+      if (matches.length > 1) {
+        addEntry("error", `Which item do you mean: ${matches.map((listing) => listing.item.label).join(", ")}?`);
+        return;
+      }
+      await purchaseMerchantListing(matches[0]!.id);
       return;
     }
     if (verb.toLowerCase() === "look") {
@@ -643,7 +751,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     }
     addEntry("system", `> ${value}`);
     addEntry("error", 'Unknown command. Try "help" for the command list.');
-  }, [addEntry, dropObject, inspect, move, pending, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse]);
+  }, [addEntry, browseMerchant, dropObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, activeMerchantCatalog]);
 
   const submitQuickCommand = useCallback((rawCommand: string) => {
     setQuickCommandMode("quick");
@@ -804,6 +912,51 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                     >
                       {entries.length > 0 && <ActivityLog entries={entries} label="Terminal transcript" />}
                     </div>
+                  {activeMerchantCatalog ? (
+                    <section className="focused-merchant-catalog" aria-label={`${activeMerchantCatalog.merchantName} shop catalog`}>
+                      <div className="focused-merchant-catalog__header">
+                        <div>
+                          <strong>{activeMerchantCatalog.merchantName}</strong>
+                          <span>
+                            Balance: {activeMerchantCatalog.currency.balance} {activeMerchantCatalog.currency.name}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          className="focused-merchant-catalog__close"
+                          onClick={() => setActiveMerchantCatalog(null)}
+                          aria-label="Close merchant catalog"
+                          disabled={pending !== null}
+                        >
+                          ×
+                        </button>
+                      </div>
+                      <div className="focused-merchant-catalog__list">
+                        {activeMerchantCatalog.listings.map((listing) => {
+                          const cannotAfford = activeMerchantCatalog.currency.balance < listing.price;
+                          return (
+                            <article className="focused-merchant-catalog__item" key={listing.id}>
+                              <div>
+                                <strong>{listing.item.label}</strong>
+                                <span>{listing.item.description}</span>
+                              </div>
+                              <button
+                                type="button"
+                                className="focused-quick-command"
+                                onClick={() => void purchaseMerchantListing(listing.id, true)}
+                                disabled={pending !== null || listing.purchased || cannotAfford}
+                                aria-label={`${listing.purchased ? "Purchased" : cannotAfford ? "Cannot afford" : "Buy"} ${listing.item.label} for ${listing.price} ${activeMerchantCatalog.currency.name}`}
+                              >
+                                {listing.purchased
+                                  ? "Bought"
+                                  : `${listing.price} ${activeMerchantCatalog.currency.symbol}`}
+                              </button>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  ) : null}
                   {activeDialogue?.choices.length ? (
                     <div className="focused-terminal-dialogue">
                       <div
@@ -1185,7 +1338,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                         spellCheck={false}
                       />
                       <Button type="submit" variant="secondary" disabled={!command.trim() || pending !== null}>
-                        {pending === "look" ? "Looking" : pending === "read" ? "Reading" : pending === "take" ? "Taking" : pending === "drop" ? "Dropping" : pending === "move" ? "Moving" : pending === "talk" ? "Talking" : "Send"}
+                        {pending === "look" ? "Looking" : pending === "read" ? "Reading" : pending === "take" ? "Taking" : pending === "drop" ? "Dropping" : pending === "move" ? "Moving" : pending === "talk" ? "Talking" : pending === "shop" ? "Browsing" : pending === "buy" ? "Buying" : "Send"}
                       </Button>
                     </form>
                   </section>

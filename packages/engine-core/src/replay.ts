@@ -13,6 +13,8 @@ import {
   CharacterRenamedEventSchema,
   CharacterArchivedEventSchema,
   CharacterRestoredEventSchema,
+  CharacterWalletInitializedEventSchema,
+  MerchantItemPurchasedEventSchema,
 } from '@mudd/contracts';
 
 export function replayCharacter(events: readonly StoredGameEvent[]) {
@@ -31,6 +33,40 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         name: created.payload.name,
         locationId: created.payload.startingLocationId,
         visitedLocationIds: [created.payload.startingLocationId],
+        revision: event.aggregateVersion,
+        ...(created.payload.wallet ? { wallet: created.payload.wallet } : {}),
+      });
+    } else if (event.type === 'character.wallet_initialized') {
+      if (!state) throw new Error('Wallet initialization encountered before character creation.');
+      const initialized = CharacterWalletInitializedEventSchema.parse(publicEvent);
+      if (initialized.payload.characterId !== state.characterId || state.wallet) {
+        throw new Error(`Invalid wallet initialization at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        wallet: initialized.payload.wallet,
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.merchant_item_purchased') {
+      if (!state) throw new Error('Merchant purchase encountered before character creation.');
+      const purchased = MerchantItemPurchasedEventSchema.parse(publicEvent);
+      const { characterId, locationId, currencyId, listingId, price, item } = purchased.payload;
+      if (
+        characterId !== state.characterId ||
+        locationId !== state.locationId ||
+        !state.wallet ||
+        state.wallet.currencyId !== currencyId ||
+        state.wallet.balance < price ||
+        state.inventory.some((candidate) => candidate.id === item.id) ||
+        state.purchasedMerchantListingIds.includes(listingId)
+      ) {
+        throw new Error(`Invalid merchant purchase at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        wallet: { ...state.wallet, balance: state.wallet.balance - price },
+        inventory: [...state.inventory, item],
+        purchasedMerchantListingIds: [...state.purchasedMerchantListingIds, listingId],
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'character.moved') {

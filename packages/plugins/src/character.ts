@@ -66,6 +66,14 @@ export const characterPlugin: EnginePlugin = {
         playerId: context.session.playerId,
         name,
         startingLocationId,
+        ...(context.world.currency
+          ? {
+            wallet: {
+              currencyId: context.world.currency.id,
+              balance: context.world.currency.startingBalance,
+            },
+          }
+          : {}),
       };
       CharacterCreatedEventSchema.shape.payload.parse(payload);
       return {

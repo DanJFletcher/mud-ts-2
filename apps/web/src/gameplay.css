@@ -371,6 +371,95 @@
   gap: .45rem;
 }
 
+.focused-merchant-catalog {
+  display: flex;
+  max-height: min(30vh, 220px);
+  flex: 0 0 auto;
+  flex-direction: column;
+  overflow: hidden;
+  border-block: 1px solid var(--terminal-line);
+  background: var(--terminal-inset);
+}
+
+.focused-merchant-catalog__header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  padding: .45rem .65rem;
+  border-bottom: 1px solid var(--terminal-line);
+  color: var(--terminal-text);
+  font: 500 .72rem/1.25 "DM Mono", monospace;
+}
+
+.focused-merchant-catalog__header > div {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: .45rem .8rem;
+}
+
+.focused-merchant-catalog__header span,
+.focused-merchant-catalog__item span {
+  color: var(--terminal-muted);
+  font-size: .67rem;
+}
+
+.focused-merchant-catalog__close {
+  width: 1.7rem;
+  height: 1.7rem;
+  flex: 0 0 auto;
+  border: 1px solid var(--terminal-border);
+  border-radius: .35rem;
+  background: transparent;
+  color: var(--terminal-text);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.focused-merchant-catalog__list {
+  display: grid;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.focused-merchant-catalog__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .7rem;
+  padding: .45rem .65rem;
+  border-bottom: 1px solid var(--terminal-line);
+}
+
+.focused-merchant-catalog__item:last-child {
+  border-bottom: 0;
+}
+
+.focused-merchant-catalog__item > div {
+  display: grid;
+  min-width: 0;
+  gap: .15rem;
+  color: var(--terminal-text);
+  font: 500 .7rem/1.3 "DM Mono", monospace;
+}
+
+.focused-merchant-catalog__item span {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.focused-merchant-catalog__item .focused-quick-command {
+  min-width: 4rem;
+  flex: 0 0 auto;
+}
+
 .focused-quick-commands__label {
   flex: 0 0 auto;
   color: var(--terminal-muted);

@@ -10,7 +10,7 @@ const { apiFetch } = vi.hoisted(() => {
 import { WorldClient } from './App.js';
 
 const characterId = '11111111-1111-4111-8111-111111111111';
-let room: 'clearing' | 'bridge';
+let room: 'clearing' | 'bridge' | 'market';
 let visitedLocationIds: string[];
 let revision: number;
 let moveError: string | null;
@@ -36,17 +36,21 @@ type TestRoomChatMessage = {
 };
 let roomChatMessages: TestRoomChatMessage[];
 let nextRoomChatMessageId: number;
+let walletBalance: number;
+let merchantLanternPurchased: boolean;
 
 function currentLocation() {
   return {
     worldInstanceId: 'mudd-demo-instance',
-    locationId: room === 'clearing' ? 'mossgate-clearing' : 'glasswater-bridge',
-    title: room === 'clearing' ? 'Mossgate Clearing' : 'Glasswater Bridge',
+    locationId: room === 'clearing' ? 'mossgate-clearing' : room === 'market' ? 'reedbank-stalls' : 'glasswater-bridge',
+    title: room === 'clearing' ? 'Mossgate Clearing' : room === 'market' ? 'Reedbank Stalls' : 'Glasswater Bridge',
     description: room === 'clearing'
       ? itemTaken
         ? 'A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east.'
         : 'A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east. One loose stone bears a pale stripe.'
-      : 'A stone bridge crosses clear water.',
+      : room === 'market'
+        ? 'Canvas awnings line the riverbank.'
+        : 'A stone bridge crosses clear water.',
     revision,
     objects: room === 'clearing' ? [
       {
@@ -70,24 +74,38 @@ function currentLocation() {
         readable: false,
         takeable: true,
       }] : []),
-    ] : [{
+    ] : room === 'bridge' ? [{
       id: 'tower-cracked-bell',
       label: 'Cracked bell',
       description: 'A heavy bronze bell hangs from a weathered frame.',
       readable: false,
       takeable: false,
-    }],
+    }] : [],
     occupants: [],
-    exits: [{
-      id: room === 'clearing' ? 'clearing-to-bridge' : 'bridge-to-clearing',
-      label: room === 'clearing' ? 'North to Glasswater Bridge' : 'South to Mossgate Clearing',
-      direction: room === 'clearing' ? 'north' : 'south',
+    exits: room === 'clearing' ? [{
+      id: 'clearing-to-bridge',
+      label: 'North to Glasswater Bridge',
+      direction: 'north',
+      available: true,
+    }] : room === 'bridge' ? [{
+      id: 'bridge-to-clearing',
+      label: 'South to Mossgate Clearing',
+      direction: 'south',
+      available: true,
+    }] : [{
+      id: 'reedbank-to-bridge',
+      label: 'West to Glasswater Bridge',
+      direction: 'west',
       available: true,
     }],
     npcs: room === 'clearing' ? [{
       id: 'mara-waykeeper',
       name: 'Mara',
       description: 'A path keeper stands beside the weathered marker, watching the northern trail.',
+    }] : room === 'market' ? [{
+      id: 'sella-reedbank-merchant',
+      name: 'Sella',
+      description: 'A careful trader sorts travel goods beneath a green awning.',
     }] : [],
   };
 }
@@ -97,6 +115,7 @@ function currentWorldMap() {
     { id: 'mossgate-clearing', name: 'Mossgate Clearing', x: 0, y: 0 },
     { id: 'glasswater-bridge', name: 'Glasswater Bridge', x: 0, y: 1 },
     { id: 'bell-tower', name: 'Old Bell Tower', x: 1, y: 0 },
+    { id: 'reedbank-stalls', name: 'Reedbank Stalls', x: 1, y: 2 },
   ];
   const locations = allLocations.filter((location) => visitedLocationIds.includes(location.id));
   const hasClearing = visitedLocationIds.includes('mossgate-clearing');
@@ -157,6 +176,8 @@ beforeEach(() => {
   questJournal = [];
   roomChatMessages = [];
   nextRoomChatMessageId = 1;
+  walletBalance = 12;
+  merchantLanternPurchased = false;
   apiFetch.mockReset();
   apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
     if (path.startsWith('/api/chat')) {
@@ -208,6 +229,7 @@ beforeEach(() => {
           locationId: currentLocation().locationId,
           visitedLocationIds,
           revision,
+          wallet: { currencyId: 'moss-mark', balance: walletBalance },
           inventory: [
             ...(itemTaken ? [{
               id: 'mossgate-loose-stone',
@@ -219,6 +241,11 @@ beforeEach(() => {
               label: 'Lost feather',
               description: 'A small gray feather lies among the pale stones.',
             }] : []),
+            ...(merchantLanternPurchased ? [{
+              id: 'item-reedbank-brass-lantern',
+              label: 'Brass lantern',
+              description: 'A compact brass lantern with a sliding shutter and a soot-dark wick.',
+            }] : []),
           ],
         },
         location: currentLocation(),
@@ -229,8 +256,43 @@ beforeEach(() => {
     if (path === '/api/queries') {
       const query = JSON.parse(String(init?.body ?? '{}')) as {
         type?: string;
-        payload?: { objectId?: string; npcId?: string; topic?: string };
+        payload?: { objectId?: string; npcId?: string; topic?: string; merchantNpcId?: string };
       };
+      if (query.type === 'merchant.catalog') {
+        if (room !== 'market' || query.payload?.merchantNpcId !== 'sella-reedbank-merchant') {
+          return json({ ok: false, message: 'That merchant is not selling anything here.' }, 403);
+        }
+        return json({
+          ok: true,
+          value: {
+            merchantNpcId: 'sella-reedbank-merchant',
+            merchantName: 'Sella',
+            currency: { id: 'moss-mark', name: 'moss mark', symbol: 'm', balance: walletBalance },
+            listings: [
+              {
+                id: 'reedbank-brass-lantern',
+                item: {
+                  id: 'item-reedbank-brass-lantern',
+                  label: 'Brass lantern',
+                  description: 'A compact brass lantern with a sliding shutter and a soot-dark wick.',
+                },
+                price: 8,
+                purchased: merchantLanternPurchased,
+              },
+              {
+                id: 'reedbank-waxed-cord',
+                item: {
+                  id: 'item-reedbank-waxed-cord',
+                  label: 'Waxed cord',
+                  description: 'A coil of tough linen cord sealed with beeswax against damp.',
+                },
+                price: 5,
+                purchased: false,
+              },
+            ],
+          },
+        });
+      }
       if (query.type === 'npc.talk') {
         const npc = currentLocation().npcs.find((candidate) => candidate.id === query.payload?.npcId);
         if (!npc) return json({ ok: false, message: 'That person is not here.' }, 403);
@@ -278,6 +340,18 @@ beforeEach(() => {
         commandId?: string;
         payload?: { itemId?: string; targetId?: string; choiceId?: string; objectId?: string };
       };
+      if (command.type === 'merchant.purchase') {
+        if (room !== 'market' || merchantLanternPurchased || walletBalance < 8) {
+          return json({ receipt: { ok: false, commandId: command.commandId ?? 'mock-command', code: 'RULE_VIOLATION', message: 'That purchase is unavailable.' } });
+        }
+        merchantLanternPurchased = true;
+        walletBalance -= 8;
+        revision += 1;
+        return json({
+          receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision },
+          streamId: characterId,
+        });
+      }
       if (command.type === 'character.read' && command.payload?.objectId === 'mossgate-marker') {
         const readObjective = questJournal.find((quest) => quest.questId === 'mara-wayfinding')
           ?.objectives.find((objective) => objective.id === 'read-marker');
@@ -1209,5 +1283,31 @@ describe('single-character world session client', () => {
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     });
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+  });
+
+  it('browses and buys merchant goods from the terminal catalog', async () => {
+    room = 'market';
+    visitedLocationIds = ['mossgate-clearing', 'glasswater-bridge', 'reedbank-stalls'];
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Reedbank Stalls' });
+
+    const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
+    fireEvent.change(commandInput, { target: { value: 'shop Sella' } });
+    fireEvent.submit(commandInput.closest('form')!);
+    await screen.findByRole('region', { name: 'Sella shop catalog' });
+    expect(screen.getByText('Balance: 12 moss mark')).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Brass lantern for 8 moss mark' }));
+    await screen.findByRole('button', { name: 'Purchased Brass lantern for 8 moss mark' });
+    expect(screen.getByText('Balance: 4 moss mark')).toBeVisible();
+    expect(screen.getByText('You buy the brass lantern for 8 moss marks.')).toBeVisible();
+    const purchaseRequest = apiFetch.mock.calls.find(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'merchant.purchase',
+    );
+    expect(JSON.parse(String(purchaseRequest?.[1].body ?? '{}')).payload).toEqual({
+      merchantNpcId: 'sella-reedbank-merchant',
+      listingId: 'reedbank-brass-lantern',
+    });
   });
 });

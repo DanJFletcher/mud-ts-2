@@ -6,6 +6,7 @@ import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import {
   ArchiveCharacterCommandSchema,
+  InitializeCharacterWalletCommandSchema,
   CreateCharacterCommandSchema,
   IdSchema,
   LocationDescribeQuerySchema,
@@ -15,9 +16,10 @@ import {
   RestoreCharacterCommandSchema,
   RenameCharacterCommandSchema,
   WorldMapProjectionSchema,
+  MerchantCatalogQuerySchema,
 } from '@mudd/contracts';
 import { EngineHost, projectQuestJournal, replayCharacter } from '@mudd/engine-core';
-import { characterPlugin, movementPlugin, npcDialoguePlugin } from '@mudd/core-plugins';
+import { characterPlugin, merchantPlugin, movementPlugin, npcDialoguePlugin } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import { db, pool } from './db/client.js';
 import { characters, durableEffects, worldSessions } from './db/schema.js';
@@ -64,7 +66,7 @@ const authorization = {
   },
 };
 const engine = new EngineHost(
-  [characterPlugin, movementPlugin, npcDialoguePlugin, demoEventEffectsPlugin],
+  [characterPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin, demoEventEffectsPlugin],
   store,
   authorization,
   demoWorld,
@@ -163,6 +165,27 @@ function worldContext(identity: AccountIdentity, session: typeof worldSessions.$
     worldInstanceId: session.worldInstanceId,
     selectedCharacterId: session.characterId,
   };
+}
+
+async function ensureCharacterWallet(
+  identity: AccountIdentity,
+  session: typeof worldSessions.$inferSelect,
+  character: NonNullable<ReturnType<typeof replayCharacter>>,
+) {
+  if (character.wallet) return character;
+  const command = InitializeCharacterWalletCommandSchema.parse({
+    type: 'character.wallet.initialize',
+    version: 1,
+    commandId: globalThis.crypto.randomUUID(),
+    worldInstanceId: session.worldInstanceId,
+    characterId: session.characterId,
+    expectedVersion: character.revision,
+    payload: {},
+  });
+  await engine.dispatch(command, worldContext(identity, session));
+  const initialized = replayCharacter(await store.readStream(session.worldInstanceId, session.characterId));
+  if (!initialized?.wallet) throw new Error('Could not initialize the character wallet.');
+  return initialized;
 }
 
 app.get('/api/characters', async (req, res, next) => {
@@ -283,8 +306,11 @@ app.get('/api/game', async (req, res, next) => {
     const current = await activeSession(identity);
     if (!current) return res.status(409).json({ message: 'Choose a character before entering the world.' });
     const events = await store.readStream(current.worldInstanceId, current.characterId);
-    const character = replayCharacter(events);
-    if (!character || character.archived) return res.status(409).json({ message: 'That character is no longer available.' });
+    const replayedCharacter = replayCharacter(events);
+    if (!replayedCharacter || replayedCharacter.archived) {
+      return res.status(409).json({ message: 'That character is no longer available.' });
+    }
+    const character = await ensureCharacterWallet(identity, current, replayedCharacter);
     const query = LocationDescribeQuerySchema.parse({
       type: 'location.describe',
       version: 1,
@@ -447,15 +473,18 @@ app.post('/api/queries', async (req, res, next) => {
     const objectReadQuery = ObjectReadQuerySchema.safeParse(req.body);
     const objectInspectQuery = ObjectInspectQuerySchema.safeParse(req.body);
     const npcTalkQuery = NpcTalkQuerySchema.safeParse(req.body);
+    const merchantCatalogQuery = MerchantCatalogQuerySchema.safeParse(req.body);
     let query:
       | z.infer<typeof LocationDescribeQuerySchema>
       | z.infer<typeof ObjectReadQuerySchema>
       | z.infer<typeof ObjectInspectQuerySchema>
-      | z.infer<typeof NpcTalkQuerySchema>;
+      | z.infer<typeof NpcTalkQuerySchema>
+      | z.infer<typeof MerchantCatalogQuerySchema>;
     if (locationQuery.success) query = locationQuery.data;
     else if (objectReadQuery.success) query = objectReadQuery.data;
     else if (objectInspectQuery.success) query = objectInspectQuery.data;
     else if (npcTalkQuery.success) query = npcTalkQuery.data;
+    else if (merchantCatalogQuery.success) query = merchantCatalogQuery.data;
     else return res.status(400).json({ message: 'Invalid world query.' });
     const current = await activeSession(identity);
     if (!current) return res.status(409).json({ message: 'Enter the world with a character before making a query.' });

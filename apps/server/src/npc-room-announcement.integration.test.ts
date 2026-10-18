@@ -8,24 +8,28 @@ const state = vi.hoisted(() => ({
       characterId: 'character-alice',
       name: 'Alice',
       locationId: 'npc-room',
+      wallet: { currencyId: 'test-currency', balance: 10 },
       archived: false,
     },
     'character-bob': {
       characterId: 'character-bob',
       name: 'Bob',
       locationId: 'npc-room',
+      wallet: { currencyId: 'test-currency', balance: 10 },
       archived: false,
     },
     'character-elsewhere': {
       characterId: 'character-elsewhere',
       name: 'Elsewhere',
       locationId: 'other-room',
+      wallet: { currencyId: 'test-currency', balance: 10 },
       archived: false,
     },
     'character-mover': {
       characterId: 'character-mover',
       name: 'Mover',
       locationId: 'entry-room',
+      wallet: { currencyId: 'test-currency', balance: 10 },
       archived: false,
     },
   },
@@ -85,7 +89,9 @@ vi.mock('@mudd/contracts', async () => {
     ArchiveCharacterCommandSchema: unusedSchema,
     CreateCharacterCommandSchema: unusedSchema,
     IdSchema: z.string(),
+    InitializeCharacterWalletCommandSchema: { parse: (value: unknown) => value },
     LocationDescribeQuerySchema: unusedSchema,
+    MerchantCatalogQuerySchema: unusedSchema,
     NpcTalkQuerySchema: unusedSchema,
     ObjectReadQuerySchema: unusedSchema,
     ObjectInspectQuerySchema: unusedSchema,
@@ -98,6 +104,7 @@ vi.mock('@mudd/core-plugins', () => ({
   characterPlugin: {},
   movementPlugin: {},
   npcDialoguePlugin: {},
+  merchantPlugin: {},
 }));
 
 vi.mock('@mudd/engine-core', () => ({

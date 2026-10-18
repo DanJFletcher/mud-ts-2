@@ -29,6 +29,7 @@ const firstCharacter = {
   visitedLocationIds: ['mossgate-clearing'],
   revision: 1,
   inventory: [],
+  purchasedMerchantListingIds: [],
   itemLocations: [],
   npcProgress: [],
   readableObservations: [],

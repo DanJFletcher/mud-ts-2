@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ClientCommandBaseSchema, ClientQueryBaseSchema } from './protocol.js';
 import { ContractVersionSchema, IdSchema, NonNegativeIntSchema } from './ids.js';
 import { QuestDefinitionSchema, QuestDialogueActionSchema } from './quests.js';
+import { MerchantCatalogDefinitionSchema, WorldCurrencyDefinitionSchema } from './commerce.js';
 
 export const ExitDefinitionSchema = z.object({
   id: IdSchema,
@@ -146,6 +147,7 @@ export const NpcDefinitionSchema = z.object({
   unknownTopicResponse: z.string().min(1).max(2000),
   announcements: z.array(z.string().min(1).max(500)).max(24).optional(),
   roomChatReactions: z.array(NpcRoomChatReactionDefinitionSchema).max(24).optional(),
+  shop: MerchantCatalogDefinitionSchema.optional(),
 }).strict();
 
 export const NpcPresenceProjectionSchema = z.object({
@@ -173,6 +175,7 @@ export const WorldPackDraftSchema = z.object({
   packId: IdSchema,
   packVersion: z.string().min(1),
   displayName: z.string().min(1),
+  currency: WorldCurrencyDefinitionSchema.optional(),
   locations: z.array(LocationDefinitionSchema),
   quests: z.array(QuestDefinitionSchema).default([]),
 }).strict();
@@ -303,6 +306,25 @@ export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
   const errors: string[] = [];
   const ids = new Set(pack.locations.map((room) => room.id));
   const itemIds = new Set(pack.locations.flatMap((room) => (room.takeables ?? []).map((item) => item.id)));
+  const merchantListingIds = new Set<string>();
+  const merchantItemIds = new Set<string>();
+  const shopNpcs = pack.locations.flatMap((location) =>
+    (location.npcs ?? []).filter((npc) => npc.shop).map((npc) => ({ npc, location })),
+  );
+  if (shopNpcs.length > 0 && !pack.currency) errors.push('World currency is required when a merchant catalog is present');
+  for (const { npc, location } of shopNpcs) {
+    for (const listing of npc.shop?.listings ?? []) {
+      if (merchantListingIds.has(listing.id)) errors.push(`Duplicate merchant listing ID ${listing.id}`);
+      merchantListingIds.add(listing.id);
+      if (merchantItemIds.has(listing.item.id) || itemIds.has(listing.item.id)) {
+        errors.push(`Duplicate merchant item ID ${listing.item.id}`);
+      }
+      merchantItemIds.add(listing.item.id);
+      if (location.npcs?.filter((candidate) => candidate.id === npc.id).length !== 1) {
+        errors.push(`Merchant NPC ID ${npc.id} must be unique within its location`);
+      }
+    }
+  }
   const allItemUseIds = new Set(pack.locations.flatMap((room) => (room.itemUses ?? []).map((interaction) => interaction.id)));
   if (ids.size !== pack.locations.length) errors.push('Duplicate location ID');
   const exits = new Set<string>();

@@ -9,6 +9,11 @@ export const InventoryItemProjectionSchema = z.object({
   description: z.string().min(1).max(1000),
 }).strict();
 
+export const CharacterWalletSchema = z.object({
+  currencyId: IdSchema,
+  balance: NonNegativeIntSchema.max(2_147_483_647),
+}).strict();
+
 export const CreateCharacterCommandSchema = z.object({
   type: z.literal('character.create'),
   version: ContractVersionSchema,
@@ -19,7 +24,27 @@ export const CreateCharacterCommandSchema = z.object({
 
 export const CharacterCreatedEventSchema = DomainEventBaseSchema.extend({
   type: z.literal('character.created'),
-  payload: z.object({ characterId: IdSchema, playerId: IdSchema, name: NonEmptyNameSchema, startingLocationId: IdSchema }).strict(),
+  payload: z.object({
+    characterId: IdSchema,
+    playerId: IdSchema,
+    name: NonEmptyNameSchema,
+    startingLocationId: IdSchema,
+    wallet: CharacterWalletSchema.optional(),
+  }).strict(),
+}).strict();
+
+export const InitializeCharacterWalletCommandSchema = ClientCommandBaseSchema.extend({
+  type: z.literal('character.wallet.initialize'),
+  expectedVersion: NonNegativeIntSchema,
+  payload: z.object({}).strict(),
+}).strict();
+
+export const CharacterWalletInitializedEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('character.wallet_initialized'),
+  payload: z.object({
+    characterId: IdSchema,
+    wallet: CharacterWalletSchema,
+  }).strict(),
 }).strict();
 
 export const TakeCharacterItemCommandSchema = ClientCommandBaseSchema.extend({
@@ -150,6 +175,8 @@ export const CharacterProjectionSchema = z.object({
   visitedLocationIds: z.array(IdSchema).default([]),
   revision: NonNegativeIntSchema,
   inventory: z.array(InventoryItemProjectionSchema).default([]),
+  wallet: CharacterWalletSchema.optional(),
+  purchasedMerchantListingIds: z.array(IdSchema).default([]),
   itemLocations: z.array(z.object({
     item: InventoryItemProjectionSchema,
     locationId: IdSchema.nullable(),
@@ -189,6 +216,9 @@ export type CharacterObjectReadEvent = z.infer<typeof CharacterObjectReadEventSc
 export type CharacterItemDroppedEvent = z.infer<typeof CharacterItemDroppedEventSchema>;
 export type CharacterNpcDialogueChoiceMadeEvent = z.infer<typeof CharacterNpcDialogueChoiceMadeEventSchema>;
 export type InventoryItemProjection = z.infer<typeof InventoryItemProjectionSchema>;
+export type CharacterWallet = z.infer<typeof CharacterWalletSchema>;
+export type InitializeCharacterWalletCommand = z.infer<typeof InitializeCharacterWalletCommandSchema>;
+export type CharacterWalletInitializedEvent = z.infer<typeof CharacterWalletInitializedEventSchema>;
 export type RenameCharacterCommand = z.infer<typeof RenameCharacterCommandSchema>;
 export type ArchiveCharacterCommand = z.infer<typeof ArchiveCharacterCommandSchema>;
 export type RestoreCharacterCommand = z.infer<typeof RestoreCharacterCommandSchema>;

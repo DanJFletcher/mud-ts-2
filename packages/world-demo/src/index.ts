@@ -10,6 +10,12 @@ const draft = {
   packId: 'mudd.first-steps',
   packVersion: '1.0.0',
   displayName: 'The Waystone Path',
+  currency: {
+    id: 'moss-mark',
+    name: 'moss mark',
+    symbol: 'm',
+    startingBalance: 12,
+  },
   quests: [
     {
       id: 'mara-wayfinding',
@@ -373,6 +379,7 @@ const draft = {
       exits: [
         { id: 'bridge-to-clearing', fromLocationId: 'glasswater-bridge', toLocationId: 'mossgate-clearing', label: 'South to Mossgate Clearing', direction: 'south' },
         { id: 'bridge-to-tower', fromLocationId: 'glasswater-bridge', toLocationId: 'bell-tower', label: 'East to the Old Bell Tower', direction: 'east' },
+        { id: 'bridge-to-reedbank', fromLocationId: 'glasswater-bridge', toLocationId: 'reedbank-stalls', label: 'Southeast to Reedbank Stalls', direction: 'southeast' },
       ],
     },
     {
@@ -448,6 +455,53 @@ const draft = {
           label: 'Up to the Old Bell Tower',
           direction: 'up',
         },
+      ],
+    },
+    {
+      id: 'reedbank-stalls',
+      name: 'Reedbank Stalls',
+      mapPosition: { x: 1, y: 2 },
+      description: 'A row of canvas awnings faces the river. The air smells of waxed rope and lamp oil; the bridge leads west.',
+      npcs: [
+        {
+          id: 'sella-reedbank-merchant',
+          name: 'Sella',
+          description: 'A careful trader sorts travel goods into a neat row beneath a green awning.',
+          greeting: 'Welcome to Reedbank. Look over the goods, and ask if you need the price explained.',
+          topics: [
+            {
+              id: 'reedbank-wares',
+              keywords: ['wares', 'goods', 'shop', 'prices', 'price'],
+              response: 'The lantern is eight moss marks; the waxed cord is five. Each traveler has their own allotment.',
+            },
+          ],
+          unknownTopicResponse: 'Ask me about the wares or use the shop command to browse.',
+          shop: {
+            listings: [
+              {
+                id: 'reedbank-brass-lantern',
+                item: {
+                  id: 'item-reedbank-brass-lantern',
+                  label: 'Brass lantern',
+                  description: 'A compact brass lantern with a sliding shutter and a soot-dark wick.',
+                },
+                price: 8,
+              },
+              {
+                id: 'reedbank-waxed-cord',
+                item: {
+                  id: 'item-reedbank-waxed-cord',
+                  label: 'Waxed cord',
+                  description: 'A coil of tough linen cord sealed with beeswax against damp.',
+                },
+                price: 5,
+              },
+            ],
+          },
+        },
+      ],
+      exits: [
+        { id: 'reedbank-to-bridge', fromLocationId: 'reedbank-stalls', toLocationId: 'glasswater-bridge', label: 'Northwest to Glasswater Bridge', direction: 'northwest' },
       ],
     },
   ],
