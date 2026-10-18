@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Maximize2, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Maximize2, X } from 'lucide-react';
 import { Button } from '@mudd/ui';
 
 export type RoomChatMessage = Readonly<{
@@ -40,6 +40,7 @@ export function RoomChatPanel({ roomId, fullscreen, onFullscreenChange }: RoomCh
   const [sending, setSending] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [sendError, setSendError] = useState('');
+  const [collapsed, setCollapsed] = useState(false);
   const [fullscreenPresent, setFullscreenPresent] = useState(fullscreen);
   const [fullscreenClosing, setFullscreenClosing] = useState(false);
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -194,6 +195,7 @@ export function RoomChatPanel({ roomId, fullscreen, onFullscreenChange }: RoomCh
     <section
       className={[
         'focused-room-chat',
+        !fullscreenPresent && collapsed ? 'focused-room-chat--collapsed' : '',
         fullscreenPresent ? 'focused-room-chat--fullscreen' : '',
         fullscreenClosing ? 'focused-room-chat--closing' : '',
       ].filter(Boolean).join(' ')}
@@ -206,6 +208,19 @@ export function RoomChatPanel({ roomId, fullscreen, onFullscreenChange }: RoomCh
         <span className="focused-room-chat__status" aria-live="polite">
           {loadError ? 'Reconnecting' : loading ? 'Connecting' : 'Room'}
         </span>
+        {!fullscreenPresent && (
+          <button
+            className="focused-room-chat__fullscreen-button focused-room-chat__collapse-button"
+            type="button"
+            onClick={() => setCollapsed((current) => !current)}
+            aria-label={collapsed ? 'Expand room chat' : 'Collapse room chat'}
+            aria-expanded={!collapsed}
+            aria-controls="room-chat-content"
+            title={collapsed ? 'Expand room chat' : 'Collapse room chat'}
+          >
+            {collapsed ? <ChevronDown size={17} aria-hidden="true" /> : <ChevronUp size={17} aria-hidden="true" />}
+          </button>
+        )}
         <button
           className="focused-room-chat__fullscreen-button"
           type="button"
@@ -219,6 +234,7 @@ export function RoomChatPanel({ roomId, fullscreen, onFullscreenChange }: RoomCh
       </div>
       <div
         className="focused-room-chat__messages"
+        id="room-chat-content"
         ref={messagesRef}
         role="log"
         aria-label="Room chat messages"

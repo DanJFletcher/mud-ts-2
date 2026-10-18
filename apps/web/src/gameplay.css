@@ -355,6 +355,17 @@
   background: var(--mudd-surface);
 }
 
+.focused-room-chat--collapsed {
+  height: auto;
+  grid-template-rows: auto;
+}
+
+.focused-room-chat--collapsed .focused-room-chat__messages,
+.focused-room-chat--collapsed .focused-room-chat__composer,
+.focused-room-chat--collapsed .focused-room-chat__error {
+  display: none;
+}
+
 .focused-room-chat__header {
   display: flex;
   min-height: 44px;

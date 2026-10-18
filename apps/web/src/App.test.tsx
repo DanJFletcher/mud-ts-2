@@ -323,6 +323,37 @@ describe('single-character world session client', () => {
     });
   });
 
+  it('collapses embedded room chat while keeping it openable full screen', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    const panel = await screen.findByRole('region', { name: 'Room chat' });
+    const messages = panel.querySelector('.focused-room-chat__messages');
+    const composer = panel.querySelector('.focused-room-chat__composer');
+    expect(messages).not.toBeNull();
+    expect(composer).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse room chat' }));
+    expect(panel).toHaveClass('focused-room-chat--collapsed');
+    expect(screen.getByRole('button', { name: 'Expand room chat' })).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open chat full screen' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Room chat' });
+    expect(dialog).not.toHaveClass('focused-room-chat--collapsed');
+    expect(dialog.querySelector('.focused-room-chat__messages')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close full-screen chat' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Room chat' })).not.toBeInTheDocument());
+    const collapsedPanel = screen.getByRole('region', { name: 'Room chat' });
+    expect(collapsedPanel).toHaveClass('focused-room-chat--collapsed');
+    expect(screen.getByRole('button', { name: 'Expand room chat' })).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand room chat' }));
+    const expandedPanel = screen.getByRole('region', { name: 'Room chat' });
+    expect(expandedPanel).not.toHaveClass('focused-room-chat--collapsed');
+    expect(expandedPanel.querySelector('.focused-room-chat__messages')).not.toBeNull();
+    expect(expandedPanel.querySelector('.focused-room-chat__composer')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Collapse room chat' })).toHaveAttribute('aria-expanded', 'true');
+  });
+
   it('opens room chat full screen with a right swipe and closes with a left swipe or Escape', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('region', { name: 'Room chat' });
