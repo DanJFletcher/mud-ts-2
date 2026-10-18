@@ -1199,7 +1199,7 @@
     border-radius: 12px;
     background: var(--mudd-surface);
   }
-  .focused-tab { display: flex; flex-direction: row; justify-content: center; gap: 8px; min-height: 44px; font-size: .72rem; }
+  .focused-tab { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 8px; min-height: 44px; font-size: .72rem; }
 }
 
 @media (max-width: 360px) {
