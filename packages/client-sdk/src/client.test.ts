@@ -217,6 +217,168 @@ describe('MuddHttpClient', () => {
     await engine.stop();
   });
 
+  it('solves the bell puzzle in order, opens the Underhollow, and completes its quest', async () => {
+    const session = {
+      sessionId: 'session-bell-puzzle',
+      playerId: 'player-bell-puzzle',
+      actorId: 'player-bell-puzzle',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      grantedPermissions: [],
+      authenticated: true,
+    } as const;
+    const store = new InMemoryEventStore();
+    const engine = new EngineHost(
+      [characterPlugin, movementPlugin, npcDialoguePlugin],
+      store,
+      { canAccessInstance: async () => true, ownsCharacter: async () => true },
+      demoWorld,
+    );
+    await engine.start();
+    const fetcher: typeof fetch = async (input, init = {}) => {
+      const body = JSON.parse(String(init.body ?? '{}')) as unknown;
+      const result = String(input).endsWith('/commands')
+        ? await engine.dispatch(body, session)
+        : await engine.query(body, session);
+      return Response.json(result);
+    };
+    const client = new MuddHttpClient({ worldInstanceId: DEMO_WORLD_INSTANCE_ID, fetcher });
+    const created = await client.createCharacter('Lark', 'puzzle-create');
+    const characterId = created.streamId!;
+
+    const clearing = await client.look(characterId, 'puzzle-look-clearing');
+    await client.take(characterId, 'mossgate-loose-stone', clearing.revision, 'puzzle-take-stone');
+    const afterStone = await client.look(characterId, 'puzzle-look-after-stone');
+    await client.move(characterId, 'clearing-to-bridge', afterStone.revision, 'puzzle-go-bridge');
+    const bridge = await client.look(characterId, 'puzzle-look-bridge');
+    const eddaOpening = await client.talk(characterId, 'edda-bellwright', undefined, 'puzzle-talk-edda');
+    expect(eddaOpening.choices).toContainEqual({
+      id: 'accept-bell-echo',
+      label: 'Investigate the bell puzzle',
+    });
+    await client.chooseNpcDialogue(
+      characterId,
+      'edda-bellwright',
+      'accept-bell-echo',
+      bridge.revision,
+      'puzzle-accept-quest',
+    );
+    const firstHint = await client.talk(characterId, 'edda-bellwright', 'hint', 'puzzle-hint-one');
+    expect(firstHint.text).toContain('Hint 1');
+    const afterAccept = await client.look(characterId, 'puzzle-look-after-accept');
+    await client.take(characterId, 'glasswater-reed', afterAccept.revision, 'puzzle-take-reed');
+    const bridgeWithReed = await client.look(characterId, 'puzzle-look-bridge-with-reed');
+    await client.move(characterId, 'bridge-to-tower', bridgeWithReed.revision, 'puzzle-go-tower');
+
+    const tower = await client.look(characterId, 'puzzle-look-tower');
+    expect(tower.exits).toContainEqual(expect.objectContaining({
+      id: 'tower-to-underhollow',
+      available: false,
+    }));
+    await expect(client.move(
+      characterId,
+      'tower-to-underhollow',
+      tower.revision,
+      'puzzle-try-locked-stair',
+    )).rejects.toThrow('That passage is still sealed.');
+
+    const inscription = await client.read(
+      characterId,
+      'tower-bell-inscription',
+      tower.revision,
+      'puzzle-read-inscription',
+    );
+    expect(inscription.text).toContain('Pale first, hollow second.');
+    await client.move(characterId, 'tower-to-bridge', tower.revision + 1, 'puzzle-return-for-hint-two');
+    const bridgeForHintTwo = await client.look(characterId, 'puzzle-look-for-hint-two');
+    const secondHint = await client.talk(characterId, 'edda-bellwright', 'hint', 'puzzle-hint-two');
+    expect(secondHint.text).toContain('Hint 2');
+    await client.move(characterId, 'bridge-to-tower', bridgeForHintTwo.revision, 'puzzle-return-for-bell');
+    const towerForBell = await client.look(characterId, 'puzzle-look-for-bell');
+    await expect(client.use(
+      characterId,
+      'glasswater-reed',
+      'tower-cracked-bell',
+      towerForBell.revision,
+      'puzzle-reed-first',
+    )).rejects.toThrow('The bell gives a dull click. Its first note is still missing; the inscription says pale first.');
+
+    await expect(client.use(
+      characterId,
+      'mossgate-loose-stone',
+      'tower-cracked-bell',
+      towerForBell.revision,
+      'puzzle-strike-with-stone',
+    )).resolves.toMatchObject({
+      interactionId: 'ring-tower-bell-with-stone',
+      response: expect.stringContaining('A low, uneven note'),
+    });
+    const afterFirstNote = await client.look(characterId, 'puzzle-look-after-first-note');
+    expect(afterFirstNote.exits).toContainEqual(expect.objectContaining({
+      id: 'tower-to-underhollow',
+      available: false,
+    }));
+    await client.move(characterId, 'tower-to-bridge', afterFirstNote.revision, 'puzzle-return-for-hint-three');
+    const bridgeForHintThree = await client.look(characterId, 'puzzle-look-for-hint-three');
+    const thirdHint = await client.talk(characterId, 'edda-bellwright', 'hint', 'puzzle-hint-three');
+    expect(thirdHint.text).toContain('Hint 3');
+    await client.move(characterId, 'bridge-to-tower', bridgeForHintThree.revision, 'puzzle-return-to-finish');
+    const towerForReed = await client.look(characterId, 'puzzle-look-for-reed');
+    await expect(client.use(
+      characterId,
+      'glasswater-reed',
+      'tower-cracked-bell',
+      towerForReed.revision,
+      'puzzle-answer-with-reed',
+    )).resolves.toMatchObject({
+      interactionId: 'answer-tower-bell-with-reed',
+      response: expect.stringContaining('a narrow stair opens beneath the bell'),
+    });
+
+    const afterSecondNote = await client.look(characterId, 'puzzle-look-after-second-note');
+    expect(afterSecondNote.exits).toContainEqual(expect.objectContaining({
+      id: 'tower-to-underhollow',
+      available: true,
+    }));
+    const solvedState = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(projectQuestJournal(solvedState, demoWorld)).toMatchObject([{
+      questId: 'eddas-bell-echo',
+      status: 'active',
+      objectives: [
+        { id: 'read-bell-inscription', completed: true },
+        { id: 'strike-bell-with-stone', completed: true },
+        { id: 'answer-bell-with-reed', completed: true },
+        { id: 'visit-underhollow', completed: false },
+      ],
+    }]);
+
+    await client.move(characterId, 'tower-to-underhollow', afterSecondNote.revision, 'puzzle-descend');
+    const underhollow = await client.look(characterId, 'puzzle-look-underhollow');
+    expect(underhollow.title).toBe('The Underhollow');
+    await client.move(characterId, 'underhollow-to-tower', underhollow.revision, 'puzzle-return-up');
+    const towerAgain = await client.look(characterId, 'puzzle-look-tower-again');
+    await client.move(characterId, 'tower-to-bridge', towerAgain.revision, 'puzzle-return-bridge');
+    const bridgeAgain = await client.look(characterId, 'puzzle-look-bridge-again');
+    const eddaAfter = await client.talk(characterId, 'edda-bellwright', undefined, 'puzzle-talk-edda-after');
+    expect(eddaAfter.choices).toContainEqual({
+      id: 'report-bell-echo',
+      label: 'I found the Underhollow',
+    });
+    await client.chooseNpcDialogue(
+      characterId,
+      'edda-bellwright',
+      'report-bell-echo',
+      bridgeAgain.revision,
+      'puzzle-report-quest',
+    );
+    const completedState = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(completedState.visitedLocationIds).toContain('bell-underhollow');
+    expect(completedState.questProgress).toContainEqual(expect.objectContaining({
+      questId: 'eddas-bell-echo',
+      status: 'completed',
+    }));
+    await engine.stop();
+  });
+
   it('records character-specific quest progress from reading and movement, then turns it in with Mara', async () => {
     const session = {
       sessionId: 'session-quest',

@@ -10,6 +10,7 @@ export const ExitDefinitionSchema = z.object({
   toLocationId: IdSchema,
   label: z.string().min(1).max(120),
   direction: z.string().max(40).optional(),
+  requiredInteractionId: IdSchema.optional(),
 }).strict();
 
 export const MapPositionSchema = z.object({
@@ -44,6 +45,8 @@ export const ItemUseInteractionDefinitionSchema = z.object({
   targetId: IdSchema,
   response: z.string().min(1).max(2000),
   repeatResponse: z.string().min(1).max(2000).optional(),
+  requiresInteractionIds: z.array(IdSchema).max(12).optional(),
+  requiresInteractionMessage: z.string().min(1).max(500).optional(),
 }).strict();
 
 export const NpcQuestResponseDefinitionSchema = z.object({
@@ -300,6 +303,7 @@ export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
   const errors: string[] = [];
   const ids = new Set(pack.locations.map((room) => room.id));
   const itemIds = new Set(pack.locations.flatMap((room) => (room.takeables ?? []).map((item) => item.id)));
+  const allItemUseIds = new Set(pack.locations.flatMap((room) => (room.itemUses ?? []).map((interaction) => interaction.id)));
   if (ids.size !== pack.locations.length) errors.push('Duplicate location ID');
   const exits = new Set<string>();
   const itemUseIds = new Set<string>();
@@ -308,6 +312,9 @@ export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
       if (exit.fromLocationId !== room.id) errors.push(`Exit ${exit.id} does not originate from its containing location`);
       if (!ids.has(exit.toLocationId)) errors.push(`Exit ${exit.id} points to missing location ${exit.toLocationId}`);
       if (exits.has(exit.id)) errors.push(`Duplicate exit ID ${exit.id}`);
+      if (exit.requiredInteractionId && !room.itemUses?.some((interaction) => interaction.id === exit.requiredInteractionId)) {
+        errors.push(`Exit ${exit.id} requires missing interaction ${exit.requiredInteractionId} in ${room.id}`);
+      }
       exits.add(exit.id);
     }
     for (const interaction of room.itemUses ?? []) {
@@ -318,6 +325,14 @@ export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
       }
       if (!room.interactables?.some((target) => target.id === interaction.targetId)) {
         errors.push(`Item-use interaction ${interaction.id} references missing interactable target ${interaction.targetId} in ${room.id}`);
+      }
+      for (const requiredId of interaction.requiresInteractionIds ?? []) {
+        if (!allItemUseIds.has(requiredId) || !room.itemUses?.some((candidate) => candidate.id === requiredId)) {
+          errors.push(`Item-use interaction ${interaction.id} requires missing earlier interaction ${requiredId} in ${room.id}`);
+        }
+        if (requiredId === interaction.id) {
+          errors.push(`Item-use interaction ${interaction.id} cannot require itself`);
+        }
       }
     }
   }
@@ -343,6 +358,11 @@ export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
         const location = pack.locations.find((candidate) => candidate.id === objective.locationId);
         if (!location?.readables?.some((readable) => readable.id === objective.objectId)) {
           errors.push(`Quest ${quest.id} objective ${objective.id} points to missing readable ${objective.objectId}`);
+        }
+      } else if (objective.type === 'perform-interaction') {
+        const location = pack.locations.find((candidate) => candidate.id === objective.locationId);
+        if (!location?.itemUses?.some((interaction) => interaction.id === objective.interactionId)) {
+          errors.push(`Quest ${quest.id} objective ${objective.id} points to missing interaction ${objective.interactionId}`);
         }
       }
     }

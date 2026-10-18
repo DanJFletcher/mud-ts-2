@@ -337,7 +337,7 @@ describe('MUDD engine host', () => {
     }, session);
     expect(droppedRoom).toMatchObject({
       ok: true,
-      value: { objects: [expect.objectContaining({ id: 'mossgate-loose-stone', takeable: true })] },
+      value: { objects: expect.arrayContaining([expect.objectContaining({ id: 'mossgate-loose-stone', takeable: true })]) },
     });
     const moveBackToClearing = await engine.dispatch({
       type: 'character.move',

@@ -128,6 +128,14 @@ export const characterPlugin: EnginePlugin = {
       if (!interaction) {
         throw new Error(`You cannot use the ${item.label.toLocaleLowerCase()} on the ${target.label.toLocaleLowerCase()} here.`);
       }
+      const missingPrerequisite = (interaction.requiresInteractionIds ?? []).some((interactionId) =>
+        !character.itemUseObservations.some((observation) =>
+          observation.interactionId === interactionId && observation.locationId === location.id,
+        ),
+      );
+      if (missingPrerequisite) {
+        throw new Error(interaction.requiresInteractionMessage ?? 'That interaction is not ready yet.');
+      }
       const alreadyUsed = character.itemUseObservations.some((observation) =>
         observation.interactionId === interaction.id && observation.locationId === location.id,
       );
@@ -245,7 +253,9 @@ export const characterPlugin: EnginePlugin = {
           id: exit.id,
           label: exit.label,
           direction: exit.direction,
-          available: true,
+          available: !exit.requiredInteractionId || character.itemUseObservations.some((observation) =>
+            observation.interactionId === exit.requiredInteractionId && observation.locationId === location.id,
+          ),
         })),
         objects: [
           ...(location.readables ?? []).map(({ id, label, description }) => ({

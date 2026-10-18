@@ -21,6 +21,13 @@ export const QuestObjectiveDefinitionSchema = z.discriminatedUnion('type', [
     type: z.literal('visit-location'),
     locationId: IdSchema,
   }).strict(),
+  z.object({
+    id: IdSchema,
+    label: z.string().trim().min(1).max(160),
+    type: z.literal('perform-interaction'),
+    interactionId: IdSchema,
+    locationId: IdSchema,
+  }).strict(),
 ]);
 
 export const QuestDefinitionSchema = z.object({

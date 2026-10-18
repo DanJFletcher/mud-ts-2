@@ -29,6 +29,14 @@ export const movementPlugin: EnginePlugin = {
         .find((location) => location.id === character.locationId)
         ?.exits.find((candidate) => candidate.id === command.payload.exitId);
       if (!exit) throw new Error('That exit is not available from your current location.');
+      if (
+        exit.requiredInteractionId &&
+        !character.itemUseObservations.some((observation) =>
+          observation.interactionId === exit.requiredInteractionId && observation.locationId === character.locationId,
+        )
+      ) {
+        throw new Error('That passage is still sealed.');
+      }
       CharacterMovedEventSchema.shape.payload.parse({
         characterId: command.characterId,
         fromLocationId: character.locationId,

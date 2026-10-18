@@ -17,6 +17,11 @@ export function questObjectiveIsComplete(
       observation.objectId === objective.objectId && observation.locationId === objective.locationId,
     );
   }
+  if (objective.type === 'perform-interaction') {
+    return character.itemUseObservations.some((observation) =>
+      observation.interactionId === objective.interactionId && observation.locationId === objective.locationId,
+    );
+  }
   return character.visitedLocationIds.includes(objective.locationId);
 }
 
