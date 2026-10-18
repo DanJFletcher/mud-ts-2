@@ -293,6 +293,7 @@ describe('single-character world session client', () => {
     expect(screen.getByRole('button', { name: 'Close full-screen chat' })).toBeVisible();
 
     fireTouchSwipe(screen.getByRole('log', { name: 'Room chat messages' }), { x: 220, y: 100 }, { x: 70, y: 105 });
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Room chat' })).toHaveClass('focused-room-chat--closing'));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Room chat' })).not.toBeInTheDocument());
     expect(screen.getByRole('region', { name: 'Room chat' })).toBeVisible();
 

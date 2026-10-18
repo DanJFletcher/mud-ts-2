@@ -384,6 +384,21 @@
   border-radius: 0;
   background: var(--mudd-bg);
   touch-action: pan-y;
+  animation: focused-room-chat-enter 240ms cubic-bezier(.2, .8, .2, 1) both;
+}
+
+.focused-room-chat--closing {
+  animation: focused-room-chat-exit 240ms cubic-bezier(.4, 0, .6, 1) both;
+}
+
+@keyframes focused-room-chat-enter {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes focused-room-chat-exit {
+  from { transform: translateX(0); }
+  to { transform: translateX(-100%); }
 }
 
 .focused-room-chat--fullscreen .focused-room-chat__header {
@@ -482,6 +497,13 @@
 .focused-room-chat--fullscreen .focused-room-chat__composer { padding: 12px; }
 .focused-room-chat--fullscreen .focused-room-chat__composer input,
 .focused-room-chat--fullscreen .focused-room-chat__composer .mudd-button { min-height: 48px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .focused-room-chat--fullscreen,
+  .focused-room-chat--closing {
+    animation-duration: 0.01ms;
+  }
+}
 
 .focused-room-chat__error {
   margin: 0;

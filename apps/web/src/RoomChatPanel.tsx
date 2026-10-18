@@ -40,6 +40,8 @@ export function RoomChatPanel({ roomId, fullscreen, onFullscreenChange }: RoomCh
   const [sending, setSending] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [sendError, setSendError] = useState('');
+  const [fullscreenPresent, setFullscreenPresent] = useState(fullscreen);
+  const [fullscreenClosing, setFullscreenClosing] = useState(false);
   const messagesRef = useRef<HTMLDivElement>(null);
   const followsLatestRef = useRef(true);
   const currentRoomIdRef = useRef(roomId);
@@ -52,7 +54,25 @@ export function RoomChatPanel({ roomId, fullscreen, onFullscreenChange }: RoomCh
   currentRoomIdRef.current = roomId;
 
   useEffect(() => {
-    if (!fullscreen) {
+    if (fullscreen) {
+      setFullscreenPresent(true);
+      setFullscreenClosing(false);
+      return;
+    }
+    if (!fullscreenPresent) return;
+
+    setFullscreenClosing(true);
+    const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    const closeDelay = prefersReducedMotion ? 0 : 250;
+    const timeout = window.setTimeout(() => {
+      setFullscreenPresent(false);
+      setFullscreenClosing(false);
+    }, closeDelay);
+    return () => window.clearTimeout(timeout);
+  }, [fullscreen, fullscreenPresent]);
+
+  useEffect(() => {
+    if (!fullscreenPresent) {
       if (wasFullscreenRef.current) expandButtonRef.current?.focus();
       wasFullscreenRef.current = false;
       return;
@@ -74,7 +94,7 @@ export function RoomChatPanel({ roomId, fullscreen, onFullscreenChange }: RoomCh
       document.documentElement.style.overflow = previousDocumentOverflow;
       document.removeEventListener('keydown', closeOnEscape);
     };
-  }, [fullscreen, onFullscreenChange]);
+  }, [fullscreenPresent, onFullscreenChange]);
 
   useEffect(() => {
     let active = true;
@@ -172,10 +192,14 @@ export function RoomChatPanel({ roomId, fullscreen, onFullscreenChange }: RoomCh
 
   const panel = (
     <section
-      className={`focused-room-chat${fullscreen ? ' focused-room-chat--fullscreen' : ''}`}
+      className={[
+        'focused-room-chat',
+        fullscreenPresent ? 'focused-room-chat--fullscreen' : '',
+        fullscreenClosing ? 'focused-room-chat--closing' : '',
+      ].filter(Boolean).join(' ')}
       aria-label="Room chat"
-      role={fullscreen ? 'dialog' : undefined}
-      aria-modal={fullscreen ? true : undefined}
+      role={fullscreenPresent ? 'dialog' : undefined}
+      aria-modal={fullscreenPresent ? true : undefined}
     >
       <div className="focused-room-chat__header">
         <h2 className="focused-kicker">Room chat</h2>
@@ -185,12 +209,12 @@ export function RoomChatPanel({ roomId, fullscreen, onFullscreenChange }: RoomCh
         <button
           className="focused-room-chat__fullscreen-button"
           type="button"
-          ref={fullscreen ? closeButtonRef : expandButtonRef}
-          onClick={() => onFullscreenChange(!fullscreen)}
-          aria-label={fullscreen ? 'Close full-screen chat' : 'Open chat full screen'}
-          title={fullscreen ? 'Close chat' : 'Open full-screen chat'}
+          ref={fullscreenPresent ? closeButtonRef : expandButtonRef}
+          onClick={() => onFullscreenChange(!fullscreenPresent)}
+          aria-label={fullscreenPresent ? 'Close full-screen chat' : 'Open chat full screen'}
+          title={fullscreenPresent ? 'Close chat' : 'Open full-screen chat'}
         >
-          {fullscreen ? <X size={17} aria-hidden="true" /> : <Maximize2 size={17} aria-hidden="true" />}
+          {fullscreenPresent ? <X size={17} aria-hidden="true" /> : <Maximize2 size={17} aria-hidden="true" />}
         </button>
       </div>
       <div
@@ -240,5 +264,5 @@ export function RoomChatPanel({ roomId, fullscreen, onFullscreenChange }: RoomCh
     </section>
   );
 
-  return fullscreen ? createPortal(panel, document.body) : panel;
+  return fullscreenPresent ? createPortal(panel, document.body) : panel;
 }
