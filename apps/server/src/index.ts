@@ -380,7 +380,7 @@ app.use((error: unknown, _req: Request, res: Response, _next: express.NextFuncti
 });
 
 const port = Number(process.env.API_PORT ?? 5001);
-const server = app.listen(port, '0.0.0.0', () => {
+export const server = app.listen(port, '0.0.0.0', () => {
   console.log(`MUDD server listening on ${port}`);
 });
 
