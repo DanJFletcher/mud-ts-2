@@ -90,3 +90,91 @@ test('draft content checks graph references', () => {
   assert.deepEqual(validateDraftWorldGraph(pack), []);
   assert.equal(validateDraftWorldGraph({ ...pack, locations: pack.locations.slice(0, 1) }).length, 1);
 });
+
+const topicReplyWorld = WorldPackDraftSchema.parse({
+  formatVersion: 1,
+  packId: 'topic-replies',
+  packVersion: '0.1.0',
+  displayName: 'Topic Replies',
+  locations: [{
+    id: 'r1',
+    name: 'Crossroads',
+    description: 'Paths branch',
+    exits: [],
+    readables: [{ id: 'marker', label: 'Marker', description: 'A painted wooden sign.', text: 'North to the forest' }],
+    npcs: [{
+      id: 'guide',
+      name: 'Guide',
+      description: 'A helpful traveler.',
+      greeting: 'Hello.',
+      topics: [{
+        id: 'directions',
+        keywords: ['directions'],
+        response: 'The forest is north.',
+        questResponses: [{
+          questId: 'forest-marker',
+          status: 'active',
+          requiresCompletedObjectiveIds: ['read-marker'],
+          response: 'You read the marker.',
+        }],
+      }],
+      unknownTopicResponse: 'I do not know.',
+    }],
+  }],
+  quests: [{
+    id: 'forest-marker',
+    version: '1',
+    title: 'Read the marker',
+    summary: 'Find out what the marker says.',
+    giverNpcId: 'guide',
+    turnInNpcId: 'guide',
+    objectives: [{
+      id: 'read-marker',
+      label: 'Read the marker',
+      type: 'read-object',
+      objectId: 'marker',
+      locationId: 'r1',
+    }],
+  }],
+});
+
+function withTopicQuestResponse(response) {
+  const [location] = topicReplyWorld.locations;
+  const [npc] = location.npcs;
+  const [topic] = npc.topics;
+
+  return {
+    ...topicReplyWorld,
+    locations: [{
+      ...location,
+      npcs: [{
+        ...npc,
+        topics: [{ ...topic, questResponses: [response] }],
+      }],
+    }],
+  };
+}
+
+test('topic quest replies validate references to existing quests and objectives', () => {
+  assert.deepEqual(validateDraftWorldGraph(topicReplyWorld), []);
+});
+
+test('topic quest replies reject unknown quest IDs', () => {
+  const errors = validateDraftWorldGraph(withTopicQuestResponse({
+    ...topicReplyWorld.locations[0].npcs[0].topics[0].questResponses[0],
+    questId: 'missing-quest',
+  }));
+
+  assert.ok(errors.includes('NPC guide dialogue response references missing quest missing-quest'));
+});
+
+test('topic quest replies reject unknown objective IDs', () => {
+  const errors = validateDraftWorldGraph(withTopicQuestResponse({
+    ...topicReplyWorld.locations[0].npcs[0].topics[0].questResponses[0],
+    requiresCompletedObjectiveIds: ['missing-objective'],
+  }));
+
+  assert.ok(errors.includes(
+    'NPC guide dialogue response references missing objective missing-objective in quest forest-marker',
+  ));
+});
