@@ -32,6 +32,31 @@ const draft = {
           roomDescription: 'One loose stone bears a pale stripe.',
         },
       ],
+      npcs: [
+        {
+          id: 'mara-waykeeper',
+          name: 'Mara',
+          description: 'A path keeper stands beside the weathered marker, watching the northern trail.',
+          greeting: 'The north bridge is open. The marker points east to the Old Bell Tower.',
+          topics: [
+            {
+              id: 'marker',
+              keywords: ['marker', 'sign', 'east'],
+              response: 'The marker is old, but the carving still points east toward the Old Bell Tower.',
+            },
+            {
+              id: 'tower',
+              keywords: ['tower', 'bell'],
+              response: 'The bell has not rung in years. The tower stands east of this clearing.',
+            },
+          ],
+          unknownTopicResponse: 'Ask me about the marker or the bell tower.',
+          announcements: [
+            'The north bridge is open to travelers.',
+            'The marker still points east to the Old Bell Tower.',
+          ],
+        },
+      ],
       exits: [
         { id: 'clearing-to-bridge', fromLocationId: 'mossgate-clearing', toLocationId: 'glasswater-bridge', label: 'North to Glasswater Bridge', direction: 'north' },
         { id: 'clearing-to-tower', fromLocationId: 'mossgate-clearing', toLocationId: 'bell-tower', label: 'East to the Old Bell Tower', direction: 'east' },

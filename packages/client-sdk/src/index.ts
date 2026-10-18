@@ -4,6 +4,7 @@ import {
   ArchiveCharacterCommandSchema,
   RestoreCharacterCommandSchema,
   LocationDescribeQuerySchema,
+  NpcTalkQuerySchema,
   ObjectReadQuerySchema,
   ObjectInspectQuerySchema,
   MoveCharacterCommandSchema,
@@ -12,6 +13,7 @@ import {
   type CharacterProjection,
   type CommandReceipt,
   type LocationProjection,
+  type NpcDialogueProjection,
   type ReadableObjectProjection,
   type ObjectInspectionProjection,
 } from '@mudd/contracts';
@@ -183,6 +185,32 @@ export class MuddHttpClient {
       body: JSON.stringify(query),
     });
     if (!result.ok || !result.value) throw new Error(result.message ?? 'Unable to inspect that object.');
+    return result.value;
+  }
+
+  async talk(
+    characterId: string,
+    npcId: string,
+    topic?: string,
+    queryId = crypto.randomUUID(),
+  ): Promise<NpcDialogueProjection> {
+    const query = NpcTalkQuerySchema.parse({
+      type: 'npc.talk',
+      version: 1,
+      queryId,
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      payload: { npcId, ...(topic ? { topic } : {}) },
+    });
+    const result = await this.request<{
+      ok: boolean;
+      value?: NpcDialogueProjection;
+      message?: string;
+    }>('/api/queries', {
+      method: 'POST',
+      body: JSON.stringify(query),
+    });
+    if (!result.ok || !result.value) throw new Error(result.message ?? 'Unable to speak to that person.');
     return result.value;
   }
 

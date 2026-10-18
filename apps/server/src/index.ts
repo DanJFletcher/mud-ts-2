@@ -9,13 +9,14 @@ import {
   CreateCharacterCommandSchema,
   IdSchema,
   LocationDescribeQuerySchema,
+  NpcTalkQuerySchema,
   ObjectReadQuerySchema,
   ObjectInspectQuerySchema,
   RestoreCharacterCommandSchema,
   RenameCharacterCommandSchema,
 } from '@mudd/contracts';
 import { EngineHost, replayCharacter } from '@mudd/engine-core';
-import { characterPlugin, movementPlugin } from '@mudd/core-plugins';
+import { characterPlugin, movementPlugin, npcDialoguePlugin } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import { db, pool } from './db/client.js';
 import { characters, worldSessions } from './db/schema.js';
@@ -26,7 +27,9 @@ import {
   createPlayerRoomChatMessage,
   listRoomChatMessages,
   MAX_ROOM_CHAT_MESSAGE_LENGTH,
+  publishNpcRoomMessage,
 } from './room-chat-service.js';
+import { createNpcRoomAnnouncer } from './npc-announcer.js';
 
 const store = new PostgresEventStore();
 const authorization = {
@@ -40,8 +43,27 @@ const authorization = {
     return Boolean(row);
   },
 };
-const engine = new EngineHost([characterPlugin, movementPlugin], store, authorization, demoWorld);
+const engine = new EngineHost([characterPlugin, movementPlugin, npcDialoguePlugin], store, authorization, demoWorld);
 await engine.start();
+
+const announceNpcRoomMessage = createNpcRoomAnnouncer(publishNpcRoomMessage);
+async function announceNpcsOnEntry(worldInstanceId: string, roomId: string) {
+  const location = demoWorld.locations.find((candidate) => candidate.id === roomId);
+  for (const npc of location?.npcs ?? []) {
+    if (!npc.announcements?.length) continue;
+    try {
+      await announceNpcRoomMessage({
+        worldInstanceId,
+        roomId,
+        npcId: npc.id,
+        npcName: npc.name,
+        announcements: npc.announcements,
+      });
+    } catch (error) {
+      console.error('Could not publish NPC room announcement:', error instanceof Error ? error.message : 'unknown error');
+    }
+  }
+}
 
 const app = express();
 app.set('trust proxy', 1);
@@ -158,6 +180,10 @@ app.post('/api/world-session', async (req, res, next) => {
 
     if (result.kind === 'missing') return res.status(404).json({ message: 'That character is unavailable.' });
     if (result.kind === 'occupied') return res.status(409).json({ message: 'Leave the current world session before switching characters.' });
+    const character = replayCharacter(await store.readStream(result.session.worldInstanceId, result.session.characterId));
+    if (character && !character.archived) {
+      await announceNpcsOnEntry(result.session.worldInstanceId, character.locationId);
+    }
     return res.json({ sessionId: result.session.id, characterId: result.session.characterId });
   } catch (error) {
     next(error);
@@ -302,6 +328,15 @@ app.post('/api/commands', async (req, res, next) => {
     }
 
     const result = await engine.dispatch(req.body, context);
+    if (result.receipt.ok && command?.type === 'character.move') {
+      const current = await activeSession(identity);
+      if (current) {
+        const character = replayCharacter(await store.readStream(current.worldInstanceId, current.characterId));
+        if (character && !character.archived) {
+          await announceNpcsOnEntry(current.worldInstanceId, character.locationId);
+        }
+      }
+    }
     return res.json(result);
   } catch (error) {
     next(error);
@@ -315,13 +350,16 @@ app.post('/api/queries', async (req, res, next) => {
     const locationQuery = LocationDescribeQuerySchema.safeParse(req.body);
     const objectReadQuery = ObjectReadQuerySchema.safeParse(req.body);
     const objectInspectQuery = ObjectInspectQuerySchema.safeParse(req.body);
+    const npcTalkQuery = NpcTalkQuerySchema.safeParse(req.body);
     let query:
       | z.infer<typeof LocationDescribeQuerySchema>
       | z.infer<typeof ObjectReadQuerySchema>
-      | z.infer<typeof ObjectInspectQuerySchema>;
+      | z.infer<typeof ObjectInspectQuerySchema>
+      | z.infer<typeof NpcTalkQuerySchema>;
     if (locationQuery.success) query = locationQuery.data;
     else if (objectReadQuery.success) query = objectReadQuery.data;
     else if (objectInspectQuery.success) query = objectInspectQuery.data;
+    else if (npcTalkQuery.success) query = npcTalkQuery.data;
     else return res.status(400).json({ message: 'Invalid world query.' });
     const current = await activeSession(identity);
     if (!current) return res.status(409).json({ message: 'Enter the world with a character before making a query.' });

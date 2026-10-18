@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MuddHttpClient } from './index.js';
 import { EngineHost, InMemoryEventStore } from '@mudd/engine-core';
-import { characterPlugin, movementPlugin } from '@mudd/core-plugins';
+import { characterPlugin, movementPlugin, npcDialoguePlugin } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 
 describe('MuddHttpClient', () => {
@@ -15,7 +15,7 @@ describe('MuddHttpClient', () => {
       authenticated: true,
     } as const;
     const engine = new EngineHost(
-      [characterPlugin, movementPlugin],
+      [characterPlugin, movementPlugin, npcDialoguePlugin],
       new InMemoryEventStore(),
       { canAccessInstance: async () => true, ownsCharacter: async () => true },
       demoWorld,
@@ -36,6 +36,11 @@ describe('MuddHttpClient', () => {
     const firstRoom = await client.look(characterId, 'sdk-look-1');
     expect(firstRoom.title).toBe('Mossgate Clearing');
     expect(firstRoom.description).toContain('One loose stone bears a pale stripe.');
+    expect(firstRoom.npcs).toEqual([{
+      id: 'mara-waykeeper',
+      name: 'Mara',
+      description: 'A path keeper stands beside the weathered marker, watching the northern trail.',
+    }]);
     expect(firstRoom.objects).toEqual([
       {
         id: 'mossgate-marker',
@@ -60,6 +65,19 @@ describe('MuddHttpClient', () => {
     });
     await expect(client.read(characterId, 'unknown-object', 'sdk-read-missing'))
       .rejects.toThrow('That object is not readable from here.');
+    await expect(client.talk(characterId, 'mara-waykeeper', undefined, 'sdk-talk-greeting'))
+      .resolves.toEqual({
+        npcId: 'mara-waykeeper',
+        npcName: 'Mara',
+        text: 'The north bridge is open. The marker points east to the Old Bell Tower.',
+      });
+    await expect(client.talk(characterId, 'mara-waykeeper', 'bell', 'sdk-talk-topic'))
+      .resolves.toMatchObject({
+        npcName: 'Mara',
+        text: 'The bell has not rung in years. The tower stands east of this clearing.',
+      });
+    await expect(client.talk(characterId, 'mara-waykeeper', 'weather', 'sdk-talk-unknown-topic'))
+      .resolves.toMatchObject({ text: 'Ask me about the marker or the bell tower.' });
     const taken = await client.take(characterId, 'mossgate-loose-stone', firstRoom.revision, 'sdk-take');
     expect(taken.receipt).toMatchObject({ ok: true, newAggregateVersion: 2 });
     await expect(client.inspect(characterId, 'mossgate-loose-stone', 'sdk-inspect-carried'))
@@ -92,6 +110,8 @@ describe('MuddHttpClient', () => {
       .rejects.toThrow('That object is not here or in your pack.');
     await expect(client.read(characterId, 'mossgate-marker', 'sdk-read-from-bridge'))
       .rejects.toThrow('That object is not readable from here.');
+    await expect(client.talk(characterId, 'mara-waykeeper', undefined, 'sdk-talk-away'))
+      .rejects.toThrow('That person is not here.');
     await engine.stop();
   });
 });

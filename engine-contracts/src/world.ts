@@ -25,6 +25,28 @@ export const TakeableObjectDefinitionSchema = z.object({
   roomDescription: z.string().min(1).max(1000).optional(),
 }).strict();
 
+export const NpcDialogueTopicDefinitionSchema = z.object({
+  id: IdSchema,
+  keywords: z.array(z.string().trim().min(1).max(80)).min(1).max(12),
+  response: z.string().min(1).max(2000),
+}).strict();
+
+export const NpcDefinitionSchema = z.object({
+  id: IdSchema,
+  name: z.string().min(1).max(120),
+  description: z.string().min(1).max(1000),
+  greeting: z.string().min(1).max(2000),
+  topics: z.array(NpcDialogueTopicDefinitionSchema).max(24),
+  unknownTopicResponse: z.string().min(1).max(2000),
+  announcements: z.array(z.string().min(1).max(500)).max(24).optional(),
+}).strict();
+
+export const NpcPresenceProjectionSchema = z.object({
+  id: IdSchema,
+  name: z.string().min(1).max(120),
+  description: z.string().min(1).max(1000),
+}).strict();
+
 export const LocationDefinitionSchema = z.object({
   id: IdSchema,
   name: z.string().min(1).max(160),
@@ -33,6 +55,7 @@ export const LocationDefinitionSchema = z.object({
   exits: z.array(ExitDefinitionSchema),
   readables: z.array(ReadableObjectDefinitionSchema).optional(),
   takeables: z.array(TakeableObjectDefinitionSchema).optional(),
+  npcs: z.array(NpcDefinitionSchema).optional(),
 }).strict();
 
 export const WorldPackDraftSchema = z.object({
@@ -58,6 +81,14 @@ export const ObjectInspectQuerySchema = ClientQueryBaseSchema.extend({
   payload: z.object({ objectId: IdSchema }).strict(),
 }).strict();
 
+export const NpcTalkQuerySchema = ClientQueryBaseSchema.extend({
+  type: z.literal('npc.talk'),
+  payload: z.object({
+    npcId: IdSchema,
+    topic: z.string().trim().min(1).max(80).optional(),
+  }).strict(),
+}).strict();
+
 export const ReadableObjectProjectionSchema = z.object({
   id: IdSchema,
   label: z.string(),
@@ -68,6 +99,12 @@ export const ObjectInspectionProjectionSchema = z.object({
   id: IdSchema,
   label: z.string(),
   description: z.string().min(1).max(1000),
+}).strict();
+
+export const NpcDialogueProjectionSchema = z.object({
+  npcId: IdSchema,
+  npcName: z.string().min(1).max(120),
+  text: z.string().min(1).max(2000),
 }).strict();
 
 export const ExitProjectionSchema = z.object({
@@ -94,6 +131,7 @@ export const LocationProjectionSchema = z.object({
     takeable: z.boolean(),
   }).strict()),
   occupants: z.array(z.object({ id: IdSchema, displayName: z.string() }).strict()),
+  npcs: z.array(NpcPresenceProjectionSchema).optional(),
 }).strict();
 
 export type ExitDefinition = z.infer<typeof ExitDefinitionSchema>;
@@ -104,6 +142,10 @@ export type ObjectReadQuery = z.infer<typeof ObjectReadQuerySchema>;
 export type ObjectInspectQuery = z.infer<typeof ObjectInspectQuerySchema>;
 export type ReadableObjectDefinition = z.infer<typeof ReadableObjectDefinitionSchema>;
 export type TakeableObjectDefinition = z.infer<typeof TakeableObjectDefinitionSchema>;
+export type NpcDefinition = z.infer<typeof NpcDefinitionSchema>;
+export type NpcPresenceProjection = z.infer<typeof NpcPresenceProjectionSchema>;
+export type NpcTalkQuery = z.infer<typeof NpcTalkQuerySchema>;
+export type NpcDialogueProjection = z.infer<typeof NpcDialogueProjectionSchema>;
 export type ReadableObjectProjection = z.infer<typeof ReadableObjectProjectionSchema>;
 export type ObjectInspectionProjection = z.infer<typeof ObjectInspectionProjectionSchema>;
 export type LocationProjection = z.infer<typeof LocationProjectionSchema>;

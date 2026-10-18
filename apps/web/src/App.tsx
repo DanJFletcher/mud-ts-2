@@ -23,6 +23,7 @@ const client = new MuddHttpClient({ worldInstanceId: "mudd-demo-instance" });
 type Screen = "play" | "traveler" | "notes";
 type WorldClientProps = { onLeaveWorld: () => Promise<void> };
 type VisibleRoomObject = NonNullable<GameSnapshot["location"]>["objects"][number];
+type VisibleNpc = NonNullable<NonNullable<GameSnapshot["location"]>["npcs"]>[number];
 
 function findObjectMatches(target: string, objects: VisibleRoomObject[]) {
   const normalizedTarget = target.toLocaleLowerCase();
@@ -35,10 +36,25 @@ function findObjectMatches(target: string, objects: VisibleRoomObject[]) {
     : objects.filter((object) => object.label.toLocaleLowerCase().includes(normalizedTarget));
 }
 
+function findNpcMatches(target: string, npcs: readonly VisibleNpc[]) {
+  const normalizedTarget = target.toLocaleLowerCase();
+  const exactMatch = npcs.find((npc) =>
+    npc.id.toLocaleLowerCase() === normalizedTarget ||
+    npc.name.toLocaleLowerCase() === normalizedTarget
+  );
+  return exactMatch
+    ? [exactMatch]
+    : npcs.filter((npc) => npc.name.toLocaleLowerCase().includes(normalizedTarget));
+}
+
 const COMMAND_HELP: Record<string, readonly string[]> = {
   help: [
     "Usage: help [command]",
     "Show the command list or instructions for one command.",
+  ],
+  talk: [
+    "Usage: talk <npc> [about <topic>]",
+    "Speak privately with someone in the current room. Ask about a topic to continue.",
   ],
   look: [
     "Usage: look | look [at] <object>",
@@ -69,12 +85,13 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
 const GENERAL_HELP = [
   "Commands",
   "help [command] — List commands or show instructions for one.",
+  "talk <npc> [about <topic>] — Speak privately with someone in the current room.",
   "look [at] <object> — Describe the room or inspect an object here or in your inventory.",
   "go <direction> — Travel through an available exit.",
   "read <object> — Read text on an object in the current room.",
   "take <item> | take all — Pick up one or all items in the current room.",
   "drop <item> — Put down an item you carry.",
-  "Quick actions: Look, Read, Take, Drop, Go, and Help.",
+  "Quick actions: Look, Read, Take, Drop, Go, Talk, and Help.",
 ];
 
 function getCommandHelp(topic: string): readonly string[] {
@@ -99,10 +116,10 @@ function makeEntry(kind: ActivityEntry["kind"], text: string): ActivityEntry {
 export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"look" | "read" | "take" | "drop" | "move" | null>(null);
+  const [pending, setPending] = useState<"look" | "read" | "take" | "drop" | "move" | "talk" | null>(null);
   const [command, setCommand] = useState("");
   const [quickCommandPage, setQuickCommandPage] = useState<"main" | "more">("main");
-  const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "go" | "look" | "read" | "drop" | "take">("quick");
+  const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "go" | "look" | "read" | "drop" | "take" | "talk">("quick");
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [connectionError, setConnectionError] = useState("");
   const [inspectedCarriedItem, setInspectedCarriedItem] = useState<{ id: string; label: string; description: string }>();
@@ -191,6 +208,15 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
         addEntry("narration", location.description);
         return;
       }
+      const npcMatches = findNpcMatches(target, location.npcs ?? []);
+      if (npcMatches.length === 1) {
+        addEntry("narration", npcMatches[0]!.description);
+        return;
+      }
+      if (npcMatches.length > 1) {
+        addEntry("error", `Which one do you mean: ${npcMatches.map((npc) => npc.name).join(", ")}?`);
+        return;
+      }
       const inventoryObjects = (snapshot.character.inventory ?? []).map((item) => ({
         ...item,
         readable: false,
@@ -234,6 +260,19 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
       addEntry("narration", readable.text);
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "You cannot read that just now.");
+    } finally {
+      setPending(null);
+    }
+  }, [addEntry, pending, snapshot]);
+
+  const talkToNpc = useCallback(async (npcId: string, topic?: string) => {
+    if (!snapshot?.character || pending) return;
+    setPending("talk");
+    try {
+      const dialogue = await client.talk(snapshot.character.characterId, npcId, topic);
+      addEntry("narration", `${dialogue.npcName}: ${dialogue.text}`);
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "That person does not answer.");
     } finally {
       setPending(null);
     }
@@ -333,6 +372,31 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
       for (const line of getCommandHelp(target)) addEntry("narration", line);
       return;
     }
+    if (verb.toLowerCase() === "talk") {
+      addEntry("system", `> ${value}`);
+      if (!target) {
+        addEntry("error", "Talk to whom? Try “talk Mara”.");
+        return;
+      }
+      const aboutMatch = /^(.+?)\s+about(?:\s+(.+))?$/i.exec(target);
+      const npcTarget = aboutMatch?.[1]?.trim() || target;
+      const topic = aboutMatch?.[2]?.trim();
+      if (aboutMatch && !topic) {
+        addEntry("error", "Talk about what? Try “talk Mara about the tower”.");
+        return;
+      }
+      const matches = findNpcMatches(npcTarget, snapshot?.location?.npcs ?? []);
+      if (matches.length === 0) {
+        addEntry("error", `You do not see anyone called “${npcTarget}” here.`);
+        return;
+      }
+      if (matches.length > 1) {
+        addEntry("error", `Who do you mean: ${matches.map((npc) => npc.name).join(", ")}?`);
+        return;
+      }
+      await talkToNpc(matches[0]!.id, topic);
+      return;
+    }
     if (verb.toLowerCase() === "look") {
       addEntry("system", `> ${value}`);
       const lookTarget = target.replace(/^at\s+/i, "").replace(/^the\s+/i, "").trim();
@@ -427,7 +491,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     }
     addEntry("system", `> ${value}`);
     addEntry("error", 'Unknown command. Try "help" for the command list.');
-  }, [addEntry, dropObject, inspect, move, pending, readObject, snapshot, takeAllObjects, takeObject]);
+  }, [addEntry, dropObject, inspect, move, pending, readObject, snapshot, takeAllObjects, takeObject, talkToNpc]);
 
   const submitQuickCommand = useCallback((rawCommand: string) => {
     setQuickCommandMode("quick");
@@ -472,8 +536,11 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     });
   }, [exits]);
   const quickLookTargets = useMemo(() => {
-    return (snapshot?.location?.objects ?? []).map(({ id, label }) => ({ id, label }));
-  }, [snapshot?.location?.objects]);
+    return [
+      ...(snapshot?.location?.objects ?? []).map(({ id, label }) => ({ id, label })),
+      ...(snapshot?.location?.npcs ?? []).map(({ id, name }) => ({ id, label: name })),
+    ];
+  }, [snapshot?.location?.npcs, snapshot?.location?.objects]);
   const quickTakeableObjects = useMemo(
     () => (snapshot?.location?.objects ?? []).filter((object) => object.takeable),
     [snapshot?.location?.objects],
@@ -587,7 +654,8 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                         {quickCommandMode === "go" ? "Go"
                           : quickCommandMode === "look" ? "Look"
                             : quickCommandMode === "read" ? "Read"
-                              : quickCommandMode === "drop" ? "Drop" : "Take"}
+                              : quickCommandMode === "drop" ? "Drop"
+                                : quickCommandMode === "take" ? "Take" : "Talk"}
                       </span>
                     )}
                     <div
@@ -599,7 +667,8 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                           : quickCommandMode === "go" ? "Available directions"
                             : quickCommandMode === "look" ? "Things to look at"
                               : quickCommandMode === "read" ? "Readable objects"
-                                : quickCommandMode === "drop" ? "Items to drop" : "Items to take"
+                                : quickCommandMode === "drop" ? "Items to drop"
+                                  : quickCommandMode === "talk" ? "People here" : "Items to take"
                       }
                     >
                       {quickCommandMode === "go" ? (
@@ -748,6 +817,32 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                             </>
                           ) : <span className="focused-quick-commands__empty">Nothing to take here</span>}
                         </>
+                      ) : quickCommandMode === "talk" ? (
+                        <>
+                          <button
+                            type="button"
+                            className="focused-quick-command focused-quick-command--back"
+                            onClick={() => setQuickCommandMode("quick")}
+                            aria-label={quickReturnLabel}
+                            disabled={pending !== null}
+                          >
+                            ‹
+                          </button>
+                          {(snapshot.location.npcs ?? []).length ? (
+                            (snapshot.location.npcs ?? []).map((npc) => (
+                              <button
+                                key={npc.id}
+                                type="button"
+                                className="focused-quick-command"
+                                onClick={() => submitQuickCommand(`talk ${npc.name}`)}
+                                aria-label={`Talk to ${npc.name}`}
+                                disabled={pending !== null}
+                              >
+                                {npc.name}
+                              </button>
+                            ))
+                          ) : <span className="focused-quick-commands__empty">No one to talk to here</span>}
+                        </>
                       ) : quickCommandMode === "quick" && quickCommandPage === "more" ? (
                         <>
                           <button
@@ -767,6 +862,15 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                             disabled={pending !== null}
                           >
                             take <span aria-hidden="true">›</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="focused-quick-command"
+                            onClick={() => setQuickCommandMode("talk")}
+                            aria-label="Show people to talk to"
+                            disabled={pending !== null}
+                          >
+                            talk <span aria-hidden="true">›</span>
                           </button>
                           <button
                             type="button"
@@ -842,7 +946,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                         spellCheck={false}
                       />
                       <Button type="submit" variant="secondary" disabled={!command.trim() || pending !== null}>
-                        {pending === "look" ? "Looking" : pending === "read" ? "Reading" : pending === "take" ? "Taking" : pending === "drop" ? "Dropping" : pending === "move" ? "Moving" : "Send"}
+                        {pending === "look" ? "Looking" : pending === "read" ? "Reading" : pending === "take" ? "Taking" : pending === "drop" ? "Dropping" : pending === "move" ? "Moving" : pending === "talk" ? "Talking" : "Send"}
                       </Button>
                     </form>
                   </section>
