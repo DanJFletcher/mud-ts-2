@@ -7,6 +7,7 @@ import {
   NpcTalkQuerySchema,
   type CharacterProjection,
   type NpcDefinition,
+  type NpcQuestStateCondition,
 } from '@mudd/contracts';
 import type {
   EngineCommandContext,
@@ -28,6 +29,19 @@ function currentNpc(
   const npc = location.npcs?.find((candidate) => candidate.id === npcId);
   if (!npc) throw new Error('That person is not here.');
   return npc;
+}
+
+function questConditionMatches(
+  condition: NpcQuestStateCondition,
+  questJournal: ReturnType<typeof projectQuestJournal>,
+): boolean {
+  const quest = questJournal.find((entry) => entry.questId === condition.questId);
+  if (!quest || (condition.status && quest.status !== condition.status)) return false;
+  const completedObjectiveIds = new Set(
+    quest.objectives.filter((objective) => objective.completed).map((objective) => objective.id),
+  );
+  return condition.requiresCompletedObjectiveIds.every((id) => completedObjectiveIds.has(id)) &&
+    condition.requiresIncompleteObjectiveIds.every((id) => !completedObjectiveIds.has(id));
 }
 
 function dialogueProjection(
@@ -63,13 +77,7 @@ function dialogueProjection(
   const lastChoice = dialogue.choices.find((choice) => choice.id === progress?.lastChoiceId);
   const questJournal = projectQuestJournal(character, world);
   const matchingQuestResponses = (dialogue.questResponses ?? []).filter((candidate) => {
-    const quest = questJournal.find((entry) => entry.questId === candidate.questId);
-    if (!quest || quest.status !== candidate.status) return false;
-    const completedObjectiveIds = new Set(
-      quest.objectives.filter((objective) => objective.completed).map((objective) => objective.id),
-    );
-    return candidate.requiresCompletedObjectiveIds.every((id) => completedObjectiveIds.has(id)) &&
-      candidate.requiresIncompleteObjectiveIds.every((id) => !completedObjectiveIds.has(id));
+    return questConditionMatches(candidate, questJournal);
   });
   const questResponse = matchingQuestResponses
     .sort((left, right) =>
@@ -79,6 +87,7 @@ function dialogueProjection(
   const choices = dialogue.choices
     .filter((choice) => {
       if (progress?.progressFlagIds.includes(choice.progressFlagId)) return false;
+      if (choice.questCondition && !questConditionMatches(choice.questCondition, questJournal)) return false;
       if (!choice.questAction) return true;
       const quest = world.quests.find((candidate) => candidate.id === choice.questAction?.questId);
       if (!quest) return false;
@@ -126,6 +135,13 @@ export const npcDialoguePlugin: EnginePlugin = {
       const npc = currentNpc(context, character, command.payload.npcId);
       const choice = npc.dialogue?.choices.find((candidate) => candidate.id === command.payload.choiceId);
       if (!choice) throw new Error('That choice is not available here.');
+
+      if (
+        choice.questCondition &&
+        !questConditionMatches(choice.questCondition, projectQuestJournal(character, context.world))
+      ) {
+        throw new Error('That choice is not available here.');
+      }
 
       const progress = character.npcProgress.find((entry) => entry.npcId === npc.id);
       if (progress?.progressFlagIds.includes(choice.progressFlagId)) {

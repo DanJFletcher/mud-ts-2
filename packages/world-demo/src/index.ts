@@ -108,6 +108,12 @@ const draft = {
                 label: 'Ask about the bell tower',
                 response: 'The bell has been silent for years. I still hope to hear it ring again.',
                 progressFlagId: 'mara-asked-tower',
+                questCondition: {
+                  questId: 'mara-wayfinding',
+                  status: 'active',
+                  requiresCompletedObjectiveIds: ['read-marker'],
+                  requiresIncompleteObjectiveIds: [],
+                },
               },
               {
                 id: 'accept-wayfinding-quest',
