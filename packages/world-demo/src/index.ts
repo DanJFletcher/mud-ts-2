@@ -136,6 +136,22 @@ const draft = {
               id: 'marker',
               keywords: ['marker', 'sign', 'east'],
               response: 'The marker is old, but the carving still points east toward the Old Bell Tower.',
+              questResponses: [
+                {
+                  questId: 'mara-wayfinding',
+                  status: 'active',
+                  requiresCompletedObjectiveIds: ['read-marker'],
+                  requiresIncompleteObjectiveIds: [],
+                  response: 'You’ve read the marker now. Its arrow points east to the Old Bell Tower.',
+                },
+                {
+                  questId: 'mara-wayfinding',
+                  status: 'completed',
+                  requiresCompletedObjectiveIds: ['read-marker'],
+                  requiresIncompleteObjectiveIds: [],
+                  response: 'You read the marker and followed its direction all the way to the Old Bell Tower.',
+                },
+              ],
             },
             {
               id: 'tower',

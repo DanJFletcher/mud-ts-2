@@ -82,6 +82,11 @@ describe('MuddHttpClient', () => {
         text: 'The bell has not rung in years. The tower stands east of this clearing.',
         choices: [],
       });
+    await expect(client.talk(characterId, 'mara-waykeeper', 'marker', 'sdk-talk-marker-unaccepted'))
+      .resolves.toMatchObject({
+        text: 'The marker is old, but the carving still points east toward the Old Bell Tower.',
+        choices: [],
+      });
     await expect(client.talk(characterId, 'mara-waykeeper', 'weather', 'sdk-talk-unknown-topic'))
       .resolves.toMatchObject({ text: 'Ask me about the marker or the bell tower.', choices: [] });
     const secondCreated = await client.createCharacter('Ash', 'sdk-create-second');
@@ -196,6 +201,11 @@ describe('MuddHttpClient', () => {
       .resolves.toMatchObject({
         text: 'I’ll mark the way for you. Read the weathered marker beside me to start.',
       });
+    await expect(client.talk(characterId, 'mara-waykeeper', 'marker', 'quest-talk-marker-before-read'))
+      .resolves.toMatchObject({
+        text: 'The marker is old, but the carving still points east toward the Old Bell Tower.',
+        choices: [],
+      });
     const dialogueBeforeObjective = await client.talk(
       characterId,
       'mara-waykeeper',
@@ -236,6 +246,11 @@ describe('MuddHttpClient', () => {
     await expect(client.talk(characterId, 'mara-waykeeper', undefined, 'quest-talk-after-read'))
       .resolves.toMatchObject({
         text: 'You read the marker. Its arrow points east to the Old Bell Tower. Visit the tower, then come back and tell me what you found.',
+      });
+    await expect(client.talk(characterId, 'mara-waykeeper', 'marker', 'quest-talk-marker-after-read'))
+      .resolves.toMatchObject({
+        text: 'You’ve read the marker now. Its arrow points east to the Old Bell Tower.',
+        choices: [],
       });
     await expect(client.talk(characterId, 'mara-waykeeper', undefined, 'quest-talk-choice-unlocked'))
       .resolves.toMatchObject({
@@ -288,6 +303,11 @@ describe('MuddHttpClient', () => {
       'quest-talk-after-turn-in',
     );
     expect(completedDialogue.text).toBe('You brought back the story of the path. Thank you; I will remember it.');
+    await expect(client.talk(characterId, 'mara-waykeeper', 'marker', 'quest-talk-marker-after-turn-in'))
+      .resolves.toMatchObject({
+        text: 'You read the marker and followed its direction all the way to the Old Bell Tower.',
+        choices: [],
+      });
     expect(completedDialogue.choices).not.toContainEqual({
       id: 'report-wayfinding-quest',
       label: 'I visited the Old Bell Tower',
@@ -300,6 +320,11 @@ describe('MuddHttpClient', () => {
     await expect(client.talk(anotherCharacterId, 'mara-waykeeper', undefined, 'quest-talk-second-character'))
       .resolves.toMatchObject({
         text: 'The old paths still have their stories. What would you like to ask?',
+      });
+    await expect(client.talk(anotherCharacterId, 'mara-waykeeper', 'marker', 'quest-talk-marker-second-character'))
+      .resolves.toMatchObject({
+        text: 'The marker is old, but the carving still points east toward the Old Bell Tower.',
+        choices: [],
       });
     await engine.stop();
   });

@@ -7,6 +7,7 @@ import {
   NpcTalkQuerySchema,
   type CharacterProjection,
   type NpcDefinition,
+  type NpcQuestResponseDefinition,
   type NpcQuestStateCondition,
 } from '@mudd/contracts';
 import type {
@@ -44,6 +45,18 @@ function questConditionMatches(
     condition.requiresIncompleteObjectiveIds.every((id) => !completedObjectiveIds.has(id));
 }
 
+function matchingQuestResponse(
+  responses: NpcQuestResponseDefinition[] | undefined,
+  questJournal: ReturnType<typeof projectQuestJournal>,
+): NpcQuestResponseDefinition | undefined {
+  return (responses ?? [])
+    .filter((candidate) => questConditionMatches(candidate, questJournal))
+    .sort((left, right) =>
+      right.requiresCompletedObjectiveIds.length + right.requiresIncompleteObjectiveIds.length -
+      left.requiresCompletedObjectiveIds.length - left.requiresIncompleteObjectiveIds.length,
+    )[0];
+}
+
 function dialogueProjection(
   npc: NpcDefinition,
   character: CharacterProjection,
@@ -52,13 +65,15 @@ function dialogueProjection(
 ) {
   if (topic) {
     const normalizedTopic = topic.toLocaleLowerCase();
-    const topicResponse = npc.topics.find((entry) =>
+    const matchingTopic = npc.topics.find((entry) =>
       entry.keywords.some((keyword) => normalizedTopic.includes(keyword.toLocaleLowerCase())),
-    )?.response;
+    );
+    const questJournal = projectQuestJournal(character, world);
+    const questResponse = matchingQuestResponse(matchingTopic?.questResponses, questJournal);
     return NpcDialogueProjectionSchema.parse({
       npcId: npc.id,
       npcName: npc.name,
-      text: topicResponse ?? npc.unknownTopicResponse,
+      text: questResponse?.response ?? matchingTopic?.response ?? npc.unknownTopicResponse,
       choices: [],
     });
   }
@@ -76,14 +91,7 @@ function dialogueProjection(
   const progress = character.npcProgress.find((entry) => entry.npcId === npc.id);
   const lastChoice = dialogue.choices.find((choice) => choice.id === progress?.lastChoiceId);
   const questJournal = projectQuestJournal(character, world);
-  const matchingQuestResponses = (dialogue.questResponses ?? []).filter((candidate) => {
-    return questConditionMatches(candidate, questJournal);
-  });
-  const questResponse = matchingQuestResponses
-    .sort((left, right) =>
-      right.requiresCompletedObjectiveIds.length + right.requiresIncompleteObjectiveIds.length -
-      left.requiresCompletedObjectiveIds.length - left.requiresIncompleteObjectiveIds.length,
-    )[0];
+  const questResponse = matchingQuestResponse(dialogue.questResponses, questJournal);
   const choices = dialogue.choices
     .filter((choice) => {
       if (progress?.progressFlagIds.includes(choice.progressFlagId)) return false;

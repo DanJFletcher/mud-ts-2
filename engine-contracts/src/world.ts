@@ -31,12 +31,6 @@ export const TakeableObjectDefinitionSchema = z.object({
   roomDescription: z.string().min(1).max(1000).optional(),
 }).strict();
 
-export const NpcDialogueTopicDefinitionSchema = z.object({
-  id: IdSchema,
-  keywords: z.array(z.string().trim().min(1).max(80)).min(1).max(12),
-  response: z.string().min(1).max(2000),
-}).strict();
-
 export const NpcQuestResponseDefinitionSchema = z.object({
   questId: IdSchema,
   status: z.enum(['active', 'completed']),
@@ -56,6 +50,13 @@ export const NpcQuestResponseDefinitionSchema = z.object({
     }
   }
 });
+
+export const NpcDialogueTopicDefinitionSchema = z.object({
+  id: IdSchema,
+  keywords: z.array(z.string().trim().min(1).max(80)).min(1).max(12),
+  response: z.string().min(1).max(2000),
+  questResponses: z.array(NpcQuestResponseDefinitionSchema).max(24).optional(),
+}).strict();
 
 export const NpcQuestStateConditionSchema = z.object({
   questId: IdSchema,
@@ -257,6 +258,7 @@ export type ReadableObjectDefinition = z.infer<typeof ReadableObjectDefinitionSc
 export type TakeableObjectDefinition = z.infer<typeof TakeableObjectDefinitionSchema>;
 export type NpcDefinition = z.infer<typeof NpcDefinitionSchema>;
 export type NpcDialogueDefinition = z.infer<typeof NpcDialogueDefinitionSchema>;
+export type NpcQuestResponseDefinition = z.infer<typeof NpcQuestResponseDefinitionSchema>;
 export type NpcDialogueChoiceDefinition = z.infer<typeof NpcDialogueChoiceDefinitionSchema>;
 export type NpcQuestStateCondition = z.infer<typeof NpcQuestStateConditionSchema>;
 export type NpcPresenceProjection = z.infer<typeof NpcPresenceProjectionSchema>;
@@ -308,7 +310,11 @@ export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
     }
   }
   for (const { npc } of npcs) {
-    for (const questResponse of npc.dialogue?.questResponses ?? []) {
+    const questResponses = [
+      ...(npc.dialogue?.questResponses ?? []),
+      ...npc.topics.flatMap((topic) => topic.questResponses ?? []),
+    ];
+    for (const questResponse of questResponses) {
       const quest = quests.find((candidate) => candidate.id === questResponse.questId);
       if (!quest) {
         errors.push(`NPC ${npc.id} dialogue response references missing quest ${questResponse.questId}`);
