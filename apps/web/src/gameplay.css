@@ -346,6 +346,9 @@
 
 .focused-room-chat {
   display: grid;
+  box-sizing: border-box;
+  height: 240px;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   overflow: hidden;
   border: 1px solid var(--mudd-border);
   border-radius: 12px;
@@ -432,8 +435,8 @@
 
 .focused-room-chat__messages {
   display: grid;
-  min-height: 80px;
-  max-height: 140px;
+  min-height: 0;
+  max-height: none;
   align-content: start;
   gap: 6px;
   overflow-y: auto;
