@@ -4,11 +4,14 @@ import { IdSchema, NonNegativeIntSchema, PositiveIntSchema } from './ids.js';
 
 export const CombatActionIdSchema = z.enum(['attack', 'defend', 'flee']);
 export const CombatOutcomeSchema = z.enum(['active', 'victory', 'defeat', 'fled']);
+export const CombatStyleSchema = z.enum(['steady', 'heavy', 'guardian']);
 
 /** Mechanics supplied by the selected combat ruleset for an authored NPC. */
 export const NpcCombatProfileSchema = z.object({
   maxHealth: PositiveIntSchema.max(1000),
   attackDamage: NonNegativeIntSchema.max(100),
+  style: CombatStyleSchema.optional(),
+  defense: NonNegativeIntSchema.max(100).optional(),
 }).strict();
 
 export const CombatEncounterProjectionSchema = z.object({
@@ -16,6 +19,7 @@ export const CombatEncounterProjectionSchema = z.object({
   locationId: IdSchema,
   opponentNpcId: IdSchema,
   opponentName: z.string().min(1).max(120),
+  opponentStyle: CombatStyleSchema.default('steady'),
   round: PositiveIntSchema,
   playerHealth: NonNegativeIntSchema.max(1000),
   playerMaxHealth: PositiveIntSchema.max(1000),
@@ -71,17 +75,32 @@ export const CombatActionCommandSchema = ClientCommandBaseSchema.extend({
   }),
 }).strict();
 
-export const CombatActionResolvedEventSchema = DomainEventBaseSchema.extend({
-  type: z.literal('character.combat_action_resolved'),
-  payload: z.object({
-    characterId: IdSchema,
-    damageDealt: NonNegativeIntSchema.max(1000),
-    damageTaken: NonNegativeIntSchema.max(1000),
-    encounter: CombatEncounterProjectionSchema,
-  }).strict(),
+const CombatActionResolvedPayloadSchema = z.object({
+  characterId: IdSchema,
+  damageDealt: NonNegativeIntSchema.max(1000),
+  damageTaken: NonNegativeIntSchema.max(1000),
+  encounter: CombatEncounterProjectionSchema,
 }).strict();
 
+export const CombatActionResolvedEventV1Schema = DomainEventBaseSchema.extend({
+  type: z.literal('character.combat_action_resolved'),
+  version: z.literal(1),
+  payload: CombatActionResolvedPayloadSchema,
+}).strict();
+
+export const CombatActionResolvedEventV2Schema = DomainEventBaseSchema.extend({
+  type: z.literal('character.combat_action_resolved'),
+  version: z.literal(2),
+  payload: CombatActionResolvedPayloadSchema,
+}).strict();
+
+export const CombatActionResolvedEventSchema = z.discriminatedUnion('version', [
+  CombatActionResolvedEventV1Schema,
+  CombatActionResolvedEventV2Schema,
+]);
+
 export type CombatActionId = z.infer<typeof CombatActionIdSchema>;
+export type CombatStyle = z.infer<typeof CombatStyleSchema>;
 export type NpcCombatProfile = z.infer<typeof NpcCombatProfileSchema>;
 export type CombatEncounterProjection = z.infer<typeof CombatEncounterProjectionSchema>;
 export type CombatActionCommand = z.infer<typeof CombatActionCommandSchema>;

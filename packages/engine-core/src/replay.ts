@@ -75,7 +75,10 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
     } else if (event.type === 'character.combat_action_resolved') {
       if (!state) throw new Error('Combat action encountered before character creation.');
       const resolved = CombatActionResolvedEventSchema.parse(publicEvent);
-      const combat = resolved.payload.encounter;
+      const combat = {
+        ...resolved.payload.encounter,
+        opponentStyle: resolved.payload.encounter.opponentStyle ?? 'steady',
+      };
       const previous = state.combat;
       if (
         resolved.payload.characterId !== state.characterId ||
@@ -83,6 +86,7 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         (previous?.status === 'active' && (
           combat.encounterId !== previous.encounterId ||
           combat.opponentNpcId !== previous.opponentNpcId ||
+          combat.opponentStyle !== previous.opponentStyle ||
           combat.round !== previous.round + 1 ||
           combat.playerHealth > previous.playerHealth ||
           combat.opponentHealth > previous.opponentHealth

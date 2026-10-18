@@ -42,6 +42,14 @@ The engine exposes only a draft combat command shape and has no combat runtime, 
 - Combat derives outgoing damage from base attack plus the equipped weapon bonus, and incoming damage from authored opponent damage minus equipped armor reduction (floored at zero). The resolved event persists the result; replay does not recalculate balance rules.
 - This does not introduce levels, experience, persistent health, random rolls, loot, or shared NPC state. Revisit those decisions before implementing them.
 
+## Addendum: authored opponent styles
+
+- NPC combat profiles may author a `steady`, `heavy`, or `guardian` style. Missing style means `steady`.
+- `steady` opponents strike after each player attack as before. `heavy` opponents telegraph on odd-numbered encounter rounds and strike on even-numbered rounds; defending still blocks the strike. `guardian` opponents reduce each incoming player hit by their authored defense value (default 1) and counterattack after attacks.
+- The encounter projection snapshots the opponent style. The character-scoped combat event records the resolved damage and narration, so replay never re-runs the style logic. NPC definitions remain immutable shared world content; encounters and health remain character-specific.
+- The combat event advances to schema version 2. Replay continues to accept version-1 events and interprets their missing style as `steady`.
+- This adds no shared NPC health, random rolls, persistent injuries, rewards, or database migration.
+
 ## Verification
 
 The initial implementation must test invalid targets and locations, attack/defend/flee resolution, victory/defeat, movement lock, replay, stale revisions, duplicate command IDs, and independent encounters for two characters.

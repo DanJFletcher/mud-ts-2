@@ -51,4 +51,31 @@ describe('character event replay validation', () => {
       event('character.archived', 3, { characterId: 'character-test' }),
     ])).toThrow(/non-contiguous aggregate revision/i);
   });
+
+  it('replays version-1 combat events as steady-style encounters', () => {
+    const legacyCombat = event('character.combat_action_resolved', 2, {
+      characterId: 'character-test',
+      damageDealt: 2,
+      damageTaken: 1,
+      encounter: {
+        encounterId: 'combat-legacy',
+        locationId: 'mossgate-clearing',
+        opponentNpcId: 'mossgate-training-sentinel',
+        opponentName: 'Practice Sentinel',
+        round: 1,
+        playerHealth: 5,
+        playerMaxHealth: 6,
+        opponentHealth: 2,
+        opponentMaxHealth: 4,
+        status: 'active',
+        lastAction: 'attack',
+        lastNarration: 'The practice begins.',
+      },
+    });
+
+    expect(replayCharacter([created, legacyCombat])?.combat).toMatchObject({
+      encounterId: 'combat-legacy',
+      opponentStyle: 'steady',
+    });
+  });
 });

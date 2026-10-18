@@ -71,6 +71,7 @@ describe('turn-based PvE combat', () => {
     );
     expect(retriedAttack.receipt).toEqual(attack.receipt);
     expect((await store.readStream(DEMO_WORLD_INSTANCE_ID, firstId))).toHaveLength(2);
+    expect((await store.readStream(DEMO_WORLD_INSTANCE_ID, firstId))[1]?.version).toBe(2);
     await expect(client.move(firstId, 'clearing-to-bridge', firstState.revision, 'combat-move-during'))
       .rejects.toThrow('You cannot leave while combat is active. Flee first.');
 
@@ -122,6 +123,61 @@ describe('turn-based PvE combat', () => {
       .resolves.toMatchObject({ receipt: { ok: true } });
     expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, firstId))?.combat?.status)
       .toBe('victory');
+  });
+
+  it('resolves heavy wind-ups and guardian defenses from authored opponent styles', async () => {
+    const { client, store } = makeClient();
+    const heavyCharacter = await client.createCharacter('Rowan', 'combat-heavy-create');
+    const heavyId = heavyCharacter.streamId!;
+    let heavyState = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, heavyId))!;
+
+    await client.performCombatAction(
+      heavyId,
+      'attack',
+      heavyState.revision,
+      { targetNpcId: 'mossgate-practice-mauler' },
+      'combat-heavy-windup',
+    );
+    heavyState = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, heavyId))!;
+    expect(heavyState.combat).toMatchObject({
+      opponentStyle: 'heavy',
+      round: 1,
+      playerHealth: 6,
+      opponentHealth: 4,
+      lastNarration: 'You deal 2 damage to Practice Mauler. It winds up for a heavy strike.',
+    });
+
+    await client.performCombatAction(
+      heavyId,
+      'attack',
+      heavyState.revision,
+      { encounterId: heavyState.combat!.encounterId },
+      'combat-heavy-strike',
+    );
+    heavyState = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, heavyId))!;
+    expect(heavyState.combat).toMatchObject({
+      round: 2,
+      playerHealth: 4,
+      lastNarration: 'You deal 2 damage to Practice Mauler. Its heavy strike for 2.',
+    });
+
+    const guardianCharacter = await client.createCharacter('Sable', 'combat-guardian-create');
+    const guardianId = guardianCharacter.streamId!;
+    const guardianState = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, guardianId))!;
+    await client.performCombatAction(
+      guardianId,
+      'attack',
+      guardianState.revision,
+      { targetNpcId: 'mossgate-practice-guardian' },
+      'combat-guardian-block',
+    );
+    const defendedState = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, guardianId))!;
+    expect(defendedState.combat).toMatchObject({
+      opponentStyle: 'guardian',
+      opponentHealth: 5,
+      playerHealth: 5,
+      lastNarration: 'You deal 1 damage to Practice Guardian. Its guard softens your blow. It strikes back for 1.',
+    });
   });
 
   it('records a nonlethal defeat when an authored opponent overwhelms the player', async () => {

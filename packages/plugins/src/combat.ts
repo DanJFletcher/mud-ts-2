@@ -1,6 +1,6 @@
 import {
   CombatActionCommandSchema,
-  CombatActionResolvedEventSchema,
+  CombatActionResolvedEventV2Schema,
 } from '@mudd/contracts';
 import type { EnginePlugin } from '@mudd/engine-core';
 import { RuleViolationError } from '@mudd/engine-core';
@@ -17,7 +17,7 @@ export const combatPlugin: EnginePlugin = {
     category: 'first-party',
     requires: [characterStateCapability.id],
     requiredPlugins: { 'mudd.character': '^1.0.0' },
-    eventSchemaVersions: { 'character.combat_action_resolved': 1 },
+    eventSchemaVersions: { 'character.combat_action_resolved': 2 },
   },
   register({ registerCommand, requireCapability }) {
     const characterState = requireCapability<CharacterStateCapability>(characterStateCapability);
@@ -50,6 +50,7 @@ export const combatPlugin: EnginePlugin = {
           locationId: character.locationId,
           opponentNpcId: npc.id,
           opponentName: npc.name,
+          opponentStyle: npc.combatProfile.style ?? 'steady',
           round: 0,
           playerHealth: PLAYER_MAX_HEALTH,
           playerMaxHealth: PLAYER_MAX_HEALTH,
@@ -67,6 +68,7 @@ export const combatPlugin: EnginePlugin = {
       if (!npc?.combatProfile) throw new RuleViolationError('That opponent is no longer available.');
 
       const action = command.payload.action;
+      const opponentStyle = encounter.opponentStyle ?? npc.combatProfile.style ?? 'steady';
       const weapon = character.inventory.find((item) => item.id === character.equipment.weaponItemId);
       const armor = character.inventory.find((item) => item.id === character.equipment.armorItemId);
       const attackDamage = PLAYER_ATTACK_DAMAGE + (weapon?.equipment?.attackBonus ?? 0);
@@ -84,7 +86,8 @@ export const combatPlugin: EnginePlugin = {
         narration = `You retreat from ${npc.name}. The encounter ends without lasting injury.`;
       } else {
         if (action === 'attack') {
-          damageDealt = Math.min(attackDamage, opponentHealth);
+          const guard = opponentStyle === 'guardian' ? npc.combatProfile.defense ?? 1 : 0;
+          damageDealt = Math.min(Math.max(0, attackDamage - guard), opponentHealth);
           opponentHealth -= damageDealt;
         }
 
@@ -92,15 +95,25 @@ export const combatPlugin: EnginePlugin = {
           status = 'victory';
           narration = `You defeat ${npc.name}. The practice ends without lasting injury.`;
         } else if (action === 'defend') {
-          narration = `You guard against ${npc.name}'s padded strike and take no damage.`;
+          narration = opponentStyle === 'heavy' && round % 2 === 1
+            ? `You hold your guard while ${npc.name} winds up a heavy strike.`
+            : opponentStyle === 'heavy'
+              ? `You block ${npc.name}'s heavy strike and take no damage.`
+              : `You guard against ${npc.name}'s strike and take no damage.`;
+        } else if (opponentStyle === 'heavy' && round % 2 === 1) {
+          narration = `You deal ${damageDealt} damage to ${npc.name}. It winds up for a heavy strike.`;
         } else {
-          damageTaken = Math.min(Math.max(0, npc.combatProfile.attackDamage - damageReduction), playerHealth);
+          const heavyDamage = opponentStyle === 'heavy' ? npc.combatProfile.attackDamage : 0;
+          const incomingDamage = heavyDamage || npc.combatProfile.attackDamage;
+          damageTaken = Math.min(Math.max(0, incomingDamage - damageReduction), playerHealth);
           playerHealth -= damageTaken;
           if (playerHealth === 0) {
             status = 'defeat';
-            narration = `${npc.name} lands a padded strike. You are down; the practice ends without lasting injury.`;
+            narration = `${npc.name} lands a ${opponentStyle === 'heavy' ? 'heavy ' : ''}strike. You are down; the practice ends without lasting injury.`;
           } else {
-            narration = `You deal ${damageDealt} damage to ${npc.name}. It strikes back for ${damageTaken}${damageReduction ? ` after your armor absorbs ${damageReduction}` : ''}.`;
+            const guardText = opponentStyle === 'guardian' ? ' Its guard softens your blow.' : '';
+            const strikeText = opponentStyle === 'heavy' ? ' Its heavy strike' : ' It strikes back';
+            narration = `You deal ${damageDealt} damage to ${npc.name}.${guardText}${strikeText} for ${damageTaken}${damageReduction ? ` after your armor absorbs ${damageReduction}` : ''}.`;
           }
         }
       }
@@ -120,11 +133,11 @@ export const combatPlugin: EnginePlugin = {
         damageTaken,
         encounter: resolvedEncounter,
       };
-      CombatActionResolvedEventSchema.shape.payload.parse(payload);
+      CombatActionResolvedEventV2Schema.shape.payload.parse(payload);
       return {
         streamId: character.characterId,
         expectedVersion: command.expectedVersion,
-        events: [{ type: 'character.combat_action_resolved', version: 1, payload }],
+        events: [{ type: 'character.combat_action_resolved', version: 2, payload }],
       };
     });
   },

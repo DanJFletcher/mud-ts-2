@@ -93,7 +93,19 @@ describe('MuddHttpClient', () => {
     }, {
       id: 'mossgate-training-sentinel',
       name: 'Practice Sentinel',
-      description: 'A knee-high wooden sentinel waits beside the trail. Its padded arms lift as you approach.',
+      description: 'A knee-high wooden sentinel waits beside the trail. Its padded arms lift in a steady, even rhythm.',
+      canChallenge: true,
+      canShop: false,
+    }, {
+      id: 'mossgate-practice-mauler',
+      name: 'Practice Mauler',
+      description: 'A weighted wooden sparring dummy pivots slowly, telegraphing each broad, heavy swing.',
+      canChallenge: true,
+      canShop: false,
+    }, {
+      id: 'mossgate-practice-guardian',
+      name: 'Practice Guardian',
+      description: 'A broad wooden figure keeps a round shield angled toward the trail, guarding its center.',
       canChallenge: true,
       canShop: false,
     }]);
