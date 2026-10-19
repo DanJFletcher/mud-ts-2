@@ -43,6 +43,22 @@ describe('demo world navigation', () => {
 });
 
 describe('MuddHttpClient', () => {
+  it('starts a guest session through the same-origin API', async () => {
+    const fetcher: typeof fetch = async (input, init) => {
+      expect(String(input)).toBe('/api/guest-session');
+      expect(init?.method).toBe('POST');
+      expect(init?.credentials).toBe('same-origin');
+      return Response.json({
+        player: { id: 'guest-player', displayName: 'Traveler GUEST' },
+      });
+    };
+    const client = new MuddHttpClient({ worldInstanceId: DEMO_WORLD_INSTANCE_ID, fetcher });
+
+    await expect(client.createGuestSession()).resolves.toEqual({
+      player: { id: 'guest-player', displayName: 'Traveler GUEST' },
+    });
+  });
+
   it('sends an authenticated world-session heartbeat and validates its room projection', async () => {
     let callCount = 0;
     const fetcher: typeof fetch = async (input, init) => {

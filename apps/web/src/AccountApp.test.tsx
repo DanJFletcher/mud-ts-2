@@ -18,7 +18,7 @@ vi.mock('@clerk/react/internal', () => ({ publishableKeyFromHost: () => 'pk_test
 vi.mock('@clerk/themes', () => ({ shadcn: {} }));
 vi.mock('wouter', () => ({ useLocation: () => ['/characters', navigate] }));
 
-import { CharacterRoster } from './AccountApp.js';
+import { CharacterRoster, GuestPlayButton } from './AccountApp.js';
 
 const firstCharacter = {
   worldInstanceId: 'mudd-demo-instance',
@@ -223,5 +223,52 @@ describe('account character roster', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Enter world' })[1]);
     await waitFor(() => expect(active?.characterId).toBe(secondCharacter.characterId));
     expect(navigate).toHaveBeenCalledWith('/world');
+  });
+});
+
+describe('guest entry', () => {
+  it('creates a guest character, joins the world, and enters without Clerk sign-in', async () => {
+    let characterCreated = false;
+    apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/api/guest-session') {
+        expect(init?.method).toBe('POST');
+        return json({ player: { id: 'guest-player', displayName: 'Traveler GUEST' } });
+      }
+      if (path === '/api/characters') {
+        return json({
+          player: { id: 'guest-player', displayName: 'Traveler GUEST' },
+          characters: characterCreated ? [{
+            ...firstCharacter,
+            characterId: 'guest-character',
+            name: 'Traveler',
+          }] : [],
+          activeWorldSession: null,
+        });
+      }
+      if (path === '/api/commands') {
+        characterCreated = true;
+        return json({
+          receipt: { ok: true, commandId: 'guest-create', eventIds: [], newAggregateVersion: 1 },
+          streamId: 'guest-character',
+        });
+      }
+      if (path === '/api/world-session' && init?.method === 'POST') {
+        expect(JSON.parse(String(init.body))).toEqual({ characterId: 'guest-character' });
+        return json({ sessionId: 'guest-world-session', characterId: 'guest-character' });
+      }
+      return json({ message: 'Not found.' }, 404);
+    });
+
+    render(<GuestPlayButton />);
+    fireEvent.click(screen.getByRole('button', { name: 'Play as guest' }));
+
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/guest-world'));
+    expect(apiFetch.mock.calls.map(([path]) => path)).toEqual([
+      '/api/guest-session',
+      '/api/characters',
+      '/api/commands',
+      '/api/characters',
+      '/api/world-session',
+    ]);
   });
 });

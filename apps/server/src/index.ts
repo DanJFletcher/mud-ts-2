@@ -28,7 +28,12 @@ import { listRoomOccupants, touchWorldSessionPresence } from './room-presence-se
 import { demoEventEffectsPlugin } from './demo-event-effects-plugin.js';
 import { LOCATION_ENTERED_EFFECT } from './durable-effect-contracts.js';
 import { projectWorldMap } from './world-map-projection.js';
-import { expiredGuestCookie, getAccountIdentity, type AccountIdentity } from './session-service.js';
+import {
+  createGuestIdentity,
+  expiredGuestCookie,
+  getAccountIdentity,
+  type AccountIdentity,
+} from './session-service.js';
 import { CLERK_PROXY_PATH, clerkProxyMiddleware, getClerkProxyHost } from './middlewares/clerkProxyMiddleware.js';
 import {
   createPlayerRoomChatMessage,
@@ -117,12 +122,25 @@ async function accountFor(request: Request, response: Response): Promise<Account
   const auth = getAuth(request);
   const identity = await getAccountIdentity(request, { userId: auth.userId, sessionId: auth.sessionId });
   if (!identity) {
-    response.status(401).json({ message: 'Sign in to access your characters.' });
+    response.status(401).json({ message: 'Start a guest session or sign in to access your characters.' });
     return undefined;
   }
   if (identity.clearGuestCookie) response.setHeader('Set-Cookie', expiredGuestCookie);
   return identity;
 }
+
+app.post('/api/guest-session', createRateLimiter({ windowMs: 60_000, maxRequests: 10 }), async (req, res, next) => {
+  try {
+    if (getAuth(req).userId) {
+      return res.status(409).json({ message: 'Sign out before starting a guest session.' });
+    }
+    const { identity, setCookie } = await createGuestIdentity(req);
+    if (setCookie) res.setHeader('Set-Cookie', setCookie);
+    return res.json({ player: { id: identity.playerId, displayName: identity.displayName } });
+  } catch (error) {
+    next(error);
+  }
+});
 
 async function activeSession(identity: AccountIdentity) {
   const [session] = await db.select().from(worldSessions).where(and(

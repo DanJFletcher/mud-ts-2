@@ -56,6 +56,9 @@ export const CharacterRosterSnapshotSchema = z.object({
   activeWorldSession: z.object({ id: IdSchema, characterId: IdSchema }).nullable(),
 });
 export type CharacterRosterSnapshot = z.infer<typeof CharacterRosterSnapshotSchema>;
+const GuestSessionResponseSchema = z.object({
+  player: z.object({ id: IdSchema, displayName: z.string() }),
+});
 
 export const CommandResponseSchema = z.object({
   receipt: CommandReceiptSchema,
@@ -96,6 +99,12 @@ export class MuddHttpClient {
 
   async getCharacters(): Promise<CharacterRosterSnapshot> {
     return this.request('/api/characters', {}, CharacterRosterSnapshotSchema);
+  }
+
+  async createGuestSession(): Promise<{ player: { id: string; displayName: string } }> {
+    return this.request('/api/guest-session', {
+      method: 'POST',
+    }, GuestSessionResponseSchema);
   }
 
   async joinWorld(characterId: string): Promise<{ sessionId: string; characterId: string }> {

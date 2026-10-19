@@ -13,6 +13,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
   const characterId = randomUUID();
   const chatCharacterId = randomUUID();
   const playerId = randomUUID();
+  let guestPlayerId: string | undefined;
   const secondActorId = randomUUID();
   const presencePlayerIds = [randomUUID(), randomUUID()] as const;
   let db: typeof import('./db/client.js').db;
@@ -47,7 +48,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     const { characters, commandReceipts, durableEffects, gameEvents, players, worldSessions } = await import('./db/schema.js');
     try {
       const testWorlds = [worldInstanceId, chatWorldInstanceId, presenceWorldInstanceId];
-      const testPlayers = [playerId, ...presencePlayerIds];
+      const testPlayers = [playerId, ...presencePlayerIds, ...(guestPlayerId ? [guestPlayerId] : [])];
       await db.delete(durableEffects).where(inArray(durableEffects.worldInstanceId, testWorlds));
       await db.delete(commandReceipts).where(inArray(commandReceipts.worldInstanceId, testWorlds));
       await db.delete(gameEvents).where(inArray(gameEvents.worldInstanceId, testWorlds));
@@ -230,6 +231,60 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
       worldInstanceId,
       characterId: secondCharacterId,
     })).rejects.toThrow();
+  });
+
+  it('creates a cookie-backed guest identity and upgrades it without losing its character ownership', async () => {
+    process.env.SESSION_SECRET ??= randomUUID();
+    const { createGuestIdentity, getAccountIdentity } = await import('./session-service.js');
+    const { characters, players, sessions } = await import('./db/schema.js');
+    const guest = await createGuestIdentity({ headers: {} });
+    guestPlayerId = guest.identity.playerId;
+    expect(guest.identity.isGuest).toBe(true);
+    expect(guest.setCookie).toMatch(/^mudd_guest=[A-Za-z0-9_-]+; Path=\/; HttpOnly; SameSite=Strict;/);
+    expect(guest.setCookie).not.toContain(guest.identity.playerId);
+
+    const guestCharacterId = randomUUID();
+    await db.insert(characters).values({
+      id: guestCharacterId,
+      playerId: guestPlayerId,
+      worldInstanceId: 'mudd-demo-instance',
+      name: 'Guest Traveler',
+    });
+
+    const cookie = guest.setCookie!.split(';', 1)[0]!;
+    const resumed = await createGuestIdentity({ headers: { cookie } });
+    expect(resumed.identity.playerId).toBe(guestPlayerId);
+    expect(resumed.setCookie).toBeUndefined();
+
+    const recovered = await getAccountIdentity(
+      { headers: { cookie } },
+      { userId: null, sessionId: null },
+    );
+    expect(recovered).toMatchObject({
+      playerId: guestPlayerId,
+      isGuest: true,
+      clearGuestCookie: false,
+    });
+
+    const upgraded = await getAccountIdentity(
+      { headers: { cookie } },
+      { userId: `guest-upgrade-${randomUUID()}`, sessionId: 'clerk-session' },
+    );
+    expect(upgraded).toMatchObject({
+      playerId: guestPlayerId,
+      isGuest: false,
+      clearGuestCookie: true,
+    });
+
+    const [retainedCharacter] = await db.select().from(characters)
+      .where((await import('drizzle-orm')).eq(characters.id, guestCharacterId));
+    const [claimedPlayer] = await db.select().from(players)
+      .where((await import('drizzle-orm')).eq(players.id, guestPlayerId));
+    const remainingSessions = await db.select().from(sessions)
+      .where((await import('drizzle-orm')).eq(sessions.playerId, guestPlayerId));
+    expect(retainedCharacter?.playerId).toBe(guestPlayerId);
+    expect(claimedPlayer?.clerkUserId).toMatch(/^guest-upgrade-/);
+    expect(remainingSessions).toHaveLength(0);
   });
 
   it('derives two-account room presence and scopes heartbeat writes to the owning session', async () => {

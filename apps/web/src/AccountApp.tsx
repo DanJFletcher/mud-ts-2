@@ -103,9 +103,68 @@ function HomePage() {
             <a className="account-link account-link--primary" href={`${basePath}/sign-up`}><UserRoundPlus size={17} /> Create account</a>
             <a className="account-link account-link--quiet" href={`${basePath}/sign-in`}>I have an account</a>
           </div>
+          <GuestPlayButton />
         </Show>
       </section>
     </main>
+  );
+}
+
+export function GuestPlayButton() {
+  const [, setLocation] = useLocation();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState('');
+
+  const playAsGuest = async () => {
+    if (pending) return;
+    setPending(true);
+    setError('');
+    try {
+      await client.createGuestSession();
+      let roster = await client.getCharacters();
+      const activeCharacter = roster.characters.find(
+        (character) => character.characterId === roster.activeWorldSession?.characterId,
+      );
+      if (activeCharacter && activeCharacter.combat?.status !== 'defeat' && activeCharacter.health?.current !== 0) {
+        window.location.hash = '#/play';
+        setLocation('/guest-world');
+        return;
+      }
+      if (roster.activeWorldSession) {
+        await client.leaveWorld();
+        roster = await client.getCharacters();
+      }
+
+      let character = roster.characters.find((candidate) =>
+        !candidate.archived && candidate.combat?.status !== 'defeat' && candidate.health?.current !== 0,
+      );
+      if (!character) {
+        const name = roster.characters.length ? `Traveler ${roster.characters.length + 1}` : 'Traveler';
+        const created = await client.createCharacter(name);
+        if (!created.streamId) throw new Error('The guest character was created without an ID.');
+        roster = await client.getCharacters();
+        character = roster.characters.find((candidate) => candidate.characterId === created.streamId);
+        if (!character) throw new Error('The new guest character could not be loaded.');
+      }
+
+      await client.joinWorld(character.characterId);
+      window.location.hash = '#/play';
+      setLocation('/guest-world');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not start a guest journey.');
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <div className="guest-play">
+      <Button type="button" variant="secondary" onClick={() => void playAsGuest()} disabled={pending}>
+        {pending ? 'Entering…' : 'Play as guest'}
+      </Button>
+      <p>Your guest journey is saved in this browser. Create an account later to keep it across devices.</p>
+      {error && <p className="account-message account-message--error" role="alert">{error}</p>}
+    </div>
   );
 }
 
@@ -448,6 +507,16 @@ function WorldPage() {
   );
 }
 
+function GuestWorldPage() {
+  const [, setLocation] = useLocation();
+  const leaveWorld = async () => {
+    await client.leaveWorld();
+    window.location.hash = '';
+    setLocation('/');
+  };
+  return <WorldClient onLeaveWorld={leaveWorld} />;
+}
+
 function ClerkAppRoutes() {
   const [, setLocation] = useLocation();
   return (
@@ -470,6 +539,7 @@ function ClerkAppRoutes() {
         <Route path="/sign-up/*?" component={SignUpPage} />
         <Route path="/characters" component={() => <ProtectedPage><CharacterRoster /></ProtectedPage>} />
         <Route path="/world" component={WorldPage} />
+        <Route path="/guest-world" component={GuestWorldPage} />
         <Route component={HomePage} />
       </Switch>
     </ClerkProvider>

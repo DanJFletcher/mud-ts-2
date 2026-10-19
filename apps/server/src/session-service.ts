@@ -1,4 +1,4 @@
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { and, eq, gt, isNull } from 'drizzle-orm';
 import type { SessionContext } from '@mudd/contracts';
 import { DEMO_WORLD_INSTANCE_ID } from '@mudd/world-demo';
@@ -7,6 +7,7 @@ import { characters, players, sessions } from './db/schema.js';
 
 const secret = process.env.SESSION_SECRET;
 if (!secret) throw new Error('SESSION_SECRET is required to preserve existing guest accounts.');
+export const GUEST_SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
 
 function hashToken(token: string): string {
   return createHmac('sha256', secret!).update(token).digest('hex');
@@ -15,7 +16,12 @@ function hashToken(token: string): string {
 function readGuestToken(request: { headers: { cookie?: string } }): string | undefined {
   const entry = request.headers.cookie?.split(';').map((part) => part.trim())
     .find((part) => part.startsWith('mudd_guest='));
-  return entry ? decodeURIComponent(entry.slice('mudd_guest='.length)) : undefined;
+  if (!entry) return undefined;
+  try {
+    return decodeURIComponent(entry.slice('mudd_guest='.length));
+  } catch {
+    return undefined;
+  }
 }
 
 export interface AccountIdentity {
@@ -23,6 +29,7 @@ export interface AccountIdentity {
   playerId: string;
   displayName: string;
   clearGuestCookie: boolean;
+  isGuest: boolean;
 }
 
 interface ClerkIdentity {
@@ -34,20 +41,14 @@ export async function getAccountIdentity(
   request: { headers: { cookie?: string } },
   auth: ClerkIdentity,
 ): Promise<AccountIdentity | undefined> {
-  if (!auth.userId) return undefined;
-
   const guestToken = readGuestToken(request);
   const tokenHash = guestToken ? hashToken(guestToken) : undefined;
-
-  const findAccount = () => db.select({
-    id: players.id,
-    displayName: players.displayName,
-  }).from(players).where(eq(players.clerkUserId, auth.userId!)).limit(1);
-
-  let [account] = await findAccount();
-
   const guestPlayer = () => tokenHash
-    ? db.select({ id: players.id }).from(sessions)
+    ? db.select({
+      id: players.id,
+      displayName: players.displayName,
+      sessionId: sessions.id,
+    }).from(sessions)
       .innerJoin(players, eq(sessions.playerId, players.id))
       .where(and(
         eq(sessions.tokenHash, tokenHash),
@@ -57,6 +58,30 @@ export async function getAccountIdentity(
     : undefined;
 
   const guest = await guestPlayer();
+  if (!auth.userId) {
+    if (!guest) return undefined;
+    return {
+      session: {
+        sessionId: guest.sessionId,
+        playerId: guest.id,
+        actorId: guest.id,
+        worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+        grantedPermissions: [],
+        authenticated: true,
+      },
+      playerId: guest.id,
+      displayName: guest.displayName,
+      clearGuestCookie: false,
+      isGuest: true,
+    };
+  }
+
+  const findAccount = () => db.select({
+    id: players.id,
+    displayName: players.displayName,
+  }).from(players).where(eq(players.clerkUserId, auth.userId!)).limit(1);
+
+  let [account] = await findAccount();
 
   if (!account) {
     const newId = guest?.id ?? randomUUID();
@@ -125,7 +150,86 @@ export async function getAccountIdentity(
     playerId: account.id,
     displayName: account.displayName,
     clearGuestCookie: Boolean(guestToken),
+    isGuest: false,
   };
+}
+
+export async function createGuestIdentity(request: { headers: { cookie?: string } }): Promise<{
+  identity: AccountIdentity;
+  setCookie?: string;
+}> {
+  const existingToken = readGuestToken(request);
+  const existingHash = existingToken ? hashToken(existingToken) : undefined;
+  if (existingHash) {
+    const [existing] = await db.select({
+      id: players.id,
+      displayName: players.displayName,
+      sessionId: sessions.id,
+    }).from(sessions)
+      .innerJoin(players, eq(sessions.playerId, players.id))
+      .where(and(
+        eq(sessions.tokenHash, existingHash),
+        gt(sessions.expiresAt, new Date()),
+        isNull(players.clerkUserId),
+      )).limit(1);
+    if (existing) {
+      return {
+        identity: {
+          session: {
+            sessionId: existing.sessionId,
+            playerId: existing.id,
+            actorId: existing.id,
+            worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+            grantedPermissions: [],
+            authenticated: true,
+          },
+          playerId: existing.id,
+          displayName: existing.displayName,
+          clearGuestCookie: false,
+          isGuest: true,
+        },
+      };
+    }
+  }
+
+  const token = randomBytes(32).toString('base64url');
+  const tokenHash = hashToken(token);
+  const playerId = randomUUID();
+  const sessionId = randomUUID();
+  const displayName = `Traveler ${playerId.slice(0, 4).toUpperCase()}`;
+  const expiresAt = new Date(Date.now() + GUEST_SESSION_TTL_SECONDS * 1000);
+
+  await db.transaction(async (tx) => {
+    await tx.insert(players).values({ id: playerId, displayName, clerkUserId: null });
+    await tx.insert(sessions).values({
+      id: sessionId,
+      playerId,
+      tokenHash,
+      expiresAt,
+    });
+  });
+
+  return {
+    identity: {
+      session: {
+        sessionId,
+        playerId,
+        actorId: playerId,
+        worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+        grantedPermissions: [],
+        authenticated: true,
+      },
+      playerId,
+      displayName,
+      clearGuestCookie: false,
+      isGuest: true,
+    },
+    setCookie: guestCookie(token),
+  };
+}
+
+function guestCookie(token: string): string {
+  return `mudd_guest=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${GUEST_SESSION_TTL_SECONDS}${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`;
 }
 
 export const expiredGuestCookie = `mudd_guest=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`;

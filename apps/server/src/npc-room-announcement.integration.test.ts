@@ -40,6 +40,20 @@ const state = vi.hoisted(() => ({
     'character-mover': 'player-mover',
   },
   sessions: new Map(),
+  guestIdentity: null as null | {
+    playerId: string;
+    displayName: string;
+    clearGuestCookie: false;
+    isGuest: true;
+    session: {
+      sessionId: string;
+      playerId: string;
+      actorId: string;
+      worldInstanceId: string;
+      grantedPermissions: never[];
+      authenticated: true;
+    };
+  },
   messages: [],
   nextMessageId: 1,
   chatSubmissions: new Map(),
@@ -533,16 +547,41 @@ vi.mock('./persistence/postgres-event-store.js', () => ({
 
 vi.mock('./session-service.js', () => ({
   expiredGuestCookie: '',
-  getAccountIdentity: async (_request: unknown, auth: { userId: string | null; sessionId: string }) => {
+  createGuestIdentity: async () => {
+    const playerId = 'player-guest';
+    const identity = {
+      playerId,
+      displayName: 'Guest Traveler',
+      clearGuestCookie: false as const,
+      isGuest: true as const,
+      session: {
+        sessionId: 'guest-session',
+        playerId,
+        actorId: playerId,
+        worldInstanceId: instanceId,
+        grantedPermissions: [],
+        authenticated: true as const,
+      },
+    };
+    state.guestIdentity = identity;
+    return { identity, setCookie: 'mudd_guest=test-guest-token; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000' };
+  },
+  getAccountIdentity: async (
+    request: { headers: { cookie?: string } },
+    auth: { userId: string | null; sessionId: string },
+  ) => {
     const account = auth.userId ? playersByAuthId[auth.userId] : undefined;
-    if (!account) return undefined;
+    const cookieGuest = request.headers.cookie?.includes('mudd_guest=test-guest-token') ? state.guestIdentity : null;
+    if (!account && !cookieGuest) return undefined;
+    if (!account && cookieGuest) return cookieGuest;
     return {
       ...account,
       clearGuestCookie: false,
+      isGuest: false,
       session: {
         sessionId: auth.sessionId,
-        playerId: account.playerId,
-        actorId: account.playerId,
+        playerId: account!.playerId,
+        actorId: account!.playerId,
         worldInstanceId: instanceId,
         grantedPermissions: [],
         authenticated: true,
@@ -575,6 +614,7 @@ describe('NPC room announcements through the server', () => {
 
   beforeEach(() => {
     state.sessions.clear();
+    state.guestIdentity = null;
     state.messages.length = 0;
     state.nextMessageId = 1;
     state.chatSubmissions.clear();
@@ -599,6 +639,23 @@ describe('NPC room announcements through the server', () => {
     state.characters['character-bob'].locationId = 'npc-room';
     state.characters['character-elsewhere'].locationId = 'other-room';
     state.characters['character-mover'].locationId = 'entry-room';
+  });
+
+  it('starts a guest session and accepts its cookie on account APIs', async () => {
+    const start = await fetch(`${baseUrl}/api/guest-session`, { method: 'POST' });
+    expect(start.status).toBe(200);
+    expect(start.headers.get('set-cookie')).toContain('HttpOnly; SameSite=Strict');
+    expect(start.headers.get('set-cookie')).not.toContain('player-guest');
+
+    const roster = await fetch(`${baseUrl}/api/characters`, {
+      headers: { cookie: 'mudd_guest=test-guest-token' },
+    });
+    expect(roster.status).toBe(200);
+    expect(await roster.json()).toMatchObject({
+      player: { id: 'player-guest', displayName: 'Guest Traveler' },
+      characters: [],
+      activeWorldSession: null,
+    });
   });
 
   afterAll(async () => {
