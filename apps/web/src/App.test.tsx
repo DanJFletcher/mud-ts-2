@@ -684,6 +684,43 @@ describe('single-character world session client', () => {
     expect(pages).toHaveLength(2);
   });
 
+  it('shows up to six quick actions per page at the desktop breakpoint', async () => {
+    const originalDescriptor = Object.getOwnPropertyDescriptor(window, 'matchMedia');
+    const desktopMediaQuery = {
+      matches: true,
+      media: '(min-width: 700px)',
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(() => true),
+    } as unknown as MediaQueryList;
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn(() => desktopMediaQuery),
+    });
+
+    try {
+      render(<WorldClient onLeaveWorld={async () => undefined} />);
+      const firstPage = await screen.findByRole('group', { name: 'Quick commands, page 1' });
+      const firstPageActions = within(firstPage).getAllByRole('button')
+        .filter((button) =>
+          !button.classList.contains('focused-quick-command--back') &&
+          !button.classList.contains('focused-quick-command--next')
+        );
+      expect(firstPageActions).toHaveLength(6);
+      expect(desktopMediaQuery.addEventListener).toHaveBeenCalledWith('change', expect.any(Function));
+
+      fireEvent.click(within(firstPage).getByRole('button', { name: 'Show quick actions page 2' }));
+      const secondPage = await screen.findByRole('group', { name: 'Quick commands, page 2' });
+      expect(within(secondPage).getAllByRole('button')).toHaveLength(2);
+    } finally {
+      if (originalDescriptor) Object.defineProperty(window, 'matchMedia', originalDescriptor);
+      else Reflect.deleteProperty(window, 'matchMedia');
+    }
+  });
+
   it('hides target-dependent actions in a room without their targets', async () => {
     room = 'bridge';
     render(<WorldClient onLeaveWorld={async () => undefined} />);

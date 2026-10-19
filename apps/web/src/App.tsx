@@ -179,6 +179,9 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const [pending, setPending] = useState<"look" | "read" | "take" | "use" | "drop" | "move" | "talk" | "shop" | "buy" | "combat" | "rest" | "equip" | null>(null);
   const [command, setCommand] = useState("");
   const [quickCommandPage, setQuickCommandPage] = useState(1);
+  const [quickCommandPageSize, setQuickCommandPageSize] = useState(() =>
+    window.matchMedia?.("(min-width: 700px)").matches ? 6 : 4
+  );
   const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "go" | "look" | "read" | "drop" | "take" | "talk" | "attack" | "shop" | "buy" | "use" | "use-target" | "equip" | "unequip">("quick");
   const [quickUseItemId, setQuickUseItemId] = useState<string | null>(null);
   const [combatUseMenuOpen, setCombatUseMenuOpen] = useState(false);
@@ -1220,11 +1223,20 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   ]);
   const quickCommandPages = useMemo(() => {
     const pages: (typeof quickCommandItems)[] = [];
-    for (let index = 0; index < quickCommandItems.length; index += 4) {
-      pages.push(quickCommandItems.slice(index, index + 4));
+    for (let index = 0; index < quickCommandItems.length; index += quickCommandPageSize) {
+      pages.push(quickCommandItems.slice(index, index + quickCommandPageSize));
     }
     return pages.length > 0 ? pages : [[]];
-  }, [quickCommandItems]);
+  }, [quickCommandItems, quickCommandPageSize]);
+  useEffect(() => {
+    const desktopQuery = window.matchMedia?.("(min-width: 700px)");
+    if (!desktopQuery) return;
+
+    const updatePageSize = () => setQuickCommandPageSize(desktopQuery.matches ? 6 : 4);
+    updatePageSize();
+    desktopQuery.addEventListener("change", updatePageSize);
+    return () => desktopQuery.removeEventListener("change", updatePageSize);
+  }, []);
   const visibleQuickCommandPage = Math.min(quickCommandPage, quickCommandPages.length);
   const visibleQuickCommandItems = quickCommandPages[visibleQuickCommandPage - 1] ?? [];
   useEffect(() => {
