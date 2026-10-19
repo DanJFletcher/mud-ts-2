@@ -18,14 +18,14 @@ const authorization = {
   ownsCharacter: async () => true,
 };
 
-function makeEngine() {
+function makeEngine(world = demoWorld) {
   let id = 0;
   const store = new InMemoryEventStore();
   const engine = new EngineHost(
     [movementPlugin, characterPlugin],
     store,
     authorization,
-    demoWorld,
+    world,
     () => `test-id-${++id}`,
     () => new Date('2026-10-17T12:00:00.000Z'),
   );
@@ -297,8 +297,8 @@ describe('MUDD engine host', () => {
     await engine.stop();
   });
 
-  it('allows inspection of carried items after travel but not objects left behind', async () => {
-    const { engine } = makeEngine();
+  it('allows inspection of carried items and prevents quest items from being dropped', async () => {
+    const { engine, store } = makeEngine();
     await engine.start();
     const created = await engine.dispatch({
       type: 'character.create',
@@ -365,33 +365,24 @@ describe('MUDD engine host', () => {
       expectedVersion: 3,
       payload: { itemId: 'mossgate-loose-stone' },
     }, session);
-    expect(droppedItem.receipt).toMatchObject({ ok: true, newAggregateVersion: 4 });
-    await engine.dispatch({
-      type: 'character.move',
-      version: 1,
-      commandId: 'inspect-return',
-      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
-      characterId,
-      expectedVersion: 4,
-      payload: { exitId: 'bridge-to-clearing' },
-    }, session);
-    const itemLeftBehind = await engine.query({
-      type: 'object.inspect',
-      version: 1,
-      queryId: 'inspect-dropped-stone-from-original-room',
-      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
-      characterId,
-      payload: { objectId: 'mossgate-loose-stone' },
-    }, session);
-    expect(itemLeftBehind).toMatchObject({
+    expect(droppedItem.receipt).toMatchObject({
       ok: false,
-      message: 'That object is not here or in your pack.',
+      message: 'Quest items cannot be dropped.',
     });
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))?.inventory)
+      .toContainEqual(expect.objectContaining({ id: 'mossgate-loose-stone', questBound: true }));
     await engine.stop();
   });
 
-  it('drops a carried item into the current room and keeps its location through replay', async () => {
-    const { engine, store } = makeEngine();
+  it('drops an ordinary item into the current room and keeps its location through replay', async () => {
+    const testWorld = structuredClone(demoWorld);
+    testWorld.locations.find((location) => location.id === 'mossgate-clearing')!.takeables!.push({
+      id: 'drop-test-pebble',
+      label: 'Pebble',
+      description: 'A plain pebble used to test ordinary item dropping.',
+      roomDescription: 'A plain pebble lies nearby.',
+    });
+    const { engine, store } = makeEngine(testWorld);
     await engine.start();
     const created = await engine.dispatch({
       type: 'character.create',
@@ -408,7 +399,7 @@ describe('MUDD engine host', () => {
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
       expectedVersion: 1,
-      payload: { itemId: 'mossgate-loose-stone' },
+      payload: { itemId: 'drop-test-pebble' },
     }, session);
     expect(take.receipt).toMatchObject({ ok: true, newAggregateVersion: 2 });
     const moveToBridge = await engine.dispatch({
@@ -428,20 +419,20 @@ describe('MUDD engine host', () => {
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
       expectedVersion: 3,
-      payload: { itemId: 'mossgate-loose-stone' },
+      payload: { itemId: 'drop-test-pebble' },
     }, session);
     expect(drop.receipt).toMatchObject({ ok: true, newAggregateVersion: 4 });
     expect(drop.events[0]).toMatchObject({
       type: 'character.item_dropped',
       version: 1,
-      payload: { characterId, locationId: 'glasswater-bridge', item: { id: 'mossgate-loose-stone' } },
+      payload: { characterId, locationId: 'glasswater-bridge', item: { id: 'drop-test-pebble' } },
     });
     expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))).toMatchObject({
       locationId: 'glasswater-bridge',
       revision: 4,
       inventory: [],
       itemLocations: [{
-        item: { id: 'mossgate-loose-stone' },
+        item: { id: 'drop-test-pebble' },
         locationId: 'glasswater-bridge',
       }],
     });
@@ -455,7 +446,7 @@ describe('MUDD engine host', () => {
     }, session);
     expect(droppedRoom).toMatchObject({
       ok: true,
-      value: { objects: expect.arrayContaining([expect.objectContaining({ id: 'mossgate-loose-stone', takeable: true })]) },
+      value: { objects: expect.arrayContaining([expect.objectContaining({ id: 'drop-test-pebble', takeable: true })]) },
     });
     const moveBackToClearing = await engine.dispatch({
       type: 'character.move',
@@ -485,7 +476,7 @@ describe('MUDD engine host', () => {
     });
     expect(originalRoom).not.toMatchObject({
       ok: true,
-      value: { objects: expect.arrayContaining([expect.objectContaining({ id: 'mossgate-loose-stone' })]) },
+      value: { objects: expect.arrayContaining([expect.objectContaining({ id: 'drop-test-pebble' })]) },
     });
     const returnToBridge = await engine.dispatch({
       type: 'character.move',
@@ -500,16 +491,16 @@ describe('MUDD engine host', () => {
     const takeAgain = await engine.dispatch({
       type: 'character.take',
       version: 1,
-      commandId: 'take-dropped-stone',
+      commandId: 'take-dropped-pebble',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
       expectedVersion: 6,
-      payload: { itemId: 'mossgate-loose-stone' },
+      payload: { itemId: 'drop-test-pebble' },
     }, session);
     expect(takeAgain.receipt).toMatchObject({ ok: true, newAggregateVersion: 7 });
     expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))).toMatchObject({
-      inventory: [{ id: 'mossgate-loose-stone' }],
-      itemLocations: [{ item: { id: 'mossgate-loose-stone' }, locationId: null }],
+      inventory: [{ id: 'drop-test-pebble' }],
+      itemLocations: [{ item: { id: 'drop-test-pebble' }, locationId: null }],
     });
     await engine.stop();
   });

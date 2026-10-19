@@ -99,6 +99,7 @@ const draft = {
           label: 'Loose stone',
           description: 'A smooth, palm-sized stone with a pale stripe running through it.',
           roomDescription: 'One loose stone bears a pale stripe.',
+          questBound: true,
         },
       ],
       npcs: [
@@ -263,6 +264,7 @@ const draft = {
           label: 'Hollow reed',
           description: 'A dry green reed with a hollow stem, light enough to bend but not break.',
           roomDescription: 'A hollow reed rests between the bridge stones.',
+          questBound: true,
         },
       ],
       npcs: [

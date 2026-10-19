@@ -94,6 +94,30 @@ describe('character event replay validation', () => {
     ])).toThrow();
   });
 
+  it('rejects replaying a drop event for a quest-bound item', () => {
+    const taken = event('character.item_taken', 2, {
+      characterId: 'character-test',
+      locationId: 'mossgate-clearing',
+      item: {
+        id: 'quest-stone',
+        label: 'Quest stone',
+        description: 'A marked stone.',
+      },
+    });
+    const dropped = event('character.item_dropped', 3, {
+      characterId: 'character-test',
+      locationId: 'mossgate-clearing',
+      item: {
+        id: 'quest-stone',
+        label: 'Quest stone',
+        description: 'A marked stone.',
+        questBound: true,
+      },
+    });
+
+    expect(() => replayCharacter([created, taken, dropped])).toThrow(/invalid item dropped event/i);
+  });
+
   it('rejects gaps in aggregate revisions', () => {
     expect(() => replayCharacter([
       created,

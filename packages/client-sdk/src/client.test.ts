@@ -100,11 +100,18 @@ describe('MuddHttpClient', () => {
       authenticated: true,
     } as const;
     const store = new InMemoryEventStore();
+    const testWorld = structuredClone(demoWorld);
+    testWorld.locations.find((location) => location.id === 'mossgate-clearing')!.takeables!.push({
+      id: 'sdk-test-pebble',
+      label: 'Test pebble',
+      description: 'A plain pebble used to test ordinary item dropping.',
+      roomDescription: 'A plain test pebble lies nearby.',
+    });
     const engine = new EngineHost(
       [characterPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin],
       store,
       { canAccessInstance: async () => true, ownsCharacter: async () => true },
-      demoWorld,
+      testWorld,
     );
     await engine.start();
     const fetcher: typeof fetch = async (input, init = {}) => {
@@ -159,6 +166,13 @@ describe('MuddHttpClient', () => {
         id: 'mossgate-loose-stone',
         label: 'Loose stone',
         description: 'A smooth, palm-sized stone with a pale stripe running through it.',
+        readable: false,
+        takeable: true,
+      },
+      {
+        id: 'sdk-test-pebble',
+        label: 'Test pebble',
+        description: 'A plain pebble used to test ordinary item dropping.',
         readable: false,
         takeable: true,
       },
@@ -235,15 +249,19 @@ describe('MuddHttpClient', () => {
     expect(afterTake.revision).toBe(afterDialogue.revision + 1);
     expect(afterTake.objects).not.toContainEqual(expect.objectContaining({ id: 'mossgate-loose-stone' }));
     expect(afterTake.description).not.toContain('One loose stone bears a pale stripe.');
-    const dropped = await client.drop(characterId, 'mossgate-loose-stone', afterTake.revision, 'sdk-drop');
-    expect(dropped.receipt).toMatchObject({ ok: true, newAggregateVersion: afterTake.revision + 1 });
+    const pebbleTaken = await client.take(characterId, 'sdk-test-pebble', afterTake.revision, 'sdk-take-pebble');
+    expect(pebbleTaken.receipt).toMatchObject({ ok: true, newAggregateVersion: afterTake.revision + 1 });
+    const afterPebbleTake = await client.look(characterId, 'sdk-look-after-pebble-take');
+    expect(afterPebbleTake.objects).not.toContainEqual(expect.objectContaining({ id: 'sdk-test-pebble' }));
+    const dropped = await client.drop(characterId, 'sdk-test-pebble', afterPebbleTake.revision, 'sdk-drop');
+    expect(dropped.receipt).toMatchObject({ ok: true, newAggregateVersion: afterPebbleTake.revision + 1 });
     const afterDrop = await client.look(characterId, 'sdk-look-after-drop');
-    expect(afterDrop.description).toContain('One loose stone bears a pale stripe.');
+    expect(afterDrop.description).toContain('A plain test pebble lies nearby.');
     expect(afterDrop.objects).toContainEqual(expect.objectContaining({
-      id: 'mossgate-loose-stone',
+      id: 'sdk-test-pebble',
       takeable: true,
     }));
-    const takenAgain = await client.take(characterId, 'mossgate-loose-stone', afterDrop.revision, 'sdk-take-again');
+    const takenAgain = await client.take(characterId, 'sdk-test-pebble', afterDrop.revision, 'sdk-take-again');
     expect(takenAgain.receipt).toMatchObject({ ok: true, newAggregateVersion: afterDrop.revision + 1 });
     const moved = await client.move(characterId, 'clearing-to-bridge', afterDrop.revision + 1, 'sdk-move');
     expect(moved.receipt.ok).toBe(true);

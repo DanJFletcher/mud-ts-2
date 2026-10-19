@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   MoveCharacterCommandSchema, CharacterMovedEventSchema, CommandReceiptSchema,
   PluginManifestSchema, LocationDescribeQuerySchema, ObjectReadQuerySchema, ObjectInspectQuerySchema, TakeCharacterItemCommandSchema,
-  DropCharacterItemCommandSchema, WorldPackDraftSchema,
+  DropCharacterItemCommandSchema, InventoryItemProjectionSchema, WorldPackDraftSchema,
   validateDraftWorldGraph,
 } from '../dist/src/index.js';
 
@@ -82,12 +82,20 @@ test('dropping a carried item is a versioned character command', () => {
   }).success, false);
 });
 
+test('inventory items accept an optional quest-bound marker', () => {
+  const item = { id: 'quest-stone', label: 'Quest stone', description: 'A marked stone.' };
+  assert.equal(InventoryItemProjectionSchema.safeParse(item).success, true);
+  assert.equal(InventoryItemProjectionSchema.safeParse({ ...item, questBound: true }).success, true);
+  assert.equal(InventoryItemProjectionSchema.safeParse({ ...item, questBound: 'yes' }).success, false);
+});
+
 test('draft content checks graph references', () => {
   const pack = WorldPackDraftSchema.parse({ formatVersion: 1, packId: 'starter', packVersion: '0.1.0', displayName: 'Starter', locations: [
-    { id: 'r1', name: 'Crossroads', description: 'Paths branch', readables: [{ id: 'marker', label: 'Marker', description: 'A painted wooden sign.', text: 'North to the forest' }], takeables: [{ id: 'pebble', label: 'Pebble', description: 'A smooth pebble.' }], exits: [{ id: 'north', fromLocationId: 'r1', toLocationId: 'r2', label: 'North' }] },
+    { id: 'r1', name: 'Crossroads', description: 'Paths branch', readables: [{ id: 'marker', label: 'Marker', description: 'A painted wooden sign.', text: 'North to the forest' }], takeables: [{ id: 'pebble', label: 'Pebble', description: 'A smooth pebble.', questBound: true }], exits: [{ id: 'north', fromLocationId: 'r1', toLocationId: 'r2', label: 'North' }] },
     { id: 'r2', name: 'Forest', description: 'Old trees', exits: [] },
   ] });
   assert.deepEqual(validateDraftWorldGraph(pack), []);
+  assert.equal(pack.locations[0].takeables[0].questBound, true);
   assert.equal(validateDraftWorldGraph({ ...pack, locations: pack.locations.slice(0, 1) }).length, 1);
 });
 

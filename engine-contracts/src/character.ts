@@ -14,6 +14,7 @@ export const InventoryItemProjectionSchema = z.object({
   id: IdSchema,
   label: z.string().min(1).max(120),
   description: z.string().min(1).max(1000),
+  questBound: z.boolean().optional(),
   consumable: ConsumableItemSchema.optional(),
   equipment: z.object({
     slot: z.enum(['weapon', 'armor']),

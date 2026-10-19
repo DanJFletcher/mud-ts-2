@@ -533,6 +533,10 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
 
   const dropObject = useCallback(async (itemId: string, label: string) => {
     if (!snapshot?.character || !snapshot.location || pending) return;
+    if (snapshot.character.inventory.find((item) => item.id === itemId)?.questBound) {
+      addEntry("error", "Quest items cannot be dropped.");
+      return;
+    }
     setPending("drop");
     try {
       await client.drop(snapshot.character.characterId, itemId, snapshot.location.revision);
@@ -1192,6 +1196,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     const inventory = snapshot?.character?.inventory ?? [];
     const equipment = snapshot?.character?.equipment;
     const unequippedInventory = inventory.filter((item) =>
+      item.questBound !== true &&
       item.id !== equipment?.weaponItemId && item.id !== equipment?.armorItemId,
     );
     const gearToEquip = inventory.filter((item) => item.equipment &&
@@ -1735,10 +1740,12 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                             ‹
                           </button>
                           {(snapshot.character?.inventory ?? []).filter((item) =>
+                            item.questBound !== true &&
                             item.id !== snapshot.character?.equipment.weaponItemId &&
                             item.id !== snapshot.character?.equipment.armorItemId,
                           ).length ? (
                             (snapshot.character?.inventory ?? []).filter((item) =>
+                              item.questBound !== true &&
                               item.id !== snapshot.character?.equipment.weaponItemId &&
                               item.id !== snapshot.character?.equipment.armorItemId,
                             ).map((item) => (

@@ -39,6 +39,7 @@ export const TakeableObjectDefinitionSchema = z.object({
   label: z.string().min(1).max(120),
   description: z.string().min(1).max(1000),
   roomDescription: z.string().min(1).max(1000).optional(),
+  questBound: z.boolean().optional(),
 }).strict();
 
 export const InteractableObjectDefinitionSchema = z.object({

@@ -107,10 +107,19 @@ export const characterPlugin: EnginePlugin = {
         ? trackedItem.locationId === character.locationId ? trackedItem.item : undefined
         : (location.takeables ?? []).find((candidate) => candidate.id === command.payload.itemId);
       if (!item) throw new RuleViolationError('That item is not available to take here.');
+      const questBound = item.questBound === true || context.world.locations.some((worldLocation) =>
+        worldLocation.takeables?.some((candidate) => candidate.id === item.id && candidate.questBound === true),
+      );
+      const inventoryItem = questBound ? { ...item, questBound: true } : item;
       const payload = {
         characterId: character.characterId,
         locationId: character.locationId,
-        item: { id: item.id, label: item.label, description: item.description },
+        item: {
+          id: inventoryItem.id,
+          label: inventoryItem.label,
+          description: inventoryItem.description,
+          ...(inventoryItem.questBound ? { questBound: true } : {}),
+        },
       };
       CharacterItemTakenEventSchema.shape.payload.parse(payload);
       return {
@@ -126,6 +135,10 @@ export const characterPlugin: EnginePlugin = {
       assertCharacterAlive(character);
       const item = character.inventory.find((candidate) => candidate.id === command.payload.itemId);
       if (!item) throw new RuleViolationError('You are not carrying that item.');
+      const questBound = item.questBound === true || context.world.locations.some((worldLocation) =>
+        worldLocation.takeables?.some((candidate) => candidate.id === item.id && candidate.questBound === true),
+      );
+      if (questBound) throw new RuleViolationError('Quest items cannot be dropped.');
       if (character.equipment.weaponItemId === item.id || character.equipment.armorItemId === item.id) {
         throw new RuleViolationError('Unequip that item before dropping it.');
       }

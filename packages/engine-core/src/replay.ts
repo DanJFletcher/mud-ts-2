@@ -281,6 +281,8 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         dropped.payload.characterId !== state.characterId ||
         dropped.payload.locationId !== state.locationId ||
         !carriedItem ||
+        carriedItem.questBound === true ||
+        carriedItem.questBound !== dropped.payload.item.questBound ||
         state.equipment.weaponItemId === dropped.payload.item.id ||
         state.equipment.armorItemId === dropped.payload.item.id ||
         itemLocation?.locationId !== null ||
