@@ -15,7 +15,6 @@ import {
   ObjectInspectQuerySchema,
   RestoreCharacterCommandSchema,
   RenameCharacterCommandSchema,
-  WorldMapProjectionSchema,
   MerchantCatalogQuerySchema,
 } from '@mudd/contracts';
 import { EngineHost, projectQuestJournal, replayCharacter } from '@mudd/engine-core';
@@ -26,6 +25,7 @@ import { characters, durableEffects, worldSessions } from './db/schema.js';
 import { PostgresEventStore } from './persistence/postgres-event-store.js';
 import { demoEventEffectsPlugin } from './demo-event-effects-plugin.js';
 import { LOCATION_ENTERED_EFFECT } from './durable-effect-contracts.js';
+import { projectWorldMap } from './world-map-projection.js';
 import { expiredGuestCookie, getAccountIdentity, type AccountIdentity } from './session-service.js';
 import { CLERK_PROXY_PATH, clerkProxyMiddleware, getClerkProxyHost } from './middlewares/clerkProxyMiddleware.js';
 import {
@@ -93,33 +93,6 @@ async function runPendingEffectBatch() {
 void runPendingEffectBatch();
 const effectPoller = setInterval(() => void runPendingEffectBatch(), 1_000);
 effectPoller.unref();
-
-function projectWorldMap(character: NonNullable<ReturnType<typeof replayCharacter>>) {
-  const visitedLocationIds = new Set(character.visitedLocationIds);
-  const visitedLocations = demoWorld.locations.filter((location) => visitedLocationIds.has(location.id));
-  const locations = visitedLocations.map((location, index) => ({
-    id: location.id,
-    name: location.name,
-    x: location.mapPosition?.x ?? index,
-    y: location.mapPosition?.y ?? 0,
-  }));
-  const visibleLocationIds = new Set(locations.map((location) => location.id));
-  const seenPaths = new Set<string>();
-  const connections = visitedLocations.flatMap((location) => location.exits.flatMap((exit) => {
-    if (!visibleLocationIds.has(exit.toLocationId)) return [];
-    const pathKey = [exit.fromLocationId, exit.toLocationId].sort().join(':');
-    if (seenPaths.has(pathKey)) return [];
-    seenPaths.add(pathKey);
-    return [{ fromLocationId: exit.fromLocationId, toLocationId: exit.toLocationId }];
-  }));
-
-  return WorldMapProjectionSchema.parse({
-    worldInstanceId: character.worldInstanceId,
-    currentLocationId: character.locationId,
-    locations,
-    connections,
-  });
-}
 
 const app = express();
 app.set('trust proxy', trustedProxyHops);
