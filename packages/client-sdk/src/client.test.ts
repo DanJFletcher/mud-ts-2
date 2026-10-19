@@ -14,7 +14,7 @@ describe('demo world navigation', () => {
   it('aligns every surface exit with its map bearing', () => {
     for (const location of demoWorld.locations) {
       for (const exit of location.exits) {
-        if (exit.direction === 'up' || exit.direction === 'down') continue;
+        if (!compassVectors[exit.direction!]) continue;
         const destination = demoWorld.locations.find((candidate) => candidate.id === exit.toLocationId)!;
         expect(location.mapPosition, exit.id).toBeDefined();
         expect(destination.mapPosition, exit.id).toBeDefined();
@@ -295,7 +295,20 @@ describe('MuddHttpClient', () => {
     );
     expect(movedToTower.receipt.ok).toBe(true);
     const tower = await client.look(characterId, 'sdk-look-tower');
-    expect(tower.objects).toContainEqual(expect.objectContaining({
+    expect(tower.objects).not.toContainEqual(expect.objectContaining({
+      id: 'tower-cracked-bell',
+    }));
+    expect(tower.exits).toContainEqual(expect.objectContaining({ id: 'tower-to-belfry', available: true }));
+    await expect(client.use(
+      characterId,
+      'mossgate-loose-stone',
+      'tower-cracked-bell',
+      tower.revision,
+      'sdk-use-bell-from-ground-floor',
+    )).rejects.toThrow('That is not a usable target in this room.');
+    await client.move(characterId, 'tower-to-belfry', tower.revision, 'sdk-climb-to-belfry');
+    const belfry = await client.look(characterId, 'sdk-look-belfry');
+    expect(belfry.objects).toContainEqual(expect.objectContaining({
       id: 'tower-cracked-bell',
       readable: false,
       takeable: false,
@@ -304,7 +317,7 @@ describe('MuddHttpClient', () => {
       characterId,
       'mossgate-loose-stone',
       'tower-cracked-bell',
-      tower.revision,
+      belfry.revision,
       'sdk-use-bell',
     );
     expect(firstUse).toEqual({
@@ -317,7 +330,7 @@ describe('MuddHttpClient', () => {
       interactionId: 'ring-tower-bell-with-stone',
       itemId: 'mossgate-loose-stone',
       targetId: 'tower-cracked-bell',
-      locationId: 'bell-tower',
+      locationId: 'bell-tower-belfry',
     });
     expect(characterAfterFirstUse?.inventory).toContainEqual(expect.objectContaining({ id: 'mossgate-loose-stone' }));
     await expect(client.use(
@@ -404,24 +417,33 @@ describe('MuddHttpClient', () => {
 
     const tower = await client.look(characterId, 'puzzle-look-tower');
     expect(tower.exits).toContainEqual(expect.objectContaining({
+      id: 'tower-to-belfry',
+      available: true,
+    }));
+    await client.move(characterId, 'tower-to-belfry', tower.revision, 'puzzle-climb-to-belfry');
+    const belfry = await client.look(characterId, 'puzzle-look-belfry');
+    expect(belfry.exits).toContainEqual(expect.objectContaining({
       id: 'tower-to-underhollow',
       available: false,
     }));
     await expect(client.move(
       characterId,
       'tower-to-underhollow',
-      tower.revision,
+      belfry.revision,
       'puzzle-try-locked-stair',
     )).rejects.toThrow('That passage is still sealed.');
 
     const inscription = await client.read(
       characterId,
       'tower-bell-inscription',
-      tower.revision,
+      belfry.revision,
       'puzzle-read-inscription',
     );
     expect(inscription.text).toContain('Pale first, hollow second.');
-    await client.move(characterId, 'tower-to-west-approach', tower.revision + 1, 'puzzle-return-to-west-for-hint-two');
+    const belfryAfterReading = await client.look(characterId, 'puzzle-look-after-inscription');
+    await client.move(characterId, 'belfry-to-tower', belfryAfterReading.revision, 'puzzle-descend-to-tower-floor');
+    const towerFloorAfterReading = await client.look(characterId, 'puzzle-look-tower-floor-after-reading');
+    await client.move(characterId, 'tower-to-west-approach', towerFloorAfterReading.revision, 'puzzle-return-to-west-for-hint-two');
     const westForHintTwo = await client.look(characterId, 'puzzle-look-west-for-hint-two');
     await client.move(characterId, 'bell-tower-west-to-bridge', westForHintTwo.revision, 'puzzle-return-for-hint-two');
     const bridgeForHintTwo = await client.look(characterId, 'puzzle-look-for-hint-two');
@@ -431,11 +453,13 @@ describe('MuddHttpClient', () => {
     const westForBell = await client.look(characterId, 'puzzle-look-west-for-bell');
     await client.move(characterId, 'bell-tower-west-to-tower', westForBell.revision, 'puzzle-return-for-bell');
     const towerForBell = await client.look(characterId, 'puzzle-look-for-bell');
+    await client.move(characterId, 'tower-to-belfry', towerForBell.revision, 'puzzle-return-to-belfry-for-bell');
+    const belfryForBell = await client.look(characterId, 'puzzle-look-for-bell-in-belfry');
     await expect(client.use(
       characterId,
       'glasswater-reed',
       'tower-cracked-bell',
-      towerForBell.revision,
+      belfryForBell.revision,
       'puzzle-reed-first',
     )).rejects.toThrow('The bell gives a dull click. Its first note is still missing; the inscription says pale first.');
 
@@ -443,7 +467,7 @@ describe('MuddHttpClient', () => {
       characterId,
       'mossgate-loose-stone',
       'tower-cracked-bell',
-      towerForBell.revision,
+      belfryForBell.revision,
       'puzzle-strike-with-stone',
     )).resolves.toMatchObject({
       interactionId: 'ring-tower-bell-with-stone',
@@ -454,7 +478,9 @@ describe('MuddHttpClient', () => {
       id: 'tower-to-underhollow',
       available: false,
     }));
-    await client.move(characterId, 'tower-to-west-approach', afterFirstNote.revision, 'puzzle-return-to-west-for-hint-three');
+    await client.move(characterId, 'belfry-to-tower', afterFirstNote.revision, 'puzzle-descend-for-hint-three');
+    const towerFloorForHintThree = await client.look(characterId, 'puzzle-look-tower-floor-for-hint-three');
+    await client.move(characterId, 'tower-to-west-approach', towerFloorForHintThree.revision, 'puzzle-return-to-west-for-hint-three');
     const westForHintThree = await client.look(characterId, 'puzzle-look-west-for-hint-three');
     await client.move(characterId, 'bell-tower-west-to-bridge', westForHintThree.revision, 'puzzle-return-for-hint-three');
     const bridgeForHintThree = await client.look(characterId, 'puzzle-look-for-hint-three');
@@ -462,13 +488,15 @@ describe('MuddHttpClient', () => {
     expect(thirdHint.text).toContain('Hint 3');
     await client.move(characterId, 'bridge-to-tower-west', bridgeForHintThree.revision, 'puzzle-return-to-west-for-finish');
     const westForReed = await client.look(characterId, 'puzzle-look-west-for-reed');
-    await client.move(characterId, 'bell-tower-west-to-tower', westForReed.revision, 'puzzle-return-to-finish');
+    await client.move(characterId, 'bell-tower-west-to-tower', westForReed.revision, 'puzzle-return-to-tower-for-finish');
     const towerForReed = await client.look(characterId, 'puzzle-look-for-reed');
+    await client.move(characterId, 'tower-to-belfry', towerForReed.revision, 'puzzle-climb-for-reed');
+    const belfryForReed = await client.look(characterId, 'puzzle-look-for-reed-in-belfry');
     await expect(client.use(
       characterId,
       'glasswater-reed',
       'tower-cracked-bell',
-      towerForReed.revision,
+      belfryForReed.revision,
       'puzzle-answer-with-reed',
     )).resolves.toMatchObject({
       interactionId: 'answer-tower-bell-with-reed',
@@ -495,7 +523,9 @@ describe('MuddHttpClient', () => {
     await client.move(characterId, 'tower-to-underhollow', afterSecondNote.revision, 'puzzle-descend');
     const underhollow = await client.look(characterId, 'puzzle-look-underhollow');
     expect(underhollow.title).toBe('The Underhollow');
-    await client.move(characterId, 'underhollow-to-tower', underhollow.revision, 'puzzle-return-up');
+    await client.move(characterId, 'underhollow-to-belfry', underhollow.revision, 'puzzle-return-to-belfry');
+    const belfryAgain = await client.look(characterId, 'puzzle-look-belfry-again');
+    await client.move(characterId, 'belfry-to-tower', belfryAgain.revision, 'puzzle-descend-to-tower-floor-after-underhollow');
     const towerAgain = await client.look(characterId, 'puzzle-look-tower-again');
     await client.move(characterId, 'tower-to-west-approach', towerAgain.revision, 'puzzle-return-to-west-before-bridge');
     const westBeforeBridge = await client.look(characterId, 'puzzle-look-west-before-bridge');

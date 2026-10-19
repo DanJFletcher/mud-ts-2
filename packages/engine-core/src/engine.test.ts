@@ -915,7 +915,7 @@ describe('MUDD engine host', () => {
     await engine.stop();
   });
 
-  it('requires the western tower approach before entering the tower and using the smooth stone', async () => {
+  it('requires the western approach, tower floor, and upward travel before striking the bell', async () => {
     const testWorld = structuredClone(demoWorld);
     testWorld.locations.find((location) => location.id === 'glasswater-bridge')!.exits.push({
       id: 'test-direct-bridge-to-tower',
@@ -923,6 +923,13 @@ describe('MUDD engine host', () => {
       toLocationId: 'bell-tower',
       label: 'Direct tower shortcut for gate regression coverage',
       direction: 'southeast',
+    });
+    testWorld.locations.find((location) => location.id === 'bell-tower-west')!.exits.push({
+      id: 'test-direct-west-to-belfry',
+      fromLocationId: 'bell-tower-west',
+      toLocationId: 'bell-tower-belfry',
+      label: 'Direct belfry shortcut for gate regression coverage',
+      direction: 'up',
     });
     const { engine, store } = makeEngine(testWorld);
     await engine.start();
@@ -1008,6 +1015,21 @@ describe('MUDD engine host', () => {
       message: 'That is not a usable target in this room.',
     });
 
+    const belfryBypass = await engine.dispatch({
+      type: 'character.move',
+      version: 1,
+      commandId: 'tower-route-belfry-bypass',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 4,
+      payload: { exitId: 'test-direct-west-to-belfry' },
+    }, session);
+    expect(belfryBypass.receipt).toMatchObject({
+      ok: false,
+      code: 'RULE_VIOLATION',
+      message: 'You must first visit Old Bell Tower before entering Old Bell Tower Belfry.',
+    });
+
     const enterTower = await engine.dispatch({
       type: 'character.move',
       version: 1,
@@ -1019,23 +1041,48 @@ describe('MUDD engine host', () => {
     }, session);
     expect(enterTower.receipt).toMatchObject({ ok: true, newAggregateVersion: 5 });
 
+    const useFromTowerFloor = await engine.dispatch({
+      type: 'character.use',
+      version: 1,
+      commandId: 'tower-route-use-from-ground-floor',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 5,
+      payload: { itemId: 'mossgate-loose-stone', targetId: 'tower-cracked-bell' },
+    }, session);
+    expect(useFromTowerFloor.receipt).toMatchObject({
+      ok: false,
+      message: 'That is not a usable target in this room.',
+    });
+
+    const climbToBelfry = await engine.dispatch({
+      type: 'character.move',
+      version: 1,
+      commandId: 'tower-route-climb-to-belfry',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 5,
+      payload: { exitId: 'tower-to-belfry' },
+    }, session);
+    expect(climbToBelfry.receipt).toMatchObject({ ok: true, newAggregateVersion: 6 });
+
     const strikeBell = await engine.dispatch({
       type: 'character.use',
       version: 1,
       commandId: 'tower-route-strike-bell',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
-      expectedVersion: 5,
+      expectedVersion: 6,
       payload: { itemId: 'mossgate-loose-stone', targetId: 'tower-cracked-bell' },
     }, session);
-    expect(strikeBell.receipt).toMatchObject({ ok: true, newAggregateVersion: 6 });
+    expect(strikeBell.receipt).toMatchObject({ ok: true, newAggregateVersion: 7 });
     expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))?.visitedLocationIds)
-      .toEqual(['mossgate-clearing', 'glasswater-bridge', 'bell-tower-west', 'bell-tower']);
+      .toEqual(['mossgate-clearing', 'glasswater-bridge', 'bell-tower-west', 'bell-tower', 'bell-tower-belfry']);
 
     await engine.stop();
   });
 
-  it('keeps the stone strike locked until the western approach has been visited', async () => {
+  it('keeps the bell strike locked until the western approach has been visited, even from the belfry', async () => {
     const testWorld = structuredClone(demoWorld);
     delete testWorld.locations.find((location) => location.id === 'bell-tower')!.requiredVisitedLocationId;
     testWorld.locations.find((location) => location.id === 'glasswater-bridge')!.exits.push({
@@ -1085,13 +1132,24 @@ describe('MUDD engine host', () => {
     }, session);
     expect(directEntry.receipt).toMatchObject({ ok: true, newAggregateVersion: 4 });
 
+    const climbToBelfry = await engine.dispatch({
+      type: 'character.move',
+      version: 1,
+      commandId: 'tower-strike-gate-climb',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 4,
+      payload: { exitId: 'tower-to-belfry' },
+    }, session);
+    expect(climbToBelfry.receipt).toMatchObject({ ok: true, newAggregateVersion: 5 });
+
     const prematureStrike = await engine.dispatch({
       type: 'character.use',
       version: 1,
       commandId: 'tower-strike-gate-premature',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
-      expectedVersion: 4,
+      expectedVersion: 5,
       payload: { itemId: 'mossgate-loose-stone', targetId: 'tower-cracked-bell' },
     }, session);
     expect(prematureStrike.receipt).toMatchObject({
@@ -1106,30 +1164,50 @@ describe('MUDD engine host', () => {
       commandId: 'tower-strike-gate-to-west',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
-      expectedVersion: 4,
+      expectedVersion: 5,
+      payload: { exitId: 'belfry-to-tower' },
+    }, session);
+    expect(visitApproach.receipt).toMatchObject({ ok: true, newAggregateVersion: 6 });
+    const exitTower = await engine.dispatch({
+      type: 'character.move',
+      version: 1,
+      commandId: 'tower-strike-gate-visit-west',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 6,
       payload: { exitId: 'tower-to-west-approach' },
     }, session);
-    expect(visitApproach.receipt).toMatchObject({ ok: true, newAggregateVersion: 5 });
+    expect(exitTower.receipt).toMatchObject({ ok: true, newAggregateVersion: 7 });
     const reenterTower = await engine.dispatch({
       type: 'character.move',
       version: 1,
       commandId: 'tower-strike-gate-reenter',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
-      expectedVersion: 5,
+      expectedVersion: 7,
       payload: { exitId: 'bell-tower-west-to-tower' },
     }, session);
-    expect(reenterTower.receipt).toMatchObject({ ok: true, newAggregateVersion: 6 });
+    expect(reenterTower.receipt).toMatchObject({ ok: true, newAggregateVersion: 8 });
+    const reenterBelfry = await engine.dispatch({
+      type: 'character.move',
+      version: 1,
+      commandId: 'tower-strike-gate-reclimb',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 8,
+      payload: { exitId: 'tower-to-belfry' },
+    }, session);
+    expect(reenterBelfry.receipt).toMatchObject({ ok: true, newAggregateVersion: 9 });
     const strikeAfterVisit = await engine.dispatch({
       type: 'character.use',
       version: 1,
       commandId: 'tower-strike-gate-after-visit',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
-      expectedVersion: 6,
+      expectedVersion: 9,
       payload: { itemId: 'mossgate-loose-stone', targetId: 'tower-cracked-bell' },
     }, session);
-    expect(strikeAfterVisit.receipt).toMatchObject({ ok: true, newAggregateVersion: 7 });
+    expect(strikeAfterVisit.receipt).toMatchObject({ ok: true, newAggregateVersion: 10 });
 
     await engine.stop();
   });

@@ -51,9 +51,15 @@ function travelerAt(locationId: string, visitedLocationIds: string[]) {
 
 describe('current-area and Z-level maps', () => {
   it('hides discovered underground rooms on the overworld without erasing discovery', () => {
-    const character = travelerAt('bell-tower', ['mossgate-clearing', 'bell-tower', 'bell-underhollow']);
+    const character = travelerAt('bell-tower', [
+      'mossgate-clearing', 'bell-tower-west', 'bell-tower', 'bell-tower-belfry', 'bell-underhollow',
+    ]);
     const map = projectWorldMap(character);
-    expect(map.locations.map(({ id }) => id)).toEqual(['mossgate-clearing', 'bell-tower']);
+    expect(map.locations.map(({ id }) => id)).toEqual([
+      'mossgate-clearing',
+      'bell-tower-west',
+      'bell-tower',
+    ]);
     expect(map.connections).not.toContainEqual(expect.objectContaining({ toLocationId: 'bell-underhollow' }));
     expect(character.visitedLocationIds).toContain('bell-underhollow');
   });
@@ -129,8 +135,6 @@ describe('current-area and Z-level maps', () => {
     await client.take(characterId, 'glasswater-reed', (await getCharacter()).revision, 'level-take-reed');
     await move('bridge-to-tower-west', 'level-go-tower-west');
     await move('bell-tower-west-to-tower', 'level-go-tower');
-    await client.use(characterId, 'mossgate-loose-stone', 'tower-cracked-bell', (await getCharacter()).revision, 'level-bell-stone');
-    await client.use(characterId, 'glasswater-reed', 'tower-cracked-bell', (await getCharacter()).revision, 'level-bell-reed');
 
     const surface = (await client.getGame()).map!;
     expect(surface.locations.map(({ id }) => id)).toEqual([
@@ -139,17 +143,33 @@ describe('current-area and Z-level maps', () => {
       'glasswater-bridge',
       'bell-tower',
     ]);
+    expect(surface.locations.map(({ id }) => id)).not.toContain('bell-tower-belfry');
+
+    await move('tower-to-belfry', 'level-go-up-to-belfry');
+    const upperFloor = (await client.getGame()).map!;
+    expect(upperFloor.currentLocationId).toBe('bell-tower-belfry');
+    expect(upperFloor.locations.map(({ id }) => id)).toEqual(['bell-tower-belfry']);
+    expect(upperFloor.connections).toEqual([]);
+    await client.use(characterId, 'mossgate-loose-stone', 'tower-cracked-bell', (await getCharacter()).revision, 'level-bell-stone');
+    await client.use(characterId, 'glasswater-reed', 'tower-cracked-bell', (await getCharacter()).revision, 'level-bell-reed');
+
+    expect((await client.getGame()).map).toEqual(upperFloor);
     await move('tower-to-underhollow', 'level-go-down');
     const below = (await client.getGame()).map!;
     expect(below.currentLocationId).toBe('bell-underhollow');
     expect(below.locations.map(({ id }) => id)).toEqual(['bell-underhollow']);
     expect(below.connections).toEqual([]);
-    await move('underhollow-to-tower', 'level-go-up');
+    await move('underhollow-to-belfry', 'level-go-up');
+    expect((await client.getGame()).map).toEqual(upperFloor);
+    await move('belfry-to-tower', 'level-return-to-tower-floor-again');
     expect((await client.getGame()).map).toEqual(surface);
+    await move('tower-to-belfry', 'level-go-up-again');
+    expect((await client.getGame()).map).toEqual(upperFloor);
     await move('tower-to-underhollow', 'level-go-down-again');
     expect((await client.getGame()).map).toEqual(below);
     expect((await getCharacter()).visitedLocationIds).toEqual(expect.arrayContaining([
-      'mossgate-clearing', 'glasswater-bridge', 'bell-tower-west', 'bell-tower', 'bell-underhollow',
+      'mossgate-clearing', 'glasswater-bridge', 'bell-tower-west', 'bell-tower', 'bell-tower-belfry',
+      'bell-underhollow',
     ]));
   });
 });

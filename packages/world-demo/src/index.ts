@@ -54,21 +54,21 @@ const draft = {
           label: 'Find the bell’s inscription',
           type: 'read-object',
           objectId: 'tower-bell-inscription',
-          locationId: 'bell-tower',
+          locationId: 'bell-tower-belfry',
         },
         {
           id: 'strike-bell-with-stone',
           label: 'Sound the bell’s first note',
           type: 'perform-interaction',
           interactionId: 'ring-tower-bell-with-stone',
-          locationId: 'bell-tower',
+          locationId: 'bell-tower-belfry',
         },
         {
           id: 'answer-bell-with-reed',
           label: 'Find the bell’s second note',
           type: 'perform-interaction',
           interactionId: 'answer-tower-bell-with-reed',
-          locationId: 'bell-tower',
+          locationId: 'bell-tower-belfry',
         },
         {
           id: 'visit-underhollow',
@@ -330,7 +330,7 @@ const draft = {
                 status: 'active',
                 requiresCompletedObjectiveIds: [],
                 requiresIncompleteObjectiveIds: ['read-bell-inscription'],
-                response: 'Take the southeast trail to the tower’s western approach, then enter from there. The inscription inside explains how the mechanism works.',
+                response: 'Take the southeast trail to the tower’s western approach, enter the tower, then climb its inner stair to the bell and inscription.',
               },
               {
                 questId: 'eddas-bell-echo',
@@ -421,7 +421,7 @@ const draft = {
                   status: 'active',
                   requiresCompletedObjectiveIds: [],
                   requiresIncompleteObjectiveIds: ['read-bell-inscription'],
-                  response: 'Hint 1: Look beneath the bell. The brass plate there records the bellwrights’ instructions.',
+                  response: 'Hint 1: Climb the tower’s inner stair to the belfry. A brass plate beneath the bell records the bellwrights’ instructions.',
                 },
                 {
                   questId: 'eddas-bell-echo',
@@ -466,7 +466,20 @@ const draft = {
       mapPosition: { x: 2, y: 0 },
       requiredVisitedLocationId: 'bell-tower-west',
       description:
-        'The roofless tower stands quiet above the trees. Its cracked bell hangs still; the western entrance opens onto the tower’s outer approach.',
+        'The tower’s shadowed ground floor is empty except for a narrow stone stair that winds up toward the bell. The western entrance opens onto the tower’s outer approach.',
+      exits: [
+        { id: 'tower-to-west-approach', fromLocationId: 'bell-tower', toLocationId: 'bell-tower-west', label: 'West to West of Old Bell Tower', direction: 'west' },
+        { id: 'tower-to-belfry', fromLocationId: 'bell-tower', toLocationId: 'bell-tower-belfry', label: 'Up to the belfry', direction: 'up' },
+      ],
+    },
+    {
+      id: 'bell-tower-belfry',
+      name: 'Old Bell Tower Belfry',
+      mapAreaId: 'bell-tower',
+      mapPosition: { x: 0, y: 0, z: 1 },
+      requiredVisitedLocationId: 'bell-tower',
+      description:
+        'The stair opens into the belfry. A cracked bronze bell hangs from its weathered frame, its long fracture visible beneath a brass inscription plate.',
       readables: [
         {
           id: 'tower-bell-inscription',
@@ -502,13 +515,13 @@ const draft = {
         },
       ],
       exits: [
-        { id: 'tower-to-west-approach', fromLocationId: 'bell-tower', toLocationId: 'bell-tower-west', label: 'West to West of Old Bell Tower', direction: 'west' },
+        { id: 'belfry-to-tower', fromLocationId: 'bell-tower-belfry', toLocationId: 'bell-tower', label: 'Down to the tower floor', direction: 'down' },
         {
           id: 'tower-to-underhollow',
-          fromLocationId: 'bell-tower',
+          fromLocationId: 'bell-tower-belfry',
           toLocationId: 'bell-underhollow',
-          label: 'Down the stair',
-          direction: 'down',
+          label: 'Down into the Underhollow',
+          direction: 'underhollow',
           requiredInteractionId: 'answer-tower-bell-with-reed',
         },
       ],
@@ -518,7 +531,7 @@ const draft = {
       name: 'The Underhollow',
       mapAreaId: 'bell-tower',
       mapPosition: { x: 1, y: 0, z: -1 },
-      description: 'A low stone chamber rests beneath the tower. The bell’s second note hums in the walls; a dry stair leads back up.',
+      description: 'A low stone chamber rests beneath the tower. The bell’s second note hums in the walls; a dry stair leads back up to the belfry.',
       readables: [
         {
           id: 'underhollow-bellwright-ledger',
@@ -529,10 +542,10 @@ const draft = {
       ],
       exits: [
         {
-          id: 'underhollow-to-tower',
+          id: 'underhollow-to-belfry',
           fromLocationId: 'bell-underhollow',
-          toLocationId: 'bell-tower',
-          label: 'Up to the Old Bell Tower',
+          toLocationId: 'bell-tower-belfry',
+          label: 'Up to the belfry',
           direction: 'up',
         },
       ],
