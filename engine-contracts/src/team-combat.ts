@@ -1,0 +1,127 @@
+import { z } from 'zod';
+import { ClientCommandBaseSchema, ClientQueryBaseSchema, DomainEventBaseSchema } from './protocol.js';
+import { IdSchema } from './ids.js';
+
+export const TeamCombatActionSchema = z.enum(['attack', 'defend', 'flee', 'use-item']);
+
+export const TeamCombatantSchema = z.object({
+  participantId: IdSchema,
+  teamId: IdSchema,
+  kind: z.enum(['player', 'npc']),
+  characterId: IdSchema.optional(),
+  playerId: IdSchema.optional(),
+  npcId: IdSchema.optional(),
+  displayName: z.string().trim().min(1).max(80),
+  health: z.number().int().nonnegative(),
+  maximumHealth: z.number().int().positive(),
+  defending: z.boolean(),
+  status: z.enum(['active', 'defeated', 'escaped']),
+}).strict().superRefine((participant, context) => {
+  if (participant.kind === 'player' && (!participant.characterId || !participant.playerId || participant.npcId)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Player combatants require player and character IDs.' });
+  }
+  if (participant.kind === 'npc' && (!participant.npcId || participant.characterId || participant.playerId)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'NPC combatants require only an NPC ID.' });
+  }
+});
+
+export const TeamCombatEncounterSchema = z.object({
+  encounterId: IdSchema,
+  locationId: IdSchema,
+  sourceGroupId: IdSchema.optional(),
+  participants: z.array(TeamCombatantSchema).min(2).max(16),
+  contributingPlayerIds: z.array(IdSchema),
+  currentParticipantId: IdSchema.nullable(),
+  round: z.number().int().nonnegative(),
+  status: z.enum(['active', 'victory', 'defeat', 'fled']),
+  lastNarration: z.string().min(1).max(2000),
+  consumedItemIdsByCharacter: z.record(z.array(IdSchema)),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+}).strict();
+export type TeamCombatEncounter = z.infer<typeof TeamCombatEncounterSchema>;
+
+export const TeamCombatStartedEventSchema = z.object({
+  type: z.literal('team.combat_started'),
+  version: z.literal(1),
+  payload: z.object({ encounter: TeamCombatEncounterSchema }).strict(),
+}).strict();
+
+export const TeamCombatActionResolvedEventSchema = z.object({
+  type: z.literal('team.combat_action_resolved'),
+  version: z.literal(1),
+  payload: z.object({
+    encounter: TeamCombatEncounterSchema,
+    actingCharacterId: IdSchema,
+    action: TeamCombatActionSchema,
+    damageDealt: z.number().int().nonnegative(),
+    damageTaken: z.number().int().nonnegative(),
+    healingDone: z.number().int().nonnegative(),
+    narration: z.string().min(1).max(2000),
+  }).strict(),
+}).strict();
+
+export const TeamCombatEndedEventSchema = z.object({
+  type: z.literal('team.combat_ended'),
+  version: z.literal(1),
+  payload: z.object({
+    encounterId: IdSchema,
+    sourceGroupId: IdSchema.optional(),
+    locationId: IdSchema,
+    npcId: IdSchema,
+    result: z.enum(['victory', 'defeat', 'fled']),
+    contributingPlayerIds: z.array(IdSchema),
+  }).strict(),
+}).strict();
+
+export const TeamCombatStartCommandSchema = ClientCommandBaseSchema.extend({
+  type: z.literal('team.combat.start'),
+  payload: z.object({ targetNpcId: IdSchema }).strict(),
+}).strict();
+
+export const TeamCombatActionCommandSchema = ClientCommandBaseSchema.extend({
+  type: z.literal('team.combat.action'),
+  payload: z.object({
+    encounterId: IdSchema,
+    action: TeamCombatActionSchema,
+    targetParticipantId: IdSchema.optional(),
+    itemId: IdSchema.optional(),
+  }).strict(),
+}).strict();
+
+export const TeamCombatInfoQuerySchema = ClientQueryBaseSchema.extend({
+  type: z.literal('team.combat.info'),
+  version: z.literal(1),
+  payload: z.object({}).strict(),
+}).strict();
+
+export const TeamCombatInfoProjectionSchema = z.object({
+  encounter: TeamCombatEncounterSchema.nullable(),
+}).strict();
+export type TeamCombatInfoProjection = z.infer<typeof TeamCombatInfoProjectionSchema>;
+
+export const CharacterTeamCombatOutcomeAppliedEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('character.team_combat_outcome_applied'),
+  payload: z.object({
+    characterId: IdSchema,
+    encounterId: IdSchema,
+    result: z.enum(['victory', 'defeat', 'fled']),
+    health: z.object({
+      current: z.number().int().nonnegative(),
+      maximum: z.number().int().positive(),
+    }).strict(),
+    consumedItemIds: z.array(IdSchema),
+  }).strict(),
+}).strict();
+
+export const TeamCombatOutcomeEffectSchema = z.object({
+  encounterId: IdSchema,
+  locationId: IdSchema,
+  result: z.enum(['victory', 'defeat', 'fled']),
+  players: z.array(z.object({
+    characterId: IdSchema,
+    health: z.number().int().nonnegative(),
+    maximumHealth: z.number().int().positive(),
+    consumedItemIds: z.array(IdSchema),
+  }).strict()).max(8),
+}).strict();

@@ -13,8 +13,8 @@ export interface PreparedRespawn {
 
 export function prepareCharacterRespawn(
   character: CharacterProjection,
-  context: EngineCommandContext,
-  cause: 'pve' | 'pvp',
+  context: Pick<EngineCommandContext, 'world' | 'makeId' | 'rng'>,
+  cause: 'pve' | 'pvp' | 'team-pve',
   encounterId: string,
   deathLocationId: string,
   excludedItemIds: readonly string[] = [],

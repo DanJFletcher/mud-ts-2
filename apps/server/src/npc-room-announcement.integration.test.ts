@@ -105,6 +105,8 @@ vi.mock('@mudd/contracts', async () => {
     IdSchema: z.string(),
     InteractionInboxSchema: unusedSchema,
     PvpEncounterProjectionSchema: { safeParse: () => ({ success: false }) },
+    PartyInfoProjectionSchema: { safeParse: (value: unknown) => ({ success: true, data: value }) },
+    TeamCombatInfoProjectionSchema: { safeParse: (value: unknown) => ({ success: true, data: value }) },
     InitializeCharacterWalletCommandSchema: { parse: (value: unknown) => value },
     LocationDescribeQuerySchema: unusedSchema,
     MerchantCatalogQuerySchema: unusedSchema,
@@ -119,6 +121,12 @@ vi.mock('@mudd/contracts', async () => {
 vi.mock('@mudd/core-plugins', () => ({
   characterPlugin: {},
   combatPlugin: {},
+  groupsPlugin: {},
+  partyPlugin: {},
+  partyQuestPlugin: {},
+  partyCombatPolicyPlugin: {},
+  teamCombatPlugin: {},
+  combatRoomPresenceCapability: { id: 'mudd.combat.room-presence.v1', version: '1' },
   interactionPlugin: {},
   interactionStreamId: (worldInstanceId: string) => `world-interactions:${worldInstanceId}`,
   projectInteractionEvents: () => ({ requests: [], latestEncounterEvent: undefined }),
@@ -151,6 +159,12 @@ vi.mock('@mudd/engine-core', () => ({
     }
     async start() {}
     async stop() {}
+    async query(query: { type?: string }) {
+      if (query.type === 'party.info') {
+        return { ok: true, value: { party: null, revision: 0, activity: [] } };
+      }
+      return { ok: true, value: { encounter: null } };
+    }
     async processPendingEffects() {
       while (state.pendingEffects.length) {
         const effect = state.pendingEffects.shift();

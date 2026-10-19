@@ -84,6 +84,7 @@ export const CharacterAdvancementAwardedEventV2Schema = DomainEventBaseSchema.ex
   version: z.literal(2),
   payload: CharacterAdvancementAwardPayloadV1Schema.extend({
     maximumHealth: PositiveIntSchema.max(1000),
+    source: z.enum(['pve', 'team-pve']).optional(),
   }).strict(),
 }).strict();
 
@@ -343,7 +344,7 @@ export const CharacterRespawnedEventSchema = DomainEventBaseSchema.extend({
   version: z.literal(1),
   payload: z.object({
     characterId: IdSchema,
-    cause: z.enum(['pve', 'pvp']),
+    cause: z.enum(['pve', 'pvp', 'team-pve']),
     encounterId: IdSchema,
     deathLocationId: IdSchema,
     respawnLocationId: IdSchema,

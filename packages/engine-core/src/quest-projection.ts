@@ -22,6 +22,7 @@ export function questObjectiveIsComplete(
       observation.interactionId === objective.interactionId && observation.locationId === objective.locationId,
     );
   }
+  if (objective.type === 'defeat-npc') return false;
   return character.visitedLocationIds.includes(objective.locationId);
 }
 
@@ -32,6 +33,7 @@ export function questObjectivesAreComplete(quest: QuestDefinition, character: Ch
 export function projectQuestJournal(character: CharacterProjection, world: WorldPackDraft) {
   const progressById = new Map(character.questProgress.map((progress) => [progress.questId, progress]));
   const quests = (world.quests ?? []).flatMap((quest) => {
+    if (quest.scope === 'party') return [];
     const progress = progressById.get(quest.id);
     if (!progress) return [];
     if (progress.definitionVersion !== quest.version) {

@@ -100,7 +100,7 @@ function dialogueProjection(
       if (choice.questCondition && !questConditionMatches(choice.questCondition, questJournal)) return false;
       if (!choice.questAction) return true;
       const quest = world.quests.find((candidate) => candidate.id === choice.questAction?.questId);
-      if (!quest) return false;
+      if (!quest || quest.scope === 'party') return false;
       const questProgress = character.questProgress.find((candidate) => candidate.questId === quest.id);
       if (choice.questAction.type === 'accept') {
         return quest.giverNpcId === npc.id && !questProgress;
@@ -174,6 +174,9 @@ export const npcDialoguePlugin: EnginePlugin = {
       if (choice.questAction) {
         const quest = context.world.quests.find((candidate) => candidate.id === choice.questAction?.questId);
         if (!quest) throw new RuleViolationError('That quest is not available in this world.');
+        if (quest.scope === 'party') {
+          throw new RuleViolationError('Party quests are accepted through the party commands.');
+        }
         const questProgress = character.questProgress.find((candidate) => candidate.questId === quest.id);
         if (choice.questAction.type === 'accept') {
           if (quest.giverNpcId !== npc.id || questProgress) throw new RuleViolationError('That quest is no longer available.');

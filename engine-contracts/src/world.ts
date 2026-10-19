@@ -422,6 +422,15 @@ export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
       errors.push(`Quest ${quest.id} has a missing turn-in NPC ${quest.turnInNpcId}`);
     }
     for (const objective of quest.objectives) {
+      if (objective.type === 'defeat-npc') {
+        if (quest.scope !== 'party') {
+          errors.push(`Quest ${quest.id} uses a defeat-NPC objective outside party scope`);
+        }
+        if (!npcs.some(({ npc }) => npc.id === objective.npcId && npc.combatProfile)) {
+          errors.push(`Quest ${quest.id} objective ${objective.id} points to missing combatant ${objective.npcId}`);
+        }
+        continue;
+      }
       if (!ids.has(objective.locationId)) {
         errors.push(`Quest ${quest.id} objective ${objective.id} points to missing location ${objective.locationId}`);
       } else if (objective.type === 'read-object') {

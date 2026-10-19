@@ -1,9 +1,24 @@
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { EngineHost, InMemoryEventStore, replayCharacter, type EnginePlugin } from './index.js';
-import { characterPlugin, movementPlugin, worldItemsPlugin } from '@mudd/core-plugins';
+import {
+  characterPlugin,
+  combatPlugin,
+  combatRoomPresenceCapability,
+  groupsPlugin,
+  interactionPlugin,
+  movementPlugin,
+  partyCombatPolicyPlugin,
+  partyPlugin,
+  partyQuestPlugin,
+  projectGroups,
+  worldItemsPlugin,
+  teamCombatPlugin,
+  type ActiveRoomCharacter,
+} from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import type { CapabilityToken } from '@mudd/contracts';
+import { TeamCombatInfoProjectionSchema } from '@mudd/contracts';
 
 const session = {
   sessionId: 'session-1',
@@ -17,12 +32,27 @@ const authorization = {
   canAccessInstance: async () => true,
   ownsCharacter: async () => true,
 };
+let activeTestRoomCharacters: ActiveRoomCharacter[] = [];
+const testCombatPresencePlugin: EnginePlugin = {
+  manifest: {
+    id: 'mudd.room-combat-presence',
+    version: '1.0.0',
+    apiVersion: '1.0',
+    category: 'core',
+    provides: [combatRoomPresenceCapability.id],
+  },
+  register({ provideCapability }) {
+    provideCapability(combatRoomPresenceCapability, {
+      listActiveCharacters: async () => activeTestRoomCharacters,
+    });
+  },
+};
 
 function makeEngine(world = demoWorld) {
   let id = 0;
   const store = new InMemoryEventStore();
   const engine = new EngineHost(
-    [worldItemsPlugin, movementPlugin, characterPlugin],
+    [worldItemsPlugin, movementPlugin, characterPlugin, groupsPlugin, partyPlugin, partyQuestPlugin],
     store,
     authorization,
     world,
@@ -167,6 +197,622 @@ describe('MUDD engine host', () => {
     await engine.stop();
     log.mockRestore();
     vi.useRealTimers();
+  });
+
+  it('dispatches committed domain events to subscribers through the durable outbox', async () => {
+    const subscriber = vi.fn(async (_payload: { value: string }, _context: { actorId: string }) => undefined);
+    const plugin: EnginePlugin = {
+      manifest: {
+        id: 'mudd.event-subscriber-test',
+        version: '1.0.0',
+        apiVersion: '1.0',
+        category: 'core',
+      },
+      register(context) {
+        context.registerCommand('test.publish-event', z.object({
+          type: z.literal('test.publish-event'),
+          version: z.literal(1),
+          commandId: z.string(),
+          worldInstanceId: z.string(),
+        }), async () => ({
+          streamId: 'published-events',
+          expectedVersion: 0,
+          events: [{ type: 'test.published', version: 1, payload: { value: 'committed' } }],
+        }));
+        context.registerEventHandler(
+          'test.published',
+          1,
+          z.object({ value: z.string() }),
+          subscriber,
+        );
+      },
+    };
+    const engine = new EngineHost([plugin], new InMemoryEventStore(), authorization, demoWorld);
+    await engine.start();
+    const command = {
+      type: 'test.publish-event',
+      version: 1,
+      commandId: 'publish-event-1',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+    };
+
+    expect((await engine.dispatch(command, session)).receipt.ok).toBe(true);
+    expect((await engine.dispatch(command, session)).commitOutcome).toBe('duplicate');
+    expect(await engine.processPendingEffects()).toBe(1);
+    expect(subscriber).toHaveBeenCalledTimes(1);
+    expect(subscriber).toHaveBeenCalledWith(
+      { value: 'committed' },
+      expect.objectContaining({
+        actorId: session.playerId,
+        sourceStreamId: 'published-events',
+      }),
+    );
+    expect(await engine.processPendingEffects()).toBe(0);
+    await engine.stop();
+  });
+
+  it('enforces public-party capacity and one active party per player', async () => {
+    const { engine, store } = makeEngine();
+    await engine.start();
+    const players = Array.from({ length: 5 }, (_, index) => ({
+      ...session,
+      sessionId: `party-session-${index + 1}`,
+      playerId: `party-player-${index + 1}`,
+      actorId: `party-player-${index + 1}`,
+    }));
+    const characters: string[] = [];
+
+    for (const [index, player] of players.entries()) {
+      const created = await engine.dispatch({
+        type: 'character.create',
+        version: 1,
+        commandId: `party-character-${index + 1}`,
+        worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+        payload: { name: `Traveler ${index + 1}` },
+      }, player);
+      expect(created.receipt.ok).toBe(true);
+      characters.push(created.streamId!);
+    }
+
+    const createParty = async (playerIndex: number, commandId: string) => engine.dispatch({
+      type: 'party.create',
+      version: 1,
+      commandId,
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: characters[playerIndex],
+      payload: {},
+    }, players[playerIndex]!);
+    const createdParty = await createParty(0, 'party-create');
+    expect(createdParty.receipt.ok).toBe(true);
+    const partyId = projectGroups(await store.readStream(DEMO_WORLD_INSTANCE_ID, 'world-groups')).groups[0]!.groupId;
+
+    for (let index = 1; index <= 3; index += 1) {
+      const joined = await engine.dispatch({
+        type: 'party.join',
+        version: 1,
+        commandId: `party-join-${index}`,
+        worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+        characterId: characters[index],
+        payload: { groupId: partyId },
+      }, players[index]!);
+      expect(joined.receipt.ok).toBe(true);
+    }
+    const fullPartyJoin = await engine.dispatch({
+      type: 'party.join',
+      version: 1,
+      commandId: 'party-join-5',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: characters[4],
+      payload: { groupId: partyId },
+    }, players[4]!);
+    expect(fullPartyJoin.receipt).toMatchObject({ ok: false, code: 'RULE_VIOLATION' });
+
+    const duplicateParty = await createParty(1, 'party-create-while-member');
+    expect(duplicateParty.receipt).toMatchObject({ ok: false, code: 'RULE_VIOLATION' });
+    const groups = projectGroups(await store.readStream(DEMO_WORLD_INSTANCE_ID, 'world-groups'));
+    expect(groups.groups[0]).toMatchObject({
+      groupType: 'party',
+      isPublic: true,
+      maxMembers: 4,
+      members: expect.arrayContaining([
+        expect.objectContaining({ playerId: 'party-player-1' }),
+        expect.objectContaining({ playerId: 'party-player-4' }),
+      ]),
+    });
+    expect(groups.groups[0]?.members).toHaveLength(4);
+
+    await engine.stop();
+  });
+
+  it('notifies members when the leader closes their party and preserves separate ownership', async () => {
+    const { engine, store } = makeEngine();
+    await engine.start();
+    const leader = { ...session, playerId: 'party-leader', actorId: 'party-leader' };
+    const member = { ...session, playerId: 'party-member', actorId: 'party-member' };
+    const leaderCharacter = await engine.dispatch({
+      type: 'character.create',
+      version: 1,
+      commandId: 'leader-character',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      payload: { name: 'Leader' },
+    }, leader);
+    const memberCharacter = await engine.dispatch({
+      type: 'character.create',
+      version: 1,
+      commandId: 'member-character',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      payload: { name: 'Member' },
+    }, member);
+    const party = await engine.dispatch({
+      type: 'party.create',
+      version: 1,
+      commandId: 'leader-party',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: leaderCharacter.streamId!,
+      payload: {},
+    }, leader);
+    const partyId = projectGroups(await store.readStream(DEMO_WORLD_INSTANCE_ID, 'world-groups')).groups[0]!.groupId;
+    await engine.dispatch({
+      type: 'party.join',
+      version: 1,
+      commandId: 'member-joins',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: memberCharacter.streamId!,
+      payload: { groupId: partyId },
+    }, member);
+    expect(party.receipt.ok).toBe(true);
+
+    const unauthorizedClose = await engine.dispatch({
+      type: 'party.close',
+      version: 1,
+      commandId: 'member-closes-party',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: memberCharacter.streamId!,
+      payload: {},
+    }, member);
+    expect(unauthorizedClose.receipt).toMatchObject({ ok: false, code: 'RULE_VIOLATION' });
+
+    const close = await engine.dispatch({
+      type: 'party.leave',
+      version: 1,
+      commandId: 'leader-leaves-party',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: leaderCharacter.streamId!,
+      payload: {},
+    }, leader);
+    expect(close.receipt.ok).toBe(true);
+    const info = await engine.query({
+      type: 'party.info',
+      version: 1,
+      queryId: 'member-party-info',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: memberCharacter.streamId!,
+      payload: { afterRevision: 0 },
+    }, member);
+    expect(info).toMatchObject({
+      ok: true,
+      value: { party: null, activity: [{ type: 'created' }, { type: 'joined' }, { type: 'closed' }] },
+    });
+
+    await engine.stop();
+  });
+
+  it('shares party quest progress from committed member events and abandons it on party closure', async () => {
+    const targetLocationId = demoWorld.locations[1]!.id;
+    const testWorld = {
+      ...demoWorld,
+      quests: [
+        ...(demoWorld.quests ?? []),
+        {
+          id: 'party-visit-test',
+          version: '1',
+          title: 'Shared Wayfinding',
+          summary: 'Reach the next room as a party.',
+          scope: 'party' as const,
+          giverNpcId: 'test-giver',
+          turnInNpcId: 'test-giver',
+          objectives: [{
+            id: 'visit-next-room',
+            label: 'Reach the next room',
+            type: 'visit-location' as const,
+            locationId: targetLocationId,
+          }],
+        },
+        {
+          id: 'party-abandon-test',
+          version: '1',
+          title: 'Unfinished Shared Route',
+          summary: 'A progress state that should be invalidated on party close.',
+          scope: 'party' as const,
+          giverNpcId: 'test-giver',
+          turnInNpcId: 'test-giver',
+          objectives: [{
+            id: 'visit-far-room',
+            label: 'Reach another room',
+            type: 'visit-location' as const,
+            locationId: demoWorld.locations[0]!.id,
+          }],
+        },
+      ],
+    };
+    let testId = 0;
+    const triggerPlugin: EnginePlugin = {
+      manifest: {
+        id: 'mudd.party-quest-test-trigger',
+        version: '1.0.0',
+        apiVersion: '1.0',
+        category: 'core',
+      },
+      register(context) {
+        context.registerCommand('test.party-movement', z.object({
+          type: z.literal('test.party-movement'),
+          version: z.literal(1),
+          commandId: z.string(),
+          worldInstanceId: z.string(),
+          characterId: z.string(),
+          payload: z.object({ toLocationId: z.string() }),
+        }), async (command) => ({
+          streamId: 'test-party-movement',
+          expectedVersion: 0,
+          events: [{
+            type: 'character.moved',
+            version: 1,
+            payload: {
+              characterId: command.characterId,
+              fromLocationId: 'test-start',
+              toLocationId: command.payload.toLocationId,
+              exitId: 'test-exit',
+            },
+          }],
+        }));
+      },
+    };
+    const store = new InMemoryEventStore();
+    const engine = new EngineHost(
+      [worldItemsPlugin, movementPlugin, characterPlugin, groupsPlugin, partyPlugin, partyQuestPlugin, triggerPlugin],
+      store,
+      authorization,
+      testWorld,
+      () => `party-quest-test-${++testId}`,
+      () => new Date('2026-10-19T12:00:00.000Z'),
+    );
+    await engine.start();
+    const player = { ...session, playerId: 'quest-party-member', actorId: 'quest-party-member' };
+    const character = await engine.dispatch({
+      type: 'character.create',
+      version: 1,
+      commandId: 'quest-party-character',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      payload: { name: 'Wayfinder' },
+    }, player);
+    const characterId = character.streamId!;
+    expect((await engine.dispatch({
+      type: 'party.create',
+      version: 1,
+      commandId: 'quest-party-create',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      payload: {},
+    }, player)).receipt.ok).toBe(true);
+    const partyId = projectGroups(await store.readStream(DEMO_WORLD_INSTANCE_ID, 'world-groups')).groups[0]!.groupId;
+
+    expect((await engine.dispatch({
+      type: 'party.quest.start',
+      version: 1,
+      commandId: 'quest-party-start',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      payload: { questId: 'party-visit-test' },
+    }, player)).receipt.ok).toBe(true);
+    const movement = {
+      type: 'test.party-movement',
+      version: 1,
+      commandId: 'party-quest-movement-1',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      payload: { toLocationId: targetLocationId },
+    };
+    expect((await engine.dispatch(movement, player)).receipt.ok).toBe(true);
+    expect((await engine.dispatch(movement, player)).commitOutcome).toBe('duplicate');
+    await engine.processPendingEffects();
+
+    const journal = await engine.query({
+      type: 'party.quests',
+      version: 1,
+      queryId: 'party-quest-journal',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      payload: {},
+    }, player);
+    expect(journal).toMatchObject({
+      ok: true,
+      value: {
+        partyId,
+        quests: [{
+          questId: 'party-visit-test',
+          status: 'completed',
+          objectives: [{ progress: 1, required: 1, completed: true }],
+        }],
+      },
+    });
+    expect((await engine.dispatch({
+      type: 'party.quest.start',
+      version: 1,
+      commandId: 'quest-party-abandon-start',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      payload: { questId: 'party-abandon-test' },
+    }, player)).receipt.ok).toBe(true);
+    expect((await engine.dispatch({
+      type: 'party.close',
+      version: 1,
+      commandId: 'quest-party-close',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      payload: {},
+    }, player)).receipt.ok).toBe(true);
+    await engine.processPendingEffects();
+    const questEvents = await store.readStream(DEMO_WORLD_INSTANCE_ID, `party-quests:${partyId}`);
+    expect(questEvents.map((event) => event.type)).toContain('party.quest_completed');
+    expect(questEvents.some((event) =>
+      event.type === 'party.quest_abandoned' &&
+      (event.payload as { questId?: string }).questId === 'party-abandon-test',
+    )).toBe(true);
+    expect(questEvents.some((event) =>
+      event.type === 'party.quest_abandoned' &&
+      (event.payload as { questId?: string }).questId === 'party-visit-test',
+    )).toBe(false);
+
+    await engine.stop();
+  });
+
+  it('puts online party members in one encounter with independent turns', async () => {
+    activeTestRoomCharacters = [];
+    let id = 0;
+    const store = new InMemoryEventStore();
+    const engine = new EngineHost(
+      [
+        worldItemsPlugin,
+        movementPlugin,
+        characterPlugin,
+        groupsPlugin,
+        partyPlugin,
+        partyQuestPlugin,
+        interactionPlugin,
+        combatPlugin,
+        testCombatPresencePlugin,
+        partyCombatPolicyPlugin,
+        teamCombatPlugin,
+      ],
+      store,
+      authorization,
+      demoWorld,
+      () => `team-combat-test-${++id}`,
+      () => new Date('2026-10-19T12:00:00.000Z'),
+    );
+    await engine.start();
+    const firstPlayer = { ...session, playerId: 'team-player-a', actorId: 'team-player-a' };
+    const secondPlayer = { ...session, playerId: 'team-player-b', actorId: 'team-player-b' };
+    const unavailablePlayer = { ...session, playerId: 'team-player-c', actorId: 'team-player-c' };
+    const firstCreated = await engine.dispatch({
+      type: 'character.create',
+      version: 1,
+      commandId: 'team-character-a',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      payload: { name: 'Tern' },
+    }, firstPlayer);
+    const secondCreated = await engine.dispatch({
+      type: 'character.create',
+      version: 1,
+      commandId: 'team-character-b',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      payload: { name: 'Wren' },
+    }, secondPlayer);
+    const unavailableCreated = await engine.dispatch({
+      type: 'character.create',
+      version: 1,
+      commandId: 'team-character-c',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      payload: { name: 'Lark' },
+    }, unavailablePlayer);
+    const firstCharacterId = firstCreated.streamId!;
+    const secondCharacterId = secondCreated.streamId!;
+    const unavailableCharacterId = unavailableCreated.streamId!;
+    const firstCharacter = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, firstCharacterId))!;
+    const secondCharacter = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, secondCharacterId))!;
+    expect(firstCharacter.locationId).toBe(secondCharacter.locationId);
+
+    expect((await engine.dispatch({
+      type: 'party.create',
+      version: 1,
+      commandId: 'team-party-create',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: firstCharacterId,
+      payload: {},
+    }, firstPlayer)).receipt.ok).toBe(true);
+    const partyId = projectGroups(await store.readStream(DEMO_WORLD_INSTANCE_ID, 'world-groups')).groups[0]!.groupId;
+    expect((await engine.dispatch({
+      type: 'party.join',
+      version: 1,
+      commandId: 'team-party-join',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: secondCharacterId,
+      payload: { groupId: partyId },
+    }, secondPlayer)).receipt.ok).toBe(true);
+    expect((await engine.dispatch({
+      type: 'party.join',
+      version: 1,
+      commandId: 'team-party-join-unavailable',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: unavailableCharacterId,
+      payload: { groupId: partyId },
+    }, unavailablePlayer)).receipt.ok).toBe(true);
+    const partyQuestStart = await engine.dispatch({
+      type: 'party.quest.start',
+      version: 1,
+      commandId: 'team-party-quest-start',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: firstCharacterId,
+      payload: { questId: 'mossgate-cooperative-drill' },
+    }, firstPlayer);
+    if (!partyQuestStart.receipt.ok) throw new Error(partyQuestStart.receipt.message);
+    activeTestRoomCharacters = [
+      { playerId: firstPlayer.playerId, characterId: firstCharacterId, displayName: firstCharacter.name },
+      { playerId: secondPlayer.playerId, characterId: secondCharacterId, displayName: secondCharacter.name },
+    ];
+
+    const location = demoWorld.locations.find((candidate) =>
+      candidate.npcs?.some((npc) => npc.id === 'mossgate-training-sentinel'),
+    )!;
+    if (location.id !== firstCharacter.locationId) {
+      throw new Error('The team combat test characters must start beside the training sentinel.');
+    }
+    const started = await engine.dispatch({
+      type: 'team.combat.start',
+      version: 1,
+      commandId: 'team-combat-start',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: firstCharacterId,
+      payload: { targetNpcId: 'mossgate-training-sentinel' },
+    }, firstPlayer);
+    expect(started.receipt.ok).toBe(true);
+    const info = await engine.query({
+      type: 'team.combat.info',
+      version: 1,
+      queryId: 'team-combat-info',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: secondCharacterId,
+      payload: {},
+    }, secondPlayer);
+    expect(info).toMatchObject({
+      ok: true,
+      value: {
+        encounter: {
+          status: 'active',
+          participants: [
+            { characterId: firstCharacterId, teamId: 'allies' },
+            { characterId: secondCharacterId, teamId: 'allies' },
+            { npcId: 'mossgate-training-sentinel', teamId: 'enemies' },
+          ],
+          currentParticipantId: firstCharacterId,
+        },
+      },
+    });
+    const parsedInfo = TeamCombatInfoProjectionSchema.parse(
+      (info as { value: unknown }).value,
+    );
+    const encounterId = parsedInfo.encounter!.encounterId;
+
+    expect((await engine.dispatch({
+      type: 'team.combat.action',
+      version: 1,
+      commandId: 'team-combat-first-turn',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: firstCharacterId,
+      payload: {
+        encounterId,
+        action: 'attack',
+      },
+    }, firstPlayer)).receipt.ok).toBe(true);
+    const afterFirstTurn = await engine.query({
+      type: 'team.combat.info',
+      version: 1,
+      queryId: 'team-combat-info-next-turn',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: secondCharacterId,
+      payload: {},
+    }, secondPlayer);
+    expect(afterFirstTurn).toMatchObject({
+      ok: true,
+      value: {
+        encounter: {
+          status: 'active',
+          currentParticipantId: secondCharacterId,
+        },
+      },
+    });
+    expect((await engine.dispatch({
+      type: 'party.leave',
+      version: 1,
+      commandId: 'team-party-member-leaves-during-fight',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: secondCharacterId,
+      payload: {},
+    }, secondPlayer)).receipt.ok).toBe(true);
+    const memberAfterLeaving = await engine.query({
+      type: 'team.combat.info',
+      version: 1,
+      queryId: 'team-combat-after-leave',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: secondCharacterId,
+      payload: {},
+    }, secondPlayer);
+    expect(memberAfterLeaving).toMatchObject({
+      ok: true,
+      value: {
+        encounter: {
+          status: 'active',
+          currentParticipantId: secondCharacterId,
+          participants: [
+            { characterId: firstCharacterId, teamId: 'allies' },
+            { characterId: secondCharacterId, teamId: 'allies' },
+            { npcId: 'mossgate-training-sentinel', teamId: 'enemies' },
+          ],
+        },
+      },
+    });
+    expect(await engine.query({
+      type: 'party.quests',
+      version: 1,
+      queryId: 'departed-member-party-quests',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: secondCharacterId,
+      payload: {},
+    }, secondPlayer)).toMatchObject({
+      ok: true,
+      value: { partyId: null, quests: [] },
+    });
+    expect((await engine.dispatch({
+      type: 'team.combat.action',
+      version: 1,
+      commandId: 'team-combat-second-turn',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: secondCharacterId,
+      payload: { encounterId, action: 'defend' },
+    }, secondPlayer)).receipt.ok).toBe(true);
+    expect((await engine.dispatch({
+      type: 'team.combat.action',
+      version: 1,
+      commandId: 'team-combat-final-turn',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: firstCharacterId,
+      payload: { encounterId, action: 'attack' },
+    }, firstPlayer)).receipt.ok).toBe(true);
+    await engine.processPendingEffects();
+    const firstAfterOutcome = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, firstCharacterId))!;
+    const secondAfterOutcome = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, secondCharacterId))!;
+    expect(firstAfterOutcome.advancement?.experience).toBe(10);
+    expect(secondAfterOutcome.advancement?.experience).toBe(10);
+    const sharedQuestJournal = await engine.query({
+      type: 'party.quests',
+      version: 1,
+      queryId: 'team-party-quest-journal',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: firstCharacterId,
+      payload: {},
+    }, firstPlayer);
+    expect(sharedQuestJournal).toMatchObject({
+      ok: true,
+      value: {
+        quests: [{
+          questId: 'mossgate-cooperative-drill',
+          status: 'completed',
+          objectives: [{ progress: 1, required: 1, completed: true }],
+        }],
+      },
+    });
+    await engine.stop();
+    activeTestRoomCharacters = [];
   });
 
   it('rejects malformed and unknown commands', async () => {

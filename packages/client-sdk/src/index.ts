@@ -34,6 +34,22 @@ import {
   InteractionRequestCommandSchema,
   InteractionRespondCommandSchema,
   PvpCombatActionCommandSchema,
+  PartyCreateCommandSchema,
+  PartyJoinCommandSchema,
+  PartyLeaveCommandSchema,
+  PartyCloseCommandSchema,
+  PartyListQuerySchema,
+  PartyInfoQuerySchema,
+  PartyListProjectionSchema,
+  PartyInfoProjectionSchema,
+  PartyQuestStartCommandSchema,
+  PartyQuestJournalQuerySchema,
+  PartyQuestJournalSchema,
+  TeamCombatActionCommandSchema,
+  TeamCombatActionSchema,
+  TeamCombatInfoProjectionSchema,
+  TeamCombatInfoQuerySchema,
+  TeamCombatStartCommandSchema,
   type LocationProjection,
   type RoomPresenceProjection,
   type NpcDialogueProjection,
@@ -43,6 +59,10 @@ import {
   type InteractionInbox,
   type CombatActionId,
   type EquipmentSlot,
+  type PartyListProjection,
+  type PartyInfoProjection,
+  type PartyQuestJournal,
+  type TeamCombatInfoProjection,
 } from '@mudd/contracts';
 import { z } from 'zod';
 
@@ -400,6 +420,161 @@ export class MuddHttpClient {
       characterId,
       payload: { encounterId, action, ...(itemId ? { itemId } : {}) },
     }));
+  }
+
+  async createParty(characterId: string): Promise<CommandResponse> {
+    return this.send(PartyCreateCommandSchema.parse({
+      type: 'party.create',
+      version: 1,
+      commandId: crypto.randomUUID(),
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      payload: {},
+    }));
+  }
+
+  async joinParty(characterId: string, groupId: string): Promise<CommandResponse> {
+    return this.send(PartyJoinCommandSchema.parse({
+      type: 'party.join',
+      version: 1,
+      commandId: crypto.randomUUID(),
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      payload: { groupId },
+    }));
+  }
+
+  async leaveParty(characterId: string): Promise<CommandResponse> {
+    return this.send(PartyLeaveCommandSchema.parse({
+      type: 'party.leave',
+      version: 1,
+      commandId: crypto.randomUUID(),
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      payload: {},
+    }));
+  }
+
+  async closeParty(characterId: string): Promise<CommandResponse> {
+    return this.send(PartyCloseCommandSchema.parse({
+      type: 'party.close',
+      version: 1,
+      commandId: crypto.randomUUID(),
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      payload: {},
+    }));
+  }
+
+  async listParties(characterId: string): Promise<PartyListProjection> {
+    const query = PartyListQuerySchema.parse({
+      type: 'party.list',
+      version: 1,
+      queryId: crypto.randomUUID(),
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      payload: {},
+    });
+    const result = await this.request('/api/queries', {
+      method: 'POST',
+      body: JSON.stringify(query),
+    }, queryResultSchema(PartyListProjectionSchema));
+    if (!result.ok || !result.value) throw new Error(result.message ?? 'Unable to list parties.');
+    return result.value;
+  }
+
+  async getPartyInfo(characterId: string, afterRevision?: number): Promise<PartyInfoProjection> {
+    const query = PartyInfoQuerySchema.parse({
+      type: 'party.info',
+      version: 1,
+      queryId: crypto.randomUUID(),
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      payload: afterRevision === undefined ? {} : { afterRevision },
+    });
+    const result = await this.request('/api/queries', {
+      method: 'POST',
+      body: JSON.stringify(query),
+    }, queryResultSchema(PartyInfoProjectionSchema));
+    if (!result.ok || !result.value) throw new Error(result.message ?? 'Unable to view party status.');
+    return result.value;
+  }
+
+  async startPartyQuest(characterId: string, questId: string): Promise<CommandResponse> {
+    return this.send(PartyQuestStartCommandSchema.parse({
+      type: 'party.quest.start',
+      version: 1,
+      commandId: crypto.randomUUID(),
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      payload: { questId },
+    }));
+  }
+
+  async getPartyQuests(characterId: string): Promise<PartyQuestJournal> {
+    const query = PartyQuestJournalQuerySchema.parse({
+      type: 'party.quests',
+      version: 1,
+      queryId: crypto.randomUUID(),
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      payload: {},
+    });
+    const result = await this.request('/api/queries', {
+      method: 'POST',
+      body: JSON.stringify(query),
+    }, queryResultSchema(PartyQuestJournalSchema));
+    if (!result.ok || !result.value) throw new Error(result.message ?? 'Unable to view party quests.');
+    return result.value;
+  }
+
+  async startTeamCombat(
+    characterId: string,
+    targetNpcId: string,
+    expectedVersion: number,
+  ): Promise<CommandResponse> {
+    return this.send(TeamCombatStartCommandSchema.parse({
+      type: 'team.combat.start',
+      version: 1,
+      commandId: crypto.randomUUID(),
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      expectedVersion,
+      payload: { targetNpcId },
+    }));
+  }
+
+  async performTeamCombatAction(
+    characterId: string,
+    encounterId: string,
+    action: z.infer<typeof TeamCombatActionSchema>,
+    options: { itemId?: string; targetParticipantId?: string } = {},
+  ): Promise<CommandResponse> {
+    return this.send(TeamCombatActionCommandSchema.parse({
+      type: 'team.combat.action',
+      version: 1,
+      commandId: crypto.randomUUID(),
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      payload: { encounterId, action, ...options },
+    }));
+  }
+
+  async getTeamCombatInfo(characterId: string): Promise<TeamCombatInfoProjection> {
+    const query = TeamCombatInfoQuerySchema.parse({
+      type: 'team.combat.info',
+      version: 1,
+      queryId: crypto.randomUUID(),
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      payload: {},
+    });
+    const result = await this.request('/api/queries', {
+      method: 'POST',
+      body: JSON.stringify(query),
+    }, queryResultSchema(TeamCombatInfoProjectionSchema));
+    if (!result.ok || !result.value) throw new Error(result.message ?? 'Unable to view cooperative combat.');
+    return result.value;
   }
 
   async chooseNpcDialogue(

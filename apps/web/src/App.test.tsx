@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { TeamCombatEncounter } from '@mudd/contracts';
 
 const { apiFetch } = vi.hoisted(() => {
   const apiFetch = vi.fn();
@@ -56,6 +57,18 @@ let combatEncounter: {
   lastAction: 'attack' | 'defend' | 'flee' | 'use-item';
   lastNarration: string;
 } | null;
+let activePartyInfo: {
+  groupId: string;
+  groupType: string;
+  ownerPlayerId: string;
+  maxMembers: number;
+  isPublic: boolean;
+  status: 'active';
+  members: Array<{ playerId: string; characterId: string; displayName: string }>;
+  createdAt: string;
+  leaderName: string;
+} | null;
+let teamCombatEncounter: TeamCombatEncounter | null;
 
 function currentLocation() {
   return {
@@ -306,6 +319,8 @@ beforeEach(() => {
   healingDraughtCarried = false;
   characterHealth = null;
   combatEncounter = null;
+  activePartyInfo = null;
+  teamCombatEncounter = null;
   apiFetch.mockReset();
   apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
     if (path === '/api/world-session/heartbeat') {
@@ -402,6 +417,12 @@ beforeEach(() => {
         type?: string;
         payload?: { objectId?: string; npcId?: string; topic?: string; merchantNpcId?: string };
       };
+      if (query.type === 'party.info') {
+        return json({ ok: true, value: { party: activePartyInfo, revision: 0, activity: [] } });
+      }
+      if (query.type === 'team.combat.info') {
+        return json({ ok: true, value: { encounter: teamCombatEncounter } });
+      }
       if (query.type === 'merchant.catalog') {
         if (room !== 'market' || query.payload?.merchantNpcId !== 'sella-reedbank-merchant') {
           return json({ ok: false, message: 'That merchant is not selling anything here.' }, 403);
@@ -574,6 +595,65 @@ beforeEach(() => {
         return json({
           receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision },
           streamId: characterId,
+        });
+      }
+      if (command.type === 'team.combat.start') {
+        teamCombatEncounter = {
+          encounterId: 'team-combat-ui-encounter',
+          locationId: 'mossgate-clearing',
+          sourceGroupId: activePartyInfo?.groupId,
+          participants: [
+            {
+              participantId: characterId,
+              teamId: 'allies',
+              kind: 'player',
+              characterId,
+              playerId: 'account-1',
+              displayName: 'Rowan',
+              health: 6,
+              maximumHealth: 6,
+              defending: false,
+              status: 'active',
+            },
+            {
+              participantId: 'mossgate-training-sentinel',
+              teamId: 'enemies',
+              kind: 'npc',
+              npcId: 'mossgate-training-sentinel',
+              displayName: 'Practice Sentinel',
+              health: 4,
+              maximumHealth: 4,
+              defending: false,
+              status: 'active',
+            },
+          ],
+          contributingPlayerIds: [],
+          currentParticipantId: characterId,
+          round: 1,
+          status: 'active',
+          lastNarration: 'The party faces the Practice Sentinel.',
+          consumedItemIdsByCharacter: {},
+          createdAt: '2026-10-19T12:00:00.000Z',
+          updatedAt: '2026-10-19T12:00:00.000Z',
+        };
+        return json({
+          receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: 1 },
+          streamId: 'world-team-combat:mudd-demo-instance',
+        });
+      }
+      if (command.type === 'team.combat.action') {
+        if (teamCombatEncounter) {
+          teamCombatEncounter = {
+            ...teamCombatEncounter,
+            round: teamCombatEncounter.round + 1,
+            contributingPlayerIds: ['account-1'],
+            lastNarration: 'Rowan hits the Practice Sentinel for 2 damage.',
+            updatedAt: '2026-10-19T12:00:01.000Z',
+          };
+        }
+        return json({
+          receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: 2 },
+          streamId: 'world-team-combat:mudd-demo-instance',
         });
       }
       if (command.type === 'merchant.purchase') {
@@ -791,6 +871,44 @@ describe('single-character world session client', () => {
         payload: { action: 'defend', encounterId: 'combat-ui-encounter' },
       }),
     ]));
+  });
+
+  it('starts a cooperative encounter from a party and keeps combat-only controls', async () => {
+    activePartyInfo = {
+      groupId: 'party-ui-test',
+      groupType: 'party',
+      ownerPlayerId: 'account-1',
+      maxMembers: 4,
+      isPublic: true,
+      status: 'active',
+      members: [{ playerId: 'account-1', characterId, displayName: 'Rowan' }],
+      createdAt: '2026-10-19T12:00:00.000Z',
+      leaderName: 'Rowan',
+    };
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    clickQuickAction('Show opponents to attack');
+    fireEvent.click(await screen.findByRole('button', { name: 'Attack Practice Sentinel' }));
+
+    await screen.findByText('Round 2 · Cooperative encounter');
+    expect(screen.queryByRole('region', { name: 'Quick commands' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Enter a command' })).not.toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Cooperative combat actions' })).toBeInTheDocument();
+    expect(apiFetch.mock.calls.some(([path, init]) => {
+      if (path !== '/api/commands') return false;
+      const body = JSON.parse(String(init?.body ?? '{}')) as { type?: string };
+      return body.type === 'team.combat.start';
+    })).toBe(true);
+    expect(apiFetch.mock.calls.some(([path, init]) => {
+      if (path !== '/api/commands') return false;
+      const body = JSON.parse(String(init?.body ?? '{}')) as { type?: string };
+      return body.type === 'team.combat.action';
+    })).toBe(true);
+    expect(apiFetch.mock.calls.some(([path, init]) => {
+      if (path !== '/api/commands') return false;
+      const body = JSON.parse(String(init?.body ?? '{}')) as { type?: string };
+      return body.type === 'combat.action';
+    })).toBe(false);
   });
 
   it('opens directly into focused gameplay with separate Traveler and Field notes screens', async () => {
@@ -1227,7 +1345,7 @@ describe('single-character world session client', () => {
     fireEvent.submit(commandInput.closest('form')!);
     await screen.findByText('No help is available for "unknown".');
     expect(history).toHaveTextContent('Try "help" for the command list.');
-    expect(apiFetch.mock.calls.some(([path]) => path === '/api/commands' || path === '/api/queries')).toBe(false);
+    expect(apiFetch.mock.calls.some(([path]) => path === '/api/commands')).toBe(false);
   });
 
   it('uses a carried item on a room target from the terminal', async () => {
@@ -1302,7 +1420,7 @@ describe('single-character world session client', () => {
     const useButton = within(combatActions).getByRole('button', { name: 'use' });
     expect(useButton).toHaveAttribute('aria-expanded', 'false');
     fireEvent.click(useButton);
-    const combatItems = screen.getByRole('group', { name: 'Items available to use during combat' });
+    const combatItems = await screen.findByRole('group', { name: 'Items available to use during combat' });
     expect(within(combatItems).getByRole('button', { name: 'Use Small healing draught during combat' })).toBeInTheDocument();
     fireEvent.click(within(combatItems).getByRole('button', { name: 'Use Small healing draught during combat' }));
 

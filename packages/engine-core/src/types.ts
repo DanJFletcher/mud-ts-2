@@ -98,12 +98,22 @@ export interface EventEffectContext {
   readonly worldInstanceId: string;
   readonly sourceStreamId: string | null;
   readonly causationCommandId: string;
+  readonly actorId?: string;
   readonly store: EventStorePort;
+  readonly world: WorldPackDraft;
+  readonly now: () => Date;
+  readonly makeId: () => string;
+  readonly rng: RngPort;
 }
 
 export type EventEffectHandler<T = unknown> = (
   payload: T,
   context: EventEffectContext,
+) => Promise<void>;
+
+export type DomainEventHandler<T = unknown> = (
+  payload: T,
+  context: EventEffectContext & { readonly actorId: string },
 ) => Promise<void>;
 
 export interface EventEffectDefinition<T = unknown> {
@@ -144,6 +154,12 @@ export interface PluginContext {
   registerCommand<T>(type: string, schema: z.ZodType<T>, handler: CommandHandler<T>): void;
   registerQuery<T, R>(type: string, schema: z.ZodType<T>, handler: QueryHandler<T, R>): void;
   registerEffect<T>(type: string, version: number, schema: z.ZodType<T>, handler: EventEffectHandler<T>): void;
+  registerEventHandler<T>(
+    eventType: string,
+    eventVersion: number,
+    schema: z.ZodType<T>,
+    handler: DomainEventHandler<T>,
+  ): void;
   provideCapability<T>(token: CapabilityToken<T>, implementation: T): void;
   requireCapability<T>(token: CapabilityToken<T>): T;
 }

@@ -72,6 +72,10 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
     "Usage: help [command]",
     "Show the command list or instructions for one command.",
   ],
+  party: [
+    "Usage: party [help|info|list|create|join <id>|quests|quest start <id>|leave|close]",
+    "Manage a public party of up to four players, start shared quests, and coordinate cooperative encounters.",
+  ],
   accept: [
     "Usage: accept <request-id>",
     "Accept a pending player challenge addressed to your current character.",
@@ -130,7 +134,7 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
   ],
   attack: [
     "Usage: attack <opponent> | attack",
-    "Challenge a player in the same room, start an encounter with an NPC, or attack during combat.",
+    "Challenge a player in the same room, start a solo NPC fight, or attack during combat. Eligible online party members join NPC fights together.",
   ],
   defend: [
     "Usage: defend",
@@ -149,6 +153,7 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
 const GENERAL_HELP = [
   "Commands",
   "help [command] — List commands or show instructions for one.",
+  "party [help|info|list|create|join <id>|quests|quest start <id>|leave|close] — Manage your party and its quests.",
   "talk <npc> [about <topic>] — Speak privately with someone in the current room.",
   "shop <merchant> — Browse a merchant’s goods and your balance.",
   "buy <item> — Purchase an item from the open merchant catalog.",
@@ -197,9 +202,11 @@ function completedQuestObjectiveKeys(snapshot: GameSnapshot): string[] {
 export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
   const [interactionInbox, setInteractionInbox] = useState<InteractionInbox | null>(null);
+  const [partyInfo, setPartyInfo] = useState<Awaited<ReturnType<MuddHttpClient["getPartyInfo"]>> | null>(null);
+  const [teamCombatInfo, setTeamCombatInfo] = useState<Awaited<ReturnType<MuddHttpClient["getTeamCombatInfo"]>> | null>(null);
   const [presenceStale, setPresenceStale] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"look" | "read" | "take" | "use" | "drop" | "move" | "talk" | "shop" | "buy" | "combat" | "rest" | "equip" | null>(null);
+  const [pending, setPending] = useState<"look" | "read" | "take" | "use" | "drop" | "move" | "talk" | "shop" | "buy" | "combat" | "rest" | "equip" | "party" | null>(null);
   const [command, setCommand] = useState("");
   const [quickCommandPage, setQuickCommandPage] = useState(1);
   const [quickCommandPageSize, setQuickCommandPageSize] = useState(() =>
@@ -230,6 +237,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const knownQuestObjectiveCompletionsRef = useRef<Set<string>>(new Set());
   const knownInteractionStatusesRef = useRef<Map<string, string>>(new Map());
   const knownPvpUpdateRef = useRef<string | null>(null);
+  const knownPartyRevisionRef = useRef<number | null>(null);
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const handleChatFullscreenChange = useCallback((fullscreen: boolean) => {
@@ -432,6 +440,96 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [addEntry, presenceCharacterId]);
+
+  const refreshPartyState = useCallback(async () => {
+    if (!presenceCharacterId) return null;
+    const previousRevision = knownPartyRevisionRef.current;
+    const next = await client.getPartyInfo(presenceCharacterId, previousRevision ?? undefined);
+    if (previousRevision !== null) {
+      for (const activity of next.activity) {
+        if (activity.playerId === snapshot?.player.id) continue;
+        const who = activity.displayName ?? "A player";
+        const message = activity.type === "joined"
+          ? `${who} joined the party.`
+          : activity.type === "left"
+            ? `${who} left the party.`
+            : activity.type === "closed"
+              ? `${who} closed the party.`
+              : `${who} formed a party.`;
+        addEntry("system", message);
+      }
+    }
+    knownPartyRevisionRef.current = next.revision;
+    setPartyInfo(next);
+    return next;
+  }, [addEntry, presenceCharacterId, snapshot?.player.id]);
+
+  const refreshTeamCombat = useCallback(async () => {
+    if (!presenceCharacterId) return null;
+    const next = await client.getTeamCombatInfo(presenceCharacterId);
+    setTeamCombatInfo(next);
+    return next;
+  }, [presenceCharacterId]);
+
+  useEffect(() => {
+    if (!presenceCharacterId) {
+      setTeamCombatInfo(null);
+      return;
+    }
+    let active = true;
+    let requestRunning = false;
+    const poll = async () => {
+      if (!active || requestRunning || document.visibilityState === "hidden") return;
+      requestRunning = true;
+      try {
+        const next = await client.getTeamCombatInfo(presenceCharacterId);
+        if (active) setTeamCombatInfo(next);
+      } catch {
+        // Keep the last known encounter while the connection recovers.
+      } finally {
+        requestRunning = false;
+      }
+    };
+    void poll();
+    const interval = window.setInterval(() => void poll(), 2_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [presenceCharacterId]);
+
+  useEffect(() => {
+    if (!presenceCharacterId) {
+      setPartyInfo(null);
+      knownPartyRevisionRef.current = null;
+      return;
+    }
+    knownPartyRevisionRef.current = null;
+    let active = true;
+    let requestRunning = false;
+    const pollParty = async () => {
+      if (!active || document.visibilityState === "hidden" || requestRunning) return;
+      requestRunning = true;
+      try {
+        await refreshPartyState();
+      } catch {
+        // Party notifications are optional; keep the last known terminal state.
+      } finally {
+        requestRunning = false;
+      }
+    };
+    void pollParty();
+    const interval = window.setInterval(() => void pollParty(), 3_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void pollParty();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [presenceCharacterId, refreshPartyState]);
 
   const refreshAfterMutation = useCallback(async (message: string, announceQuestObjectives = false) => {
     addEntry("system", message);
@@ -760,6 +858,9 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     const activeEncounter = snapshot.character.combat?.status === "active"
       ? snapshot.character.combat
       : undefined;
+    let activeTeamEncounter = teamCombatInfo?.encounter?.status === "active"
+      ? teamCombatInfo.encounter
+      : undefined;
     if (recordCommand) {
       const commandText = action === "attack" && targetNpcId
         ? `> attack ${snapshot.location.npcs?.find((npc) => npc.id === targetNpcId)?.name ?? "opponent"}`
@@ -770,26 +871,67 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     }
     setPending("combat");
     try {
-      const result = await client.performCombatAction(
-        snapshot.character.characterId,
-        action,
-        snapshot.character.revision,
-        activeEncounter
-          ? { encounterId: activeEncounter.encounterId, ...(itemId ? { itemId } : {}) }
-          : targetNpcId
-            ? { targetNpcId }
-            : itemId
-              ? { itemId }
-              : {},
-      );
+      let playerHasParty = Boolean(partyInfo?.party);
+      if (!activeTeamEncounter && !activeEncounter && action === "attack" && targetNpcId) {
+        const currentParty = await client.getPartyInfo(snapshot.character.characterId);
+        setPartyInfo(currentParty);
+        playerHasParty = Boolean(currentParty.party);
+      }
+      let result;
+      if (activeTeamEncounter) {
+        result = await client.performTeamCombatAction(
+          snapshot.character.characterId,
+          activeTeamEncounter.encounterId,
+          action,
+          itemId ? { itemId } : {},
+        );
+      } else if (!activeEncounter && action === "attack" && targetNpcId && playerHasParty) {
+        const started = await client.startTeamCombat(
+          snapshot.character.characterId,
+          targetNpcId,
+          snapshot.character.revision,
+        );
+        if (!started.receipt.ok) throw new Error(started.receipt.message);
+        const startedInfo = await client.getTeamCombatInfo(snapshot.character.characterId);
+        setTeamCombatInfo(startedInfo);
+        activeTeamEncounter = startedInfo.encounter?.status === "active"
+          ? startedInfo.encounter
+          : undefined;
+        if (!activeTeamEncounter) throw new Error("The cooperative encounter did not start.");
+        result = await client.performTeamCombatAction(
+          snapshot.character.characterId,
+          activeTeamEncounter.encounterId,
+          "attack",
+        );
+      } else {
+        result = await client.performCombatAction(
+          snapshot.character.characterId,
+          action,
+          snapshot.character.revision,
+          activeEncounter
+            ? { encounterId: activeEncounter.encounterId, ...(itemId ? { itemId } : {}) }
+            : targetNpcId
+              ? { targetNpcId }
+              : itemId
+                ? { itemId }
+                : {},
+        );
+      }
       if (!result.receipt.ok) throw new Error(result.receipt.message);
-      const nextSnapshot = await client.getGame();
+      const [nextSnapshot, nextTeamInfo] = await Promise.all([
+        client.getGame(),
+        refreshTeamCombat(),
+      ]);
       setSnapshot(nextSnapshot);
+      if (nextTeamInfo) setTeamCombatInfo(nextTeamInfo);
       setConnectionError("");
       const encounter = nextSnapshot.character?.combat;
+      const teamEncounter = nextTeamInfo?.encounter;
       const notice = respawnNotice(result.events, nextSnapshot.location?.title ?? "the fountain");
       if (notice) {
         addEntry("narration", notice);
+      } else if (teamEncounter) {
+        addEntry("narration", `${teamEncounter.lastNarration} Round ${teamEncounter.round}.`);
       } else if (action === "use-item" && !activeEncounter) {
         const nextHealth = nextSnapshot.character?.health;
         const previousHealth = snapshot.character.health;
@@ -813,7 +955,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     } finally {
       setPending(null);
     }
-  }, [addEntry, pending, snapshot]);
+  }, [addEntry, partyInfo?.party, pending, refreshTeamCombat, snapshot, teamCombatInfo]);
 
   const challengePlayer = useCallback(async (recipientCharacterId: string, recipientName: string) => {
     if (!snapshot?.character || pending) return;
@@ -927,6 +1069,101 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
       for (const line of getCommandHelp(target)) addEntry("narration", line);
       return;
     }
+    if (verb.toLowerCase() === "party") {
+      addEntry("system", `> ${value}`);
+      const [subcommand = "info", ...args] = target.split(/\s+/).filter(Boolean);
+      const partyCommand = subcommand.toLocaleLowerCase();
+      if (partyCommand === "help") {
+        for (const line of getCommandHelp("party")) addEntry("narration", line);
+        return;
+      }
+      if (!snapshot?.character) {
+        addEntry("error", "Enter the world with a character before managing a party.");
+        return;
+      }
+      setPending("party");
+      try {
+        if (partyCommand === "list") {
+          const { parties } = await client.listParties(snapshot.character.characterId);
+          if (!parties.length) {
+            addEntry("narration", "There are no public parties available.");
+          } else {
+            for (const party of parties) {
+              addEntry("narration",
+                `${party.leaderName} — ${party.memberCount}/${party.maxMembers} members — ID ${party.groupId}${party.joinable ? "" : " (full)"}`);
+            }
+            addEntry("system", "Join with: party join <id>");
+          }
+        } else if (partyCommand === "quests" || (partyCommand === "quest" && args.length === 0)) {
+          const journal = await client.getPartyQuests(snapshot.character.characterId);
+          if (!journal.partyId) {
+            addEntry("narration", "Join a party to view shared quests.");
+          } else if (!journal.available.length && !journal.quests.length) {
+            addEntry("narration", "There are no party quests available.");
+          } else {
+            for (const quest of journal.quests) {
+              addEntry("narration", `${quest.title} (${quest.status}) — ${quest.summary}`);
+              for (const objective of quest.objectives) {
+                addEntry("narration", `${objective.completed ? "✓" : "·"} ${objective.progress}/${objective.required} ${objective.label}`);
+              }
+            }
+            for (const quest of journal.available) {
+              addEntry("narration", `${quest.title} — ${quest.summary} (start: party quest start ${quest.questId})`);
+            }
+          }
+        } else if (partyCommand === "quest") {
+          if (args.length !== 2 || args[0]?.toLocaleLowerCase() !== "start") {
+            throw new Error("Usage: party quest start <quest-id>");
+          }
+          await client.startPartyQuest(snapshot.character.characterId, args[1]!);
+          const journal = await client.getPartyQuests(snapshot.character.characterId);
+          const started = journal.quests.find((quest) => quest.questId === args[1]);
+          addEntry("narration", `Your party started ${started?.title ?? args[1]}.`);
+        } else if (partyCommand === "create") {
+          if (args.length) throw new Error("Usage: party create");
+          await client.createParty(snapshot.character.characterId);
+          const info = await refreshPartyState();
+          addEntry("narration", `Party created${info?.party ? ` (ID ${info.party.groupId})` : ""}.`);
+        } else if (partyCommand === "join") {
+          if (args.length !== 1) throw new Error("Usage: party join <id>");
+          await client.joinParty(snapshot.character.characterId, args[0]!);
+          const info = await refreshPartyState();
+          addEntry("narration", `You joined ${info?.party?.leaderName ?? "the party"}.`);
+        } else if (partyCommand === "info") {
+          if (args.length) throw new Error("Usage: party info");
+          const info = await refreshPartyState() ?? partyInfo;
+          if (!info?.party) {
+            addEntry("narration", "You are not in a party. Use “party list” to browse or “party create” to start one.");
+          } else {
+            addEntry("narration",
+              `${info.party.leaderName} leads party ${info.party.groupId} (${info.party.members.length}/${info.party.maxMembers}).`);
+            for (const member of info.party.members) {
+              addEntry("narration", `${member.displayName}${member.playerId === info.party.ownerPlayerId ? " (leader)" : ""}`);
+            }
+          }
+        } else if (partyCommand === "leave") {
+          if (args.length) throw new Error("Usage: party leave");
+          const before = await refreshPartyState();
+          await client.leaveParty(snapshot.character.characterId);
+          await refreshPartyState();
+          addEntry("narration", before?.party?.ownerPlayerId === snapshot.player.id
+            ? "You left and closed your party."
+            : "You left the party.");
+        } else if (partyCommand === "close") {
+          if (args.length) throw new Error("Usage: party close");
+          await client.closeParty(snapshot.character.characterId);
+          await refreshPartyState();
+          addEntry("narration", "You closed the party.");
+        } else {
+          throw new Error('Unknown party command. Try “party help”.');
+        }
+      } catch (error) {
+        addEntry("error", error instanceof Error ? error.message : "That party action could not be completed.");
+      } finally {
+        setPending(null);
+      }
+      return;
+    }
     if (verb.toLowerCase() === "rest") {
       addEntry("system", `> ${value}`);
       if (target) {
@@ -946,7 +1183,10 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
       const activeEncounter = snapshot?.character?.combat?.status === "active"
         ? snapshot.character.combat
         : undefined;
-      if (action === "attack" && !activeEncounter) {
+      const activeTeamEncounter = teamCombatInfo?.encounter?.status === "active"
+        ? teamCombatInfo.encounter
+        : undefined;
+      if (action === "attack" && !activeEncounter && !activeTeamEncounter) {
         if (!target) {
           addEntry("error", "Attack whom? Choose an available combatant or try “attack Practice Sentinel”.");
           return;
@@ -976,12 +1216,15 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
         await performCombatAction("attack", matches[0]!.id);
         return;
       }
-      if (!activeEncounter) {
+      if (!activeEncounter && !activeTeamEncounter) {
         addEntry("error", "There is no active encounter. Choose an available combatant to attack first.");
         return;
       }
       if (target) {
-        addEntry("error", `The active opponent is ${activeEncounter.opponentName}; use “${action}” without a target.`);
+        const activeOpponent = activeEncounter?.opponentName ??
+          activeTeamEncounter?.participants.find((participant) => participant.teamId !== "allies")?.displayName ??
+          "the opponent";
+        addEntry("error", `The active opponent is ${activeOpponent}; use “${action}” without a target.`);
         return;
       }
       await performCombatAction(action);
@@ -1263,7 +1506,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     }
     addEntry("system", `> ${value}`);
     addEntry("error", 'Unknown command. Try "help" for the command list.');
-  }, [addEntry, browseMerchant, changeEquipment, dropObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, activeMerchantCatalog, performCombatAction, performInnRest, interactionInbox, respondToPlayerChallenge, challengePlayer]);
+  }, [addEntry, browseMerchant, changeEquipment, dropObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, activeMerchantCatalog, performCombatAction, performInnRest, interactionInbox, respondToPlayerChallenge, challengePlayer, partyInfo, refreshPartyState, teamCombatInfo]);
 
   const submitQuickCommand = useCallback((rawCommand: string) => {
     setQuickCommandMode("quick");
@@ -1337,6 +1580,17 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const visibleCombat = currentCombat?.locationId === snapshot?.location?.locationId
     ? currentCombat
     : undefined;
+  const latestTeamCombat = teamCombatInfo?.encounter;
+  const visibleTeamCombat = latestTeamCombat?.locationId === snapshot?.location?.locationId
+    ? latestTeamCombat
+    : undefined;
+  const activeTeamCombat = visibleTeamCombat?.status === "active" ? visibleTeamCombat : undefined;
+  const teamCombatant = activeTeamCombat?.participants.find((participant) =>
+    participant.kind === "player" &&
+    participant.characterId === snapshot?.character?.characterId,
+  );
+  const isTeamCombatTurn = activeTeamCombat?.currentParticipantId === snapshot?.character?.characterId;
+  const isAnyCombatActive = visibleCombat?.status === "active" || Boolean(activeTeamCombat);
   const visiblePvp = interactionInbox?.encounter &&
     interactionInbox.encounter.status !== "completed" &&
     interactionInbox.encounter.participants.some((participant) =>
@@ -1346,7 +1600,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const isPvpTurn = visiblePvp?.turnCharacterId === snapshot?.character?.characterId;
   useEffect(() => {
     setCombatUseMenuOpen(false);
-  }, [visibleCombat?.encounterId, visibleCombat?.status]);
+  }, [visibleCombat?.encounterId, visibleCombat?.status, visibleTeamCombat?.encounterId, visibleTeamCombat?.status]);
   const quickInventory = snapshot?.character?.inventory ?? [];
   const outsideCombatHealth = snapshot?.character?.health;
   const canHealOutsideCombat = Boolean(
@@ -1354,11 +1608,15 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   );
   const quickUseItems = quickInventory.filter((item) => {
     if (item.consumable?.effect === "heal") {
-      return visibleCombat?.status === "active"
-        ? visibleCombat.playerHealth < visibleCombat.playerMaxHealth
+      return activeTeamCombat
+        ? Boolean(teamCombatant &&
+          teamCombatant.health < teamCombatant.maximumHealth &&
+          !(activeTeamCombat.consumedItemIdsByCharacter[snapshot?.character?.characterId ?? ""] ?? []).includes(item.id))
+        : visibleCombat?.status === "active"
+          ? visibleCombat.playerHealth < visibleCombat.playerMaxHealth
         : canHealOutsideCombat;
     }
-    return visibleCombat?.status !== "active" &&
+    return !isAnyCombatActive &&
       (snapshot?.location?.objects ?? []).some((object) => !object.readable && !object.takeable);
   });
   const quickCommandItems = useMemo(() => {
@@ -1605,7 +1863,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                         </span>
                       )}
                     </div>
-                    {snapshot.character?.health && visibleCombat?.status !== "active" && !visiblePvp && (
+                    {snapshot.character?.health && !isAnyCombatActive && !visiblePvp && (
                       <div className="focused-terminal-health" aria-label="Character health">
                         Health {snapshot.character.health.current}/{snapshot.character.health.maximum}
                       </div>
@@ -1623,7 +1881,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                     >
                       {entries.length > 0 && <ActivityLog entries={entries} label="Terminal transcript" />}
                     </div>
-                  {visibleCombat?.status !== "active" && !visiblePvp && activeMerchantCatalog ? (
+                  {!isAnyCombatActive && !visiblePvp && activeMerchantCatalog ? (
                     <section className="focused-merchant-catalog" aria-label={`${activeMerchantCatalog.merchantName} shop catalog`}>
                       <div className="focused-merchant-catalog__header">
                         <div>
@@ -1668,7 +1926,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                       </div>
                     </section>
                   ) : null}
-                  {visibleCombat?.status !== "active" && !visiblePvp && activeDialogue?.choices.length ? (
+                  {!isAnyCombatActive && !visiblePvp && activeDialogue?.choices.length ? (
                     <div className="focused-terminal-dialogue">
                       <div
                         className="focused-terminal-dialogue__choices"
@@ -1723,6 +1981,38 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                           </div>
                         ) : <span role="status">Waiting for the other player’s turn.</span>
                       ) : <span role="status">Saving combat outcomes…</span>}
+                    </section>
+                  ) : activeTeamCombat ? (
+                    <section className="focused-terminal-combat" aria-label="Cooperative combat">
+                      <div className="focused-terminal-combat__status" role="status" aria-live="polite">
+                        <strong>Round {activeTeamCombat.round} · Cooperative encounter</strong>
+                        <span>{activeTeamCombat.participants.map((participant) =>
+                          `${participant.displayName} ${participant.health}/${participant.maximumHealth}`,
+                        ).join(" · ")}</span>
+                        <span>{activeTeamCombat.lastNarration}</span>
+                      </div>
+                      {isTeamCombatTurn ? (
+                        <div className="focused-terminal-combat__actions" role="group" aria-label="Cooperative combat actions">
+                          <button type="button" className="focused-quick-command focused-combat-action" onClick={() => void performCombatAction("attack", undefined, true)} disabled={pending !== null}>attack</button>
+                          <button type="button" className="focused-quick-command focused-combat-action" onClick={() => void performCombatAction("defend", undefined, true)} disabled={pending !== null}>defend</button>
+                          {quickUseItems.some((item) => item.consumable?.effect === "heal") ? (
+                            <button type="button" className="focused-quick-command focused-combat-action" aria-expanded={combatUseMenuOpen} onClick={() => setCombatUseMenuOpen((open) => !open)} disabled={pending !== null}>use</button>
+                          ) : null}
+                          <button type="button" className="focused-quick-command focused-combat-action" onClick={() => void performCombatAction("flee", undefined, true)} disabled={pending !== null}>flee</button>
+                        </div>
+                      ) : <span role="status">Waiting for your party’s turn.</span>}
+                      {combatUseMenuOpen && isTeamCombatTurn ? (
+                        <div className="focused-terminal-combat__items" role="group" aria-label="Items available during cooperative combat">
+                          {quickUseItems.filter((item) => item.consumable?.effect === "heal").map((item) => (
+                            <button key={item.id} type="button" className="focused-quick-command focused-combat-action" onClick={() => {
+                              setCombatUseMenuOpen(false);
+                              void performCombatAction("use-item", undefined, true, item.id);
+                            }} disabled={pending !== null}>
+                              {item.label}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
                     </section>
                   ) : visibleCombat?.status === "active" ? (
                     <section className="focused-terminal-combat" aria-label="Combat">
@@ -1798,6 +2088,19 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                         </div>
                       ) : null}
                     </section>
+                  ) : visibleTeamCombat ? (
+                    <section className="focused-terminal-combat" aria-label="Last cooperative encounter">
+                      <div className="focused-terminal-combat__status" role="status">
+                        <strong>
+                          {visibleTeamCombat.status === "victory"
+                            ? "Victory"
+                            : visibleTeamCombat.status === "defeat"
+                              ? "Defeat"
+                              : "Encounter ended"}
+                        </strong>
+                        <span>{visibleTeamCombat.lastNarration}</span>
+                      </div>
+                    </section>
                   ) : visibleCombat ? (
                     <section className="focused-terminal-combat" aria-label="Last combat">
                       <div className="focused-terminal-combat__status" role="status">
@@ -1806,7 +2109,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                       </div>
                     </section>
                   ) : null}
-                  {visibleCombat?.status !== "active" && !visiblePvp && <section className="focused-quick-commands" aria-label="Quick commands">
+                  {!isAnyCombatActive && !visiblePvp && <section className="focused-quick-commands" aria-label="Quick commands">
                     {quickCommandMode !== "quick" && (
                       <span className="focused-quick-commands__label" aria-hidden="true">
                         {quickCommandMode === "go" ? "Go"
@@ -2042,7 +2345,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                                   }
                                 }}
                                 aria-label={item.consumable?.effect === "heal"
-                                  ? `Use ${item.label}${visibleCombat?.status === "active" ? " during combat" : ""}`
+                                  ? `Use ${item.label}${isAnyCombatActive ? " during combat" : ""}`
                                   : `Choose ${item.label} to use`}
                                 disabled={pending !== null}
                               >
@@ -2235,7 +2538,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                       ) : null}
                     </div>
                   </section>}
-                  {visibleCombat?.status !== "active" && !visiblePvp && <section className="focused-command" aria-label="Text command">
+                  {!isAnyCombatActive && !visiblePvp && <section className="focused-command" aria-label="Text command">
                     <form className="focused-command-form" onSubmit={submitCommand}>
                       <TextInput
                         id="focused-world-command"
@@ -2321,7 +2624,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                               <span>{slot}</span>
                               <strong>{item?.label ?? "None"}</strong>
                               {item && (
-                                <button type="button" className="focused-inventory-item" aria-label={`Unequip ${slot}`} disabled={pending !== null || snapshot.character?.combat?.status === "active"} onClick={() => void changeEquipment("unequip", slot)}>
+                                <button type="button" className="focused-inventory-item" aria-label={`Unequip ${slot}`} disabled={pending !== null || isAnyCombatActive} onClick={() => void changeEquipment("unequip", slot)}>
                                   Unequip
                                 </button>
                               )}
@@ -2353,7 +2656,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                                   type="button"
                                   className="focused-inventory-item"
                                   aria-label={`${isEquipped ? "Equipped" : "Equip"} ${item.label}`}
-                                  disabled={pending !== null || snapshot.character?.combat?.status === "active" || isEquipped}
+                                  disabled={pending !== null || isAnyCombatActive || isEquipped}
                                   onClick={() => void changeEquipment("equip", item.id)}
                                 >
                                   {isEquipped ? "Equipped" : `Equip ${item.equipment.slot}`}

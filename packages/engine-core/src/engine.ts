@@ -5,6 +5,7 @@ import {
   type CommandReceipt,
   type SessionContext,
 } from '@mudd/contracts';
+import { z } from 'zod';
 import type {
   AuthorizationPort,
   CommandDefinition,
@@ -12,6 +13,7 @@ import type {
   EngineCommandContext,
   EventEffectContext,
   EventEffectDefinition,
+  DomainEventHandler,
   EnginePlugin,
   EventStorePort,
   PluginContext,
@@ -26,6 +28,13 @@ import { isRuleViolationError } from './domain-error.js';
 const apiVersion = '1.0';
 const EFFECT_LEASE_MS = 60_000;
 const MAX_EFFECT_ATTEMPTS = 10;
+const DOMAIN_EVENT_EFFECT = 'engine.domain_event_dispatch';
+const DOMAIN_EVENT_EFFECT_SCHEMA = z.object({
+  eventType: z.string().min(1),
+  eventVersion: z.number().int().positive(),
+  actorId: z.string().min(1),
+  payload: z.record(z.unknown()),
+}).strict();
 const failure = (
   commandId: string,
   code: Extract<CommandReceipt, { ok: false }>['code'],
@@ -104,6 +113,10 @@ export class EngineHost {
   private readonly commands = new Map<string, CommandDefinition>();
   private readonly queries = new Map<string, QueryDefinition>();
   private readonly effects = new Map<string, EventEffectDefinition>();
+  private readonly eventHandlers = new Map<string, Array<{
+    schema: z.ZodType;
+    handle: DomainEventHandler;
+  }>>();
   private readonly capabilities = new Map<string, { version: string; implementation: unknown }>();
   private readonly orderedPlugins: EnginePlugin[];
   private started = false;
@@ -118,6 +131,24 @@ export class EngineHost {
     private readonly rng: RngPort = secureRng,
   ) {
     this.orderedPlugins = this.resolvePlugins(plugins);
+    this.effects.set(DOMAIN_EVENT_EFFECT, {
+      version: 1,
+      schema: DOMAIN_EVENT_EFFECT_SCHEMA,
+      handle: async (rawEvent, effectContext) => {
+        const event = DOMAIN_EVENT_EFFECT_SCHEMA.parse(rawEvent);
+        const key = `${event.eventType}@${event.eventVersion}`;
+        for (const subscription of this.eventHandlers.get(key) ?? []) {
+          const parsed = subscription.schema.safeParse(event.payload);
+          if (!parsed.success) {
+            throw new Error(`Committed event did not match subscriber contract ${key}.`);
+          }
+          await subscription.handle(parsed.data, {
+            ...effectContext,
+            actorId: event.actorId,
+          });
+        }
+      },
+    });
     const context: PluginContext = {
       registerCommand: (type, schema, handle) => {
         if (this.commands.has(type)) throw new Error(`Duplicate command registration: ${type}`);
@@ -131,6 +162,15 @@ export class EngineHost {
         if (this.effects.has(type)) throw new Error(`Duplicate event effect registration: ${type}`);
         if (!Number.isInteger(version) || version < 1) throw new Error(`Invalid event effect version for ${type}.`);
         this.effects.set(type, { version, schema, handle } as EventEffectDefinition);
+      },
+      registerEventHandler: (eventType, eventVersion, schema, handle) => {
+        if (!eventType || !Number.isInteger(eventVersion) || eventVersion < 1) {
+          throw new Error(`Invalid event subscription: ${eventType}@${eventVersion}.`);
+        }
+        const key = `${eventType}@${eventVersion}`;
+        const subscriptions = this.eventHandlers.get(key) ?? [];
+        subscriptions.push({ schema, handle } as { schema: z.ZodType; handle: DomainEventHandler });
+        this.eventHandlers.set(key, subscriptions);
       },
       provideCapability: <T>(token: CapabilityToken<T>, implementation: T) => {
         if (this.capabilities.has(token.id)) throw new Error(`Duplicate capability provider: ${token.id}`);
@@ -244,6 +284,10 @@ export class EngineHost {
         sourceStreamId: effect.sourceStreamId,
         causationCommandId: effect.causationCommandId,
         store: this.store,
+        world: this.world,
+        now: this.now,
+        makeId: this.makeId,
+        rng: this.rng,
       };
       try {
         await definition.handle(parsed.data, context);
@@ -319,6 +363,20 @@ export class EngineHost {
         rng: this.rng,
       };
       const plan = await definition.handle(command, context);
+      const eventEffects = plan.events.flatMap((event) =>
+        this.eventHandlers.has(`${event.type}@${event.version}`)
+          ? [{
+              type: DOMAIN_EVENT_EFFECT,
+              version: 1,
+              payload: {
+                eventType: event.type,
+                eventVersion: event.version,
+                actorId: session.playerId,
+                payload: event.payload,
+              },
+            }]
+          : [],
+      );
       const outcome = await this.store.append({
         worldInstanceId,
         streamId: plan.streamId,
@@ -327,7 +385,7 @@ export class EngineHost {
         payloadHash,
         expectedVersion: plan.expectedVersion,
         events: plan.events,
-        effects: plan.effects,
+        effects: [...(plan.effects ?? []), ...eventEffects],
       });
       return {
         receipt: CommandReceiptSchema.parse(outcome.receipt),

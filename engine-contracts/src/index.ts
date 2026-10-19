@@ -19,3 +19,5 @@ export * from './client.js';
 export * from './network.js';
 export * from './authoring.js';
 export * from './interactions.js';
+export * from './groups.js';
+export * from './team-combat.js';

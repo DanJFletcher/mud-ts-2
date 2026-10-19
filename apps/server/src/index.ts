@@ -19,17 +19,28 @@ import {
   LocationProjectionSchema,
   InteractionInboxSchema,
   PvpEncounterProjectionSchema,
+  PartyInfoQuerySchema,
+  PartyInfoProjectionSchema,
+  PartyListQuerySchema,
+  PartyQuestJournalQuerySchema,
+  TeamCombatInfoQuerySchema,
+  TeamCombatInfoProjectionSchema,
 } from '@mudd/contracts';
 import { EngineHost, projectQuestJournal, replayCharacter } from '@mudd/engine-core';
 import {
   characterPlugin,
   combatPlugin,
+  groupsPlugin,
   interactionPlugin,
   interactionStreamId,
   merchantPlugin,
   movementPlugin,
   npcDialoguePlugin,
+  partyPlugin,
+  partyQuestPlugin,
+  partyCombatPolicyPlugin,
   projectInteractionEvents,
+  teamCombatPlugin,
   updateInteractionRequestStatus,
   worldItemsPlugin,
 } from '@mudd/core-plugins';
@@ -38,6 +49,7 @@ import { db, pool } from './db/client.js';
 import { characters, durableEffects, worldSessions } from './db/schema.js';
 import { PostgresEventStore } from './persistence/postgres-event-store.js';
 import { listRoomOccupants, touchWorldSessionPresence } from './room-presence-service.js';
+import { combatPresencePlugin } from './combat-presence-plugin.js';
 import { demoEventEffectsPlugin } from './demo-event-effects-plugin.js';
 import { LOCATION_ENTERED_EFFECT } from './durable-effect-contracts.js';
 import { projectWorldMap } from './world-map-projection.js';
@@ -91,7 +103,22 @@ const authorization = {
   },
 };
 const engine = new EngineHost(
-  [worldItemsPlugin, characterPlugin, interactionPlugin, combatPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin, demoEventEffectsPlugin],
+  [
+    worldItemsPlugin,
+    characterPlugin,
+    groupsPlugin,
+    partyPlugin,
+    partyQuestPlugin,
+    interactionPlugin,
+    combatPlugin,
+    combatPresencePlugin,
+    partyCombatPolicyPlugin,
+    teamCombatPlugin,
+    movementPlugin,
+    npcDialoguePlugin,
+    merchantPlugin,
+    demoEventEffectsPlugin,
+  ],
   store,
   authorization,
   demoWorld,
@@ -613,6 +640,63 @@ app.post('/api/commands', createRateLimiter({ windowMs: 60_000, maxRequests: 120
       if (!characterInPvp && command.type === 'pvp.action') {
         return res.status(409).json({ message: 'There is no active PvP encounter for this character.' });
       }
+      const combatPayload = (req.body as { payload?: { action?: unknown; targetNpcId?: unknown } }).payload;
+      if (
+        command.type === 'combat.action' &&
+        combatPayload?.action === 'attack' &&
+        typeof combatPayload.targetNpcId === 'string'
+      ) {
+        const partyInfo = await engine.query({
+          type: 'party.info',
+          version: 1,
+          queryId: `combat-party-guard:${res.locals.requestId}`,
+          worldInstanceId: current.worldInstanceId,
+          characterId: current.characterId,
+          payload: {},
+        }, worldContext(identity, current));
+        const parsedPartyInfo = partyInfo.ok
+          ? PartyInfoProjectionSchema.safeParse(partyInfo.value)
+          : undefined;
+        if (!parsedPartyInfo?.success) {
+          return res.status(500).json({ message: 'The party status could not be checked before combat.' });
+        }
+        if (parsedPartyInfo.data.party) {
+          return res.status(409).json({ message: 'Use the cooperative encounter controls to begin combat with your party.' });
+        }
+      }
+      const teamCombatInfo = await engine.query({
+        type: 'team.combat.info',
+        version: 1,
+        queryId: `guard:${res.locals.requestId}`,
+        worldInstanceId: current.worldInstanceId,
+        characterId: current.characterId,
+        payload: {},
+      }, worldContext(identity, current));
+      const parsedTeamCombatInfo = teamCombatInfo.ok
+        ? TeamCombatInfoProjectionSchema.safeParse(teamCombatInfo.value)
+        : undefined;
+      if (!parsedTeamCombatInfo?.success) {
+        return res.status(500).json({ message: 'The team combat state could not be checked.' });
+      }
+      const teamEncounter = parsedTeamCombatInfo.data.encounter;
+      const characterInTeamCombat = teamEncounter?.status === 'active' &&
+        teamEncounter.participants.some((participant) =>
+          participant.kind === 'player' &&
+          participant.characterId === current.characterId &&
+          participant.status === 'active',
+        );
+      const mayChangePartyRosterDuringEncounter =
+        command.type === 'party.leave' || command.type === 'party.close';
+      if (
+        characterInTeamCombat &&
+        command.type !== 'team.combat.action' &&
+        !mayChangePartyRosterDuringEncounter
+      ) {
+        return res.status(409).json({ message: 'Only combat actions are available during a team encounter.' });
+      }
+      if (!characterInTeamCombat && command.type === 'team.combat.action') {
+        return res.status(409).json({ message: 'There is no active team encounter for this character.' });
+      }
       if (command.type === 'interaction.request') {
         const recipientCharacterId = (req.body as { payload?: { recipientCharacterId?: unknown } }).payload?.recipientCharacterId;
         if (typeof recipientCharacterId !== 'string') {
@@ -656,17 +740,29 @@ app.post('/api/queries', async (req, res, next) => {
     const objectInspectQuery = ObjectInspectQuerySchema.safeParse(req.body);
     const npcTalkQuery = NpcTalkQuerySchema.safeParse(req.body);
     const merchantCatalogQuery = MerchantCatalogQuerySchema.safeParse(req.body);
+    const partyListQuery = PartyListQuerySchema.safeParse(req.body);
+    const partyInfoQuery = PartyInfoQuerySchema.safeParse(req.body);
+    const partyQuestsQuery = PartyQuestJournalQuerySchema.safeParse(req.body);
+    const teamCombatInfoQuery = TeamCombatInfoQuerySchema.safeParse(req.body);
     let query:
       | z.infer<typeof LocationDescribeQuerySchema>
       | z.infer<typeof ObjectReadQuerySchema>
       | z.infer<typeof ObjectInspectQuerySchema>
       | z.infer<typeof NpcTalkQuerySchema>
-      | z.infer<typeof MerchantCatalogQuerySchema>;
+      | z.infer<typeof MerchantCatalogQuerySchema>
+      | z.infer<typeof PartyListQuerySchema>
+      | z.infer<typeof PartyInfoQuerySchema>
+      | z.infer<typeof PartyQuestJournalQuerySchema>
+      | z.infer<typeof TeamCombatInfoQuerySchema>;
     if (locationQuery.success) query = locationQuery.data;
     else if (objectReadQuery.success) query = objectReadQuery.data;
     else if (objectInspectQuery.success) query = objectInspectQuery.data;
     else if (npcTalkQuery.success) query = npcTalkQuery.data;
     else if (merchantCatalogQuery.success) query = merchantCatalogQuery.data;
+    else if (partyListQuery.success) query = partyListQuery.data;
+    else if (partyInfoQuery.success) query = partyInfoQuery.data;
+    else if (partyQuestsQuery.success) query = partyQuestsQuery.data;
+    else if (teamCombatInfoQuery.success) query = teamCombatInfoQuery.data;
     else return res.status(400).json({ message: 'Invalid world query.' });
     const current = await activeSession(identity);
     if (!current) return res.status(409).json({ message: 'Enter the world with a character before making a query.' });

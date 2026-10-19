@@ -78,6 +78,24 @@ const draft = {
         },
       ],
     },
+    {
+      id: 'mossgate-cooperative-drill',
+      version: '1.0.0',
+      scope: 'party',
+      title: 'Mossgate Cooperative Drill',
+      summary: 'Work together to defeat the Practice Sentinel at Mossgate Clearing.',
+      giverNpcId: 'mara-waykeeper',
+      turnInNpcId: 'mara-waykeeper',
+      objectives: [
+        {
+          id: 'defeat-practice-sentinel',
+          label: 'Defeat the Practice Sentinel together',
+          type: 'defeat-npc',
+          npcId: 'mossgate-training-sentinel',
+          requiredCount: 1,
+        },
+      ],
+    },
   ],
   locations: [
     {

@@ -19,6 +19,7 @@ import {
   CharacterAdvancementAwardedEventSchema,
   CharacterCombatItemUsedEventSchema,
   CharacterPvpOutcomeAppliedEventSchema,
+  CharacterTeamCombatOutcomeAppliedEventSchema,
   CharacterRespawnedEventSchema,
   CharacterSharedItemReceivedEventSchema,
   CharacterSharedItemRelinquishedEventSchema,
@@ -29,6 +30,8 @@ import {
 export function replayCharacter(events: readonly StoredGameEvent[]) {
   let state: ReturnType<typeof CharacterProjectionSchema.parse> | undefined;
   const pvpOutcomeEncounterIds = new Set<string>();
+  const teamCombatOutcomeEncounterIds = new Set<string>();
+  const teamCombatVictoryEncounterIds = new Set<string>();
 
   for (const event of events) {
     const { streamId: _streamId, ...publicEvent } = event;
@@ -184,10 +187,13 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
       const awarded = CharacterAdvancementAwardedEventSchema.parse(publicEvent);
       const { characterId, encounterId, experienceAwarded, totalExperience, level } = awarded.payload;
       const previousAdvancement = state.advancement;
+      const source = awarded.version === 2 ? awarded.payload.source ?? 'pve' : 'pve';
+      const encounterIsValid = source === 'team-pve'
+        ? teamCombatVictoryEncounterIds.has(encounterId)
+        : state.combat?.status === 'victory' && state.combat.encounterId === encounterId;
       if (
         characterId !== state.characterId ||
-        state.combat?.status !== 'victory' ||
-        state.combat.encounterId !== encounterId ||
+        !encounterIsValid ||
         previousAdvancement?.lastRewardedEncounterId === encounterId ||
         totalExperience !== (previousAdvancement?.experience ?? 0) + experienceAwarded ||
         level < (previousAdvancement?.level ?? 1) ||
@@ -266,6 +272,33 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
       if (outcome.payload.health.current === 0) {
         pvpOutcomeEncounterIds.add(outcome.payload.encounterId);
       }
+    } else if (event.type === 'character.team_combat_outcome_applied') {
+      if (!state) throw new Error('Team combat outcome encountered before character creation.');
+      const outcome = CharacterTeamCombatOutcomeAppliedEventSchema.parse(publicEvent);
+      const maximum = state.health?.maximum ?? outcome.payload.health.maximum;
+      const consumedItems = outcome.payload.consumedItemIds.map((id) =>
+        state!.inventory.find((item) => item.id === id),
+      );
+      if (
+        outcome.payload.characterId !== state.characterId ||
+        outcome.payload.health.maximum !== maximum ||
+        outcome.payload.health.current > maximum ||
+        new Set(outcome.payload.consumedItemIds).size !== outcome.payload.consumedItemIds.length ||
+        consumedItems.some((item) => !item || !item.consumable || item.questBound === true)
+      ) {
+        throw new Error(`Invalid team combat outcome at revision ${event.aggregateVersion}.`);
+      }
+      teamCombatOutcomeEncounterIds.add(outcome.payload.encounterId);
+      if (outcome.payload.result === 'victory') {
+        teamCombatVictoryEncounterIds.add(outcome.payload.encounterId);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        health: outcome.payload.health,
+        inventory: state.inventory.filter((item) => !outcome.payload.consumedItemIds.includes(item.id)),
+        itemLocations: state.itemLocations.filter((entry) => !outcome.payload.consumedItemIds.includes(entry.item.id)),
+        revision: event.aggregateVersion,
+      });
     } else if (event.type === 'character.respawned') {
       if (!state) throw new Error('Respawn event encountered before character creation.');
       const respawned = CharacterRespawnedEventSchema.parse(publicEvent);
@@ -288,7 +321,9 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         ? state.combat?.status === 'defeat' &&
           state.combat.encounterId === encounterId &&
           state.combat.locationId === deathLocationId
-        : pvpOutcomeEncounterIds.has(encounterId) && state.combat?.status !== 'defeat';
+        : cause === 'team-pve'
+          ? teamCombatOutcomeEncounterIds.has(encounterId) && state.combat?.status !== 'defeat'
+          : pvpOutcomeEncounterIds.has(encounterId) && state.combat?.status !== 'defeat';
       if (
         characterId !== state.characterId ||
         state.health?.current !== 0 ||
@@ -310,6 +345,8 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         throw new Error(`Invalid character respawn at revision ${event.aggregateVersion}.`);
       }
       pvpOutcomeEncounterIds.delete(encounterId);
+      teamCombatOutcomeEncounterIds.delete(encounterId);
+      teamCombatVictoryEncounterIds.delete(encounterId);
       state = CharacterProjectionSchema.parse({
         ...state,
         locationId: respawnLocationId,
