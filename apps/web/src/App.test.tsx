@@ -626,10 +626,13 @@ describe('single-character world session client', () => {
     clickQuickAction('Show opponents to attack');
     fireEvent.click(await screen.findByRole('button', { name: 'Attack Practice Sentinel' }));
     await screen.findByText('Round 1 · Practice Sentinel');
-    expect(quickActionVisibleAnywhere('Attack during active combat')).toBe(true);
-    expect(quickActionVisibleAnywhere('Defend')).toBe(true);
-    expect(quickActionVisibleAnywhere('Flee')).toBe(true);
-    clickQuickAction('Defend');
+    expect(screen.queryByRole('region', { name: 'Quick commands' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Enter a command' })).not.toBeInTheDocument();
+    const combatActions = screen.getByRole('group', { name: 'Combat actions' });
+    expect(within(combatActions).getByRole('button', { name: 'Attack during active combat' })).toBeInTheDocument();
+    expect(within(combatActions).getByRole('button', { name: 'Defend during active combat' })).toBeInTheDocument();
+    expect(within(combatActions).getByRole('button', { name: 'Flee from combat' })).toBeInTheDocument();
+    fireEvent.click(within(combatActions).getByRole('button', { name: 'Defend during active combat' }));
     await screen.findByText('Round 2 · Practice Sentinel');
 
     const commands = apiFetch.mock.calls
@@ -1082,7 +1085,7 @@ describe('single-character world session client', () => {
     })).toBe(true);
   });
 
-  it('uses a healing item from the terminal during active combat', async () => {
+  it('replaces normal terminal actions with dedicated combat controls', async () => {
     healingDraughtCarried = true;
     combatEncounter = {
       encounterId: 'combat-ui-encounter',
@@ -1100,9 +1103,13 @@ describe('single-character world session client', () => {
     };
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
-    const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
-    fireEvent.change(commandInput, { target: { value: 'use Small healing draught' } });
-    fireEvent.submit(commandInput.closest('form')!);
+    expect(screen.queryByRole('textbox', { name: 'Enter a command' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Quick commands' })).not.toBeInTheDocument();
+    const combatActions = screen.getByRole('group', { name: 'Combat actions' });
+    expect(within(combatActions).getByRole('button', { name: 'Attack during active combat' })).toBeInTheDocument();
+    expect(within(combatActions).getByRole('button', { name: 'Defend during active combat' })).toBeInTheDocument();
+    expect(within(combatActions).getByRole('button', { name: 'Flee from combat' })).toBeInTheDocument();
+    fireEvent.click(within(combatActions).getByRole('button', { name: 'Use Small healing draught during combat' }));
 
     await screen.findByText(/You use the small healing draught and recover 3 health/);
     expect(apiFetch.mock.calls.some(([path, init]) => {
@@ -1150,7 +1157,7 @@ describe('single-character world session client', () => {
     expect(healingDraughtCarried).toBe(false);
   });
 
-  it('offers carried healing items as combat quick actions only when health is missing', async () => {
+  it('offers healing items in combat controls only when health is missing', async () => {
     healingDraughtCarried = true;
     combatEncounter = {
       encounterId: 'combat-ui-encounter',
@@ -1166,12 +1173,12 @@ describe('single-character world session client', () => {
       lastAction: 'attack',
       lastNarration: 'The sentinel waits.',
     };
+    combatEncounter.playerHealth = combatEncounter.playerMaxHealth;
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
-    clickQuickAction('Show items to use');
-    fireEvent.click(screen.getByRole('button', { name: 'Use Small healing draught during combat' }));
-    await screen.findByText(/You use the small healing draught and recover 3 health/);
-    expect(healingDraughtCarried).toBe(false);
+    const combatActions = screen.getByRole('group', { name: 'Combat actions' });
+    expect(within(combatActions).queryByRole('button', { name: 'Use Small healing draught during combat' })).not.toBeInTheDocument();
+    expect(healingDraughtCarried).toBe(true);
   });
 
   it('replaces gameplay with a game-over screen after character death', async () => {

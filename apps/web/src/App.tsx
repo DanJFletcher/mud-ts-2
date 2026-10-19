@@ -1286,7 +1286,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                     >
                       {entries.length > 0 && <ActivityLog entries={entries} label="Terminal transcript" />}
                     </div>
-                  {activeMerchantCatalog ? (
+                  {visibleCombat?.status !== "active" && activeMerchantCatalog ? (
                     <section className="focused-merchant-catalog" aria-label={`${activeMerchantCatalog.merchantName} shop catalog`}>
                       <div className="focused-merchant-catalog__header">
                         <div>
@@ -1331,7 +1331,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                       </div>
                     </section>
                   ) : null}
-                  {activeDialogue?.choices.length ? (
+                  {visibleCombat?.status !== "active" && activeDialogue?.choices.length ? (
                     <div className="focused-terminal-dialogue">
                       <div
                         className="focused-terminal-dialogue__choices"
@@ -1359,8 +1359,47 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                         <span>You {visibleCombat.playerHealth}/{visibleCombat.playerMaxHealth} · {visibleCombat.opponentName} {visibleCombat.opponentHealth}/{visibleCombat.opponentMaxHealth}</span>
                       </div>
                       <div className="focused-terminal-combat__actions" role="group" aria-label="Combat actions">
-                        <button type="button" className="focused-quick-command" onClick={() => void performCombatAction("defend", undefined, true)} disabled={pending !== null}>defend</button>
-                        <button type="button" className="focused-quick-command" onClick={() => void performCombatAction("flee", undefined, true)} disabled={pending !== null}>flee</button>
+                        <button
+                          type="button"
+                          className="focused-quick-command focused-combat-action"
+                          aria-label="Attack during active combat"
+                          onClick={() => void performCombatAction("attack", undefined, true)}
+                          disabled={pending !== null}
+                        >
+                          attack
+                        </button>
+                        <button
+                          type="button"
+                          className="focused-quick-command focused-combat-action"
+                          aria-label="Defend during active combat"
+                          onClick={() => void performCombatAction("defend", undefined, true)}
+                          disabled={pending !== null}
+                        >
+                          defend
+                        </button>
+                        {quickUseItems
+                          .filter((item) => item.consumable?.effect === "heal")
+                          .map((item) => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              className="focused-quick-command focused-combat-action"
+                              aria-label={`Use ${item.label} during combat`}
+                              onClick={() => void performCombatAction("use-item", undefined, true, item.id)}
+                              disabled={pending !== null}
+                            >
+                              use {item.label}
+                            </button>
+                          ))}
+                        <button
+                          type="button"
+                          className="focused-quick-command focused-combat-action"
+                          aria-label="Flee from combat"
+                          onClick={() => void performCombatAction("flee", undefined, true)}
+                          disabled={pending !== null}
+                        >
+                          flee
+                        </button>
                       </div>
                     </section>
                   ) : visibleCombat ? (
@@ -1371,7 +1410,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                       </div>
                     </section>
                   ) : null}
-                  <section className="focused-quick-commands" aria-label="Quick commands">
+                  {visibleCombat?.status !== "active" && <section className="focused-quick-commands" aria-label="Quick commands">
                     {quickCommandMode !== "quick" && (
                       <span className="focused-quick-commands__label" aria-hidden="true">
                         {quickCommandMode === "go" ? "Go"
@@ -1613,7 +1652,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                               </button>
                             ))
                           ) : <span className="focused-quick-commands__empty">
-                            {visibleCombat?.status === "active" ? "No healing items to use" : "Nothing to use"}
+                            Nothing to use
                           </span>}
                         </>
                       ) : quickCommandMode === "use-target" ? (
@@ -1797,8 +1836,8 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                         </>
                       ) : null}
                     </div>
-                  </section>
-                  <section className="focused-command" aria-label="Text command">
+                  </section>}
+                  {visibleCombat?.status !== "active" && <section className="focused-command" aria-label="Text command">
                     <form className="focused-command-form" onSubmit={submitCommand}>
                       <TextInput
                         id="focused-world-command"
@@ -1814,7 +1853,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                         {pending === "look" ? "Looking" : pending === "read" ? "Reading" : pending === "take" ? "Taking" : pending === "drop" ? "Dropping" : pending === "move" ? "Moving" : pending === "talk" ? "Talking" : pending === "shop" ? "Browsing" : pending === "buy" ? "Buying" : pending === "combat" ? "Acting" : pending === "equip" ? "Changing gear" : "Send"}
                       </Button>
                     </form>
-                  </section>
+                  </section>}
                 </TerminalPanel>
                 <RoomChatPanel
                   roomId={snapshot.location.locationId}

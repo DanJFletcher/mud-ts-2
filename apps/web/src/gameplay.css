@@ -470,12 +470,11 @@
 }
 
 .focused-terminal-combat {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   flex: 0 0 auto;
-  align-items: center;
-  justify-content: space-between;
-  gap: .65rem;
-  padding: .4rem .65rem;
+  gap: .55rem;
+  padding: .65rem;
   border-top: 1px solid var(--terminal-line);
   background: var(--terminal-inset);
 }
@@ -495,13 +494,19 @@
 }
 
 .focused-terminal-combat__actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   min-width: 0;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: .4rem;
-  overflow-x: auto;
-  scrollbar-width: thin;
+  gap: .5rem;
+}
+
+.focused-terminal-combat__actions .focused-combat-action {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  padding: .55rem .45rem;
+  text-align: center;
+  white-space: normal;
 }
 
 .focused-quick-commands__label {
@@ -514,8 +519,7 @@
 
 @media (max-width: 540px) {
   .focused-terminal-combat {
-    align-items: flex-start;
-    flex-direction: column;
+    align-items: stretch;
   }
 
   .focused-terminal-combat__actions {
