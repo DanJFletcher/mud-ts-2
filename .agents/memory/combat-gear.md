@@ -14,3 +14,9 @@ While combat is active, the client shows dedicated combat controls only; hide th
 **Why:** The user wants the battle interface focused on the actions available in combat.
 
 **How to apply:** Add future in-battle actions as explicit combat controls backed by authoritative combat commands; do not expose general exploration commands during a fight.
+
+In battle, the Use control opens a menu of currently available combat items instead of placing each item directly in the main action grid.
+
+**Why:** The user requested that combat item selection be grouped behind the Use action.
+
+**How to apply:** Keep the combat controls compact; list only items valid for combat in the menu and hide Use when no items can currently be used.

@@ -1109,9 +1109,15 @@ describe('single-character world session client', () => {
     expect(within(combatActions).getByRole('button', { name: 'Attack during active combat' })).toBeInTheDocument();
     expect(within(combatActions).getByRole('button', { name: 'Defend during active combat' })).toBeInTheDocument();
     expect(within(combatActions).getByRole('button', { name: 'Flee from combat' })).toBeInTheDocument();
-    fireEvent.click(within(combatActions).getByRole('button', { name: 'Use Small healing draught during combat' }));
+    const useButton = within(combatActions).getByRole('button', { name: 'use' });
+    expect(useButton).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(useButton);
+    const combatItems = screen.getByRole('group', { name: 'Items available to use during combat' });
+    expect(within(combatItems).getByRole('button', { name: 'Use Small healing draught during combat' })).toBeInTheDocument();
+    fireEvent.click(within(combatItems).getByRole('button', { name: 'Use Small healing draught during combat' }));
 
     await screen.findByText(/You use the small healing draught and recover 3 health/);
+    expect(screen.queryByRole('group', { name: 'Items available to use during combat' })).not.toBeInTheDocument();
     expect(apiFetch.mock.calls.some(([path, init]) => {
       if (path !== '/api/commands') return false;
       const body = JSON.parse(String(init?.body ?? '{}'));
@@ -1177,7 +1183,8 @@ describe('single-character world session client', () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     const combatActions = screen.getByRole('group', { name: 'Combat actions' });
-    expect(within(combatActions).queryByRole('button', { name: 'Use Small healing draught during combat' })).not.toBeInTheDocument();
+    expect(within(combatActions).queryByRole('button', { name: 'use' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Items available to use during combat' })).not.toBeInTheDocument();
     expect(healingDraughtCarried).toBe(true);
   });
 

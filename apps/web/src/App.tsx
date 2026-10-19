@@ -176,6 +176,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const [quickCommandPage, setQuickCommandPage] = useState(1);
   const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "go" | "look" | "read" | "drop" | "take" | "talk" | "attack" | "shop" | "buy" | "use" | "use-target" | "equip" | "unequip">("quick");
   const [quickUseItemId, setQuickUseItemId] = useState<string | null>(null);
+  const [combatUseMenuOpen, setCombatUseMenuOpen] = useState(false);
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [collapsedQuestGroups, setCollapsedQuestGroups] = useState({ active: false, completed: false });
   const [collapsedQuestCards, setCollapsedQuestCards] = useState<Set<string>>(() => new Set());
@@ -1051,6 +1052,9 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const visibleCombat = currentCombat?.locationId === snapshot?.location?.locationId
     ? currentCombat
     : undefined;
+  useEffect(() => {
+    setCombatUseMenuOpen(false);
+  }, [visibleCombat?.encounterId, visibleCombat?.status]);
   const quickInventory = snapshot?.character?.inventory ?? [];
   const outsideCombatHealth = snapshot?.character?.health;
   const canHealOutsideCombat = Boolean(
@@ -1377,20 +1381,18 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                         >
                           defend
                         </button>
-                        {quickUseItems
-                          .filter((item) => item.consumable?.effect === "heal")
-                          .map((item) => (
-                            <button
-                              key={item.id}
-                              type="button"
-                              className="focused-quick-command focused-combat-action"
-                              aria-label={`Use ${item.label} during combat`}
-                              onClick={() => void performCombatAction("use-item", undefined, true, item.id)}
-                              disabled={pending !== null}
-                            >
-                              use {item.label}
-                            </button>
-                          ))}
+                        {quickUseItems.some((item) => item.consumable?.effect === "heal") ? (
+                          <button
+                            type="button"
+                            className="focused-quick-command focused-combat-action"
+                            aria-expanded={combatUseMenuOpen}
+                            aria-controls="combat-usable-items"
+                            onClick={() => setCombatUseMenuOpen((open) => !open)}
+                            disabled={pending !== null}
+                          >
+                            use
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           className="focused-quick-command focused-combat-action"
@@ -1401,6 +1403,32 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                           flee
                         </button>
                       </div>
+                      {combatUseMenuOpen ? (
+                        <div
+                          id="combat-usable-items"
+                          className="focused-terminal-combat__items"
+                          role="group"
+                          aria-label="Items available to use during combat"
+                        >
+                          {quickUseItems
+                            .filter((item) => item.consumable?.effect === "heal")
+                            .map((item) => (
+                              <button
+                                key={item.id}
+                                type="button"
+                                className="focused-quick-command focused-combat-action"
+                                aria-label={`Use ${item.label} during combat`}
+                                onClick={() => {
+                                  setCombatUseMenuOpen(false);
+                                  void performCombatAction("use-item", undefined, true, item.id);
+                                }}
+                                disabled={pending !== null}
+                              >
+                                {item.label}
+                              </button>
+                            ))}
+                        </div>
+                      ) : null}
                     </section>
                   ) : visibleCombat ? (
                     <section className="focused-terminal-combat" aria-label="Last combat">
