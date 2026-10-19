@@ -53,6 +53,7 @@ export const ItemUseInteractionDefinitionSchema = z.object({
   id: IdSchema,
   itemId: IdSchema,
   targetId: IdSchema,
+  requiredVisitedLocationId: IdSchema.optional(),
   response: z.string().min(1).max(2000),
   repeatResponse: z.string().min(1).max(2000).optional(),
   requiresInteractionIds: z.array(IdSchema).max(12).optional(),
@@ -176,6 +177,8 @@ export const LocationDefinitionSchema = z.object({
   /** Independent dungeon/overworld map namespace; omitted means overworld. */
   mapAreaId: IdSchema.optional(),
   mapPosition: MapPositionSchema.optional(),
+  /** This location cannot be entered until the character has visited the named location. */
+  requiredVisitedLocationId: IdSchema.optional(),
   exits: z.array(ExitDefinitionSchema),
   readables: z.array(ReadableObjectDefinitionSchema).optional(),
   takeables: z.array(TakeableObjectDefinitionSchema).optional(),
@@ -378,6 +381,9 @@ export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
   const exits = new Set<string>();
   const itemUseIds = new Set<string>();
   for (const room of pack.locations) {
+    if (room.requiredVisitedLocationId && !ids.has(room.requiredVisitedLocationId)) {
+      errors.push(`Location ${room.id} requires missing visited location ${room.requiredVisitedLocationId}`);
+    }
     for (const exit of room.exits) {
       if (exit.fromLocationId !== room.id) errors.push(`Exit ${exit.id} does not originate from its containing location`);
       if (!ids.has(exit.toLocationId)) errors.push(`Exit ${exit.id} points to missing location ${exit.toLocationId}`);
@@ -395,6 +401,9 @@ export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
       }
       if (!room.interactables?.some((target) => target.id === interaction.targetId)) {
         errors.push(`Item-use interaction ${interaction.id} references missing interactable target ${interaction.targetId} in ${room.id}`);
+      }
+      if (interaction.requiredVisitedLocationId && !ids.has(interaction.requiredVisitedLocationId)) {
+        errors.push(`Item-use interaction ${interaction.id} requires missing visited location ${interaction.requiredVisitedLocationId}`);
       }
       for (const requiredId of interaction.requiresInteractionIds ?? []) {
         if (!allItemUseIds.has(requiredId) || !room.itemUses?.some((candidate) => candidate.id === requiredId)) {

@@ -91,12 +91,27 @@ test('inventory items accept an optional quest-bound marker', () => {
 
 test('draft content checks graph references', () => {
   const pack = WorldPackDraftSchema.parse({ formatVersion: 1, packId: 'starter', packVersion: '0.1.0', displayName: 'Starter', locations: [
-    { id: 'r1', name: 'Crossroads', description: 'Paths branch', readables: [{ id: 'marker', label: 'Marker', description: 'A painted wooden sign.', text: 'North to the forest' }], takeables: [{ id: 'pebble', label: 'Pebble', description: 'A smooth pebble.', questBound: true }], exits: [{ id: 'north', fromLocationId: 'r1', toLocationId: 'r2', label: 'North' }] },
-    { id: 'r2', name: 'Forest', description: 'Old trees', exits: [] },
+    { id: 'r1', name: 'Crossroads', description: 'Paths branch', readables: [{ id: 'marker', label: 'Marker', description: 'A painted wooden sign.', text: 'North to the forest' }], takeables: [{ id: 'pebble', label: 'Pebble', description: 'A smooth pebble.', questBound: true }], interactables: [{ id: 'bell', label: 'Bell', description: 'A small brass bell.' }], itemUses: [{ id: 'ring-bell', itemId: 'pebble', targetId: 'bell', requiredVisitedLocationId: 'r1', response: 'A chime rings.' }], exits: [{ id: 'north', fromLocationId: 'r1', toLocationId: 'r2', label: 'North' }] },
+    { id: 'r2', name: 'Forest', description: 'Old trees', requiredVisitedLocationId: 'r1', exits: [] },
   ] });
   assert.deepEqual(validateDraftWorldGraph(pack), []);
   assert.equal(pack.locations[0].takeables[0].questBound, true);
   assert.equal(validateDraftWorldGraph({ ...pack, locations: pack.locations.slice(0, 1) }).length, 1);
+  assert.equal(validateDraftWorldGraph({
+    ...pack,
+    locations: pack.locations.map((location) => location.id === 'r2'
+      ? { ...location, requiredVisitedLocationId: 'missing-location' }
+      : location),
+  }).some((error) => error.includes('Location r2 requires missing visited location')), true);
+  assert.equal(validateDraftWorldGraph({
+    ...pack,
+    locations: pack.locations.map((location) => location.id === 'r1'
+      ? { ...location, itemUses: location.itemUses.map((interaction) => ({
+          ...interaction,
+          requiredVisitedLocationId: 'missing-location',
+        })) }
+      : location),
+  }).some((error) => error.includes('Item-use interaction ring-bell requires missing visited location')), true);
 });
 
 const topicReplyWorld = WorldPackDraftSchema.parse({

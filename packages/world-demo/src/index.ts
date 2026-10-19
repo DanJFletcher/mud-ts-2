@@ -22,7 +22,7 @@ const draft = {
       id: 'mara-wayfinding',
       version: '1.0.0',
       title: 'The Waystone Path',
-      summary: 'Read the marker, visit the Old Bell Tower, and report back to Mara.',
+      summary: 'Read the marker, follow its path to the tower’s western approach, visit the Old Bell Tower, and report back to Mara.',
       giverNpcId: 'mara-waykeeper',
       turnInNpcId: 'mara-waykeeper',
       objectives: [
@@ -103,12 +103,12 @@ const draft = {
       name: 'Mossgate Clearing',
       mapPosition: { x: 0, y: 0 },
       description:
-        'A circle of pale stones breaks through the moss. A narrow path runs north, a path leads west to a quiet fountain, and a weathered marker points east.',
+        'A circle of pale stones breaks through the moss. A narrow path runs north, a path leads west to a quiet fountain, and a weathered marker points east toward the western approach to the Old Bell Tower.',
       readables: [
         {
           id: 'mossgate-marker',
           label: 'Weathered marker',
-          description: 'A weathered stone marker, its carved arrow worn but still pointing east.',
+          description: 'A weathered stone marker, its carved arrow worn but still pointing east toward the western approach to the Old Bell Tower.',
           text: 'OLD BELL TOWER — EAST',
         },
       ],
@@ -126,7 +126,7 @@ const draft = {
           id: 'mara-waykeeper',
           name: 'Mara',
           description: 'A path keeper stands beside the weathered marker, watching the northern trail.',
-          greeting: 'The north bridge is open. The marker points east to the Old Bell Tower.',
+          greeting: 'The north bridge is open. The marker points east toward the western approach to the Old Bell Tower.',
           dialogue: {
             prompt: 'The old paths still have their stories. What would you like to ask?',
             questResponses: [
@@ -142,14 +142,14 @@ const draft = {
                 status: 'active',
                 requiresCompletedObjectiveIds: ['read-marker'],
                 requiresIncompleteObjectiveIds: ['visit-bell-tower'],
-                response: 'You read the marker. Its arrow points east to the Old Bell Tower. Visit the tower, then come back and tell me what you found.',
+                response: 'You read the marker. Its arrow points east to the tower’s western approach. Follow the path there, enter the tower, then come back and tell me what you found.',
               },
               {
                 questId: 'mara-wayfinding',
                 status: 'active',
                 requiresCompletedObjectiveIds: ['read-marker', 'visit-bell-tower'],
                 requiresIncompleteObjectiveIds: [],
-                response: 'You reached the Old Bell Tower. Tell me what you found when you are ready to report.',
+                response: 'You reached the Old Bell Tower by its western approach. Tell me what you found when you are ready to report.',
               },
               {
                 questId: 'mara-wayfinding',
@@ -163,7 +163,7 @@ const draft = {
               {
                 id: 'ask-marker',
                 label: 'Ask about the marker',
-                response: 'The marker points east to the Old Bell Tower. Its direction is still true.',
+                response: 'The marker points east toward the Old Bell Tower’s western approach. Its direction is still true.',
                 progressFlagId: 'mara-asked-marker',
               },
               {
@@ -181,7 +181,7 @@ const draft = {
               {
                 id: 'accept-wayfinding-quest',
                 label: "I'll follow the marker",
-                response: 'Read the marker, visit the Old Bell Tower, and come back to tell me what you found.',
+                response: 'Read the marker, follow it to the tower’s western approach, enter the Old Bell Tower, and come back to tell me what you found.',
                 progressFlagId: 'mara-accepted-wayfinding',
                 questAction: { type: 'accept', questId: 'mara-wayfinding' },
               },
@@ -198,21 +198,21 @@ const draft = {
             {
               id: 'marker',
               keywords: ['marker', 'sign', 'east'],
-              response: 'The marker is old, but the carving still points east toward the Old Bell Tower.',
+              response: 'The marker is old, but the carving still points east toward the western approach to the Old Bell Tower.',
               questResponses: [
                 {
                   questId: 'mara-wayfinding',
                   status: 'active',
                   requiresCompletedObjectiveIds: ['read-marker'],
                   requiresIncompleteObjectiveIds: [],
-                  response: 'You’ve read the marker now. Its arrow points east to the Old Bell Tower.',
+                  response: 'You’ve read the marker now. Its arrow points east to the tower’s western approach.',
                 },
                 {
                   questId: 'mara-wayfinding',
                   status: 'completed',
                   requiresCompletedObjectiveIds: ['read-marker'],
                   requiresIncompleteObjectiveIds: [],
-                  response: 'You read the marker and followed its direction all the way to the Old Bell Tower.',
+                  response: 'You read the marker and followed its direction through the western approach into the Old Bell Tower.',
                 },
               ],
             },
@@ -225,12 +225,12 @@ const draft = {
           unknownTopicResponse: 'Ask me about the marker or the bell tower.',
           announcements: [
             'The north bridge is open to travelers.',
-            'The marker still points east to the Old Bell Tower.',
+            'The marker still points east toward the western approach to the Old Bell Tower.',
           ],
           roomChatReactions: [
             {
               keywords: ['marker', 'sign'],
-              response: 'The marker is old, but its arrow still points east.',
+              response: 'The marker is old, but its arrow still points east toward the tower’s western approach.',
             },
             {
               keywords: ['bell tower', 'tower', 'bell'],
@@ -269,7 +269,19 @@ const draft = {
       exits: [
         { id: 'clearing-to-fountain', fromLocationId: 'mossgate-clearing', toLocationId: 'stillwater-fountain', label: 'West to Stillwater Fountain', direction: 'west' },
         { id: 'clearing-to-bridge', fromLocationId: 'mossgate-clearing', toLocationId: 'glasswater-bridge', label: 'North to Glasswater Bridge', direction: 'north' },
-        { id: 'clearing-to-tower', fromLocationId: 'mossgate-clearing', toLocationId: 'bell-tower', label: 'East to the Old Bell Tower', direction: 'east' },
+        { id: 'clearing-to-tower-west', fromLocationId: 'mossgate-clearing', toLocationId: 'bell-tower-west', label: 'East to West of Old Bell Tower', direction: 'east' },
+      ],
+    },
+    {
+      id: 'bell-tower-west',
+      name: 'West of Old Bell Tower',
+      mapPosition: { x: 1, y: 0 },
+      description:
+        'A worn track meets the western foot of the Old Bell Tower. Its low entrance stands to the east beneath the cracked bell’s frame; the path returns west to Mossgate Clearing, while a northwest trail leads to Glasswater Bridge.',
+      exits: [
+        { id: 'bell-tower-west-to-clearing', fromLocationId: 'bell-tower-west', toLocationId: 'mossgate-clearing', label: 'West to Mossgate Clearing', direction: 'west' },
+        { id: 'bell-tower-west-to-bridge', fromLocationId: 'bell-tower-west', toLocationId: 'glasswater-bridge', label: 'Northwest to Glasswater Bridge', direction: 'northwest' },
+        { id: 'bell-tower-west-to-tower', fromLocationId: 'bell-tower-west', toLocationId: 'bell-tower', label: 'East into the Old Bell Tower', direction: 'east' },
       ],
     },
     {
@@ -294,7 +306,7 @@ const draft = {
       name: 'Glasswater Bridge',
       mapPosition: { x: 0, y: 1 },
       description:
-        'A low stone bridge crosses clear water. Reeds stir below it. Paths lead south to the clearing, southeast toward the tower’s dark roofline, and northeast to Reedbank Stalls.',
+        'A low stone bridge crosses clear water. Reeds stir below it. Paths lead south to the clearing, southeast to the western approach of the Old Bell Tower, and northeast to Reedbank Stalls.',
       takeables: [
         {
           id: 'glasswater-reed',
@@ -318,7 +330,7 @@ const draft = {
                 status: 'active',
                 requiresCompletedObjectiveIds: [],
                 requiresIncompleteObjectiveIds: ['read-bell-inscription'],
-                response: 'Start at the tower. The inscription is the bellwrights’ account of how the mechanism works.',
+                response: 'Take the southeast trail to the tower’s western approach, then enter from there. The inscription inside explains how the mechanism works.',
               },
               {
                 questId: 'eddas-bell-echo',
@@ -444,16 +456,17 @@ const draft = {
       ],
       exits: [
         { id: 'bridge-to-clearing', fromLocationId: 'glasswater-bridge', toLocationId: 'mossgate-clearing', label: 'South to Mossgate Clearing', direction: 'south' },
-        { id: 'bridge-to-tower', fromLocationId: 'glasswater-bridge', toLocationId: 'bell-tower', label: 'Southeast to the Old Bell Tower', direction: 'southeast' },
+        { id: 'bridge-to-tower-west', fromLocationId: 'glasswater-bridge', toLocationId: 'bell-tower-west', label: 'Southeast to West of Old Bell Tower', direction: 'southeast' },
         { id: 'bridge-to-reedbank', fromLocationId: 'glasswater-bridge', toLocationId: 'reedbank-stalls', label: 'Northeast to Reedbank Stalls', direction: 'northeast' },
       ],
     },
     {
       id: 'bell-tower',
       name: 'Old Bell Tower',
-      mapPosition: { x: 1, y: 0 },
+      mapPosition: { x: 2, y: 0 },
+      requiredVisitedLocationId: 'bell-tower-west',
       description:
-        'The roofless tower stands quiet above the trees. Its cracked bell hangs still; paths lead west to the clearing and northwest to the bridge.',
+        'The roofless tower stands quiet above the trees. Its cracked bell hangs still; the western entrance opens onto the tower’s outer approach.',
       readables: [
         {
           id: 'tower-bell-inscription',
@@ -474,6 +487,7 @@ const draft = {
           id: 'ring-tower-bell-with-stone',
           itemId: 'mossgate-loose-stone',
           targetId: 'tower-cracked-bell',
+          requiredVisitedLocationId: 'bell-tower-west',
           response: 'You strike the cracked bell with the smooth stone. A low, uneven note rolls through the tower.',
           repeatResponse: 'You strike the bell again. Its low note echoes through the stonework.',
         },
@@ -488,8 +502,7 @@ const draft = {
         },
       ],
       exits: [
-        { id: 'tower-to-clearing', fromLocationId: 'bell-tower', toLocationId: 'mossgate-clearing', label: 'West to Mossgate Clearing', direction: 'west' },
-        { id: 'tower-to-bridge', fromLocationId: 'bell-tower', toLocationId: 'glasswater-bridge', label: 'Northwest to Glasswater Bridge', direction: 'northwest' },
+        { id: 'tower-to-west-approach', fromLocationId: 'bell-tower', toLocationId: 'bell-tower-west', label: 'West to West of Old Bell Tower', direction: 'west' },
         {
           id: 'tower-to-underhollow',
           fromLocationId: 'bell-tower',

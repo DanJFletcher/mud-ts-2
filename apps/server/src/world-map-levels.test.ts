@@ -127,12 +127,18 @@ describe('current-area and Z-level maps', () => {
     await client.take(characterId, 'mossgate-loose-stone', (await getCharacter()).revision, 'level-take-stone');
     await move('clearing-to-bridge', 'level-go-bridge');
     await client.take(characterId, 'glasswater-reed', (await getCharacter()).revision, 'level-take-reed');
-    await move('bridge-to-tower', 'level-go-tower');
+    await move('bridge-to-tower-west', 'level-go-tower-west');
+    await move('bell-tower-west-to-tower', 'level-go-tower');
     await client.use(characterId, 'mossgate-loose-stone', 'tower-cracked-bell', (await getCharacter()).revision, 'level-bell-stone');
     await client.use(characterId, 'glasswater-reed', 'tower-cracked-bell', (await getCharacter()).revision, 'level-bell-reed');
 
     const surface = (await client.getGame()).map!;
-    expect(surface.locations.map(({ id }) => id)).toEqual(['mossgate-clearing', 'glasswater-bridge', 'bell-tower']);
+    expect(surface.locations.map(({ id }) => id)).toEqual([
+      'mossgate-clearing',
+      'bell-tower-west',
+      'glasswater-bridge',
+      'bell-tower',
+    ]);
     await move('tower-to-underhollow', 'level-go-down');
     const below = (await client.getGame()).map!;
     expect(below.currentLocationId).toBe('bell-underhollow');
@@ -143,7 +149,7 @@ describe('current-area and Z-level maps', () => {
     await move('tower-to-underhollow', 'level-go-down-again');
     expect((await client.getGame()).map).toEqual(below);
     expect((await getCharacter()).visitedLocationIds).toEqual(expect.arrayContaining([
-      'mossgate-clearing', 'glasswater-bridge', 'bell-tower', 'bell-underhollow',
+      'mossgate-clearing', 'glasswater-bridge', 'bell-tower-west', 'bell-tower', 'bell-underhollow',
     ]));
   });
 });

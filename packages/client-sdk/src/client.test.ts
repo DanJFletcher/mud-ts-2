@@ -158,7 +158,7 @@ describe('MuddHttpClient', () => {
       {
         id: 'mossgate-marker',
         label: 'Weathered marker',
-        description: 'A weathered stone marker, its carved arrow worn but still pointing east.',
+        description: 'A weathered stone marker, its carved arrow worn but still pointing east toward the western approach to the Old Bell Tower.',
         readable: true,
         takeable: false,
       },
@@ -204,7 +204,7 @@ describe('MuddHttpClient', () => {
       });
     await expect(client.talk(characterId, 'mara-waykeeper', 'marker', 'sdk-talk-marker-unaccepted'))
       .resolves.toMatchObject({
-        text: 'The marker is old, but the carving still points east toward the Old Bell Tower.',
+        text: 'The marker is old, but the carving still points east toward the western approach to the Old Bell Tower.',
         choices: [],
       });
     await expect(client.talk(characterId, 'mara-waykeeper', 'weather', 'sdk-talk-unknown-topic'))
@@ -226,7 +226,7 @@ describe('MuddHttpClient', () => {
       .resolves.toEqual({
         npcId: 'mara-waykeeper',
         npcName: 'Mara',
-        text: 'The marker points east to the Old Bell Tower. Its direction is still true.',
+        text: 'The marker points east toward the Old Bell Tower’s western approach. Its direction is still true.',
         choices: [
           { id: 'accept-wayfinding-quest', label: "I'll follow the marker" },
         ],
@@ -284,7 +284,15 @@ describe('MuddHttpClient', () => {
       nextRoom.revision,
       'sdk-use-target-away',
     )).rejects.toThrow('That is not a usable target in this room.');
-    const movedToTower = await client.move(characterId, 'bridge-to-tower', nextRoom.revision, 'sdk-move-tower');
+    const movedToWest = await client.move(characterId, 'bridge-to-tower-west', nextRoom.revision, 'sdk-move-tower-west');
+    expect(movedToWest.receipt.ok).toBe(true);
+    const westApproach = await client.look(characterId, 'sdk-look-tower-west');
+    const movedToTower = await client.move(
+      characterId,
+      'bell-tower-west-to-tower',
+      westApproach.revision,
+      'sdk-move-tower',
+    );
     expect(movedToTower.receipt.ok).toBe(true);
     const tower = await client.look(characterId, 'sdk-look-tower');
     expect(tower.objects).toContainEqual(expect.objectContaining({
@@ -390,7 +398,9 @@ describe('MuddHttpClient', () => {
     const afterAccept = await client.look(characterId, 'puzzle-look-after-accept');
     await client.take(characterId, 'glasswater-reed', afterAccept.revision, 'puzzle-take-reed');
     const bridgeWithReed = await client.look(characterId, 'puzzle-look-bridge-with-reed');
-    await client.move(characterId, 'bridge-to-tower', bridgeWithReed.revision, 'puzzle-go-tower');
+    await client.move(characterId, 'bridge-to-tower-west', bridgeWithReed.revision, 'puzzle-go-tower-west');
+    const towerWest = await client.look(characterId, 'puzzle-look-tower-west');
+    await client.move(characterId, 'bell-tower-west-to-tower', towerWest.revision, 'puzzle-go-tower');
 
     const tower = await client.look(characterId, 'puzzle-look-tower');
     expect(tower.exits).toContainEqual(expect.objectContaining({
@@ -411,11 +421,15 @@ describe('MuddHttpClient', () => {
       'puzzle-read-inscription',
     );
     expect(inscription.text).toContain('Pale first, hollow second.');
-    await client.move(characterId, 'tower-to-bridge', tower.revision + 1, 'puzzle-return-for-hint-two');
+    await client.move(characterId, 'tower-to-west-approach', tower.revision + 1, 'puzzle-return-to-west-for-hint-two');
+    const westForHintTwo = await client.look(characterId, 'puzzle-look-west-for-hint-two');
+    await client.move(characterId, 'bell-tower-west-to-bridge', westForHintTwo.revision, 'puzzle-return-for-hint-two');
     const bridgeForHintTwo = await client.look(characterId, 'puzzle-look-for-hint-two');
     const secondHint = await client.talk(characterId, 'edda-bellwright', 'hint', 'puzzle-hint-two');
     expect(secondHint.text).toContain('Hint 2');
-    await client.move(characterId, 'bridge-to-tower', bridgeForHintTwo.revision, 'puzzle-return-for-bell');
+    await client.move(characterId, 'bridge-to-tower-west', bridgeForHintTwo.revision, 'puzzle-return-to-west-for-bell');
+    const westForBell = await client.look(characterId, 'puzzle-look-west-for-bell');
+    await client.move(characterId, 'bell-tower-west-to-tower', westForBell.revision, 'puzzle-return-for-bell');
     const towerForBell = await client.look(characterId, 'puzzle-look-for-bell');
     await expect(client.use(
       characterId,
@@ -440,11 +454,15 @@ describe('MuddHttpClient', () => {
       id: 'tower-to-underhollow',
       available: false,
     }));
-    await client.move(characterId, 'tower-to-bridge', afterFirstNote.revision, 'puzzle-return-for-hint-three');
+    await client.move(characterId, 'tower-to-west-approach', afterFirstNote.revision, 'puzzle-return-to-west-for-hint-three');
+    const westForHintThree = await client.look(characterId, 'puzzle-look-west-for-hint-three');
+    await client.move(characterId, 'bell-tower-west-to-bridge', westForHintThree.revision, 'puzzle-return-for-hint-three');
     const bridgeForHintThree = await client.look(characterId, 'puzzle-look-for-hint-three');
     const thirdHint = await client.talk(characterId, 'edda-bellwright', 'hint', 'puzzle-hint-three');
     expect(thirdHint.text).toContain('Hint 3');
-    await client.move(characterId, 'bridge-to-tower', bridgeForHintThree.revision, 'puzzle-return-to-finish');
+    await client.move(characterId, 'bridge-to-tower-west', bridgeForHintThree.revision, 'puzzle-return-to-west-for-finish');
+    const westForReed = await client.look(characterId, 'puzzle-look-west-for-reed');
+    await client.move(characterId, 'bell-tower-west-to-tower', westForReed.revision, 'puzzle-return-to-finish');
     const towerForReed = await client.look(characterId, 'puzzle-look-for-reed');
     await expect(client.use(
       characterId,
@@ -479,7 +497,9 @@ describe('MuddHttpClient', () => {
     expect(underhollow.title).toBe('The Underhollow');
     await client.move(characterId, 'underhollow-to-tower', underhollow.revision, 'puzzle-return-up');
     const towerAgain = await client.look(characterId, 'puzzle-look-tower-again');
-    await client.move(characterId, 'tower-to-bridge', towerAgain.revision, 'puzzle-return-bridge');
+    await client.move(characterId, 'tower-to-west-approach', towerAgain.revision, 'puzzle-return-to-west-before-bridge');
+    const westBeforeBridge = await client.look(characterId, 'puzzle-look-west-before-bridge');
+    await client.move(characterId, 'bell-tower-west-to-bridge', westBeforeBridge.revision, 'puzzle-return-bridge');
     const bridgeAgain = await client.look(characterId, 'puzzle-look-bridge-again');
     const eddaAfter = await client.talk(characterId, 'edda-bellwright', undefined, 'puzzle-talk-edda-after');
     expect(eddaAfter.choices).toContainEqual({
@@ -549,7 +569,7 @@ describe('MuddHttpClient', () => {
       });
     await expect(client.talk(characterId, 'mara-waykeeper', 'marker', 'quest-talk-marker-before-read'))
       .resolves.toMatchObject({
-        text: 'The marker is old, but the carving still points east toward the Old Bell Tower.',
+        text: 'The marker is old, but the carving still points east toward the western approach to the Old Bell Tower.',
         choices: [],
       });
     const dialogueBeforeObjective = await client.talk(
@@ -591,11 +611,11 @@ describe('MuddHttpClient', () => {
     const afterRead = await client.look(characterId, 'quest-look-after-read');
     await expect(client.talk(characterId, 'mara-waykeeper', undefined, 'quest-talk-after-read'))
       .resolves.toMatchObject({
-        text: 'You read the marker. Its arrow points east to the Old Bell Tower. Visit the tower, then come back and tell me what you found.',
+        text: 'You read the marker. Its arrow points east to the tower’s western approach. Follow the path there, enter the tower, then come back and tell me what you found.',
       });
     await expect(client.talk(characterId, 'mara-waykeeper', 'marker', 'quest-talk-marker-after-read'))
       .resolves.toMatchObject({
-        text: 'You’ve read the marker now. Its arrow points east to the Old Bell Tower.',
+        text: 'You’ve read the marker now. Its arrow points east to the tower’s western approach.',
         choices: [],
       });
     await expect(client.talk(characterId, 'mara-waykeeper', undefined, 'quest-talk-choice-unlocked'))
@@ -605,18 +625,23 @@ describe('MuddHttpClient', () => {
           label: 'Ask about the bell tower',
         }]),
       });
-    await client.move(characterId, 'clearing-to-tower', afterRead.revision, 'quest-visit-tower');
+    await client.move(characterId, 'clearing-to-tower-west', afterRead.revision, 'quest-visit-tower-west');
+    const westApproach = await client.look(characterId, 'quest-look-tower-west');
+    await client.move(characterId, 'bell-tower-west-to-tower', westApproach.revision, 'quest-visit-tower');
     const atTower = await client.look(characterId, 'quest-look-at-tower');
     expect(atTower.title).toBe('Old Bell Tower');
     const towerState = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(towerState.visitedLocationIds).toContain('bell-tower-west');
     expect(projectQuestJournal(towerState, demoWorld)[0]?.objectives.every((objective) => objective.completed))
       .toBe(true);
 
-    await client.move(characterId, 'tower-to-clearing', atTower.revision, 'quest-return-to-mara');
+    await client.move(characterId, 'tower-to-west-approach', atTower.revision, 'quest-return-to-west');
+    const westOnReturn = await client.look(characterId, 'quest-look-west-on-return');
+    await client.move(characterId, 'bell-tower-west-to-clearing', westOnReturn.revision, 'quest-return-to-mara');
     const backAtMara = await client.look(characterId, 'quest-look-back-at-mara');
     const reportDialogue = await client.talk(characterId, 'mara-waykeeper', undefined, 'quest-report-dialogue');
     expect(reportDialogue.text)
-      .toBe('You reached the Old Bell Tower. Tell me what you found when you are ready to report.');
+      .toBe('You reached the Old Bell Tower by its western approach. Tell me what you found when you are ready to report.');
     expect(reportDialogue.choices).toContainEqual({
       id: 'report-wayfinding-quest',
       label: 'I visited the Old Bell Tower',
@@ -651,7 +676,7 @@ describe('MuddHttpClient', () => {
     expect(completedDialogue.text).toBe('You brought back the story of the path. Thank you; I will remember it.');
     await expect(client.talk(characterId, 'mara-waykeeper', 'marker', 'quest-talk-marker-after-turn-in'))
       .resolves.toMatchObject({
-        text: 'You read the marker and followed its direction all the way to the Old Bell Tower.',
+        text: 'You read the marker and followed its direction through the western approach into the Old Bell Tower.',
         choices: [],
       });
     expect(completedDialogue.choices).not.toContainEqual({
@@ -669,7 +694,7 @@ describe('MuddHttpClient', () => {
       });
     await expect(client.talk(anotherCharacterId, 'mara-waykeeper', 'marker', 'quest-talk-marker-second-character'))
       .resolves.toMatchObject({
-        text: 'The marker is old, but the carving still points east toward the Old Bell Tower.',
+        text: 'The marker is old, but the carving still points east toward the western approach to the Old Bell Tower.',
         choices: [],
       });
     await engine.stop();

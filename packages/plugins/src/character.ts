@@ -285,6 +285,17 @@ export const characterPlugin: EnginePlugin = {
       if (!interaction) {
         throw new RuleViolationError(`You cannot use the ${item.label.toLocaleLowerCase()} on the ${target.label.toLocaleLowerCase()} here.`);
       }
+      if (
+        interaction.requiredVisitedLocationId &&
+        !character.visitedLocationIds.includes(interaction.requiredVisitedLocationId)
+      ) {
+        const requiredLocation = context.world.locations.find((candidate) =>
+          candidate.id === interaction.requiredVisitedLocationId,
+        );
+        throw new RuleViolationError(
+          `You must first visit ${requiredLocation?.name ?? 'the required place'} before using the ${item.label.toLocaleLowerCase()} here.`,
+        );
+      }
       const missingPrerequisite = (interaction.requiresInteractionIds ?? []).some((interactionId) =>
         !character.itemUseObservations.some((observation) =>
           observation.interactionId === interactionId && observation.locationId === location.id,

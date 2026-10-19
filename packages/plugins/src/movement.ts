@@ -35,6 +35,18 @@ export const movementPlugin: EnginePlugin = {
         .find((location) => location.id === character.locationId)
         ?.exits.find((candidate) => candidate.id === command.payload.exitId);
       if (!exit) throw new RuleViolationError('That exit is not available from your current location.');
+      const destination = context.world.locations.find((location) => location.id === exit.toLocationId);
+      if (
+        destination?.requiredVisitedLocationId &&
+        !character.visitedLocationIds.includes(destination.requiredVisitedLocationId)
+      ) {
+        const requiredLocation = context.world.locations.find((location) =>
+          location.id === destination.requiredVisitedLocationId,
+        );
+        throw new RuleViolationError(
+          `You must first visit ${requiredLocation?.name ?? 'the required place'} before entering ${destination.name}.`,
+        );
+      }
       if (
         exit.requiredInteractionId &&
         !character.itemUseObservations.some((observation) =>

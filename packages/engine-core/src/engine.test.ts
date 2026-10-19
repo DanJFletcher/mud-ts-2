@@ -915,6 +915,225 @@ describe('MUDD engine host', () => {
     await engine.stop();
   });
 
+  it('requires the western tower approach before entering the tower and using the smooth stone', async () => {
+    const testWorld = structuredClone(demoWorld);
+    testWorld.locations.find((location) => location.id === 'glasswater-bridge')!.exits.push({
+      id: 'test-direct-bridge-to-tower',
+      fromLocationId: 'glasswater-bridge',
+      toLocationId: 'bell-tower',
+      label: 'Direct tower shortcut for gate regression coverage',
+      direction: 'southeast',
+    });
+    const { engine, store } = makeEngine(testWorld);
+    await engine.start();
+    const created = await engine.dispatch({
+      type: 'character.create',
+      version: 1,
+      commandId: 'tower-route-create',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      payload: { name: 'Rill' },
+    }, session);
+    const characterId = created.streamId!;
+
+    const clearingBypass = await engine.dispatch({
+      type: 'character.move',
+      version: 1,
+      commandId: 'tower-route-clearing-bypass',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 1,
+      payload: { exitId: 'clearing-to-tower' },
+    }, session);
+    expect(clearingBypass.receipt).toMatchObject({ ok: false, code: 'RULE_VIOLATION' });
+
+    const takeStone = await engine.dispatch({
+      type: 'character.take',
+      version: 1,
+      commandId: 'tower-route-take-stone',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 1,
+      payload: { itemId: 'mossgate-loose-stone' },
+    }, session);
+    expect(takeStone.receipt).toMatchObject({ ok: true, newAggregateVersion: 2 });
+
+    const reachBridge = await engine.dispatch({
+      type: 'character.move',
+      version: 1,
+      commandId: 'tower-route-to-bridge',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 2,
+      payload: { exitId: 'clearing-to-bridge' },
+    }, session);
+    expect(reachBridge.receipt).toMatchObject({ ok: true, newAggregateVersion: 3 });
+
+    const bridgeBypass = await engine.dispatch({
+      type: 'character.move',
+      version: 1,
+      commandId: 'tower-route-bridge-bypass',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 3,
+      payload: { exitId: 'test-direct-bridge-to-tower' },
+    }, session);
+    expect(bridgeBypass.receipt).toMatchObject({
+      ok: false,
+      code: 'RULE_VIOLATION',
+      message: 'You must first visit West of Old Bell Tower before entering Old Bell Tower.',
+    });
+
+    const reachWesternApproach = await engine.dispatch({
+      type: 'character.move',
+      version: 1,
+      commandId: 'tower-route-to-west',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 3,
+      payload: { exitId: 'bridge-to-tower-west' },
+    }, session);
+    expect(reachWesternApproach.receipt).toMatchObject({ ok: true, newAggregateVersion: 4 });
+
+    const prematureBellStrike = await engine.dispatch({
+      type: 'character.use',
+      version: 1,
+      commandId: 'tower-route-premature-bell',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 4,
+      payload: { itemId: 'mossgate-loose-stone', targetId: 'tower-cracked-bell' },
+    }, session);
+    expect(prematureBellStrike.receipt).toMatchObject({
+      ok: false,
+      message: 'That is not a usable target in this room.',
+    });
+
+    const enterTower = await engine.dispatch({
+      type: 'character.move',
+      version: 1,
+      commandId: 'tower-route-enter-tower',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 4,
+      payload: { exitId: 'bell-tower-west-to-tower' },
+    }, session);
+    expect(enterTower.receipt).toMatchObject({ ok: true, newAggregateVersion: 5 });
+
+    const strikeBell = await engine.dispatch({
+      type: 'character.use',
+      version: 1,
+      commandId: 'tower-route-strike-bell',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 5,
+      payload: { itemId: 'mossgate-loose-stone', targetId: 'tower-cracked-bell' },
+    }, session);
+    expect(strikeBell.receipt).toMatchObject({ ok: true, newAggregateVersion: 6 });
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))?.visitedLocationIds)
+      .toEqual(['mossgate-clearing', 'glasswater-bridge', 'bell-tower-west', 'bell-tower']);
+
+    await engine.stop();
+  });
+
+  it('keeps the stone strike locked until the western approach has been visited', async () => {
+    const testWorld = structuredClone(demoWorld);
+    delete testWorld.locations.find((location) => location.id === 'bell-tower')!.requiredVisitedLocationId;
+    testWorld.locations.find((location) => location.id === 'glasswater-bridge')!.exits.push({
+      id: 'test-direct-bridge-to-tower',
+      fromLocationId: 'glasswater-bridge',
+      toLocationId: 'bell-tower',
+      label: 'Direct tower shortcut for legacy character coverage',
+      direction: 'southeast',
+    });
+    const { engine } = makeEngine(testWorld);
+    await engine.start();
+    const created = await engine.dispatch({
+      type: 'character.create',
+      version: 1,
+      commandId: 'tower-strike-gate-create',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      payload: { name: 'Rill' },
+    }, session);
+    const characterId = created.streamId!;
+
+    await engine.dispatch({
+      type: 'character.take',
+      version: 1,
+      commandId: 'tower-strike-gate-take-stone',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 1,
+      payload: { itemId: 'mossgate-loose-stone' },
+    }, session);
+    await engine.dispatch({
+      type: 'character.move',
+      version: 1,
+      commandId: 'tower-strike-gate-to-bridge',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 2,
+      payload: { exitId: 'clearing-to-bridge' },
+    }, session);
+    const directEntry = await engine.dispatch({
+      type: 'character.move',
+      version: 1,
+      commandId: 'tower-strike-gate-shortcut',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 3,
+      payload: { exitId: 'test-direct-bridge-to-tower' },
+    }, session);
+    expect(directEntry.receipt).toMatchObject({ ok: true, newAggregateVersion: 4 });
+
+    const prematureStrike = await engine.dispatch({
+      type: 'character.use',
+      version: 1,
+      commandId: 'tower-strike-gate-premature',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 4,
+      payload: { itemId: 'mossgate-loose-stone', targetId: 'tower-cracked-bell' },
+    }, session);
+    expect(prematureStrike.receipt).toMatchObject({
+      ok: false,
+      code: 'RULE_VIOLATION',
+      message: 'You must first visit West of Old Bell Tower before using the loose stone here.',
+    });
+
+    const visitApproach = await engine.dispatch({
+      type: 'character.move',
+      version: 1,
+      commandId: 'tower-strike-gate-to-west',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 4,
+      payload: { exitId: 'tower-to-west-approach' },
+    }, session);
+    expect(visitApproach.receipt).toMatchObject({ ok: true, newAggregateVersion: 5 });
+    const reenterTower = await engine.dispatch({
+      type: 'character.move',
+      version: 1,
+      commandId: 'tower-strike-gate-reenter',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 5,
+      payload: { exitId: 'bell-tower-west-to-tower' },
+    }, session);
+    expect(reenterTower.receipt).toMatchObject({ ok: true, newAggregateVersion: 6 });
+    const strikeAfterVisit = await engine.dispatch({
+      type: 'character.use',
+      version: 1,
+      commandId: 'tower-strike-gate-after-visit',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 6,
+      payload: { itemId: 'mossgate-loose-stone', targetId: 'tower-cracked-bell' },
+    }, session);
+    expect(strikeAfterVisit.receipt).toMatchObject({ ok: true, newAggregateVersion: 7 });
+
+    await engine.stop();
+  });
+
   it('uses a supplied character projection for a consistent game snapshot', async () => {
     const { engine, store } = makeEngine();
     await engine.start();
@@ -1261,7 +1480,7 @@ describe('MUDD engine host', () => {
     expect([firstAttempt.commitOutcome, secondAttempt.commitOutcome].sort()).toEqual(['committed', 'duplicate']);
     expect(firstAttempt.receipt).toMatchObject({ ok: true, newAggregateVersion: 2 });
     expect(secondAttempt.receipt).toMatchObject({ ok: true, newAggregateVersion: 2 });
-    const competing = await engine.dispatch({ ...command, commandId: 'move-race-b', payload: { exitId: 'clearing-to-tower' } }, session);
+    const competing = await engine.dispatch({ ...command, commandId: 'move-race-b', payload: { exitId: 'clearing-to-tower-west' } }, session);
     expect(competing.receipt).toMatchObject({ ok: false, code: 'VERSION_CONFLICT' });
     expect((await store.readStream(DEMO_WORLD_INSTANCE_ID, created.streamId!))).toHaveLength(2);
     await engine.stop();
