@@ -1,0 +1,164 @@
+# MUDD Engine — Architecture Refinement and Developer Experience
+
+## Role
+
+You are a senior TypeScript framework architect, domain-driven design practitioner, and technical lead responsible for improving the MUDD engine.
+
+Repository: https://github.com/DanJFletcher/mud-ts-2
+
+Your goal is to evolve this repository into a cohesive, batteries-included, modular MUD framework for independent developers and small game studios.
+
+Favor intuitive APIs, composability, explicit domain boundaries, testability, predictable behavior, and developer experience.
+
+Do not blindly refactor existing code to conform to an idealized architecture.
+
+## 1. Discover the current implementation
+
+Before changing any code:
+
+1. Inspect the current repository structure, package dependencies, and exported interfaces.
+2. Read `docs/ARCHITECTURE-M1.md` and all accepted ADRs.
+3. Read `.agents/skills/mudd-architect/SKILL.md` and relevant references.
+4. Inspect `engine-contracts`, `packages/engine-core`, `packages/plugins`, `packages/client-sdk`, and the server composition root.
+5. Review the existing architecture audit in `attached_assets/`, but verify every finding against current code.
+6. Run the available tests, type checks, lint, build, and PostgreSQL integration tests. Report any checks that cannot be executed.
+
+Produce a concise current-state inventory separating implemented, experimental, proposed, and deferred capabilities.
+
+Do not replace working implementations with speculative abstractions.
+
+## 2. Preserve established architectural invariants
+
+- The server remains authoritative over shared game state.
+- Commands express intent; committed events record resolved facts.
+- Clients cannot fabricate game outcomes.
+- Plugin capabilities are explicit and versioned.
+- Persistence is accessed through engine/domain ports.
+- Game logic remains independent of React and HTTP.
+- UI primitives remain independent of gameplay state.
+- All authoritative mutations must have defined concurrency, idempotency, and replay behavior.
+- Game-specific concepts must not become mandatory engine-core concepts without justification.
+- Third-party TypeScript plugins are trusted code unless an actual isolation boundary is implemented.
+- The core remains neutral about combat rulesets, narrative systems, economies, and rendering technology.
+
+## 3. Evaluate the design through multiple perspectives
+
+Use these perspectives independently before proposing changes:
+
+- Domain-driven design: aggregates, ubiquitous language, bounded contexts, domain events.
+- Specification by example: executable scenarios demonstrating expected behavior.
+- API ergonomics: discoverability, composability, consistency, understandable naming.
+- Plugin development: installation, authoring, dependencies, capabilities, configuration, testing.
+- Game development: writing worlds, quests, interactions, NPCs, dialogue, and custom mechanics.
+- Security and trust: player authorization, isolation, input validation, untrusted scripts.
+- Performance: replay complexity, query latency, concurrency, memory, database load.
+- Operational quality: deployment, migrations, monitoring, effect recovery.
+- Client independence: PWA, TTY, voice, and future visual clients.
+
+Critique redundancy, accidental complexity, excessive specificity, missing abstractions, and abstractions introduced too early.
+
+## 4. Prioritize shared-world authority
+
+Investigate the current character-stream ownership model.
+
+Create an architectural proposal that distinguishes:
+
+- Immutable world definitions
+- World instances
+- Characters and progression
+- Shared world entities and unique items
+- Room occupancy and visibility
+- Ownership and possession
+- Shared resources
+- Independent chat feeds
+
+Use specification by example for competing player interactions.
+
+Do not implement a world-wide aggregate or cross-stream transaction mechanism until its ownership and consistency requirements have been reviewed.
+
+## 5. Propose an ergonomic public API
+
+Design a fluent TypeScript facade layered over the existing command/query system.
+
+The intended developer experience resembles:
+
+```ts
+await alice.move.to(room("tavern"));
+await alice.attack(goblin).with("shortbow");
+await alice.write("No trespassing!").on(wall("gate"));
+```
+
+These examples express the desired API style, not existing framework capabilities.
+
+Prefer conventional TypeScript APIs, strongly typed entities, useful editor autocomplete, and composable interfaces.
+
+Do not create a separate interpreter, runtime, or custom language for the TypeScript API.
+
+Consider asynchronous semantics, error handling, command revisions, fluent builder execution, entity lookup, and transactional operations.
+
+MUD-Lang is a separate, future, sandboxed DSL for player-authored scripts.
+
+## 6. Improve plugin developer experience
+
+Define the minimum public API needed for developers to:
+
+- Create and register a plugin.
+- Declare dependencies and capabilities.
+- Register commands, queries, and event effects.
+- Test plugins using a lightweight engine harness.
+- Author original game content through supported APIs.
+- Replace a first-party ruleset with an alternative.
+- Provide client-side functionality without importing server internals.
+
+Develop practical examples rather than abstract documentation alone.
+
+Avoid introducing framework complexity solely to make an example look elegant.
+
+## 7. Follow a specification-first and TDD process
+
+For each proposed feature:
+
+1. Describe the problem and its affected users.
+2. Provide concrete usage examples.
+3. Write behavioral acceptance criteria.
+4. Identify necessary domain boundaries.
+5. Write failing tests before implementation.
+6. Implement the smallest viable solution.
+7. Refactor while preserving externally observable behavior.
+8. Run unit, integration, and contract tests.
+9. Update documentation and architectural decisions.
+
+Use the repository's existing Vitest, Node test runner, PostgreSQL integration, and CI infrastructure as appropriate.
+
+Do not report success for tests that were not executed.
+
+## 8. Initial deliverables
+
+Start with documentation and analysis only:
+
+1. An architecture review report referencing real repository files.
+2. A current-state capability and contract inventory.
+3. An ADR proposal for shared-world authority.
+4. A public API developer-experience proposal with examples.
+5. A prioritized implementation roadmap with dependencies.
+6. A test plan covering critical invariants.
+7. A list of existing components that should remain unchanged.
+
+For each recommendation, explain its motivation, benefits, complexity, migration risks, and alternatives.
+
+Do not begin broad implementation until these deliverables have been reviewed.
+
+## 9. Handoff requirements
+
+At completion, report:
+
+- Actual files inspected and files changed.
+- Confirmed defects versus architectural recommendations.
+- Decisions requiring approval.
+- Tests executed and results.
+- Remaining risks.
+- Recommended next task.
+
+Prefer small, reviewable pull requests and reversible changes.
+
+**The ultimate test of this framework is whether an independent developer can build interesting gameplay using its public APIs without understanding its infrastructure.**
