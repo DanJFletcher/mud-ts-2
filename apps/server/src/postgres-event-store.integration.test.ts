@@ -35,7 +35,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
       },
       ...presencePlayerIds.map((id, index) => ({
         id,
-        clerkUserId: `audit-presence-${id}`,
+        clerkUserId: index === 0 ? `audit-presence-${id}` : null,
         displayName: index === 0 ? 'Rowan' : 'Mira',
       })),
     ]);
@@ -287,7 +287,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     expect(remainingSessions).toHaveLength(0);
   });
 
-  it('derives two-account room presence and scopes heartbeat writes to the owning session', async () => {
+  it('shows guest and signed-in players to each other and scopes heartbeat writes to each session owner', async () => {
     const { worldSessions } = await import('./db/schema.js');
     const { listRoomOccupants, touchWorldSessionPresence } = await import('./room-presence-service.js');
     const firstPlayerId = presencePlayerIds[0];
