@@ -464,7 +464,8 @@ const draft = {
     {
       id: 'bell-underhollow',
       name: 'The Underhollow',
-      mapPosition: { x: 1, y: -1 },
+      mapAreaId: 'bell-tower',
+      mapPosition: { x: 1, y: 0, z: -1 },
       description: 'A low stone chamber rests beneath the tower. The bell’s second note hums in the walls; a dry stair leads back up.',
       readables: [
         {

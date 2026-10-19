@@ -4,3 +4,4 @@
 - [Cross-package error identity](workspace-package-error-identity.md) — Workspace source/dist resolution can create multiple class constructors; use stable error discriminants across package boundaries.
 - [Replit preview origins](replit-preview-origins.md) — Preview browser Origins can include `:5000`; allow only exact development hosts and ports.
 - [Character-owned combat state](combat-gear.md) — Gear, health, consumables, and advancement stay within each character's event stream.
+- [Map visibility](map-visibility.md) — Show only the current area's floor; preserve exploration when switching between overworld and dungeon maps.

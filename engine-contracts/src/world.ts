@@ -23,6 +23,8 @@ export const ExitDefinitionSchema = z.object({
 export const MapPositionSchema = z.object({
   x: z.number().int().min(-10000).max(10000),
   y: z.number().int().min(-10000).max(10000),
+  /** Omitted for legacy surface content (level zero). */
+  z: z.number().int().min(-10000).max(10000).optional(),
 }).strict();
 
 export const ReadableObjectDefinitionSchema = z.object({
@@ -170,6 +172,8 @@ export const LocationDefinitionSchema = z.object({
   name: z.string().min(1).max(160),
   description: z.string().min(1),
   regionId: IdSchema.optional(),
+  /** Independent dungeon/overworld map namespace; omitted means overworld. */
+  mapAreaId: IdSchema.optional(),
   mapPosition: MapPositionSchema.optional(),
   exits: z.array(ExitDefinitionSchema),
   readables: z.array(ReadableObjectDefinitionSchema).optional(),

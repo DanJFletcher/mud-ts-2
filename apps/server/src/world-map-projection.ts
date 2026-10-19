@@ -1,9 +1,17 @@
-import { WorldMapProjectionSchema, type CharacterProjection } from '@mudd/contracts';
+import { WorldMapProjectionSchema, type CharacterProjection, type WorldPackDraft } from '@mudd/contracts';
 import { demoWorld } from '@mudd/world-demo';
 
-export function projectWorldMap(character: CharacterProjection) {
+export function projectWorldMap(character: CharacterProjection, world: WorldPackDraft = demoWorld) {
+  const currentLocation = world.locations.find((location) => location.id === character.locationId);
+  if (!currentLocation) throw new Error('Cannot project a map for a location absent from the world.');
+  const currentAreaId = currentLocation.mapAreaId ?? 'overworld';
+  const currentLevel = currentLocation.mapPosition?.z ?? 0;
   const visitedLocationIds = new Set(character.visitedLocationIds);
-  const visitedLocations = demoWorld.locations.filter((location) => visitedLocationIds.has(location.id));
+  const visitedLocations = world.locations.filter((location) =>
+    visitedLocationIds.has(location.id) &&
+    (location.mapAreaId ?? 'overworld') === currentAreaId &&
+    (location.mapPosition?.z ?? 0) === currentLevel,
+  );
   const locations = visitedLocations.map((location, index) => ({
     id: location.id,
     name: location.name,
