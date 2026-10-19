@@ -475,6 +475,7 @@ beforeEach(() => {
           targetId?: string;
           choiceId?: string;
           objectId?: string;
+          exitId?: string;
           innId?: string;
           action?: 'attack' | 'defend' | 'flee' | 'use-item';
           encounterId?: string;
@@ -631,7 +632,27 @@ beforeEach(() => {
         });
       }
       if (moveError) return json({ message: moveError }, 409);
-      room = room === 'clearing' ? 'bridge' : 'clearing';
+      const destinationByExitId: Record<string, typeof room> = {
+        'clearing-to-bridge': 'bridge',
+        'bridge-to-clearing': 'clearing',
+        'reedbank-to-bridge': 'bridge',
+        'reedbank-to-willowrest': 'inn',
+        'willowrest-to-reedbank': 'market',
+      };
+      const destination = command.payload?.exitId
+        ? destinationByExitId[command.payload.exitId]
+        : undefined;
+      if (!destination) {
+        return json({
+          receipt: {
+            ok: false,
+            commandId: command.commandId ?? 'mock-command',
+            code: 'RULE_VIOLATION',
+            message: 'That exit is not available in this test world.',
+          },
+        });
+      }
+      room = destination;
       const newLocationId = currentLocation().locationId;
       if (!visitedLocationIds.includes(newLocationId)) visitedLocationIds.push(newLocationId);
       if (newLocationId === 'glasswater-bridge') {
@@ -865,6 +886,56 @@ describe('single-character world session client', () => {
     await waitFor(() => expect(map).toHaveTextContent('Glasswater Bridge'));
     expect(map.querySelector('.focused-world-map__location--current')).toHaveTextContent('Glasswater Bridge');
     expect(map.querySelectorAll('.focused-world-map__path')).toHaveLength(1);
+  });
+
+  it('shows Willowrest Inn and its Reedbank path only after traveling there', async () => {
+    room = 'market';
+    visitedLocationIds = ['mossgate-clearing', 'glasswater-bridge', 'reedbank-stalls'];
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    await screen.findByRole('heading', { name: 'Reedbank Stalls' });
+    const map = screen.getByRole('region', { name: 'World map' });
+    expect(map).not.toHaveTextContent('Willowrest Inn');
+    expect(map.querySelectorAll('.focused-world-map__path')).toHaveLength(2);
+
+    const locationMarker = (name: string) =>
+      [...map.querySelectorAll<SVGGElement>('.focused-world-map__location')]
+        .find((location) => location.querySelector('text')?.textContent === name)
+        ?.querySelector<SVGCircleElement>('.focused-world-map__marker');
+    const reedbankMarkerBeforeArrival = locationMarker('Reedbank Stalls');
+    expect(reedbankMarkerBeforeArrival).toBeDefined();
+    expect(locationMarker('Willowrest Inn')).toBeUndefined();
+
+    clickQuickAction('Show available exits');
+    fireEvent.click(screen.getByRole('button', { name: 'Go east' }));
+
+    await screen.findByRole('heading', { name: 'Willowrest Inn' });
+    await waitFor(() => expect(map).toHaveTextContent('Willowrest Inn'));
+    const reedbankMarker = locationMarker('Reedbank Stalls');
+    const willowrestMarker = locationMarker('Willowrest Inn');
+    expect(reedbankMarker).toBeDefined();
+    expect(willowrestMarker).toBeDefined();
+    expect(map.querySelectorAll('.focused-world-map__path')).toHaveLength(3);
+
+    const markerCoordinates = (marker: SVGCircleElement) => ({
+      x: marker.getAttribute('cx'),
+      y: marker.getAttribute('cy'),
+    });
+    const reedbankCoordinates = markerCoordinates(reedbankMarker!);
+    const willowrestCoordinates = markerCoordinates(willowrestMarker!);
+    const reedbankConnection = [...map.querySelectorAll<SVGLineElement>('.focused-world-map__path')]
+      .find((path) => {
+        const endpoints = [
+          { x: path.getAttribute('x1'), y: path.getAttribute('y1') },
+          { x: path.getAttribute('x2'), y: path.getAttribute('y2') },
+        ];
+        return endpoints.some((point) =>
+          point.x === reedbankCoordinates.x && point.y === reedbankCoordinates.y
+        ) && endpoints.some((point) =>
+          point.x === willowrestCoordinates.x && point.y === willowrestCoordinates.y
+        );
+      });
+    expect(reedbankConnection).toBeDefined();
   });
 
   it('collapses the map and can still open it full screen', async () => {
