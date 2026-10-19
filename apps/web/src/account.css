@@ -70,6 +70,7 @@
 .account-home__intro > p:not(.focused-kicker) { max-width: 380px; margin: 18px 0 28px; color: var(--mudd-muted); line-height: 1.6; }
 .account-home__actions { flex-wrap: wrap; }
 .guest-play { display: grid; justify-items: start; gap: 9px; margin-top: 16px; }
+.guest-play__form { display: grid; width: min(100%, 380px); grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; }
 .guest-play > p { max-width: 380px; margin: 0; color: var(--mudd-muted); font-size: .76rem; line-height: 1.5; }
 .guest-play .account-message { margin-top: 2px; }
 

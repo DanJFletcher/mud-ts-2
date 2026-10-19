@@ -114,8 +114,15 @@ export function GuestPlayButton() {
   const [, setLocation] = useLocation();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
+  const [needsName, setNeedsName] = useState(false);
+  const [characterName, setCharacterName] = useState('');
 
-  const playAsGuest = async () => {
+  const enterWorld = () => {
+    window.location.hash = '#/play';
+    setLocation('/guest-world');
+  };
+
+  const beginGuestJourney = async () => {
     if (pending) return;
     setPending(true);
     setError('');
@@ -126,8 +133,7 @@ export function GuestPlayButton() {
         (character) => character.characterId === roster.activeWorldSession?.characterId,
       );
       if (activeCharacter && activeCharacter.combat?.status !== 'defeat' && activeCharacter.health?.current !== 0) {
-        window.location.hash = '#/play';
-        setLocation('/guest-world');
+        enterWorld();
         return;
       }
       if (roster.activeWorldSession) {
@@ -135,21 +141,16 @@ export function GuestPlayButton() {
         roster = await client.getCharacters();
       }
 
-      let character = roster.characters.find((candidate) =>
+      const character = roster.characters.find((candidate) =>
         !candidate.archived && candidate.combat?.status !== 'defeat' && candidate.health?.current !== 0,
       );
       if (!character) {
-        const name = roster.characters.length ? `Traveler ${roster.characters.length + 1}` : 'Traveler';
-        const created = await client.createCharacter(name);
-        if (!created.streamId) throw new Error('The guest character was created without an ID.');
-        roster = await client.getCharacters();
-        character = roster.characters.find((candidate) => candidate.characterId === created.streamId);
-        if (!character) throw new Error('The new guest character could not be loaded.');
+        setNeedsName(true);
+        return;
       }
 
       await client.joinWorld(character.characterId);
-      window.location.hash = '#/play';
-      setLocation('/guest-world');
+      enterWorld();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not start a guest journey.');
     } finally {
@@ -157,11 +158,47 @@ export function GuestPlayButton() {
     }
   };
 
+  const createNamedCharacter = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmedName = characterName.trim();
+    if (!trimmedName || pending) return;
+    setPending(true);
+    setError('');
+    try {
+      const created = await client.createCharacter(trimmedName);
+      if (!created.streamId) throw new Error('The guest character was created without an ID.');
+      await client.joinWorld(created.streamId);
+      enterWorld();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not create the guest character.');
+    } finally {
+      setPending(false);
+    }
+  };
+
   return (
     <div className="guest-play">
-      <Button type="button" variant="secondary" onClick={() => void playAsGuest()} disabled={pending}>
-        {pending ? 'Entering…' : 'Play as guest'}
-      </Button>
+      {needsName ? (
+        <form className="guest-play__form" onSubmit={(event) => void createNamedCharacter(event)}>
+          <TextInput
+            id="guest-character-name"
+            label="Character name"
+            placeholder="Choose a name"
+            maxLength={48}
+            value={characterName}
+            onChange={(event) => setCharacterName(event.target.value)}
+            autoComplete="off"
+            required
+          />
+          <Button type="submit" variant="secondary" disabled={!characterName.trim() || pending}>
+            {pending ? 'Entering…' : 'Enter world'}
+          </Button>
+        </form>
+      ) : (
+        <Button type="button" variant="secondary" onClick={() => void beginGuestJourney()} disabled={pending}>
+          {pending ? 'Starting…' : 'Play as guest'}
+        </Button>
+      )}
       <p>Your guest journey is saved in this browser. Create an account later to keep it across devices.</p>
       {error && <p className="account-message account-message--error" role="alert">{error}</p>}
     </div>
