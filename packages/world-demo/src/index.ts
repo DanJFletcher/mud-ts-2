@@ -10,6 +10,7 @@ const draft = {
   packId: 'mudd.first-steps',
   packVersion: '1.0.0',
   displayName: 'The Waystone Path',
+  respawn: { locationId: 'stillwater-fountain' },
   currency: {
     id: 'moss-mark',
     name: 'moss mark',
@@ -84,7 +85,7 @@ const draft = {
       name: 'Mossgate Clearing',
       mapPosition: { x: 0, y: 0 },
       description:
-        'A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east.',
+        'A circle of pale stones breaks through the moss. A narrow path runs north, a path leads west to a quiet fountain, and a weathered marker points east.',
       readables: [
         {
           id: 'mossgate-marker',
@@ -248,8 +249,26 @@ const draft = {
         },
       ],
       exits: [
+        { id: 'clearing-to-fountain', fromLocationId: 'mossgate-clearing', toLocationId: 'stillwater-fountain', label: 'West to Stillwater Fountain', direction: 'west' },
         { id: 'clearing-to-bridge', fromLocationId: 'mossgate-clearing', toLocationId: 'glasswater-bridge', label: 'North to Glasswater Bridge', direction: 'north' },
         { id: 'clearing-to-tower', fromLocationId: 'mossgate-clearing', toLocationId: 'bell-tower', label: 'East to the Old Bell Tower', direction: 'east' },
+      ],
+    },
+    {
+      id: 'stillwater-fountain',
+      name: 'Stillwater Fountain',
+      mapPosition: { x: -1, y: 0 },
+      description: 'A low stone court opens beneath willow branches. In its middle, a clear fountain spills into a shallow round basin, its steady water carrying the quiet of the grove.',
+      interactables: [
+        {
+          id: 'stillwater-fountain-basin',
+          label: 'Stone fountain',
+          description: 'Water wells from a carved stone bowl and runs through a narrow channel into the moss.',
+          roomDescription: 'The fountain stands at the center of the court, its water bright against the dark stone.',
+        },
+      ],
+      exits: [
+        { id: 'fountain-to-clearing', fromLocationId: 'stillwater-fountain', toLocationId: 'mossgate-clearing', label: 'East to Mossgate Clearing', direction: 'east' },
       ],
     },
     {

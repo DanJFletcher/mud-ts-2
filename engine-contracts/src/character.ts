@@ -12,6 +12,8 @@ export const ConsumableItemSchema = z.object({
 
 export const InventoryItemProjectionSchema = z.object({
   id: IdSchema,
+  /** Present only while this physical item is owned by the shared world-item aggregate. */
+  sharedItemId: IdSchema.optional(),
   label: z.string().min(1).max(120),
   description: z.string().min(1).max(1000),
   questBound: z.boolean().optional(),
@@ -30,6 +32,13 @@ export const InventoryItemProjectionSchema = z.object({
     }
   }),
 }).strict().superRefine((item, context) => {
+  if (item.sharedItemId && item.sharedItemId !== item.id) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['sharedItemId'],
+      message: 'A shared item ID must match its inventory item ID.',
+    });
+  }
   if (item.consumable && item.equipment) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
@@ -305,6 +314,44 @@ export const CharacterPvpOutcomeAppliedEventSchema = DomainEventBaseSchema.exten
     encounterId: IdSchema,
     health: CharacterHealthSchema,
     consumedItemIds: z.array(IdSchema),
+  }).strict(),
+}).strict();
+
+export const CharacterSharedItemReceivedEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('character.shared_item_received'),
+  version: z.literal(1),
+  payload: z.object({
+    characterId: IdSchema,
+    worldItemId: IdSchema,
+    sourceLocationId: IdSchema,
+    item: InventoryItemProjectionSchema,
+  }).strict(),
+}).strict();
+
+export const CharacterSharedItemRelinquishedEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('character.shared_item_relinquished'),
+  version: z.literal(1),
+  payload: z.object({
+    characterId: IdSchema,
+    worldItemId: IdSchema,
+    locationId: IdSchema,
+  }).strict(),
+}).strict();
+
+export const CharacterRespawnedEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('character.respawned'),
+  version: z.literal(1),
+  payload: z.object({
+    characterId: IdSchema,
+    cause: z.enum(['pve', 'pvp']),
+    encounterId: IdSchema,
+    deathLocationId: IdSchema,
+    respawnLocationId: IdSchema,
+    health: CharacterHealthSchema,
+    droppedItem: z.object({
+      sourceItemId: IdSchema,
+      item: InventoryItemProjectionSchema,
+    }).strict().optional(),
   }).strict(),
 }).strict();
 

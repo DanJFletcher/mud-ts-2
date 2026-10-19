@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MuddHttpClient } from './index.js';
 import { EngineHost, InMemoryEventStore, projectQuestJournal, replayCharacter } from '@mudd/engine-core';
-import { characterPlugin, merchantPlugin, movementPlugin, npcDialoguePlugin } from '@mudd/core-plugins';
+import { characterPlugin, merchantPlugin, movementPlugin, npcDialoguePlugin, worldItemsPlugin } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import { InitializeCharacterWalletCommandSchema } from '@mudd/contracts';
 
@@ -108,7 +108,7 @@ describe('MuddHttpClient', () => {
       roomDescription: 'A plain test pebble lies nearby.',
     });
     const engine = new EngineHost(
-      [characterPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin],
+      [worldItemsPlugin, characterPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin],
       store,
       { canAccessInstance: async () => true, ownsCharacter: async () => true },
       testWorld,
@@ -351,7 +351,7 @@ describe('MuddHttpClient', () => {
     } as const;
     const store = new InMemoryEventStore();
     const engine = new EngineHost(
-      [characterPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin],
+      [worldItemsPlugin, characterPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin],
       store,
       { canAccessInstance: async () => true, ownsCharacter: async () => true },
       demoWorld,
@@ -513,7 +513,7 @@ describe('MuddHttpClient', () => {
     } as const;
     const store = new InMemoryEventStore();
     const engine = new EngineHost(
-      [characterPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin],
+      [worldItemsPlugin, characterPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin],
       store,
       { canAccessInstance: async () => true, ownsCharacter: async () => true },
       demoWorld,
@@ -686,7 +686,7 @@ describe('MuddHttpClient', () => {
     } as const;
     const store = new InMemoryEventStore();
     const engine = new EngineHost(
-      [characterPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin],
+      [worldItemsPlugin, characterPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin],
       store,
       { canAccessInstance: async () => true, ownsCharacter: async () => true },
       demoWorld,
@@ -779,7 +779,7 @@ describe('MuddHttpClient', () => {
   it('grants a legacy character wallet through one explicit initialization event', async () => {
     const store = new InMemoryEventStore();
     const engine = new EngineHost(
-      [characterPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin],
+      [worldItemsPlugin, characterPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin],
       store,
       { canAccessInstance: async () => true, ownsCharacter: async () => true },
       demoWorld,

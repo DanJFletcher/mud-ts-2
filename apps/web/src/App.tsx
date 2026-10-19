@@ -7,7 +7,7 @@ import {
   type FormEvent,
   type TouchEvent as ReactTouchEvent,
 } from "react";
-import { MuddHttpClient, type GameSnapshot } from "@mudd/client-sdk";
+import { MuddHttpClient, type CommandResponse, type GameSnapshot } from "@mudd/client-sdk";
 import type { InteractionInbox } from "@mudd/contracts";
 import {
   ActivityLog,
@@ -53,6 +53,18 @@ function findNpcMatches(target: string, npcs: readonly VisibleNpc[]) {
   return exactMatch
     ? [exactMatch]
     : npcs.filter((npc) => npc.name.toLocaleLowerCase().includes(normalizedTarget));
+}
+
+function respawnNotice(events: CommandResponse["events"], locationName: string): string | undefined {
+  const event = events?.find((candidate) => candidate.type === "character.respawned");
+  if (!event?.payload || typeof event.payload !== "object") return undefined;
+  const payload = event.payload as {
+    droppedItem?: { item?: { label?: unknown } };
+  };
+  const droppedLabel = typeof payload.droppedItem?.item?.label === "string"
+    ? payload.droppedItem.item.label
+    : undefined;
+  return `You awaken at ${locationName}, restored to full health.${droppedLabel ? ` ${droppedLabel} was dropped where you fell.` : ""}`;
 }
 
 const COMMAND_HELP: Record<string, readonly string[]> = {
@@ -775,7 +787,10 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
       setSnapshot(nextSnapshot);
       setConnectionError("");
       const encounter = nextSnapshot.character?.combat;
-      if (action === "use-item" && !activeEncounter) {
+      const notice = respawnNotice(result.events, nextSnapshot.location?.title ?? "the fountain");
+      if (notice) {
+        addEntry("narration", notice);
+      } else if (action === "use-item" && !activeEncounter) {
         const nextHealth = nextSnapshot.character?.health;
         const previousHealth = snapshot.character.health;
         const label = snapshot.character.inventory.find((item) => item.id === itemId)?.label ?? "item";
@@ -841,7 +856,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     if (!snapshot?.character || !encounter || pending) return;
     setPending("combat");
     try {
-      await client.performPvpAction(snapshot.character.characterId, encounter.encounterId, action, itemId);
+      const result = await client.performPvpAction(snapshot.character.characterId, encounter.encounterId, action, itemId);
       const [inbox, nextSnapshot] = await Promise.all([client.getInteractionInbox(), client.getGame()]);
       setInteractionInbox(inbox);
       setSnapshot(nextSnapshot);
@@ -850,6 +865,8 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
         knownPvpUpdateRef.current = `${nextEncounter.encounterId}:${nextEncounter.updatedAt}`;
         addEntry("narration", nextEncounter.lastNarration);
       }
+      const notice = respawnNotice(result.events, nextSnapshot.location?.title ?? "the fountain");
+      if (notice) addEntry("narration", notice);
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "The combat action could not be completed.");
     } finally {

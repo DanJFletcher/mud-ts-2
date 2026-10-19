@@ -5,6 +5,7 @@ import {
   combatPlugin,
   interactionPlugin,
   interactionStreamId,
+  worldItemsPlugin,
 } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 
@@ -16,7 +17,7 @@ function makeHarness() {
   const owners = new Map<string, string>();
   const store = new InMemoryEventStore();
   const engine = new EngineHost(
-    [characterPlugin, combatPlugin, interactionPlugin],
+    [worldItemsPlugin, characterPlugin, combatPlugin, interactionPlugin],
     store,
     {
       canAccessInstance: async () => true,
@@ -218,7 +219,9 @@ describe('consent-based PvP interaction requests', () => {
     const challengerState = replayCharacter(await h.store.readStream(DEMO_WORLD_INSTANCE_ID, challengerId));
     const recipientState = replayCharacter(await h.store.readStream(DEMO_WORLD_INSTANCE_ID, recipientId));
     expect(challengerState?.health).toEqual({ current: 2, maximum: 6 });
-    expect(recipientState?.health).toEqual({ current: 0, maximum: 6 });
+    expect(recipientState?.health).toEqual({ current: 6, maximum: 6 });
+    expect(recipientState?.locationId).toBe('stillwater-fountain');
+    expect(recipientState?.combat).toBeUndefined();
     const stream = await h.store.readStream(DEMO_WORLD_INSTANCE_ID, interactionStreamId(DEMO_WORLD_INSTANCE_ID));
     expect(stream.some((event) =>
       event.type === 'pvp.outcome.applied' &&

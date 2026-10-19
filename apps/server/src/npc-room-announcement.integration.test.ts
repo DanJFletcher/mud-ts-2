@@ -124,6 +124,7 @@ vi.mock('@mudd/core-plugins', () => ({
   projectInteractionEvents: () => ({ requests: [], latestEncounterEvent: undefined }),
   updateInteractionRequestStatus: async () => false,
   movementPlugin: {},
+  worldItemsPlugin: {},
   npcDialoguePlugin: {},
   merchantPlugin: {},
 }));

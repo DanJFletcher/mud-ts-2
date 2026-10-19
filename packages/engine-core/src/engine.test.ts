@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { EngineHost, InMemoryEventStore, replayCharacter, type EnginePlugin } from './index.js';
-import { characterPlugin, movementPlugin } from '@mudd/core-plugins';
+import { characterPlugin, movementPlugin, worldItemsPlugin } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import type { CapabilityToken } from '@mudd/contracts';
 
@@ -22,7 +22,7 @@ function makeEngine(world = demoWorld) {
   let id = 0;
   const store = new InMemoryEventStore();
   const engine = new EngineHost(
-    [movementPlugin, characterPlugin],
+    [worldItemsPlugin, movementPlugin, characterPlugin],
     store,
     authorization,
     world,
@@ -293,7 +293,7 @@ describe('MUDD engine host', () => {
     }, session, { characterProjection: projection });
 
     expect(location.ok).toBe(true);
-    expect(readStream).not.toHaveBeenCalled();
+    expect(readStream.mock.calls.map(([, streamId]) => streamId)).toEqual(['world-items']);
     await engine.stop();
   });
 

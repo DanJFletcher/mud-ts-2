@@ -31,6 +31,7 @@ import {
   npcDialoguePlugin,
   projectInteractionEvents,
   updateInteractionRequestStatus,
+  worldItemsPlugin,
 } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import { db, pool } from './db/client.js';
@@ -90,7 +91,7 @@ const authorization = {
   },
 };
 const engine = new EngineHost(
-  [characterPlugin, interactionPlugin, combatPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin, demoEventEffectsPlugin],
+  [worldItemsPlugin, characterPlugin, interactionPlugin, combatPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin, demoEventEffectsPlugin],
   store,
   authorization,
   demoWorld,

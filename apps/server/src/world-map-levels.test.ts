@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CharacterProjectionSchema, type WorldPackDraft } from '@mudd/contracts';
 import { EngineHost, InMemoryEventStore, replayCharacter } from '@mudd/engine-core';
-import { characterPlugin, merchantPlugin, movementPlugin } from '@mudd/core-plugins';
+import { characterPlugin, merchantPlugin, movementPlugin, worldItemsPlugin } from '@mudd/core-plugins';
 import { MuddHttpClient } from '@mudd/client-sdk';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import { projectWorldMap } from './world-map-projection.js';
@@ -96,7 +96,7 @@ describe('current-area and Z-level maps', () => {
   it('switches maps after real down/up movement and remembers both maps when revisiting', async () => {
     const store = new InMemoryEventStore();
     const engine = new EngineHost(
-      [characterPlugin, merchantPlugin, movementPlugin], store,
+      [worldItemsPlugin, characterPlugin, merchantPlugin, movementPlugin], store,
       { canAccessInstance: async () => true, ownsCharacter: async () => true }, demoWorld,
     );
     await engine.start();

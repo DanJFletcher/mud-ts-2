@@ -5,6 +5,12 @@ export { merchantPlugin } from './merchant.js';
 export { combatPlugin } from './combat.js';
 export { interactionPlugin } from './interactions.js';
 export {
+  projectWorldItems,
+  worldItemsPlugin,
+  worldItemsStateCapability,
+  worldItemsStreamId,
+} from './world-items.js';
+export {
   interactionStreamId,
   projectInteractionEvents,
   updateInteractionRequestStatus,

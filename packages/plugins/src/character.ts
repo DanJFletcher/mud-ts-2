@@ -1,5 +1,6 @@
 import {
   CharacterCreatedEventSchema,
+  CharacterSharedItemRelinquishedEventSchema,
   CharacterItemTakenEventSchema,
   CharacterItemDroppedEventSchema,
   CharacterItemUsedEventSchema,
@@ -25,10 +26,18 @@ import {
   ReadableObjectProjectionSchema,
   ObjectInspectionProjectionSchema,
   type CapabilityToken,
+  WorldItemClaimedEventSchema,
 } from '@mudd/contracts';
 import { RuleViolationError, type EngineCommandContext, type EnginePlugin, type QueryContext } from '@mudd/engine-core';
 import { replayCharacter } from '@mudd/engine-core';
 import type { CharacterProjection } from '@mudd/contracts';
+import {
+  worldItemClaimEffect,
+  worldItemDropEffect,
+  worldItemsStateCapability,
+  worldItemsStreamId,
+  type WorldItemsStateCapability,
+} from './world-items.js';
 
 export interface CharacterStateCapability {
   load(context: EngineCommandContext | QueryContext, characterId: string): Promise<CharacterProjection | undefined>;
@@ -52,9 +61,16 @@ export const characterPlugin: EnginePlugin = {
     apiVersion: '1.0',
     category: 'core',
     provides: ['mudd.character.state.v1'],
-    eventSchemaVersions: { 'character.equipment_changed': 1 },
+    requiredPlugins: { 'mudd.world-items': '^1.0.0' },
+    eventSchemaVersions: {
+      'character.equipment_changed': 1,
+      'character.shared_item_received': 1,
+      'character.shared_item_relinquished': 1,
+      'character.respawned': 1,
+    },
   },
-  register({ registerCommand, registerQuery, provideCapability }) {
+  register({ registerCommand, registerQuery, provideCapability, requireCapability }) {
+    const worldItems = requireCapability<WorldItemsStateCapability>(worldItemsStateCapability);
     const state: CharacterStateCapability = {
       async load(context, characterId) {
         if ('characterProjection' in context && context.characterProjection?.characterId === characterId) {
@@ -102,6 +118,30 @@ export const characterPlugin: EnginePlugin = {
       }
       const location = context.world.locations.find((item) => item.id === character.locationId);
       if (!location) throw new Error('The character location is not present in this world version.');
+      const sharedState = await worldItems.load(context);
+      const sharedItem = sharedState.items.find((entry) => entry.worldItemId === command.payload.itemId);
+      if (sharedItem) {
+        if (sharedItem.locationId !== character.locationId) {
+          throw new RuleViolationError('That item is not available to take here.');
+        }
+        const eventPayload = {
+          worldItemId: sharedItem.worldItemId,
+          characterId: character.characterId,
+          locationId: character.locationId,
+        };
+        WorldItemClaimedEventSchema.shape.payload.parse(eventPayload);
+        return {
+          streamId: worldItemsStreamId(context.worldInstanceId),
+          expectedVersion: sharedState.revision,
+          events: [{ type: 'world.item_claimed', version: 1, payload: eventPayload }],
+          effects: [worldItemClaimEffect({
+            worldItemId: sharedItem.worldItemId,
+            characterId: character.characterId,
+            sourceLocationId: character.locationId,
+            item: sharedItem.item,
+          })],
+        };
+      }
       const trackedItem = character.itemLocations.find((entry) => entry.item.id === command.payload.itemId);
       const item = trackedItem
         ? trackedItem.locationId === character.locationId ? trackedItem.item : undefined
@@ -141,6 +181,30 @@ export const characterPlugin: EnginePlugin = {
       if (questBound) throw new RuleViolationError('Quest items cannot be dropped.');
       if (character.equipment.weaponItemId === item.id || character.equipment.armorItemId === item.id) {
         throw new RuleViolationError('Unequip that item before dropping it.');
+      }
+      if (item.sharedItemId) {
+        const sharedState = await worldItems.load(context);
+        const sharedItem = sharedState.items.find((candidate) => candidate.worldItemId === item.sharedItemId);
+        if (sharedItem?.holderCharacterId !== character.characterId) {
+          throw new RuleViolationError('That shared item is not currently held by this character.');
+        }
+        const payload = {
+          characterId: character.characterId,
+          worldItemId: item.sharedItemId,
+          locationId: character.locationId,
+        };
+        CharacterSharedItemRelinquishedEventSchema.shape.payload.parse(payload);
+        return {
+          streamId: command.characterId,
+          expectedVersion: command.expectedVersion,
+          events: [{ type: 'character.shared_item_relinquished', version: 1, payload }],
+          effects: [worldItemDropEffect({
+            worldItemId: item.sharedItemId,
+            fromCharacterId: character.characterId,
+            locationId: character.locationId,
+            item,
+          })],
+        };
       }
       CharacterItemDroppedEventSchema.shape.payload.parse({
         characterId: character.characterId,
@@ -315,6 +379,8 @@ export const characterPlugin: EnginePlugin = {
       }
       const location = context.world.locations.find((item) => item.id === character.locationId);
       if (!location) throw new Error('The character location is not present in this world version.');
+      const sharedItems = (await worldItems.load(context)).items
+        .filter((item) => item.locationId === character.locationId);
       const trackedItemIds = new Set(character.itemLocations.map((entry) => entry.item.id));
       const roomTakeables = [
         ...(location.takeables ?? []).filter((item) => !trackedItemIds.has(item.id)),
@@ -331,6 +397,7 @@ export const characterPlugin: EnginePlugin = {
         const roomDescription = roomDescriptionByItemId.get(item.id);
         return roomDescription ? [roomDescription] : [];
       });
+      const sharedItemDescriptions = sharedItems.map(({ item }) => `${item.label} lies here.`);
       const roomNpcDescriptions = (location.npcs ?? []).map(
         ({ name, description }) => `${name} is here. ${description}`,
       );
@@ -346,7 +413,13 @@ export const characterPlugin: EnginePlugin = {
         locationId: location.id,
         revision: character.revision,
         title: location.name,
-        description: [location.description, ...roomItemDescriptions, ...interactableRoomDescriptions, ...roomNpcDescriptions].join(' '),
+        description: [
+          location.description,
+          ...roomItemDescriptions,
+          ...sharedItemDescriptions,
+          ...interactableRoomDescriptions,
+          ...roomNpcDescriptions,
+        ].join(' '),
         exits: location.exits.map((exit) => ({
           id: exit.id,
           label: exit.label,
@@ -361,6 +434,13 @@ export const characterPlugin: EnginePlugin = {
           })),
           ...roomTakeables.map(({ id, label, description }) => ({
               id, label, description, readable: false, takeable: true,
+          })),
+          ...sharedItems.map(({ worldItemId, item }) => ({
+            id: worldItemId,
+            label: item.label,
+            description: item.description,
+            readable: false,
+            takeable: true,
           })),
           ...(location.interactables ?? []).map(({ id, label, description }) => ({
             id, label, description, readable: false, takeable: false,
@@ -411,6 +491,8 @@ export const characterPlugin: EnginePlugin = {
       const location = context.world.locations.find((item) => item.id === character.locationId);
       if (!location) throw new Error('The character location is not present in this world version.');
       const trackedItemIds = new Set(character.itemLocations.map((entry) => entry.item.id));
+      const sharedItems = (await worldItems.load(context)).items
+        .filter((item) => item.locationId === character.locationId);
       const objectInRoom = [
         ...(location.readables ?? []),
         ...(location.takeables ?? []).filter((item) => !trackedItemIds.has(item.id)),
@@ -418,6 +500,7 @@ export const characterPlugin: EnginePlugin = {
         ...character.itemLocations
           .filter((entry) => entry.locationId === location.id)
           .map(({ item }) => item),
+        ...sharedItems.map(({ item }) => item),
       ].find((item) => item.id === query.payload.objectId);
       const objectInPack = character.inventory.find((item) => item.id === query.payload.objectId);
       const object = objectInRoom ?? objectInPack;

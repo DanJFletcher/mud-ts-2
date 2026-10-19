@@ -191,9 +191,21 @@ export const WorldPackDraftSchema = z.object({
   packVersion: z.string().min(1),
   displayName: z.string().min(1),
   currency: WorldCurrencyDefinitionSchema.optional(),
+  respawn: z.object({ locationId: IdSchema }).strict().optional(),
   locations: z.array(LocationDefinitionSchema),
   quests: z.array(QuestDefinitionSchema).default([]),
-}).strict();
+}).strict().superRefine((world, context) => {
+  if (
+    world.respawn &&
+    !world.locations.some((location) => location.id === world.respawn!.locationId)
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['respawn', 'locationId'],
+      message: 'The respawn location must be included in the world pack.',
+    });
+  }
+});
 
 export const LocationDescribeQuerySchema = ClientQueryBaseSchema.extend({
   type: z.literal('location.describe'),

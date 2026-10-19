@@ -19,12 +19,16 @@ import {
   CharacterAdvancementAwardedEventSchema,
   CharacterCombatItemUsedEventSchema,
   CharacterPvpOutcomeAppliedEventSchema,
+  CharacterRespawnedEventSchema,
+  CharacterSharedItemReceivedEventSchema,
+  CharacterSharedItemRelinquishedEventSchema,
   MerchantItemPurchasedEventSchema,
   CombatActionResolvedEventSchema,
 } from '@mudd/contracts';
 
 export function replayCharacter(events: readonly StoredGameEvent[]) {
   let state: ReturnType<typeof CharacterProjectionSchema.parse> | undefined;
+  const pvpOutcomeEncounterIds = new Set<string>();
 
   for (const event of events) {
     const { streamId: _streamId, ...publicEvent } = event;
@@ -257,6 +261,108 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         health: outcome.payload.health,
         inventory: state.inventory.filter((item) => !outcome.payload.consumedItemIds.includes(item.id)),
         itemLocations: state.itemLocations.filter((entry) => !outcome.payload.consumedItemIds.includes(entry.item.id)),
+        revision: event.aggregateVersion,
+      });
+      if (outcome.payload.health.current === 0) {
+        pvpOutcomeEncounterIds.add(outcome.payload.encounterId);
+      }
+    } else if (event.type === 'character.respawned') {
+      if (!state) throw new Error('Respawn event encountered before character creation.');
+      const respawned = CharacterRespawnedEventSchema.parse(publicEvent);
+      const { characterId, cause, encounterId, deathLocationId, respawnLocationId, health, droppedItem } =
+        respawned.payload;
+      const sourceItem = droppedItem
+        ? state.inventory.find((item) => item.id === droppedItem.sourceItemId)
+        : undefined;
+      const { id: _droppedId, sharedItemId: _sharedId, ...droppedItemDetails } = droppedItem?.item ?? {
+        id: '',
+        label: '',
+        description: '',
+      };
+      const { id: _sourceId, sharedItemId: _sourceSharedId, ...sourceItemDetails } = sourceItem ?? {
+        id: '',
+        label: '',
+        description: '',
+      };
+      const causeIsValid = cause === 'pve'
+        ? state.combat?.status === 'defeat' &&
+          state.combat.encounterId === encounterId &&
+          state.combat.locationId === deathLocationId
+        : pvpOutcomeEncounterIds.has(encounterId) && state.combat?.status !== 'defeat';
+      if (
+        characterId !== state.characterId ||
+        state.health?.current !== 0 ||
+        !causeIsValid ||
+        deathLocationId !== state.locationId ||
+        health.current !== health.maximum ||
+        health.maximum !== state.health.maximum ||
+        (droppedItem && (
+          !sourceItem ||
+          sourceItem.questBound === true ||
+          sourceItem.id === state.equipment.weaponItemId ||
+          sourceItem.id === state.equipment.armorItemId ||
+          droppedItem.item.id !== droppedItem.item.sharedItemId ||
+          state.inventory.some((item) =>
+            item.id === droppedItem.item.id && item.id !== droppedItem.sourceItemId) ||
+          JSON.stringify(droppedItemDetails) !== JSON.stringify(sourceItemDetails)
+        ))
+      ) {
+        throw new Error(`Invalid character respawn at revision ${event.aggregateVersion}.`);
+      }
+      pvpOutcomeEncounterIds.delete(encounterId);
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        locationId: respawnLocationId,
+        visitedLocationIds: state.visitedLocationIds.includes(respawnLocationId)
+          ? state.visitedLocationIds
+          : [...state.visitedLocationIds, respawnLocationId],
+        health,
+        combat: undefined,
+        ...(droppedItem ? {
+          inventory: state.inventory.filter((item) => item.id !== droppedItem.sourceItemId),
+          itemLocations: state.itemLocations.filter((entry) => entry.item.id !== droppedItem.sourceItemId),
+        } : {}),
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.shared_item_received') {
+      if (!state) throw new Error('Shared item receipt encountered before character creation.');
+      const received = CharacterSharedItemReceivedEventSchema.parse(publicEvent);
+      const { characterId, worldItemId, item } = received.payload;
+      if (
+        characterId !== state.characterId ||
+        worldItemId !== item.id ||
+        worldItemId !== item.sharedItemId ||
+        item.questBound === true ||
+        state.inventory.some((candidate) => candidate.id === worldItemId)
+      ) {
+        throw new Error(`Invalid shared item receipt at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        inventory: [...state.inventory, item],
+        itemLocations: [...state.itemLocations, { item, locationId: null }],
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.shared_item_relinquished') {
+      if (!state) throw new Error('Shared item relinquishment encountered before character creation.');
+      const relinquished = CharacterSharedItemRelinquishedEventSchema.parse(publicEvent);
+      const { characterId, worldItemId, locationId } = relinquished.payload;
+      const item = state.inventory.find((candidate) => candidate.id === worldItemId);
+      if (
+        characterId !== state.characterId ||
+        locationId !== state.locationId ||
+        !item ||
+        item.sharedItemId !== worldItemId ||
+        item.questBound === true ||
+        state.equipment.weaponItemId === worldItemId ||
+        state.equipment.armorItemId === worldItemId
+      ) {
+        throw new Error(`Invalid shared item relinquishment at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        inventory: state.inventory.filter((candidate) => candidate.id !== worldItemId),
+        itemLocations: state.itemLocations.filter((entry) => entry.item.id !== worldItemId),
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'character.moved') {

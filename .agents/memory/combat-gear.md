@@ -5,9 +5,9 @@ description: Ownership and event boundaries for equipment, health, consumables, 
 
 Keep equipment, current/max health, consumables, combat outcomes, and advancement owned by the character aggregate. Item attributes and NPC/shop definitions remain immutable authored content. Combat resolves health changes; item use records consumption on that same character stream. Read `docs/adr/0006-character-scoped-pve-combat.md` before extending this model.
 
-**Why:** The user chose health persistence between fights and established that reaching zero health is permanent death: the game ends and the player must start again with a new character.
+**Why:** The user chose health persistence between fights. On 2026-10-19, they changed the death rule: the same character respawns at the authored fountain with full health, and one random droppable item becomes shared loot at the death location.
 
-**How to apply:** Preserve character-stream authority for personal equipment, health, consumables, and progression. Never revive a defeated character; starting over creates a new character. Revisit the ADR before changing death rules, adding regeneration, shared loot, shared NPC health, party combat, or world-owned items.
+**How to apply:** Preserve character-stream authority for personal equipment, health, consumables, and progression. Keep quest-bound and equipped items protected from death drops; use the world-item aggregate for loot any player may claim. Read `docs/adr/0013-character-respawn-and-shared-death-drops.md` before extending respawn or shared-item behavior.
 
 While combat is active, the client shows dedicated combat controls only; hide the regular quick-action menu and free-text terminal input.
 

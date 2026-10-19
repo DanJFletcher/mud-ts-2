@@ -6,9 +6,10 @@ import {
   CombatActionResolvedEventV3Schema,
   InnRestCommandSchema,
 } from '@mudd/contracts';
-import type { EnginePlugin, ProposedDomainEvent } from '@mudd/engine-core';
+import type { EnginePlugin, ProposedDomainEvent, ProposedEventEffect } from '@mudd/engine-core';
 import { RuleViolationError } from '@mudd/engine-core';
 import { assertCharacterAlive, characterStateCapability, type CharacterStateCapability } from './character.js';
+import { prepareCharacterRespawn } from './respawn.js';
 import { registerPvpCombat } from './pvp-combat.js';
 import { interactionPolicyRegistry } from './interactions.js';
 
@@ -39,6 +40,7 @@ export const combatPlugin: EnginePlugin = {
       'character.advancement_awarded': 2,
       'character.combat_item_used': 1,
       'character.inn_rest_completed': 1,
+      'character.respawned': 1,
     },
   },
   register(pluginContext) {
@@ -259,6 +261,22 @@ export const combatPlugin: EnginePlugin = {
       const events: ProposedDomainEvent[] = [
         { type: 'character.combat_action_resolved', version: 3, payload },
       ];
+      let effects: ProposedEventEffect[] = [];
+      if (status === 'defeat' && playerHealth === 0) {
+        const respawn = prepareCharacterRespawn(
+          character,
+          context,
+          'pve',
+          resolvedEncounter.encounterId,
+          resolvedEncounter.locationId,
+          consumedItemId ? [consumedItemId] : [],
+          resolvedEncounter.playerMaxHealth,
+        );
+        if (respawn) {
+          events.push(respawn.event);
+          effects = respawn.effects;
+        }
+      }
       if (status === 'victory') {
         const currentAdvancement = character.advancement ?? { experience: 0, level: 1 };
         const totalExperience = currentAdvancement.experience + VICTORY_EXPERIENCE_REWARD;
@@ -288,6 +306,7 @@ export const combatPlugin: EnginePlugin = {
         streamId: character.characterId,
         expectedVersion: command.expectedVersion,
         events,
+        ...(effects.length ? { effects } : {}),
       };
     });
   },

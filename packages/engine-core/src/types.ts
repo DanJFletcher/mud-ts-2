@@ -4,6 +4,7 @@ import type { SessionContext } from '@mudd/contracts';
 import type { z } from 'zod';
 import type { CharacterProjection } from '@mudd/contracts';
 import type { CapabilityToken, PluginManifestInput } from '@mudd/contracts';
+import type { RngPort } from '@mudd/contracts';
 
 export interface ProposedDomainEvent {
   readonly type: string;
@@ -82,6 +83,7 @@ export interface EngineCommandContext {
   readonly world: WorldPackDraft;
   readonly makeId: () => string;
   readonly now: () => Date;
+  readonly rng: RngPort;
 }
 
 export interface CommandPlan {

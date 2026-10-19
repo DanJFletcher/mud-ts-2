@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { EngineHost, InMemoryEventStore, replayCharacter } from '@mudd/engine-core';
-import { characterPlugin, combatPlugin, interactionPlugin, merchantPlugin, movementPlugin } from '@mudd/core-plugins';
+import {
+  characterPlugin,
+  combatPlugin,
+  interactionPlugin,
+  merchantPlugin,
+  movementPlugin,
+  worldItemsPlugin,
+} from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import { MuddHttpClient } from './index.js';
 
@@ -16,7 +23,7 @@ const session = {
 function makeClient(world = demoWorld) {
   const store = new InMemoryEventStore();
   const engine = new EngineHost(
-    [characterPlugin, combatPlugin, interactionPlugin, merchantPlugin, movementPlugin],
+    [worldItemsPlugin, characterPlugin, combatPlugin, interactionPlugin, merchantPlugin, movementPlugin],
     store,
     { canAccessInstance: async () => true, ownsCharacter: async () => true },
     world,
@@ -479,7 +486,7 @@ describe('turn-based PvE combat', () => {
     expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))).toEqual(thirdEncounter);
   });
 
-  it('makes defeat terminal and requires a new character to begin again', async () => {
+  it('respawns the same character at the fountain after defeat', async () => {
     const hardWorld = {
       ...demoWorld,
       locations: demoWorld.locations.map((location) => ({
@@ -508,34 +515,18 @@ describe('turn-based PvE combat', () => {
       state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
     }
 
-    expect(state.combat).toMatchObject({
-      status: 'defeat',
-      playerHealth: 0,
-      opponentHealth: 6,
-      lastAction: 'attack',
-    });
-    const deathRevision = state.revision;
-    await expect(client.performCombatAction(
+    expect(state.locationId).toBe('stillwater-fountain');
+    expect(state.health).toEqual({ current: 6, maximum: 6 });
+    expect(state.combat).toBeUndefined();
+    expect(state.visitedLocationIds).toContain('stillwater-fountain');
+    expect((await client.move(
       characterId,
-      'use-item',
-      deathRevision,
-      { itemId: 'small-healing-draught' },
-      'combat-defeat-revive',
-    )).rejects.toThrow('Your character has died. Start a new character to begin again.');
-    await expect(client.move(
-      characterId,
-      'clearing-to-bridge',
-      deathRevision,
-      'combat-defeat-move',
-    )).rejects.toThrow('Your character has died. Start a new character to begin again.');
-    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))?.revision).toBe(deathRevision);
-
-    const restart = await client.createCharacter('Rowan Again', 'combat-death-new-character');
-    const newCharacter = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, restart.streamId!))!;
-    expect(newCharacter.locationId).toBe('mossgate-clearing');
-    expect(newCharacter.visitedLocationIds).toEqual(['mossgate-clearing']);
-    expect(newCharacter.combat).toBeUndefined();
-    expect(newCharacter.health).toBeUndefined();
+      'fountain-to-clearing',
+      state.revision,
+      'combat-respawn-return',
+    )).receipt.ok).toBe(true);
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))?.locationId)
+      .toBe('mossgate-clearing');
   });
 
   it('persists character equipment and applies weapon and armor bonuses to combat', async () => {

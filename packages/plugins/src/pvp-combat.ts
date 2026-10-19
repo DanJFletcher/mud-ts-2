@@ -1,4 +1,5 @@
 import {
+  CharacterRespawnedEventSchema,
   CharacterPvpOutcomeAppliedEventSchema,
   PvpCombatActionCommandSchema,
   PvpEncounterProjectionSchema,
@@ -8,6 +9,7 @@ import type {
   EventEffectContext,
   PluginContext,
   ProposedDomainEvent,
+  ProposedEventEffect,
 } from '@mudd/engine-core';
 import { RuleViolationError, replayCharacter } from '@mudd/engine-core';
 import { z } from 'zod';
@@ -17,6 +19,8 @@ import {
   interactionStreamId,
   type InteractionPolicyRegistry,
 } from './interactions.js';
+import { prepareCharacterRespawn } from './respawn.js';
+import { worldItemDropEffect } from './world-items.js';
 
 const PVP_CHALLENGE_KIND = 'pvp.challenge';
 const BASE_ATTACK_DAMAGE = 2;
@@ -44,6 +48,7 @@ const OutcomeEffectSchema = z.object({
   interactionStreamId: z.string(),
   encounter: PvpEncounterProjectionSchema,
   consumedItemIdsByCharacter: z.record(z.string(), z.array(z.string())),
+  respawnsByCharacter: z.record(z.string(), z.unknown()),
 }).strict();
 
 function maximumHealth(character: Awaited<ReturnType<CharacterStateCapability['load']>>): number {
@@ -147,7 +152,7 @@ async function applyPvpOutcome(
   const effectIdBase = `pvp-outcome:${raw.encounter.encounterId}`;
   for (const participant of raw.encounter.participants) {
     const characterId = participant.characterId;
-    const commandId = `${effectIdBase}:${characterId}`;
+    const baseCommandId = `${effectIdBase}:${characterId}`;
     const consumedItemIds = raw.consumedItemIdsByCharacter[characterId] ?? [];
     const eventPayload = {
       characterId,
@@ -157,28 +162,58 @@ async function applyPvpOutcome(
     };
     CharacterPvpOutcomeAppliedEventSchema.shape.payload.parse(eventPayload);
     const priorEvents = await context.store.readStream(context.worldInstanceId, characterId);
-    if (priorEvents.some((stored) =>
+    const outcomeAlreadyApplied = priorEvents.some((stored) =>
       stored.type === 'character.pvp_outcome_applied' &&
-      (stored.payload as { encounterId?: string }).encounterId === raw.encounter.encounterId)) continue;
+      (stored.payload as { encounterId?: string }).encounterId === raw.encounter.encounterId);
+    const respawnCandidate = raw.respawnsByCharacter[characterId];
+    const respawnPayload = respawnCandidate === undefined
+      ? undefined
+      : CharacterRespawnedEventSchema.shape.payload.parse(respawnCandidate);
+    const respawnAlreadyApplied = priorEvents.some((stored) =>
+      stored.type === 'character.respawned' &&
+      (stored.payload as { encounterId?: string }).encounterId === raw.encounter.encounterId);
+    if (outcomeAlreadyApplied && (!respawnPayload || respawnAlreadyApplied)) continue;
     const character = replayCharacter(priorEvents);
     if (!character || (character.health?.maximum ?? participant.maximumHealth) !== participant.maximumHealth) {
       throw new Error('PvP participant state changed before the outcome could be applied.');
     }
+    const commandId = outcomeAlreadyApplied
+      ? `pvp-respawn:${raw.encounter.encounterId}:${characterId}`
+      : baseCommandId;
+    const payloadHash = outcomeAlreadyApplied
+      ? `pvp-respawn:${raw.encounter.encounterId}:${characterId}`
+      : `pvp-outcome:${raw.encounter.encounterId}:${characterId}`;
     const duplicate = await context.store.lookupCommand(
       context.worldInstanceId,
       'system:pvp',
       commandId,
-      `pvp-outcome:${raw.encounter.encounterId}:${characterId}`,
+      payloadHash,
     );
-    if (duplicate) continue;
+    if (duplicate && (!respawnPayload || respawnAlreadyApplied)) continue;
+    const events: ProposedDomainEvent[] = outcomeAlreadyApplied
+      ? []
+      : [event('character.pvp_outcome_applied', eventPayload)];
+    const effects: ProposedEventEffect[] = [];
+    if (respawnPayload && !respawnAlreadyApplied) {
+      events.push(event('character.respawned', respawnPayload));
+      if (respawnPayload.droppedItem) {
+        effects.push(worldItemDropEffect({
+          worldItemId: respawnPayload.droppedItem.item.id,
+          fromCharacterId: characterId,
+          locationId: respawnPayload.deathLocationId,
+          item: respawnPayload.droppedItem.item,
+        }));
+      }
+    }
     const applied = await context.store.append({
       worldInstanceId: context.worldInstanceId,
       streamId: characterId,
       actorId: 'system:pvp',
       commandId,
-      payloadHash: `pvp-outcome:${raw.encounter.encounterId}:${characterId}`,
+      payloadHash,
       expectedVersion: priorEvents.at(-1)?.aggregateVersion ?? 0,
-      events: [event('character.pvp_outcome_applied', eventPayload)],
+      events,
+      ...(effects.length ? { effects } : {}),
     });
     if (!applied.receipt.ok) throw new Error('Could not append the PvP outcome to a character stream.');
   }
@@ -373,6 +408,12 @@ export function registerPvpCombat(
           consumedItemIdsByCharacter: Object.fromEntries(
             privateParticipants.map((participant) => [participant.characterId, participant.consumedItemIds]),
           ),
+          respawnsByCharacter: await preparePvpRespawns(
+            encounter,
+            privateParticipants,
+            characterState,
+            context,
+          ),
         }),
       }]
       : undefined;
@@ -387,5 +428,34 @@ export function registerPvpCombat(
   registerEffect(PVP_OUTCOME_EFFECT, 1, OutcomeEffectSchema, async (payload, context) => {
     await applyPvpOutcome(payload, context);
   });
+}
+
+async function preparePvpRespawns(
+  encounter: z.infer<typeof PvpEncounterProjectionSchema>,
+  privateParticipants: readonly z.infer<typeof PrivateParticipantSchema>[],
+  characterState: CharacterStateCapability,
+  context: EngineCommandContext,
+): Promise<Record<string, unknown>> {
+  const respawns: Record<string, unknown> = {};
+  for (const participant of encounter.participants) {
+    if (participant.health > 0) continue;
+    const character = await characterState.load(context, participant.characterId);
+    if (!character) throw new RuleViolationError('A player who fell in combat is no longer available.');
+    const privateParticipant = privateParticipants.find((candidate) =>
+      candidate.characterId === participant.characterId);
+    const respawn = prepareCharacterRespawn(
+      character,
+      context,
+      'pvp',
+      encounter.encounterId,
+      encounter.locationId,
+      privateParticipant?.consumedItemIds ?? [],
+      participant.maximumHealth,
+    );
+    if (respawn) {
+      respawns[participant.characterId] = respawn.event.payload;
+    }
+  }
+  return respawns;
 }
 

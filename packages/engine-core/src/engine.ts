@@ -18,6 +18,7 @@ import type {
   QueryDefinition,
   QueryContext,
 } from './types.js';
+import type { RngPort } from '@mudd/contracts';
 import type { WorldPackDraft } from '@mudd/contracts';
 import type { CharacterProjection } from '@mudd/contracts';
 import { isRuleViolationError } from './domain-error.js';
@@ -84,6 +85,21 @@ function dependencyVersionMatches(actual: string, range: string): boolean {
   return foundMajor === 0 && foundMinor === 0 && foundPatch === patch;
 }
 
+const secureRng: RngPort = {
+  roll(sides) {
+    if (!Number.isSafeInteger(sides) || sides < 1 || sides > 0x1_0000_0000) {
+      throw new RangeError('RNG sides must be an integer from 1 through 2^32.');
+    }
+    const range = 0x1_0000_0000;
+    const limit = Math.floor(range / sides) * sides;
+    const value = new Uint32Array(1);
+    do {
+      globalThis.crypto.getRandomValues(value);
+    } while (value[0]! >= limit);
+    return (value[0]! % sides) + 1;
+  },
+};
+
 export class EngineHost {
   private readonly commands = new Map<string, CommandDefinition>();
   private readonly queries = new Map<string, QueryDefinition>();
@@ -99,6 +115,7 @@ export class EngineHost {
     private readonly world: WorldPackDraft,
     private readonly makeId: () => string = () => globalThis.crypto.randomUUID(),
     private readonly now: () => Date = () => new Date(),
+    private readonly rng: RngPort = secureRng,
   ) {
     this.orderedPlugins = this.resolvePlugins(plugins);
     const context: PluginContext = {
@@ -299,6 +316,7 @@ export class EngineHost {
         world: this.world,
         makeId: this.makeId,
         now: this.now,
+        rng: this.rng,
       };
       const plan = await definition.handle(command, context);
       const outcome = await this.store.append({
