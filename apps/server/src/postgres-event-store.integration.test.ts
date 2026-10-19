@@ -9,10 +9,12 @@ const integrationDescribe = hasDatabase ? describe : describe.skip;
 integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
   const worldInstanceId = `audit-test-${randomUUID()}`;
   const chatWorldInstanceId = `audit-chat-test-${randomUUID()}`;
+  const presenceWorldInstanceId = `audit-presence-test-${randomUUID()}`;
   const characterId = randomUUID();
   const chatCharacterId = randomUUID();
   const playerId = randomUUID();
   const secondActorId = randomUUID();
+  const presencePlayerIds = [randomUUID(), randomUUID()] as const;
   let db: typeof import('./db/client.js').db;
   let pool: typeof import('./db/client.js').pool;
   let store: EventStorePort;
@@ -24,25 +26,34 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
       import('./db/schema.js'),
       import('./persistence/postgres-event-store.js'),
     ]);
-    await db.insert(players).values({
-      id: playerId,
-      clerkUserId: `audit-test-${playerId}`,
-      displayName: 'Integration Fixture',
-    });
+    await db.insert(players).values([
+      {
+        id: playerId,
+        clerkUserId: `audit-test-${playerId}`,
+        displayName: 'Integration Fixture',
+      },
+      ...presencePlayerIds.map((id, index) => ({
+        id,
+        clerkUserId: `audit-presence-${id}`,
+        displayName: index === 0 ? 'Rowan' : 'Mira',
+      })),
+    ]);
     store = new PostgresEventStore();
   });
 
   afterAll(async () => {
     if (!db || !pool) return;
-    const { eq, inArray } = await import('drizzle-orm');
-    const { characters, commandReceipts, durableEffects, gameEvents, players } = await import('./db/schema.js');
+    const { inArray } = await import('drizzle-orm');
+    const { characters, commandReceipts, durableEffects, gameEvents, players, worldSessions } = await import('./db/schema.js');
     try {
-      const testWorlds = [worldInstanceId, chatWorldInstanceId];
+      const testWorlds = [worldInstanceId, chatWorldInstanceId, presenceWorldInstanceId];
+      const testPlayers = [playerId, ...presencePlayerIds];
       await db.delete(durableEffects).where(inArray(durableEffects.worldInstanceId, testWorlds));
       await db.delete(commandReceipts).where(inArray(commandReceipts.worldInstanceId, testWorlds));
       await db.delete(gameEvents).where(inArray(gameEvents.worldInstanceId, testWorlds));
-      await db.delete(characters).where(eq(characters.playerId, playerId));
-      await db.delete(players).where(eq(players.id, playerId));
+      await db.delete(worldSessions).where(inArray(worldSessions.playerId, testPlayers));
+      await db.delete(characters).where(inArray(characters.playerId, testPlayers));
+      await db.delete(players).where(inArray(players.id, testPlayers));
     } finally {
       await pool.end();
     }
@@ -219,6 +230,109 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
       worldInstanceId,
       characterId: secondCharacterId,
     })).rejects.toThrow();
+  });
+
+  it('derives two-account room presence and scopes heartbeat writes to the owning session', async () => {
+    const { worldSessions } = await import('./db/schema.js');
+    const { listRoomOccupants, touchWorldSessionPresence } = await import('./room-presence-service.js');
+    const firstPlayerId = presencePlayerIds[0];
+    const secondPlayerId = presencePlayerIds[1];
+    const firstCharacterId = randomUUID();
+    const secondCharacterId = randomUUID();
+    const firstSessionId = randomUUID();
+    const secondSessionId = randomUUID();
+    const now = new Date();
+    const stale = new Date(now.getTime() - 90_001);
+
+    for (const character of [
+      { id: firstCharacterId, playerId: firstPlayerId, name: 'Rowan' },
+      { id: secondCharacterId, playerId: secondPlayerId, name: 'Mira' },
+    ]) {
+      const result = await store.append({
+        worldInstanceId: presenceWorldInstanceId,
+        streamId: character.id,
+        actorId: character.playerId,
+        commandId: `presence-create-${randomUUID()}`,
+        payloadHash: randomUUID(),
+        expectedVersion: 0,
+        events: [{
+          type: 'character.created',
+          version: 1,
+          payload: {
+            characterId: character.id,
+            playerId: character.playerId,
+            name: character.name,
+            startingLocationId: 'mossgate-clearing',
+          },
+        }],
+      });
+      expect(result.kind).toBe('committed');
+    }
+
+    await db.insert(worldSessions).values([
+      {
+        id: firstSessionId,
+        playerId: firstPlayerId,
+        worldInstanceId: presenceWorldInstanceId,
+        characterId: firstCharacterId,
+        lastSeenAt: now,
+      },
+      {
+        id: secondSessionId,
+        playerId: secondPlayerId,
+        worldInstanceId: presenceWorldInstanceId,
+        characterId: secondCharacterId,
+        lastSeenAt: stale,
+      },
+    ]);
+
+    expect(await listRoomOccupants(
+      store,
+      presenceWorldInstanceId,
+      'mossgate-clearing',
+      firstCharacterId,
+      now,
+    )).toEqual([]);
+
+    expect(await touchWorldSessionPresence(
+      firstPlayerId,
+      presenceWorldInstanceId,
+      secondSessionId,
+      now,
+    )).toBe(false);
+    const { eq } = await import('drizzle-orm');
+    const [notRefreshedByAnotherAccount] = await db.select({
+      lastSeenAt: worldSessions.lastSeenAt,
+    }).from(worldSessions).where(eq(worldSessions.id, secondSessionId));
+    expect(notRefreshedByAnotherAccount?.lastSeenAt).toEqual(stale);
+
+    expect(await touchWorldSessionPresence(
+      secondPlayerId,
+      presenceWorldInstanceId,
+      secondSessionId,
+      now,
+    )).toBe(true);
+
+    expect(await listRoomOccupants(
+      store,
+      presenceWorldInstanceId,
+      'mossgate-clearing',
+      firstCharacterId,
+      now,
+    )).toEqual([{ id: secondCharacterId, displayName: 'Mira' }]);
+    expect(await listRoomOccupants(
+      store,
+      presenceWorldInstanceId,
+      'mossgate-clearing',
+      secondCharacterId,
+      now,
+    )).toEqual([{ id: firstCharacterId, displayName: 'Rowan' }]);
+
+    const [firstSession] = await db.select().from(worldSessions).where(
+      eq(worldSessions.id, firstSessionId),
+    );
+    expect(firstSession?.lastSeenAt).toEqual(now);
+    expect(firstSession?.characterId).toBe(firstCharacterId);
   });
 
   it('keeps room-chat membership and idempotency ordered with character movement', async () => {
