@@ -17,3 +17,4 @@ export * from './stream.js';
 export * from './client.js';
 export * from './network.js';
 export * from './authoring.js';
+export * from './interactions.js';

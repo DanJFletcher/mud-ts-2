@@ -30,12 +30,17 @@ import {
   MerchantPurchaseCommandSchema,
   InnRestCommandSchema,
   CombatActionCommandSchema,
+  InteractionInboxSchema,
+  InteractionRequestCommandSchema,
+  InteractionRespondCommandSchema,
+  PvpCombatActionCommandSchema,
   type LocationProjection,
   type RoomPresenceProjection,
   type NpcDialogueProjection,
   type ReadableObjectProjection,
   type ObjectInspectionProjection,
   type MerchantCatalogProjection,
+  type InteractionInbox,
   type CombatActionId,
   type EquipmentSlot,
 } from '@mudd/contracts';
@@ -345,6 +350,56 @@ export class MuddHttpClient {
       payload: { action, ...target },
     });
     return this.send(command);
+  }
+
+  async getInteractionInbox(): Promise<InteractionInbox> {
+    return this.request('/api/interactions', { method: 'GET' }, InteractionInboxSchema);
+  }
+
+  async requestInteraction(
+    characterId: string,
+    recipientCharacterId: string,
+    kind = 'pvp.challenge',
+  ): Promise<CommandResponse> {
+    return this.send(InteractionRequestCommandSchema.parse({
+      type: 'interaction.request',
+      version: 1,
+      commandId: crypto.randomUUID(),
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      payload: { kind, recipientCharacterId },
+    }));
+  }
+
+  async respondToInteraction(
+    characterId: string,
+    requestId: string,
+    response: 'accept' | 'decline',
+  ): Promise<CommandResponse> {
+    return this.send(InteractionRespondCommandSchema.parse({
+      type: 'interaction.respond',
+      version: 1,
+      commandId: crypto.randomUUID(),
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      payload: { requestId, response },
+    }));
+  }
+
+  async performPvpAction(
+    characterId: string,
+    encounterId: string,
+    action: 'attack' | 'defend' | 'flee' | 'use-item',
+    itemId?: string,
+  ): Promise<CommandResponse> {
+    return this.send(PvpCombatActionCommandSchema.parse({
+      type: 'pvp.action',
+      version: 1,
+      commandId: crypto.randomUUID(),
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      payload: { encounterId, action, ...(itemId ? { itemId } : {}) },
+    }));
   }
 
   async chooseNpcDialogue(

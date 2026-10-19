@@ -298,6 +298,16 @@ export const CharacterProjectionSchema = z.object({
   archived: z.boolean().default(false),
 }).strict();
 
+export const CharacterPvpOutcomeAppliedEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('character.pvp_outcome_applied'),
+  payload: z.object({
+    characterId: IdSchema,
+    encounterId: IdSchema,
+    health: CharacterHealthSchema,
+    consumedItemIds: z.array(IdSchema),
+  }).strict(),
+}).strict();
+
 export type CreateCharacterCommand = z.infer<typeof CreateCharacterCommandSchema>;
 export type CharacterCreatedEvent = z.infer<typeof CharacterCreatedEventSchema>;
 export type TakeCharacterItemCommand = z.infer<typeof TakeCharacterItemCommandSchema>;

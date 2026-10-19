@@ -1,0 +1,181 @@
+Task: Implement Consent-Based Player vs. Player (PvP) Combat
+
+Objective
+
+Implement a consent-based PvP combat system that allows one player to initiate an attack against another player, requiring the targeted player to explicitly accept or decline before combat begins.
+
+This feature must follow the project's modular, plugin-first architecture. The engine should support the underlying interaction and consent workflow without containing game-specific PvP rules. The game plugin should determine when consent is required, how requests are presented, and what happens when a request is accepted or declined.
+
+Expected Player Experience
+
+1. Initiating an Attack
+
+Player A enters a command in the game terminal:
+
+"attack PlayerB"
+
+The server validates the target and sends Player B a combat request.
+
+Player A receives:
+
+"You have challenged PlayerB to combat. Awaiting their response..."
+
+2. Receiving the Request
+
+Player B receives a real-time notification in their game terminal:
+
+====================================
+       COMBAT CHALLENGE
+====================================
+
+PlayerA wants to attack you!
+
+Do you accept this challenge?
+
+[1] Accept
+[2] Decline
+
+Type: accept <request-id>
+   or decline <request-id>
+====================================
+
+Use the existing terminal command handling and notification systems wherever possible. The request should not interrupt or destroy the player's existing terminal session.
+
+3. Accepting the Challenge
+
+If Player B accepts:
+
+- Both players receive confirmation that combat has begun.
+- The game initializes a combat encounter using the existing combat/turn management system.
+- Both characters become participants in the same encounter.
+- Combat proceeds according to the game's existing combat mechanics.
+- No additional PvP-specific combat calculations should be introduced unless absolutely necessary.
+
+Example:
+
+"PlayerB accepted your challenge. Combat begins!"
+
+4. Declining the Challenge
+
+If Player B declines:
+
+- No combat encounter is created.
+- Neither player takes damage or suffers combat-related consequences.
+- Both players receive a notification.
+
+Player A:
+
+"PlayerB declined your combat challenge."
+
+Player B:
+
+"You declined PlayerA's combat challenge."
+
+The players can continue normal gameplay.
+
+Architectural Requirements
+
+Engine Responsibilities
+
+The engine should expose reusable abstractions for requesting, authorizing, and resolving interactions between players.
+
+Where the existing architecture supports it, introduce or extend a generic player interaction/request system capable of:
+
+- Creating requests between authenticated player-controlled characters.
+- Delivering requests to the appropriate connected client.
+- Tracking request lifecycle states: pending, accepted, declined, expired, and cancelled.
+- Receiving and validating responses.
+- Publishing lifecycle events to interested plugins.
+- Enforcing that only the intended recipient can respond.
+- Handling expiration, disconnection, duplicate responses, and conflicting requests.
+
+This infrastructure should be usable by future plugins for features such as trading, party invitations, duels, collaborative crafting, or other consensual interactions.
+
+Do not hard-code PvP commands, combat-specific consent rules, or combat outcomes into the engine core.
+
+The engine should remain unaware of what a particular request means to the game.
+
+Game Plugin Responsibilities
+
+Implement the PvP behavior in the appropriate game-level plugin, using the engine's existing plugin APIs and interaction infrastructure.
+
+The game plugin should:
+
+- Register or extend the "attack" command.
+- Identify whether the target is another player-controlled character.
+- Apply the game's PvP consent policy.
+- Generate a combat challenge when consent is required.
+- Respond to acceptance and decline events.
+- Start combat through the existing combat plugin only after valid acceptance.
+- Define player-facing messages and any PvP-specific eligibility rules.
+
+Preserve existing PvE combat behavior. Attacking monsters or hostile NPCs should not require the PvP consent workflow unless explicitly configured by the game.
+
+Client Responsibilities
+
+The TTY/terminal client should render incoming interaction requests and allow players to respond using terminal commands.
+
+The client must not independently authorize or initiate combat. The server remains authoritative.
+
+Design the request/response APIs so future GUI, mobile PWA, and voice clients can expose the same interactions using their own interfaces without modifying engine or game logic.
+
+Safety and Edge Cases
+
+Handle the following situations:
+
+- Players cannot challenge themselves.
+- Invalid or nonexistent targets produce a useful error.
+- Offline players cannot receive new interactive combat challenges.
+- Players cannot accept or decline another player's request.
+- A request can only be resolved once.
+- Repeated or simultaneous responses cannot start duplicate encounters.
+- Players already participating in combat cannot start another conflicting encounter.
+- Requests automatically expire after a configurable timeout, defaulting to 60 seconds.
+- Both players are notified when a request expires or is cancelled.
+- If either player disconnects before acceptance, the request is cancelled.
+- Revalidate eligibility at acceptance time, including whether both participants are still available.
+- Prevent duplicate pending challenges and excessive challenge spam.
+- All combat initiation must be validated server-side.
+
+Make the default behavior fail closed: PvP combat must never begin without a valid acceptance when consent is required.
+
+Implementation Guidelines
+
+1. Inspect the existing repository architecture before writing code.
+2. Identify existing systems for commands, events, player sessions, notifications, plugin communication, and combat encounters.
+3. Reuse or extend existing abstractions rather than introducing redundant systems.
+4. Keep the engine framework-agnostic, client-agnostic, and game-rule-agnostic.
+5. Prefer typed TypeScript interfaces and events, following existing repository conventions.
+6. Ensure request state transitions are atomic and race-condition resistant.
+7. Do not build a separate combat engine for PvP.
+8. Avoid unnecessary dependencies or unrelated refactoring.
+9. Document the interaction lifecycle, plugin integration points, and how other game plugins can reuse the same infrastructure.
+
+Acceptance Criteria
+
+The feature is complete when:
+
+- [ ] Two independently connected players can interact through the game terminal.
+- [ ] Player A can initiate an attack against Player B.
+- [ ] Player B receives a real-time consent request.
+- [ ] Player B can accept or decline using terminal commands.
+- [ ] Accepting starts exactly one combat encounter involving both players.
+- [ ] Declining notifies both players without initiating combat.
+- [ ] Expired, invalid, or cancelled requests cannot initiate combat.
+- [ ] Existing PvE combat behavior remains unchanged.
+- [ ] The server enforces consent regardless of client behavior.
+- [ ] The engine contains no hard-coded PvP-specific business rules.
+- [ ] Automated tests cover successful acceptance, decline, expiration, authorization, duplicate requests, and concurrent responses.
+- [ ] The interaction API is reusable by future game plugins.
+
+Final Deliverables
+
+Implement the working feature in the existing codebase, add appropriate automated tests, and provide a summary of:
+
+1. The architectural approach used.
+2. Which engine components were added or modified.
+3. Which game plugin components handle PvP behavior.
+4. How the request/response workflow operates.
+5. How to manually test PvP using two connected players.
+
+Important: Prioritize extending the existing architecture rather than redesigning it. If a suitable generic interaction mechanism already exists, use it. If one is missing, implement the smallest reusable abstraction necessary to support this feature cleanly.

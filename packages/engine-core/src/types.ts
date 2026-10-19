@@ -96,6 +96,7 @@ export interface EventEffectContext {
   readonly worldInstanceId: string;
   readonly sourceStreamId: string | null;
   readonly causationCommandId: string;
+  readonly store: EventStorePort;
 }
 
 export type EventEffectHandler<T = unknown> = (

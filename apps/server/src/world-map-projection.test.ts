@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { EngineHost, InMemoryEventStore, replayCharacter } from '@mudd/engine-core';
-import { characterPlugin, combatPlugin, merchantPlugin, movementPlugin } from '@mudd/core-plugins';
+import { characterPlugin, combatPlugin, interactionPlugin, merchantPlugin, movementPlugin } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import { MuddHttpClient } from '@mudd/client-sdk';
 import { projectWorldMap } from './world-map-projection.js';
@@ -18,7 +18,7 @@ describe('visited world map projection', () => {
   it('reveals Willowrest Inn and its Reedbank connection only after the traveler arrives', async () => {
     const store = new InMemoryEventStore();
     const engine = new EngineHost(
-      [characterPlugin, combatPlugin, merchantPlugin, movementPlugin],
+      [characterPlugin, combatPlugin, interactionPlugin, merchantPlugin, movementPlugin],
       store,
       { canAccessInstance: async () => true, ownsCharacter: async () => true },
       demoWorld,

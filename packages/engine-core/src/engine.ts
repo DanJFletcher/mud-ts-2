@@ -226,6 +226,7 @@ export class EngineHost {
         worldInstanceId: effect.worldInstanceId,
         sourceStreamId: effect.sourceStreamId,
         causationCommandId: effect.causationCommandId,
+        store: this.store,
       };
       try {
         await definition.handle(parsed.data, context);

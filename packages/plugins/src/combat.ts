@@ -9,6 +9,8 @@ import {
 import type { EnginePlugin, ProposedDomainEvent } from '@mudd/engine-core';
 import { RuleViolationError } from '@mudd/engine-core';
 import { assertCharacterAlive, characterStateCapability, type CharacterStateCapability } from './character.js';
+import { registerPvpCombat } from './pvp-combat.js';
+import { interactionPolicyRegistry } from './interactions.js';
 
 const PLAYER_BASE_MAX_HEALTH = 6;
 const PLAYER_HEALTH_PER_LEVEL = 2;
@@ -31,7 +33,7 @@ export const combatPlugin: EnginePlugin = {
     apiVersion: '1.0',
     category: 'first-party',
     requires: [characterStateCapability.id],
-    requiredPlugins: { 'mudd.character': '^1.0.0' },
+    requiredPlugins: { 'mudd.character': '^1.0.0', 'mudd.interactions': '^1.0.0' },
     eventSchemaVersions: {
       'character.combat_action_resolved': 3,
       'character.advancement_awarded': 2,
@@ -39,8 +41,11 @@ export const combatPlugin: EnginePlugin = {
       'character.inn_rest_completed': 1,
     },
   },
-  register({ registerCommand, requireCapability }) {
+  register(pluginContext) {
+    const { registerCommand, requireCapability } = pluginContext;
     const characterState = requireCapability<CharacterStateCapability>(characterStateCapability);
+    requireCapability(interactionPolicyRegistry);
+    registerPvpCombat(pluginContext, characterState);
 
     registerCommand('inn.rest', InnRestCommandSchema, async (command, context) => {
       const character = await characterState.load(context, command.characterId);

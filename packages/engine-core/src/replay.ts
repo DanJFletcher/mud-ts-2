@@ -18,6 +18,7 @@ import {
   CharacterInnRestCompletedEventSchema,
   CharacterAdvancementAwardedEventSchema,
   CharacterCombatItemUsedEventSchema,
+  CharacterPvpOutcomeAppliedEventSchema,
   MerchantItemPurchasedEventSchema,
   CombatActionResolvedEventSchema,
 } from '@mudd/contracts';
@@ -229,6 +230,33 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         health: used.payload.health,
         inventory: state.inventory.filter((candidate) => candidate.id !== used.payload.itemId),
         itemLocations: state.itemLocations.filter((entry) => entry.item.id !== used.payload.itemId),
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.pvp_outcome_applied') {
+      if (!state) throw new Error('PvP outcome encountered before character creation.');
+      const outcome = CharacterPvpOutcomeAppliedEventSchema.parse(publicEvent);
+      const previousHealth = state.health;
+      const previousMaximum = previousHealth?.maximum ?? outcome.payload.health.maximum;
+      const consumedItems = outcome.payload.consumedItemIds.map((itemId) =>
+        state!.inventory.find((candidate) => candidate.id === itemId));
+      if (
+        outcome.payload.characterId !== state.characterId ||
+        outcome.payload.health.maximum !== previousMaximum ||
+        outcome.payload.health.current > outcome.payload.health.maximum ||
+        new Set(outcome.payload.consumedItemIds).size !== outcome.payload.consumedItemIds.length ||
+        consumedItems.some((item) =>
+          !item?.consumable ||
+          item.equipment ||
+          state!.equipment.weaponItemId === item.id ||
+          state!.equipment.armorItemId === item.id)
+      ) {
+        throw new Error(`Invalid PvP outcome at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        health: outcome.payload.health,
+        inventory: state.inventory.filter((item) => !outcome.payload.consumedItemIds.includes(item.id)),
+        itemLocations: state.itemLocations.filter((entry) => !outcome.payload.consumedItemIds.includes(entry.item.id)),
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'character.moved') {

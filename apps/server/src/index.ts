@@ -17,9 +17,21 @@ import {
   RenameCharacterCommandSchema,
   MerchantCatalogQuerySchema,
   LocationProjectionSchema,
+  InteractionInboxSchema,
+  PvpEncounterProjectionSchema,
 } from '@mudd/contracts';
 import { EngineHost, projectQuestJournal, replayCharacter } from '@mudd/engine-core';
-import { characterPlugin, combatPlugin, merchantPlugin, movementPlugin, npcDialoguePlugin } from '@mudd/core-plugins';
+import {
+  characterPlugin,
+  combatPlugin,
+  interactionPlugin,
+  interactionStreamId,
+  merchantPlugin,
+  movementPlugin,
+  npcDialoguePlugin,
+  projectInteractionEvents,
+  updateInteractionRequestStatus,
+} from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import { db, pool } from './db/client.js';
 import { characters, durableEffects, worldSessions } from './db/schema.js';
@@ -78,7 +90,7 @@ const authorization = {
   },
 };
 const engine = new EngineHost(
-  [characterPlugin, combatPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin, demoEventEffectsPlugin],
+  [characterPlugin, interactionPlugin, combatPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin, demoEventEffectsPlugin],
   store,
   authorization,
   demoWorld,
@@ -100,6 +112,44 @@ async function runPendingEffectBatch() {
 void runPendingEffectBatch();
 const effectPoller = setInterval(() => void runPendingEffectBatch(), 1_000);
 effectPoller.unref();
+
+let interactionMaintenanceRunning = false;
+const INTERACTION_HEARTBEAT_FRESH_MS = 45_000;
+async function runInteractionMaintenance() {
+  if (interactionMaintenanceRunning) return;
+  interactionMaintenanceRunning = true;
+  try {
+    const streamId = interactionStreamId(DEMO_WORLD_INSTANCE_ID);
+    const events = await store.readStream(DEMO_WORLD_INSTANCE_ID, streamId);
+    const { requests } = projectInteractionEvents(events);
+    const sessions = await db.select({
+      characterId: worldSessions.characterId,
+      lastSeenAt: worldSessions.lastSeenAt,
+    }).from(worldSessions).where(eq(worldSessions.worldInstanceId, DEMO_WORLD_INSTANCE_ID));
+    const online = new Set(sessions
+      .filter((session) => Date.now() - session.lastSeenAt.getTime() <= INTERACTION_HEARTBEAT_FRESH_MS)
+      .map((session) => session.characterId));
+    const now = Date.now();
+    for (const request of requests) {
+      if (request.status !== 'pending') continue;
+      if (Date.parse(request.expiresAt) <= now) {
+        await updateInteractionRequestStatus(store, DEMO_WORLD_INSTANCE_ID, request.requestId, 'expired');
+      } else if (
+        !online.has(request.initiatorCharacterId) ||
+        !online.has(request.recipientCharacterId)
+      ) {
+        await updateInteractionRequestStatus(store, DEMO_WORLD_INSTANCE_ID, request.requestId, 'cancelled');
+      }
+    }
+  } catch {
+    console.error('Could not process pending player interaction requests.');
+  } finally {
+    interactionMaintenanceRunning = false;
+  }
+}
+void runInteractionMaintenance();
+const interactionPoller = setInterval(() => void runInteractionMaintenance(), 2_000);
+interactionPoller.unref();
 
 const app = express();
 app.set('trust proxy', trustedProxyHops);
@@ -488,6 +538,32 @@ app.post('/api/chat', createRateLimiter({ windowMs: 60_000, maxRequests: 30 }), 
   }
 });
 
+app.get('/api/interactions', async (req, res, next) => {
+  try {
+    const identity = await accountFor(req, res);
+    if (!identity) return;
+    const current = await activeCharacter(identity);
+    if (!current) return res.status(409).json({ message: 'Enter the world with a character before checking interactions.' });
+    const events = await store.readStream(current.session.worldInstanceId, interactionStreamId(current.session.worldInstanceId));
+    const projected = projectInteractionEvents(events);
+    const characterId = current.character.characterId;
+    const requests = projected.requests
+      .filter((request) =>
+        request.initiatorCharacterId === characterId ||
+        request.recipientCharacterId === characterId)
+      .slice(-30);
+    const eventEncounter = projected.latestEncounterEvent?.payload.encounter;
+    const parsedEncounter = PvpEncounterProjectionSchema.safeParse(eventEncounter);
+    const encounter = parsedEncounter.success &&
+      parsedEncounter.data.participants.some((participant) => participant.characterId === characterId)
+      ? parsedEncounter.data
+      : null;
+    return res.json(InteractionInboxSchema.parse({ requests, encounter }));
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post('/api/commands', createRateLimiter({ windowMs: 60_000, maxRequests: 120 }), async (req, res, next) => {
   try {
     const identity = await accountFor(req, res);
@@ -520,6 +596,37 @@ app.post('/api/commands', createRateLimiter({ windowMs: 60_000, maxRequests: 120
       const currentCharacter = replayCharacter(await store.readStream(current.worldInstanceId, current.characterId));
       if (currentCharacter?.combat?.status === 'defeat' || currentCharacter?.health?.current === 0) {
         return res.status(409).json({ message: 'Your character has died. Start a new character to begin again.' });
+      }
+      const interactionEvents = await store.readStream(
+        current.worldInstanceId,
+        interactionStreamId(current.worldInstanceId),
+      );
+      const latestInteraction = projectInteractionEvents(interactionEvents).latestEncounterEvent;
+      const latestEncounter = PvpEncounterProjectionSchema.safeParse(latestInteraction?.payload.encounter);
+      const characterInPvp = latestEncounter.success &&
+        latestEncounter.data.status !== 'completed' &&
+        latestEncounter.data.participants.some((participant) => participant.characterId === current.characterId);
+      if (characterInPvp && command.type !== 'pvp.action') {
+        return res.status(409).json({ message: 'Only combat actions are available during a PvP encounter.' });
+      }
+      if (!characterInPvp && command.type === 'pvp.action') {
+        return res.status(409).json({ message: 'There is no active PvP encounter for this character.' });
+      }
+      if (command.type === 'interaction.request') {
+        const recipientCharacterId = (req.body as { payload?: { recipientCharacterId?: unknown } }).payload?.recipientCharacterId;
+        if (typeof recipientCharacterId !== 'string') {
+          return res.status(400).json({ message: 'Choose a player to challenge.' });
+        }
+        const [recipientSession] = await db.select({
+          characterId: worldSessions.characterId,
+          lastSeenAt: worldSessions.lastSeenAt,
+        }).from(worldSessions).where(and(
+          eq(worldSessions.worldInstanceId, current.worldInstanceId),
+          eq(worldSessions.characterId, recipientCharacterId),
+        )).limit(1);
+        if (!recipientSession || Date.now() - recipientSession.lastSeenAt.getTime() > INTERACTION_HEARTBEAT_FRESH_MS) {
+          return res.status(409).json({ message: 'That player is not online right now.' });
+        }
       }
       context = worldContext(identity, current);
     }

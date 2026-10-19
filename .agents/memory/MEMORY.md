@@ -4,5 +4,6 @@
 - [Cross-package error identity](workspace-package-error-identity.md) — Workspace source/dist resolution can create multiple class constructors; use stable error discriminants across package boundaries.
 - [Replit preview origins](replit-preview-origins.md) — Preview browser Origins can include `:5000`; allow only exact development hosts and ports.
 - [Character-owned combat state](combat-gear.md) — Gear, health, consumables, and advancement stay within each character's event stream.
+- [Consent-based PvP](consent-based-pvp.md) — Player combat requires an explicit challenge acceptance; shared encounter state must not own durable character health or inventory.
 - [Quest-bound items](quest-item-binding.md) — Quest-critical items must remain undroppable and unavailable to any future trade or transfer.
 - [Map visibility](map-visibility.md) — Show only the current area's floor; preserve exploration when switching between overworld and dungeon maps.

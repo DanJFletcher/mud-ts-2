@@ -8,6 +8,7 @@ import {
   type TouchEvent as ReactTouchEvent,
 } from "react";
 import { MuddHttpClient, type GameSnapshot } from "@mudd/client-sdk";
+import type { InteractionInbox } from "@mudd/contracts";
 import {
   ActivityLog,
   Button,
@@ -59,6 +60,14 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
     "Usage: help [command]",
     "Show the command list or instructions for one command.",
   ],
+  accept: [
+    "Usage: accept <request-id>",
+    "Accept a pending player challenge addressed to your current character.",
+  ],
+  decline: [
+    "Usage: decline <request-id>",
+    "Decline a pending player challenge addressed to your current character.",
+  ],
   talk: [
     "Usage: talk <npc> [about <topic>]",
     "Speak privately with someone here. Choose a reply or ask about a topic.",
@@ -109,7 +118,7 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
   ],
   attack: [
     "Usage: attack <opponent> | attack",
-    "Start an encounter with an available opponent, or attack during an active encounter.",
+    "Challenge a player in the same room, start an encounter with an NPC, or attack during combat.",
   ],
   defend: [
     "Usage: defend",
@@ -175,6 +184,7 @@ function completedQuestObjectiveKeys(snapshot: GameSnapshot): string[] {
 
 export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
+  const [interactionInbox, setInteractionInbox] = useState<InteractionInbox | null>(null);
   const [presenceStale, setPresenceStale] = useState(false);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<"look" | "read" | "take" | "use" | "drop" | "move" | "talk" | "shop" | "buy" | "combat" | "rest" | "equip" | null>(null);
@@ -206,6 +216,8 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const terminalFollowsLatestRef = useRef(true);
   const lastRoomLookIdRef = useRef<string | null>(null);
   const knownQuestObjectiveCompletionsRef = useRef<Set<string>>(new Set());
+  const knownInteractionStatusesRef = useRef<Map<string, string>>(new Map());
+  const knownPvpUpdateRef = useRef<string | null>(null);
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const handleChatFullscreenChange = useCallback((fullscreen: boolean) => {
@@ -348,6 +360,66 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
       window.removeEventListener("pageshow", refreshWhenVisible);
     };
   }, [presenceCharacterId]);
+
+  useEffect(() => {
+    if (!presenceCharacterId) {
+      setInteractionInbox(null);
+      knownInteractionStatusesRef.current.clear();
+      return;
+    }
+    let active = true;
+    let requestRunning = false;
+    const refreshInteractions = async () => {
+      if (!active || document.visibilityState === "hidden" || requestRunning) return;
+      requestRunning = true;
+      try {
+        const inbox = await client.getInteractionInbox();
+        if (!active) return;
+        for (const request of inbox.requests) {
+          const previous = knownInteractionStatusesRef.current.get(request.requestId);
+          if (previous === undefined) {
+            if (request.status === "pending" && request.recipientCharacterId === presenceCharacterId) {
+              addEntry("system", `${request.initiatorName} challenges you. Use “accept ${request.requestId}” or “decline ${request.requestId}”.`);
+            }
+          } else if (previous !== request.status) {
+            const message = request.status === "accepted"
+              ? `${request.recipientName} accepted your challenge.`
+              : request.status === "declined"
+                ? `${request.recipientName} declined your challenge.`
+                : request.status === "expired"
+                  ? `The challenge to ${request.recipientName} expired.`
+                  : request.status === "cancelled"
+                    ? `The challenge with ${request.recipientName} was cancelled.`
+                    : "";
+            if (message && request.initiatorCharacterId === presenceCharacterId) addEntry("system", message);
+          }
+          knownInteractionStatusesRef.current.set(request.requestId, request.status);
+        }
+        const encounter = inbox.encounter;
+        const pvpUpdateKey = encounter ? `${encounter.encounterId}:${encounter.updatedAt}` : null;
+        if (encounter && pvpUpdateKey !== knownPvpUpdateRef.current) {
+          addEntry("narration", encounter.lastNarration);
+        }
+        knownPvpUpdateRef.current = pvpUpdateKey;
+        setInteractionInbox(inbox);
+      } catch {
+        // Keep the last known state; the normal game heartbeat reports connection health.
+      } finally {
+        requestRunning = false;
+      }
+    };
+    void refreshInteractions();
+    const interval = window.setInterval(() => void refreshInteractions(), 3_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void refreshInteractions();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [addEntry, presenceCharacterId]);
 
   const refreshAfterMutation = useCallback(async (message: string, announceQuestObjectives = false) => {
     addEntry("system", message);
@@ -728,6 +800,63 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     }
   }, [addEntry, pending, snapshot]);
 
+  const challengePlayer = useCallback(async (recipientCharacterId: string, recipientName: string) => {
+    if (!snapshot?.character || pending) return;
+    addEntry("system", `> attack ${recipientName}`);
+    setPending("combat");
+    try {
+      await client.requestInteraction(snapshot.character.characterId, recipientCharacterId);
+      addEntry("narration", `Challenge sent to ${recipientName}. Waiting for a response.`);
+      setInteractionInbox(await client.getInteractionInbox());
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "The challenge could not be sent.");
+    } finally {
+      setPending(null);
+    }
+  }, [addEntry, pending, snapshot]);
+
+  const respondToPlayerChallenge = useCallback(async (requestId: string, response: "accept" | "decline") => {
+    if (!snapshot?.character || pending) return;
+    setPending("combat");
+    try {
+      await client.respondToInteraction(snapshot.character.characterId, requestId, response);
+      const inbox = await client.getInteractionInbox();
+      setInteractionInbox(inbox);
+      const request = inbox.requests.find((candidate) => candidate.requestId === requestId);
+      addEntry("system", response === "accept"
+        ? `You accept ${request?.initiatorName ?? "the challenge"}’s challenge.`
+        : `You decline ${request?.initiatorName ?? "the challenge"}’s challenge.`);
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "You could not respond to that challenge.");
+    } finally {
+      setPending(null);
+    }
+  }, [addEntry, pending, snapshot]);
+
+  const performPvpAction = useCallback(async (
+    action: "attack" | "defend" | "flee" | "use-item",
+    itemId?: string,
+  ) => {
+    const encounter = interactionInbox?.encounter;
+    if (!snapshot?.character || !encounter || pending) return;
+    setPending("combat");
+    try {
+      await client.performPvpAction(snapshot.character.characterId, encounter.encounterId, action, itemId);
+      const [inbox, nextSnapshot] = await Promise.all([client.getInteractionInbox(), client.getGame()]);
+      setInteractionInbox(inbox);
+      setSnapshot(nextSnapshot);
+      const nextEncounter = inbox.encounter;
+      if (nextEncounter) {
+        knownPvpUpdateRef.current = `${nextEncounter.encounterId}:${nextEncounter.updatedAt}`;
+        addEntry("narration", nextEncounter.lastNarration);
+      }
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "The combat action could not be completed.");
+    } finally {
+      setPending(null);
+    }
+  }, [addEntry, interactionInbox, pending, snapshot]);
+
   const performInnRest = useCallback(async () => {
     if (!snapshot?.character || !snapshot.location?.inn || pending) return;
     const inn = snapshot.location.inn;
@@ -759,6 +888,23 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     if (!value || pending) return;
     const [verb, ...rest] = value.split(/\s+/);
     const target = rest.join(" ").trim();
+    if (["accept", "decline"].includes(verb.toLowerCase())) {
+      addEntry("system", `> ${value}`);
+      if (!target) {
+        addEntry("error", `Choose a challenge ID: ${verb.toLowerCase()} <id>.`);
+        return;
+      }
+      const request = interactionInbox?.requests.find((candidate) =>
+        candidate.requestId === target &&
+        candidate.recipientCharacterId === snapshot?.character?.characterId &&
+        candidate.status === "pending");
+      if (!request) {
+        addEntry("error", "That pending challenge is not available to this character.");
+        return;
+      }
+      await respondToPlayerChallenge(target, verb.toLowerCase() as "accept" | "decline");
+      return;
+    }
     if (verb.toLowerCase() === "help") {
       addEntry("system", `> ${value}`);
       for (const line of getCommandHelp(target)) addEntry("narration", line);
@@ -791,6 +937,18 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
         const targets = (snapshot?.location?.npcs ?? []).filter((npc) => npc.canChallenge);
         const matches = findNpcMatches(target, targets);
         if (matches.length === 0) {
+          const playerMatches = (snapshot?.location?.occupants ?? [])
+            .filter((player) =>
+              player.id !== snapshot?.character?.characterId &&
+              player.displayName.toLocaleLowerCase().includes(target.toLocaleLowerCase()));
+          if (playerMatches.length === 1) {
+            await challengePlayer(playerMatches[0]!.id, playerMatches[0]!.displayName);
+            return;
+          }
+          if (playerMatches.length > 1) {
+            addEntry("error", `Which player do you mean: ${playerMatches.map((player) => player.displayName).join(", ")}?`);
+            return;
+          }
           addEntry("error", `There is no available combatant called “${target}” here.`);
           return;
         }
@@ -1088,7 +1246,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     }
     addEntry("system", `> ${value}`);
     addEntry("error", 'Unknown command. Try "help" for the command list.');
-  }, [addEntry, browseMerchant, changeEquipment, dropObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, activeMerchantCatalog, performCombatAction, performInnRest]);
+  }, [addEntry, browseMerchant, changeEquipment, dropObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, activeMerchantCatalog, performCombatAction, performInnRest, interactionInbox, respondToPlayerChallenge, challengePlayer]);
 
   const submitQuickCommand = useCallback((rawCommand: string) => {
     setQuickCommandMode("quick");
@@ -1162,6 +1320,13 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const visibleCombat = currentCombat?.locationId === snapshot?.location?.locationId
     ? currentCombat
     : undefined;
+  const visiblePvp = interactionInbox?.encounter &&
+    interactionInbox.encounter.status !== "completed" &&
+    interactionInbox.encounter.participants.some((participant) =>
+      participant.characterId === snapshot?.character?.characterId)
+    ? interactionInbox.encounter
+    : undefined;
+  const isPvpTurn = visiblePvp?.turnCharacterId === snapshot?.character?.characterId;
   useEffect(() => {
     setCombatUseMenuOpen(false);
   }, [visibleCombat?.encounterId, visibleCombat?.status]);
@@ -1423,7 +1588,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                         </span>
                       )}
                     </div>
-                    {snapshot.character?.health && visibleCombat?.status !== "active" && (
+                    {snapshot.character?.health && visibleCombat?.status !== "active" && !visiblePvp && (
                       <div className="focused-terminal-health" aria-label="Character health">
                         Health {snapshot.character.health.current}/{snapshot.character.health.maximum}
                       </div>
@@ -1441,7 +1606,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                     >
                       {entries.length > 0 && <ActivityLog entries={entries} label="Terminal transcript" />}
                     </div>
-                  {visibleCombat?.status !== "active" && activeMerchantCatalog ? (
+                  {visibleCombat?.status !== "active" && !visiblePvp && activeMerchantCatalog ? (
                     <section className="focused-merchant-catalog" aria-label={`${activeMerchantCatalog.merchantName} shop catalog`}>
                       <div className="focused-merchant-catalog__header">
                         <div>
@@ -1486,7 +1651,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                       </div>
                     </section>
                   ) : null}
-                  {visibleCombat?.status !== "active" && activeDialogue?.choices.length ? (
+                  {visibleCombat?.status !== "active" && !visiblePvp && activeDialogue?.choices.length ? (
                     <div className="focused-terminal-dialogue">
                       <div
                         className="focused-terminal-dialogue__choices"
@@ -1507,7 +1672,42 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                       </div>
                     </div>
                   ) : null}
-                  {visibleCombat?.status === "active" ? (
+                  {visiblePvp ? (
+                    <section className="focused-terminal-combat" aria-label="Player combat">
+                      <div className="focused-terminal-combat__status" role="status" aria-live="polite">
+                        <strong>Round {visiblePvp.round} · Duel</strong>
+                        {visiblePvp.participants.map((participant) => (
+                          <span key={participant.characterId}>
+                            {participant.name} {participant.health}/{participant.maximumHealth}
+                          </span>
+                        ))}
+                        <span>{visiblePvp.lastNarration}</span>
+                      </div>
+                      {visiblePvp.status === "active" ? (
+                        isPvpTurn ? (
+                          <div className="focused-terminal-combat__actions" role="group" aria-label="Player combat actions">
+                            <button type="button" className="focused-quick-command focused-combat-action" onClick={() => void performPvpAction("attack")} disabled={pending !== null}>attack</button>
+                            <button type="button" className="focused-quick-command focused-combat-action" onClick={() => void performPvpAction("defend")} disabled={pending !== null}>defend</button>
+                            {quickInventory.some((item) =>
+                              item.consumable?.effect === "heal" &&
+                              item.id !== snapshot.character?.equipment.weaponItemId &&
+                              item.id !== snapshot.character?.equipment.armorItemId &&
+                              (visiblePvp.participants.find((participant) => participant.characterId === snapshot.character?.characterId)?.health ?? 0) < (visiblePvp.participants.find((participant) => participant.characterId === snapshot.character?.characterId)?.maximumHealth ?? 0)
+                            ) && (
+                              <div className="focused-terminal-combat__items">
+                                {quickInventory.filter((item) => item.consumable?.effect === "heal").map((item) => (
+                                  <button key={item.id} type="button" className="focused-quick-command focused-combat-action" onClick={() => void performPvpAction("use-item", item.id)} disabled={pending !== null}>
+                                    use {item.label}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                            <button type="button" className="focused-quick-command focused-combat-action" onClick={() => void performPvpAction("flee")} disabled={pending !== null}>flee</button>
+                          </div>
+                        ) : <span role="status">Waiting for the other player’s turn.</span>
+                      ) : <span role="status">Saving combat outcomes…</span>}
+                    </section>
+                  ) : visibleCombat?.status === "active" ? (
                     <section className="focused-terminal-combat" aria-label="Combat">
                       <div className="focused-terminal-combat__status" role="status" aria-live="polite">
                         <strong>Round {visibleCombat.round} · {visibleCombat.opponentName}</strong>
@@ -1589,7 +1789,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                       </div>
                     </section>
                   ) : null}
-                  {visibleCombat?.status !== "active" && <section className="focused-quick-commands" aria-label="Quick commands">
+                  {visibleCombat?.status !== "active" && !visiblePvp && <section className="focused-quick-commands" aria-label="Quick commands">
                     {quickCommandMode !== "quick" && (
                       <span className="focused-quick-commands__label" aria-hidden="true">
                         {quickCommandMode === "go" ? "Go"
@@ -2018,7 +2218,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                       ) : null}
                     </div>
                   </section>}
-                  {visibleCombat?.status !== "active" && <section className="focused-command" aria-label="Text command">
+                  {visibleCombat?.status !== "active" && !visiblePvp && <section className="focused-command" aria-label="Text command">
                     <form className="focused-command-form" onSubmit={submitCommand}>
                       <TextInput
                         id="focused-world-command"
