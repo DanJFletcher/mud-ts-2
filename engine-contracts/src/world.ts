@@ -255,6 +255,17 @@ export const ExitProjectionSchema = z.object({
   available: z.boolean(),
 }).strict();
 
+export const RoomOccupantProjectionSchema = z.object({
+  id: IdSchema,
+  displayName: z.string(),
+}).strict();
+
+export const RoomPresenceProjectionSchema = z.object({
+  worldInstanceId: IdSchema,
+  locationId: IdSchema,
+  occupants: z.array(RoomOccupantProjectionSchema),
+}).strict();
+
 /** Projection is already filtered for the authenticated viewer. */
 export const LocationProjectionSchema = z.object({
   worldInstanceId: IdSchema,
@@ -271,7 +282,7 @@ export const LocationProjectionSchema = z.object({
     readable: z.boolean(),
     takeable: z.boolean(),
   }).strict()),
-  occupants: z.array(z.object({ id: IdSchema, displayName: z.string() }).strict()),
+  occupants: z.array(RoomOccupantProjectionSchema),
   npcs: z.array(NpcPresenceProjectionSchema).optional(),
   inn: InnProjectionSchema.optional(),
 }).strict();
@@ -315,6 +326,8 @@ export type NpcDialogueProjection = z.infer<typeof NpcDialogueProjectionSchema>;
 export type ReadableObjectProjection = z.infer<typeof ReadableObjectProjectionSchema>;
 export type ObjectInspectionProjection = z.infer<typeof ObjectInspectionProjectionSchema>;
 export type LocationProjection = z.infer<typeof LocationProjectionSchema>;
+export type RoomOccupantProjection = z.infer<typeof RoomOccupantProjectionSchema>;
+export type RoomPresenceProjection = z.infer<typeof RoomPresenceProjectionSchema>;
 export type WorldMapProjection = z.infer<typeof WorldMapProjectionSchema>;
 
 export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {

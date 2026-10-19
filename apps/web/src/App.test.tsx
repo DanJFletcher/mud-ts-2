@@ -36,6 +36,8 @@ type TestRoomChatMessage = {
 };
 let roomChatMessages: TestRoomChatMessage[];
 let nextRoomChatMessageId: number;
+let roomOccupants: Array<{ id: string; displayName: string }>;
+let heartbeatOccupants: Array<{ id: string; displayName: string }>;
 let walletBalance: number;
 let merchantLanternPurchased: boolean;
 let healingDraughtCarried: boolean;
@@ -107,7 +109,7 @@ function currentLocation() {
       readable: false,
       takeable: false,
     }] : [],
-    occupants: [],
+    occupants: roomOccupants,
     exits: room === 'clearing' ? [{
       id: 'clearing-to-bridge',
       label: 'North to Glasswater Bridge',
@@ -297,6 +299,8 @@ beforeEach(() => {
   questJournal = [];
   roomChatMessages = [];
   nextRoomChatMessageId = 1;
+  roomOccupants = [];
+  heartbeatOccupants = [];
   walletBalance = 12;
   merchantLanternPurchased = false;
   healingDraughtCarried = false;
@@ -304,6 +308,13 @@ beforeEach(() => {
   combatEncounter = null;
   apiFetch.mockReset();
   apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
+    if (path === '/api/world-session/heartbeat') {
+      return json({
+        worldInstanceId: currentLocation().worldInstanceId,
+        locationId: currentLocation().locationId,
+        occupants: heartbeatOccupants,
+      });
+    }
     if (path.startsWith('/api/chat')) {
       const url = new URL(path, 'http://mudd.test');
       const roomId = currentLocation().locationId;
@@ -668,6 +679,17 @@ beforeEach(() => {
 });
 
 describe('single-character world session client', () => {
+  it('refreshes and displays the other players in the current room', async () => {
+    heartbeatOccupants = [{ id: 'mira-character', displayName: 'Mira' }];
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+
+    expect(await screen.findByText('Here now: Mira')).toBeTruthy();
+    expect(apiFetch).toHaveBeenCalledWith('/api/world-session/heartbeat', expect.objectContaining({
+      method: 'POST',
+    }));
+    expect(screen.getByRole('group', { name: 'Players in this room' })).toBeTruthy();
+  });
+
   it('shows only available quick commands with no more than four actions per page', async () => {
     render(<WorldClient onLeaveWorld={async () => undefined} />);
 

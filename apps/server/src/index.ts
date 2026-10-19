@@ -16,6 +16,7 @@ import {
   RestoreCharacterCommandSchema,
   RenameCharacterCommandSchema,
   MerchantCatalogQuerySchema,
+  LocationProjectionSchema,
 } from '@mudd/contracts';
 import { EngineHost, projectQuestJournal, replayCharacter } from '@mudd/engine-core';
 import { characterPlugin, combatPlugin, merchantPlugin, movementPlugin, npcDialoguePlugin } from '@mudd/core-plugins';
@@ -23,6 +24,7 @@ import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import { db, pool } from './db/client.js';
 import { characters, durableEffects, worldSessions } from './db/schema.js';
 import { PostgresEventStore } from './persistence/postgres-event-store.js';
+import { listRoomOccupants, touchWorldSessionPresence } from './room-presence-service.js';
 import { demoEventEffectsPlugin } from './demo-event-effects-plugin.js';
 import { LOCATION_ENTERED_EFFECT } from './durable-effect-contracts.js';
 import { projectWorldMap } from './world-map-projection.js';
@@ -172,6 +174,21 @@ async function ensureCharacterWallet(
   return initialized;
 }
 
+async function locationWithRoomPresence(
+  location: unknown,
+  worldInstanceId: string,
+  viewerCharacterId: string,
+) {
+  const projection = LocationProjectionSchema.parse(location);
+  const occupants = await listRoomOccupants(
+    store,
+    worldInstanceId,
+    projection.locationId,
+    viewerCharacterId,
+  );
+  return LocationProjectionSchema.parse({ ...projection, occupants });
+}
+
 app.get('/api/characters', async (req, res, next) => {
   try {
     const identity = await accountFor(req, res);
@@ -272,6 +289,43 @@ app.post('/api/world-session', async (req, res, next) => {
   }
 });
 
+app.post('/api/world-session/heartbeat', createRateLimiter({ windowMs: 60_000, maxRequests: 20 }), async (req, res, next) => {
+  try {
+    const identity = await accountFor(req, res);
+    if (!identity) return;
+    const current = await activeSession(identity);
+    if (!current) return res.status(409).json({ message: 'Enter the world with a character before sending presence.' });
+
+    const character = replayCharacter(await store.readStream(current.worldInstanceId, current.characterId));
+    if (!character || character.archived) {
+      return res.status(409).json({ message: 'Enter the world with an active character before sending presence.' });
+    }
+    if (character.combat?.status === 'defeat' || character.health?.current === 0) {
+      return res.status(409).json({ message: 'Your character has died. Start a new character to begin again.' });
+    }
+
+    const refreshed = await touchWorldSessionPresence(
+      identity.playerId,
+      current.worldInstanceId,
+      current.id,
+    );
+    if (!refreshed) return res.status(409).json({ message: 'Your world session is no longer active.' });
+
+    return res.json({
+      worldInstanceId: current.worldInstanceId,
+      locationId: character.locationId,
+      occupants: await listRoomOccupants(
+        store,
+        current.worldInstanceId,
+        character.locationId,
+        current.characterId,
+      ),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.delete('/api/world-session', async (req, res, next) => {
   try {
     const identity = await accountFor(req, res);
@@ -317,10 +371,15 @@ app.get('/api/game', async (req, res, next) => {
         ...(result.code === 'INTERNAL_ERROR' ? { requestId: result.correlationId ?? res.locals.requestId } : {}),
       });
     }
+    const location = await locationWithRoomPresence(
+      result.value,
+      current.worldInstanceId,
+      current.characterId,
+    );
     return res.json({
       player: { id: identity.playerId, displayName: identity.displayName },
       character,
-      location: result.value,
+      location,
       map: projectWorldMap(character),
       questJournal: projectQuestJournal(character, demoWorld),
     });
@@ -499,6 +558,14 @@ app.post('/api/queries', async (req, res, next) => {
       characterProjection: character,
       correlationId: res.locals.requestId,
     });
+    if (result.ok && query.type === 'location.describe') {
+      const value = await locationWithRoomPresence(
+        result.value,
+        current.worldInstanceId,
+        current.characterId,
+      );
+      return res.json({ ...result, value });
+    }
     const status = result.ok
       ? 200
       : result.code === 'INTERNAL_ERROR'

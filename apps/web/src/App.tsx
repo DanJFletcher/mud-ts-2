@@ -175,6 +175,7 @@ function completedQuestObjectiveKeys(snapshot: GameSnapshot): string[] {
 
 export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
+  const [presenceStale, setPresenceStale] = useState(false);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<"look" | "read" | "take" | "use" | "drop" | "move" | "talk" | "shop" | "buy" | "combat" | "rest" | "equip" | null>(null);
   const [command, setCommand] = useState("");
@@ -289,6 +290,64 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   useEffect(() => {
     void loadGame();
   }, [loadGame]);
+
+  const presenceCharacterId = snapshot?.character &&
+    snapshot.character.health?.current !== 0 &&
+    snapshot.character.combat?.status !== "defeat"
+    ? snapshot.character.characterId
+    : null;
+
+  useEffect(() => {
+    if (!presenceCharacterId) {
+      setPresenceStale(false);
+      return;
+    }
+
+    let active = true;
+    let requestRunning = false;
+    const sendHeartbeat = async () => {
+      if (!active || document.visibilityState === "hidden" || requestRunning) return;
+      requestRunning = true;
+      try {
+        const presence = await client.heartbeatWorldSession();
+        if (!active) return;
+        setSnapshot((current) => {
+          if (
+            !current?.location ||
+            current.location.worldInstanceId !== presence.worldInstanceId ||
+            current.location.locationId !== presence.locationId
+          ) return current;
+          const unchanged = current.location.occupants.length === presence.occupants.length &&
+            current.location.occupants.every((occupant, index) =>
+              occupant.id === presence.occupants[index]?.id &&
+              occupant.displayName === presence.occupants[index]?.displayName
+            );
+          return unchanged
+            ? current
+            : { ...current, location: { ...current.location, occupants: [...presence.occupants] } };
+        });
+        setPresenceStale(false);
+      } catch {
+        if (active) setPresenceStale(true);
+      } finally {
+        requestRunning = false;
+      }
+    };
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void sendHeartbeat();
+    };
+
+    void sendHeartbeat();
+    const interval = window.setInterval(() => void sendHeartbeat(), 30_000);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    window.addEventListener("pageshow", refreshWhenVisible);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.removeEventListener("pageshow", refreshWhenVisible);
+    };
+  }, [presenceCharacterId]);
 
   const refreshAfterMutation = useCallback(async (message: string, announceQuestObjectives = false) => {
     addEntry("system", message);
@@ -1346,6 +1405,19 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
             ) : snapshot?.location ? (
               <>
                 <TerminalPanel title={snapshot.location.title} busy={pending !== null}>
+                    <div className="focused-room-presence" role="group" aria-label="Players in this room">
+                      <Users size={14} aria-hidden="true" />
+                      <span>
+                        {snapshot.location.occupants.length > 0
+                          ? `Here now: ${snapshot.location.occupants.map((occupant) => occupant.displayName).join(", ")}`
+                          : "No other players here"}
+                      </span>
+                      {presenceStale && (
+                        <span className="focused-room-presence__status" role="status">
+                          Presence may be out of date.
+                        </span>
+                      )}
+                    </div>
                     {snapshot.character?.health && visibleCombat?.status !== "active" && (
                       <div className="focused-terminal-health" aria-label="Character health">
                         Health {snapshot.character.health.current}/{snapshot.character.health.maximum}

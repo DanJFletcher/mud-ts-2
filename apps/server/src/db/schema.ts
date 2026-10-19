@@ -45,9 +45,11 @@ export const worldSessions = pgTable('world_sessions', {
   worldInstanceId: text('world_instance_id').notNull(),
   characterId: uuid('character_id').notNull().references(() => characters.id, { onDelete: 'cascade' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex('world_sessions_owner_instance_idx').on(table.playerId, table.worldInstanceId),
   index('world_sessions_character_idx').on(table.characterId),
+  index('world_sessions_presence_idx').on(table.worldInstanceId, table.lastSeenAt),
 ]);
 
 export const gameEvents = pgTable('game_events', {

@@ -27,6 +27,7 @@ One TypeScript monorepo runs a server and a mobile-first PWA. Account identity c
 8. **No plugin sandbox is implied.** Plugins are trusted in-process code. Zod validates contracts but does not isolate or safely execute third-party code.
 9. **Items are currently character-instanced.** Shared physical item ownership is explicitly deferred; see [ADR 0002](adr/0002-world-item-aggregate-ownership.md).
 10. **Room chat is a separate public feed.** Chat posts and reads revalidate room membership at the same character-stream lock boundary used by movement; see [ADR 0003](adr/0003-room-chat-persistence-boundary.md).
+11. **Room presence is a read-only online projection.** A fresh 90-second world-session heartbeat makes a character visible to others in the same room; movement remains authoritative in the character stream. See [ADR 0010](adr/0010-active-room-presence.md).
 
 ## Dependencies
 

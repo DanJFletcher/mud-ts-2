@@ -20,6 +20,7 @@ import {
   CharacterObjectReadEventSchema,
   IdSchema,
   LocationProjectionSchema,
+  RoomPresenceProjectionSchema,
   QuestJournalSchema,
   WorldMapProjectionSchema,
   ObjectInspectionProjectionSchema,
@@ -30,6 +31,7 @@ import {
   InnRestCommandSchema,
   CombatActionCommandSchema,
   type LocationProjection,
+  type RoomPresenceProjection,
   type NpcDialogueProjection,
   type ReadableObjectProjection,
   type ObjectInspectionProjection,
@@ -84,6 +86,12 @@ export class MuddHttpClient {
 
   async getGame(): Promise<GameSnapshot> {
     return this.request('/api/game', {}, GameSnapshotSchema);
+  }
+
+  async heartbeatWorldSession(): Promise<RoomPresenceProjection> {
+    return this.request('/api/world-session/heartbeat', {
+      method: 'POST',
+    }, RoomPresenceProjectionSchema);
   }
 
   async getCharacters(): Promise<CharacterRosterSnapshot> {

@@ -24,7 +24,7 @@ The existing decisions remain in force:
 | Personal character facts | Character aggregate | Character stream remains authoritative for character identity, personal quest progress, personal wallet, health, gear, personal encounters, and intentionally character-instanced items. |
 | Unique mutable item instance | A world-instance-scoped item aggregate/stream | One stable instance ID has one authoritative holder state: a location or one character. Pickup/drop are version-checked ownership transitions. Character inventories and room-visible items are read projections of the same item facts, not a second writable ownership record. |
 | Shared mutable NPC or other entity state | A separately scoped entity aggregate, if required | A specific NPC instance owns its changing health/state; immutable NPC definitions remain in the world pack. Do not add this state until shared behavior is a product requirement. |
-| Current room occupancy | Projection of active world sessions plus committed character locations | Read-only derived state initially. Do not write an independent occupant list that can drift from session and movement facts. |
+| Current room occupancy | Covered by accepted [ADR 0010](../0010-active-room-presence.md) | Read-only projection of fresh world-session heartbeats and committed character locations; not part of the still-proposed shared entity ownership model. |
 | Public room chat | Existing `(world instance, room)` feed | Keep the independent durable ordering and membership rules in ADR 0003; chat is not a duplicate of character or item ownership. |
 
 ### Command and consistency rule
@@ -55,8 +55,7 @@ Commands that genuinely require facts from more than one mutable aggregate need 
 1. Which initial content, if any, needs one physical instance shared by all characters in a world instance?
 2. Should shared items be modeled as a distinct aggregate per item, or as partitions of a world-instance inventory aggregate?
 3. What read consistency is required when a room description combines a character snapshot with shared entity streams?
-4. Is room occupancy only a read-time projection from active sessions, or does a later feature require durable presence/expiry semantics?
-5. Which store port API supports atomic appends and receipts for these aggregates without changing personal character-stream behavior?
+4. Which store port API supports atomic appends and receipts for shared entities without changing personal character-stream behavior?
 
 ## Non-goals
 

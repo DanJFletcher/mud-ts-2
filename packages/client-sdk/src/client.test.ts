@@ -43,6 +43,28 @@ describe('demo world navigation', () => {
 });
 
 describe('MuddHttpClient', () => {
+  it('sends an authenticated world-session heartbeat and validates its room projection', async () => {
+    let callCount = 0;
+    const fetcher: typeof fetch = async (input, init) => {
+      callCount += 1;
+      expect(String(input)).toBe('/api/world-session/heartbeat');
+      expect(init?.method).toBe('POST');
+      return Response.json({
+        worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+        locationId: 'mossgate-clearing',
+        occupants: [{ id: 'another-character', displayName: 'Mira' }],
+      });
+    };
+    const client = new MuddHttpClient({ worldInstanceId: DEMO_WORLD_INSTANCE_ID, fetcher });
+
+    await expect(client.heartbeatWorldSession()).resolves.toEqual({
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      locationId: 'mossgate-clearing',
+      occupants: [{ id: 'another-character', displayName: 'Mira' }],
+    });
+    expect(callCount).toBe(1);
+  });
+
   it('rejects malformed successful HTTP responses instead of trusting a TypeScript cast', async () => {
     const client = new MuddHttpClient({
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
