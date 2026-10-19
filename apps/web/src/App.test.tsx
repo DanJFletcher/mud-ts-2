@@ -1752,14 +1752,49 @@ describe('single-character world session client', () => {
 
   });
 
-  it('surfaces rejected movement without changing rooms or leaving controls disabled', async () => {
+  it('keeps the last successful map snapshot after a journey is rejected', async () => {
+    room = 'market';
+    visitedLocationIds = ['mossgate-clearing', 'glasswater-bridge', 'reedbank-stalls'];
     moveError = 'Exit is blocked.';
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
-    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
-    quickGo('north');
+    await screen.findByRole('heading', { name: 'Reedbank Stalls' });
+
+    const map = screen.getByRole('region', { name: 'World map' });
+    const locationNames = () =>
+      [...map.querySelectorAll<SVGGElement>('.focused-world-map__location')]
+        .map((location) => location.querySelector('text')?.textContent);
+    expect(locationNames()).toEqual([
+      'Mossgate Clearing',
+      'Glasswater Bridge',
+      'Reedbank Stalls',
+    ]);
+    expect(map.querySelectorAll('.focused-world-map__path')).toHaveLength(2);
+    expect(map.querySelector('.focused-world-map__location--current')).toHaveTextContent('Reedbank Stalls');
+
+    clickQuickAction('Show available exits');
+    fireEvent.click(screen.getByRole('button', { name: 'Go east' }));
     await screen.findByText('Exit is blocked.');
-    expect(screen.getByRole('heading', { name: 'Mossgate Clearing' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Reedbank Stalls' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Show available exits' })).toBeEnabled();
+    expect(locationNames()).toEqual([
+      'Mossgate Clearing',
+      'Glasswater Bridge',
+      'Reedbank Stalls',
+    ]);
+    expect(map).not.toHaveTextContent('Willowrest Inn');
+    expect(map.querySelectorAll('.focused-world-map__path')).toHaveLength(2);
+    expect(map.querySelector('.focused-world-map__location--current')).toHaveTextContent('Reedbank Stalls');
+    const attemptedMove = apiFetch.mock.calls
+      .filter(([path]) => path === '/api/commands')
+      .map(([, init]) => JSON.parse(String(init?.body ?? '{}')) as {
+        type: string;
+        payload: { exitId?: string };
+      })
+      .find((command) => command.type === 'character.move');
+    expect(attemptedMove).toMatchObject({
+      type: 'character.move',
+      payload: { exitId: 'reedbank-to-willowrest' },
+    });
   });
 
   it('restores and persists the selected theme', async () => {
