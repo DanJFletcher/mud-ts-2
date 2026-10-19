@@ -27,6 +27,7 @@ import {
   MerchantCatalogProjectionSchema,
   MerchantCatalogQuerySchema,
   MerchantPurchaseCommandSchema,
+  InnRestCommandSchema,
   CombatActionCommandSchema,
   type LocationProjection,
   type NpcDialogueProjection,
@@ -288,6 +289,24 @@ export class MuddHttpClient {
       characterId,
       expectedVersion,
       payload: { merchantNpcId, listingId },
+    });
+    return this.send(command);
+  }
+
+  async restAtInn(
+    characterId: string,
+    innId: string,
+    expectedVersion: number,
+    commandId = crypto.randomUUID(),
+  ): Promise<CommandResponse> {
+    const command = InnRestCommandSchema.parse({
+      type: 'inn.rest',
+      version: 1,
+      commandId,
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      expectedVersion,
+      payload: { innId },
     });
     return this.send(command);
   }

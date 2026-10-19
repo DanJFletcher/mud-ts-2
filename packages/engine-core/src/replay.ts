@@ -15,6 +15,7 @@ import {
   CharacterArchivedEventSchema,
   CharacterRestoredEventSchema,
   CharacterWalletInitializedEventSchema,
+  CharacterInnRestCompletedEventSchema,
   CharacterAdvancementAwardedEventSchema,
   CharacterCombatItemUsedEventSchema,
   MerchantItemPurchasedEventSchema,
@@ -72,6 +73,33 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         inventory: [...state.inventory, item],
         itemLocations: [...state.itemLocations, { item, locationId: null }],
         purchasedMerchantListingIds: [...state.purchasedMerchantListingIds, listingId],
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.inn_rest_completed') {
+      if (!state) throw new Error('Inn rest encountered before character creation.');
+      const rested = CharacterInnRestCompletedEventSchema.parse(publicEvent);
+      const { characterId, locationId, currencyId, price, healthRestored, health } = rested.payload;
+      const previousHealth = state.health;
+      if (
+        characterId !== state.characterId ||
+        locationId !== state.locationId ||
+        state.combat?.status === 'active' ||
+        !previousHealth ||
+        previousHealth.current <= 0 ||
+        !state.wallet ||
+        state.wallet.currencyId !== currencyId ||
+        state.wallet.balance < price ||
+        health.maximum !== previousHealth.maximum ||
+        health.current !== health.maximum ||
+        healthRestored !== health.maximum - previousHealth.current ||
+        healthRestored <= 0
+      ) {
+        throw new Error(`Invalid inn rest event at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        wallet: { ...state.wallet, balance: state.wallet.balance - price },
+        health,
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'character.combat_action_resolved') {

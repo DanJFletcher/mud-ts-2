@@ -3,7 +3,12 @@ import { z } from 'zod';
 import { ClientCommandBaseSchema, ClientQueryBaseSchema } from './protocol.js';
 import { ContractVersionSchema, IdSchema, NonNegativeIntSchema } from './ids.js';
 import { QuestDefinitionSchema, QuestDialogueActionSchema } from './quests.js';
-import { MerchantCatalogDefinitionSchema, WorldCurrencyDefinitionSchema } from './commerce.js';
+import {
+  InnDefinitionSchema,
+  InnProjectionSchema,
+  MerchantCatalogDefinitionSchema,
+  WorldCurrencyDefinitionSchema,
+} from './commerce.js';
 import { NpcCombatProfileSchema } from './combat.js';
 
 export const ExitDefinitionSchema = z.object({
@@ -172,6 +177,7 @@ export const LocationDefinitionSchema = z.object({
   interactables: z.array(InteractableObjectDefinitionSchema).optional(),
   itemUses: z.array(ItemUseInteractionDefinitionSchema).max(100).optional(),
   npcs: z.array(NpcDefinitionSchema).optional(),
+  inn: InnDefinitionSchema.optional(),
 }).strict();
 
 export const WorldPackDraftSchema = z.object({
@@ -263,6 +269,7 @@ export const LocationProjectionSchema = z.object({
   }).strict()),
   occupants: z.array(z.object({ id: IdSchema, displayName: z.string() }).strict()),
   npcs: z.array(NpcPresenceProjectionSchema).optional(),
+  inn: InnProjectionSchema.optional(),
 }).strict();
 
 export const WorldMapProjectionSchema = z.object({
@@ -312,10 +319,17 @@ export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
   const itemIds = new Set(pack.locations.flatMap((room) => (room.takeables ?? []).map((item) => item.id)));
   const merchantListingIds = new Set<string>();
   const merchantItemIds = new Set<string>();
+  const innIds = new Set<string>();
+  const inns = pack.locations.flatMap((location) => location.inn ? [{ inn: location.inn, location }] : []);
   const shopNpcs = pack.locations.flatMap((location) =>
     (location.npcs ?? []).filter((npc) => npc.shop).map((npc) => ({ npc, location })),
   );
   if (shopNpcs.length > 0 && !pack.currency) errors.push('World currency is required when a merchant catalog is present');
+  if (inns.length > 0 && !pack.currency) errors.push('World currency is required when an inn is present');
+  for (const { inn } of inns) {
+    if (innIds.has(inn.id)) errors.push(`Duplicate inn ID ${inn.id}`);
+    innIds.add(inn.id);
+  }
   for (const { npc, location } of shopNpcs) {
     for (const listing of npc.shop?.listings ?? []) {
       if (merchantListingIds.has(listing.id)) errors.push(`Duplicate merchant listing ID ${listing.id}`);

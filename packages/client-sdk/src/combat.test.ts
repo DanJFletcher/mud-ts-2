@@ -35,6 +35,46 @@ function makeClient(world = demoWorld) {
   return { client, store };
 }
 
+async function travelToWillowrestInn(
+  client: MuddHttpClient,
+  store: InMemoryEventStore,
+  characterId: string,
+  commandPrefix: string,
+  beginInjured = true,
+) {
+  let state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+  if (beginInjured) {
+    const room = await client.look(characterId, `${commandPrefix}-look-clearing`);
+    await client.performCombatAction(
+      characterId,
+      'attack',
+      room.revision,
+      { targetNpcId: 'mossgate-training-sentinel' },
+      `${commandPrefix}-attack`,
+    );
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    await client.performCombatAction(
+      characterId,
+      'flee',
+      state.revision,
+      { encounterId: state.combat!.encounterId },
+      `${commandPrefix}-flee`,
+    );
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+  }
+
+  const path = [
+    'clearing-to-bridge',
+    'bridge-to-reedbank',
+    'reedbank-to-willowrest',
+  ];
+  for (const [index, exitId] of path.entries()) {
+    await client.move(characterId, exitId, state.revision, `${commandPrefix}-move-${index}`);
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+  }
+  return state;
+}
+
 describe('turn-based PvE combat', () => {
   it('resolves character-scoped actions, retries idempotently, and locks movement only while active', async () => {
     const { client, store } = makeClient();
@@ -539,5 +579,149 @@ describe('turn-based PvE combat', () => {
       .rejects.toThrow('You cannot change equipment during an active encounter.');
     await client.performCombatAction(characterId, 'attack', state.revision, { encounterId: state.combat!.encounterId }, 'combat-gear-final-attack');
     expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))?.combat?.status).toBe('victory');
+  });
+});
+
+describe('paid inn rest', () => {
+  it('charges five moss marks, restores health atomically, and retries without charging twice', async () => {
+    const { client, store } = makeClient();
+    const created = await client.createCharacter('Briar', 'inn-rest-create');
+    const characterId = created.streamId!;
+    const injuredAtInn = await travelToWillowrestInn(client, store, characterId, 'inn-rest');
+    expect(injuredAtInn).toMatchObject({
+      locationId: 'willowrest-inn',
+      health: { current: 5, maximum: 6 },
+      wallet: { currencyId: 'moss-mark', balance: 12 },
+      visitedLocationIds: expect.arrayContaining(['willowrest-inn']),
+    });
+
+    const innRoom = await client.look(characterId, 'inn-rest-look-inn');
+    expect(innRoom.inn).toMatchObject({
+      id: 'willowrest-inn-service',
+      name: 'Willowrest Inn',
+      restPrice: 5,
+      currency: { id: 'moss-mark', name: 'moss mark', symbol: 'm' },
+    });
+
+    const rest = await client.restAtInn(
+      characterId,
+      'willowrest-inn-service',
+      injuredAtInn.revision,
+      'inn-rest-paid',
+    );
+    expect(rest.receipt.ok).toBe(true);
+    const rested = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(rested).toMatchObject({
+      locationId: 'willowrest-inn',
+      health: { current: 6, maximum: 6 },
+      wallet: { currencyId: 'moss-mark', balance: 7 },
+    });
+    const restEvent = (await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))
+      .find((event) => event.type === 'character.inn_rest_completed');
+    expect(restEvent).toMatchObject({
+      type: 'character.inn_rest_completed',
+      version: 1,
+      payload: {
+        characterId,
+        locationId: 'willowrest-inn',
+        innId: 'willowrest-inn-service',
+        currencyId: 'moss-mark',
+        price: 5,
+        healthRestored: 1,
+        health: { current: 6, maximum: 6 },
+      },
+    });
+
+    const eventCount = (await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).length;
+    const retry = await client.restAtInn(
+      characterId,
+      'willowrest-inn-service',
+      injuredAtInn.revision,
+      'inn-rest-paid',
+    );
+    expect(retry.receipt).toEqual(rest.receipt);
+    expect(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).toHaveLength(eventCount);
+  });
+
+  it('prevents concurrent rest requests from spending the same balance twice', async () => {
+    const { client, store } = makeClient();
+    const created = await client.createCharacter('Ash', 'inn-rest-concurrent-create');
+    const characterId = created.streamId!;
+    const state = await travelToWillowrestInn(client, store, characterId, 'inn-rest-concurrent');
+    const eventCount = (await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).length;
+
+    const results = await Promise.allSettled([
+      client.restAtInn(characterId, 'willowrest-inn-service', state.revision, 'inn-rest-concurrent-a'),
+      client.restAtInn(characterId, 'willowrest-inn-service', state.revision, 'inn-rest-concurrent-b'),
+    ]);
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).toHaveLength(eventCount + 1);
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))).toMatchObject({
+      health: { current: 6, maximum: 6 },
+      wallet: { currencyId: 'moss-mark', balance: 7 },
+    });
+  });
+
+  it('rejects resting away from the inn, at full health, during combat, or without enough money', async () => {
+    const { client, store } = makeClient();
+    const created = await client.createCharacter('Alder', 'inn-rest-invalid-create');
+    const characterId = created.streamId!;
+    let state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    await expect(client.restAtInn(characterId, 'willowrest-inn-service', state.revision, 'inn-rest-away'))
+      .rejects.toThrow('There is no such inn here.');
+    expect(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).toHaveLength(1);
+
+    state = await travelToWillowrestInn(client, store, characterId, 'inn-rest-full', false);
+    const fullHealthEventCount = (await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).length;
+    await expect(client.restAtInn(characterId, 'willowrest-inn-service', state.revision, 'inn-rest-full'))
+      .rejects.toThrow('You are already at full health.');
+    expect(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).toHaveLength(fullHealthEventCount);
+
+    const poorWorld = {
+      ...demoWorld,
+      currency: { ...demoWorld.currency!, startingBalance: 4 },
+    };
+    const poor = makeClient(poorWorld);
+    const poorCharacter = await poor.client.createCharacter('Cedar', 'inn-rest-poor-create');
+    const poorId = poorCharacter.streamId!;
+    const poorAtInn = await travelToWillowrestInn(poor.client, poor.store, poorId, 'inn-rest-poor');
+    const beforeFailedRest = (await poor.store.readStream(DEMO_WORLD_INSTANCE_ID, poorId)).length;
+    await expect(poor.client.restAtInn(
+      poorId,
+      'willowrest-inn-service',
+      poorAtInn.revision,
+      'inn-rest-unaffordable',
+    )).rejects.toThrow('You need 5 moss marks to rest.');
+    const unchangedPoor = replayCharacter(await poor.store.readStream(DEMO_WORLD_INSTANCE_ID, poorId))!;
+    expect(unchangedPoor).toMatchObject({
+      health: { current: 5, maximum: 6 },
+      wallet: { currencyId: 'moss-mark', balance: 4 },
+    });
+    expect(await poor.store.readStream(DEMO_WORLD_INSTANCE_ID, poorId)).toHaveLength(beforeFailedRest);
+  });
+
+  it('rejects inn rest while a combat encounter is active', async () => {
+    const { client, store } = makeClient();
+    const created = await client.createCharacter('Willow', 'inn-rest-combat-create');
+    const characterId = created.streamId!;
+    const room = await client.look(characterId, 'inn-rest-combat-look');
+    await client.performCombatAction(
+      characterId,
+      'attack',
+      room.revision,
+      { targetNpcId: 'mossgate-training-sentinel' },
+      'inn-rest-combat-start',
+    );
+    const state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    const eventCount = (await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).length;
+    await expect(client.restAtInn(
+      characterId,
+      'willowrest-inn-service',
+      state.revision,
+      'inn-rest-during-combat',
+    )).rejects.toThrow('You cannot rest while combat is active. Flee first.');
+    expect(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).toHaveLength(eventCount);
   });
 });

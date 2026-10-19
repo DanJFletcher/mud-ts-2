@@ -1,8 +1,10 @@
 import {
   CharacterAdvancementAwardedEventV2Schema,
   CharacterCombatItemUsedEventSchema,
+  CharacterInnRestCompletedEventSchema,
   CombatActionCommandSchema,
   CombatActionResolvedEventV3Schema,
+  InnRestCommandSchema,
 } from '@mudd/contracts';
 import type { EnginePlugin, ProposedDomainEvent } from '@mudd/engine-core';
 import { RuleViolationError } from '@mudd/engine-core';
@@ -34,10 +36,55 @@ export const combatPlugin: EnginePlugin = {
       'character.combat_action_resolved': 3,
       'character.advancement_awarded': 2,
       'character.combat_item_used': 1,
+      'character.inn_rest_completed': 1,
     },
   },
   register({ registerCommand, requireCapability }) {
     const characterState = requireCapability<CharacterStateCapability>(characterStateCapability);
+
+    registerCommand('inn.rest', InnRestCommandSchema, async (command, context) => {
+      const character = await characterState.load(context, command.characterId);
+      if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
+      assertCharacterAlive(character);
+      if (character.combat?.status === 'active') {
+        throw new RuleViolationError('You cannot rest while combat is active. Flee first.');
+      }
+
+      const location = context.world.locations.find((candidate) => candidate.id === character.locationId);
+      const inn = location?.inn;
+      if (!inn || inn.id !== command.payload.innId) {
+        throw new RuleViolationError('There is no such inn here.');
+      }
+
+      const currency = context.world.currency;
+      if (!currency) throw new RuleViolationError('This world has no configured currency.');
+      if (!character.wallet || character.wallet.currencyId !== currency.id) {
+        throw new RuleViolationError('This character’s wallet is not ready yet. Refresh the world and try again.');
+      }
+      if (character.wallet.balance < inn.restPrice) {
+        throw new RuleViolationError(`You need ${inn.restPrice} ${currency.name}${inn.restPrice === 1 ? '' : 's'} to rest.`);
+      }
+
+      const maximum = maximumHealthForLevel(character.advancement?.level ?? 1);
+      const current = Math.min(character.health?.current ?? maximum, maximum);
+      if (current >= maximum) throw new RuleViolationError('You are already at full health.');
+      const healthRestored = maximum - current;
+      const payload = {
+        characterId: character.characterId,
+        locationId: character.locationId,
+        innId: inn.id,
+        currencyId: currency.id,
+        price: inn.restPrice,
+        healthRestored,
+        health: { current: maximum, maximum },
+      };
+      CharacterInnRestCompletedEventSchema.shape.payload.parse(payload);
+      return {
+        streamId: character.characterId,
+        expectedVersion: command.expectedVersion,
+        events: [{ type: 'character.inn_rest_completed', version: 1, payload }],
+      };
+    });
 
     registerCommand('combat.action', CombatActionCommandSchema, async (command, context) => {
       const character = await characterState.load(context, command.characterId);

@@ -559,6 +559,21 @@ const draft = {
       ],
       exits: [
         { id: 'reedbank-to-bridge', fromLocationId: 'reedbank-stalls', toLocationId: 'glasswater-bridge', label: 'Southwest to Glasswater Bridge', direction: 'southwest' },
+        { id: 'reedbank-to-willowrest', fromLocationId: 'reedbank-stalls', toLocationId: 'willowrest-inn', label: 'East to Willowrest Inn', direction: 'east' },
+      ],
+    },
+    {
+      id: 'willowrest-inn',
+      name: 'Willowrest Inn',
+      mapPosition: { x: 2, y: 2 },
+      description: 'A warm timber inn stands at the edge of Reedbank, its windows bright against the river mist. A painted sign promises a full night’s rest for five moss marks.',
+      inn: {
+        id: 'willowrest-inn-service',
+        name: 'Willowrest Inn',
+        restPrice: 5,
+      },
+      exits: [
+        { id: 'willowrest-to-reedbank', fromLocationId: 'willowrest-inn', toLocationId: 'reedbank-stalls', label: 'West to Reedbank Stalls', direction: 'west' },
       ],
     },
   ],

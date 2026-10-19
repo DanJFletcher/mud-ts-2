@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { ClientCommandBaseSchema, ClientQueryBaseSchema, DomainEventBaseSchema } from './protocol.js';
 import { IdSchema, NonNegativeIntSchema, PositiveIntSchema } from './ids.js';
 import { CharacterWalletSchema, InventoryItemProjectionSchema } from './character.js';
+import { CharacterHealthSchema } from './health.js';
 
 const MAX_CURRENCY_AMOUNT = 2_147_483_647;
 
@@ -10,6 +11,20 @@ export const WorldCurrencyDefinitionSchema = z.object({
   name: z.string().trim().min(1).max(40),
   symbol: z.string().trim().min(1).max(8),
   startingBalance: NonNegativeIntSchema.max(MAX_CURRENCY_AMOUNT),
+}).strict();
+
+export const InnDefinitionSchema = z.object({
+  id: IdSchema,
+  name: z.string().trim().min(1).max(120),
+  restPrice: PositiveIntSchema.max(MAX_CURRENCY_AMOUNT),
+}).strict();
+
+export const InnProjectionSchema = InnDefinitionSchema.extend({
+  currency: z.object({
+    id: IdSchema,
+    name: z.string().min(1).max(40),
+    symbol: z.string().min(1).max(8),
+  }).strict(),
 }).strict();
 
 export const MerchantListingDefinitionSchema = z.object({
@@ -78,9 +93,32 @@ export const MerchantItemPurchasedEventSchema = DomainEventBaseSchema.extend({
   }).strict(),
 }).strict();
 
+export const InnRestCommandSchema = ClientCommandBaseSchema.extend({
+  type: z.literal('inn.rest'),
+  expectedVersion: NonNegativeIntSchema,
+  payload: z.object({ innId: IdSchema }).strict(),
+}).strict();
+
+export const CharacterInnRestCompletedEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('character.inn_rest_completed'),
+  version: z.literal(1),
+  payload: z.object({
+    characterId: IdSchema,
+    locationId: IdSchema,
+    innId: IdSchema,
+    currencyId: IdSchema,
+    price: PositiveIntSchema.max(MAX_CURRENCY_AMOUNT),
+    healthRestored: PositiveIntSchema.max(1000),
+    health: CharacterHealthSchema,
+  }).strict(),
+}).strict();
+
 export type WorldCurrencyDefinition = z.infer<typeof WorldCurrencyDefinitionSchema>;
+export type InnDefinition = z.infer<typeof InnDefinitionSchema>;
+export type InnProjection = z.infer<typeof InnProjectionSchema>;
 export type MerchantListingDefinition = z.infer<typeof MerchantListingDefinitionSchema>;
 export type MerchantCatalogDefinition = z.infer<typeof MerchantCatalogDefinitionSchema>;
 export type MerchantCatalogQuery = z.infer<typeof MerchantCatalogQuerySchema>;
 export type MerchantCatalogProjection = z.infer<typeof MerchantCatalogProjectionSchema>;
 export type MerchantPurchaseCommand = z.infer<typeof MerchantPurchaseCommandSchema>;
+export type InnRestCommand = z.infer<typeof InnRestCommandSchema>;

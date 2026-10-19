@@ -10,7 +10,7 @@ const { apiFetch } = vi.hoisted(() => {
 import { WorldClient } from './App.js';
 
 const characterId = '11111111-1111-4111-8111-111111111111';
-let room: 'clearing' | 'bridge' | 'market';
+let room: 'clearing' | 'bridge' | 'market' | 'inn';
 let visitedLocationIds: string[];
 let revision: number;
 let moveError: string | null;
@@ -58,16 +58,26 @@ let combatEncounter: {
 function currentLocation() {
   return {
     worldInstanceId: 'mudd-demo-instance',
-    locationId: room === 'clearing' ? 'mossgate-clearing' : room === 'market' ? 'reedbank-stalls' : 'glasswater-bridge',
-    title: room === 'clearing' ? 'Mossgate Clearing' : room === 'market' ? 'Reedbank Stalls' : 'Glasswater Bridge',
+    locationId: room === 'clearing' ? 'mossgate-clearing' : room === 'market' ? 'reedbank-stalls' : room === 'inn' ? 'willowrest-inn' : 'glasswater-bridge',
+    title: room === 'clearing' ? 'Mossgate Clearing' : room === 'market' ? 'Reedbank Stalls' : room === 'inn' ? 'Willowrest Inn' : 'Glasswater Bridge',
     description: room === 'clearing'
       ? itemTaken
         ? 'A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east.'
         : 'A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east. One loose stone bears a pale stripe.'
       : room === 'market'
         ? 'Canvas awnings line the riverbank.'
-        : 'A stone bridge crosses clear water.',
+        : room === 'inn'
+          ? 'A warm timber inn offers a full night’s rest for five moss marks.'
+          : 'A stone bridge crosses clear water.',
     revision,
+    ...(room === 'inn' ? {
+      inn: {
+        id: 'willowrest-inn-service',
+        name: 'Willowrest Inn',
+        restPrice: 5,
+        currency: { id: 'moss-mark', name: 'moss mark', symbol: 'm' },
+      },
+    } : {}),
     objects: room === 'clearing' ? [
       {
         id: 'mossgate-marker',
@@ -108,6 +118,21 @@ function currentLocation() {
       label: 'South to Mossgate Clearing',
       direction: 'south',
       available: true,
+    }] : room === 'market' ? [{
+      id: 'reedbank-to-bridge',
+      label: 'Southwest to Glasswater Bridge',
+      direction: 'southwest',
+      available: true,
+    }, {
+      id: 'reedbank-to-willowrest',
+      label: 'East to Willowrest Inn',
+      direction: 'east',
+      available: true,
+    }] : room === 'inn' ? [{
+      id: 'willowrest-to-reedbank',
+      label: 'West to Reedbank Stalls',
+      direction: 'west',
+      available: true,
     }] : [{
       id: 'reedbank-to-bridge',
       label: 'Southwest to Glasswater Bridge',
@@ -142,17 +167,32 @@ function currentWorldMap() {
     { id: 'glasswater-bridge', name: 'Glasswater Bridge', x: 0, y: 1 },
     { id: 'bell-tower', name: 'Old Bell Tower', x: 1, y: 0 },
     { id: 'reedbank-stalls', name: 'Reedbank Stalls', x: 1, y: 2 },
+    { id: 'willowrest-inn', name: 'Willowrest Inn', x: 2, y: 2 },
   ];
   const locations = allLocations.filter((location) => visitedLocationIds.includes(location.id));
   const hasClearing = visitedLocationIds.includes('mossgate-clearing');
   const hasBridge = visitedLocationIds.includes('glasswater-bridge');
+  const hasReedbank = visitedLocationIds.includes('reedbank-stalls');
+  const hasWillowrest = visitedLocationIds.includes('willowrest-inn');
+  const pathPairs = [
+    ['mossgate-clearing', 'glasswater-bridge'],
+    ['glasswater-bridge', 'reedbank-stalls'],
+    ['reedbank-stalls', 'willowrest-inn'],
+  ] as const;
   return {
     worldInstanceId: 'mudd-demo-instance',
     currentLocationId: currentLocation().locationId,
     locations,
-    connections: hasClearing && hasBridge
-      ? [{ fromLocationId: 'mossgate-clearing', toLocationId: 'glasswater-bridge' }]
-      : [],
+    connections: pathPairs.flatMap(([fromLocationId, toLocationId]) =>
+      (fromLocationId === 'mossgate-clearing' ? hasClearing
+        : fromLocationId === 'glasswater-bridge' ? hasBridge
+          : hasReedbank) &&
+      (toLocationId === 'glasswater-bridge' ? hasBridge
+        : toLocationId === 'reedbank-stalls' ? hasReedbank
+          : hasWillowrest)
+        ? [{ fromLocationId, toLocationId }]
+        : [],
+    ),
   };
 }
 
@@ -435,11 +475,30 @@ beforeEach(() => {
           targetId?: string;
           choiceId?: string;
           objectId?: string;
+          innId?: string;
           action?: 'attack' | 'defend' | 'flee' | 'use-item';
           encounterId?: string;
           targetNpcId?: string;
         };
       };
+      if (command.type === 'inn.rest') {
+        if (room !== 'inn' || command.payload?.innId !== 'willowrest-inn-service') {
+          return json({ receipt: { ok: false, commandId: command.commandId ?? 'mock-command', code: 'RULE_VIOLATION', message: 'There is no such inn here.' } });
+        }
+        if (characterHealth && characterHealth.current >= characterHealth.maximum) {
+          return json({ receipt: { ok: false, commandId: command.commandId ?? 'mock-command', code: 'RULE_VIOLATION', message: 'You are already at full health.' } });
+        }
+        if (walletBalance < 5) {
+          return json({ receipt: { ok: false, commandId: command.commandId ?? 'mock-command', code: 'RULE_VIOLATION', message: 'You need 5 moss marks to rest.' } });
+        }
+        walletBalance -= 5;
+        characterHealth = { current: 6, maximum: 6 };
+        revision += 1;
+        return json({
+          receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision },
+          streamId: characterId,
+        });
+      }
       if (command.type === 'combat.action') {
         const action = command.payload?.action;
         if (action === 'use-item' && combatEncounter?.status !== 'active') {
@@ -1149,6 +1208,39 @@ describe('single-character world session client', () => {
         body.payload.itemId === 'item-reedbank-healing-draught' &&
         !body.payload.encounterId;
     })).toBe(true);
+  });
+
+  it('restores health at Willowrest Inn for the listed fee through a contextual quick action', async () => {
+    room = 'inn';
+    visitedLocationIds = ['mossgate-clearing', 'glasswater-bridge', 'reedbank-stalls', 'willowrest-inn'];
+    characterHealth = { current: 4, maximum: 6 };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Willowrest Inn' });
+    expect(screen.getByText(/full night’s rest for five moss marks/i)).toBeInTheDocument();
+    expect(quickActionVisibleAnywhere('Rest at Willowrest Inn for 5 moss marks')).toBe(true);
+
+    clickQuickAction('Rest at Willowrest Inn for 5 moss marks');
+
+    await screen.findByText(/You rest at Willowrest Inn, restore 2 health, and pay 5 moss marks/);
+    expect(screen.getByLabelText('Character health')).toHaveTextContent('Health 6/6');
+    expect(walletBalance).toBe(7);
+    expect(apiFetch.mock.calls.some(([path, init]) => {
+      if (path !== '/api/commands') return false;
+      const body = JSON.parse(String(init?.body ?? '{}'));
+      return body.type === 'inn.rest' &&
+        body.payload.innId === 'willowrest-inn-service' &&
+        body.expectedVersion === 1;
+    })).toBe(true);
+  });
+
+  it('hides inn rest quick action when the traveler is already at full health', async () => {
+    room = 'inn';
+    visitedLocationIds = ['mossgate-clearing', 'glasswater-bridge', 'reedbank-stalls', 'willowrest-inn'];
+    characterHealth = { current: 6, maximum: 6 };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Willowrest Inn' });
+
+    expect(quickActionVisibleAnywhere('Rest at Willowrest Inn for 5 moss marks')).toBe(false);
   });
 
   it('offers between-fight potion use in quick actions only when health is missing', async () => {

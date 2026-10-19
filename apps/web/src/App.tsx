@@ -99,6 +99,10 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
     "Usage: use <item> on <target> | use <healing item>",
     "Use an item on a room object, or restore health during or between encounters.",
   ],
+  rest: [
+    "Usage: rest",
+    "Restore your health for the inn’s listed price when you are below full health.",
+  ],
   drop: [
     "Usage: drop <item>",
     "Put down an item you carry in the current room.",
@@ -134,6 +138,7 @@ const GENERAL_HELP = [
   "equip <item> — Equip a carried weapon or armor item.",
   "unequip <weapon|armor> — Remove equipped gear from a slot.",
   "use <item> on <target> | use <healing item> — Use a room item or restore health during or between encounters.",
+  "rest — Restore your health at an inn for its listed price.",
   "drop <item> — Put down an item you carry.",
   "attack <opponent> — Begin an encounter or attack during combat.",
   "defend — Guard against the opponent’s next strike.",
@@ -171,7 +176,7 @@ function completedQuestObjectiveKeys(snapshot: GameSnapshot): string[] {
 export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"look" | "read" | "take" | "use" | "drop" | "move" | "talk" | "shop" | "buy" | "combat" | "equip" | null>(null);
+  const [pending, setPending] = useState<"look" | "read" | "take" | "use" | "drop" | "move" | "talk" | "shop" | "buy" | "combat" | "rest" | "equip" | null>(null);
   const [command, setCommand] = useState("");
   const [quickCommandPage, setQuickCommandPage] = useState(1);
   const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "go" | "look" | "read" | "drop" | "take" | "talk" | "attack" | "shop" | "buy" | "use" | "use-target" | "equip" | "unequip">("quick");
@@ -657,6 +662,32 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     }
   }, [addEntry, pending, snapshot]);
 
+  const performInnRest = useCallback(async () => {
+    if (!snapshot?.character || !snapshot.location?.inn || pending) return;
+    const inn = snapshot.location.inn;
+    const previousHealth = snapshot.character.health;
+    setPending("rest");
+    try {
+      await client.restAtInn(snapshot.character.characterId, inn.id, snapshot.character.revision);
+      const nextSnapshot = await client.getGame();
+      setSnapshot(nextSnapshot);
+      setConnectionError("");
+      const nextHealth = nextSnapshot.character?.health;
+      const nextWallet = nextSnapshot.character?.wallet;
+      const healthRestored = nextHealth
+        ? nextHealth.current - (previousHealth?.current ?? nextHealth.maximum)
+        : 0;
+      addEntry(
+        "narration",
+        `You rest at ${inn.name}, restore ${healthRestored} health, and pay ${inn.restPrice} ${inn.currency.name}${inn.restPrice === 1 ? "" : "s"}. Health: ${nextHealth?.current ?? "—"}/${nextHealth?.maximum ?? "—"}. Balance: ${nextWallet?.balance ?? "—"}.`,
+      );
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "You could not rest at this inn.");
+    } finally {
+      setPending(null);
+    }
+  }, [addEntry, pending, snapshot]);
+
   const executeCommand = useCallback(async (rawCommand: string) => {
     const value = rawCommand.trim();
     if (!value || pending) return;
@@ -665,6 +696,19 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     if (verb.toLowerCase() === "help") {
       addEntry("system", `> ${value}`);
       for (const line of getCommandHelp(target)) addEntry("narration", line);
+      return;
+    }
+    if (verb.toLowerCase() === "rest") {
+      addEntry("system", `> ${value}`);
+      if (target) {
+        addEntry("error", "Rest at the inn in this location; no target is needed.");
+        return;
+      }
+      if (!snapshot?.location?.inn) {
+        addEntry("error", "There is no inn here where you can rest.");
+        return;
+      }
+      await performInnRest();
       return;
     }
     if (["attack", "defend", "flee"].includes(verb.toLowerCase())) {
@@ -978,7 +1022,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     }
     addEntry("system", `> ${value}`);
     addEntry("error", 'Unknown command. Try "help" for the command list.');
-  }, [addEntry, browseMerchant, changeEquipment, dropObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, activeMerchantCatalog, performCombatAction]);
+  }, [addEntry, browseMerchant, changeEquipment, dropObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, activeMerchantCatalog, performCombatAction, performInnRest]);
 
   const submitQuickCommand = useCallback((rawCommand: string) => {
     setQuickCommandMode("quick");
@@ -1133,6 +1177,22 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     } else if (challengeableNpcs.length > 0) {
       addMode("attack", "attack", "Show opponents to attack");
     }
+    const health = snapshot?.character?.health;
+    const needsRest = Boolean(health && health.current < health.maximum);
+    if (
+      visibleCombat?.status !== "active" &&
+      snapshot?.location?.inn &&
+      needsRest
+    ) {
+      const inn = snapshot.location.inn;
+      actions.push({
+        id: "rest",
+        label: "rest",
+        ariaLabel: `Rest at ${inn.name} for ${inn.restPrice} ${inn.currency.name}${inn.restPrice === 1 ? "" : "s"}`,
+        opensMenu: false,
+        onSelect: () => submitQuickCommand("rest"),
+      });
+    }
     actions.push({
       id: "help",
       label: "help",
@@ -1153,6 +1213,8 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     snapshot?.character?.equipment,
     snapshot?.location?.npcs,
     snapshot?.location?.objects,
+    snapshot?.location?.inn,
+    snapshot?.character?.health,
     submitQuickCommand,
     visibleCombat,
   ]);
@@ -1878,7 +1940,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                         spellCheck={false}
                       />
                       <Button type="submit" variant="secondary" disabled={!command.trim() || pending !== null}>
-                        {pending === "look" ? "Looking" : pending === "read" ? "Reading" : pending === "take" ? "Taking" : pending === "drop" ? "Dropping" : pending === "move" ? "Moving" : pending === "talk" ? "Talking" : pending === "shop" ? "Browsing" : pending === "buy" ? "Buying" : pending === "combat" ? "Acting" : pending === "equip" ? "Changing gear" : "Send"}
+                        {pending === "look" ? "Looking" : pending === "read" ? "Reading" : pending === "take" ? "Taking" : pending === "drop" ? "Dropping" : pending === "move" ? "Moving" : pending === "talk" ? "Talking" : pending === "shop" ? "Browsing" : pending === "buy" ? "Buying" : pending === "combat" ? "Acting" : pending === "rest" ? "Resting" : pending === "equip" ? "Changing gear" : "Send"}
                       </Button>
                     </form>
                   </section>}

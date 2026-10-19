@@ -324,6 +324,10 @@ export const characterPlugin: EnginePlugin = {
       const interactableRoomDescriptions = (location.interactables ?? []).flatMap(({ roomDescription }) =>
         roomDescription ? [roomDescription] : [],
       );
+      const innCurrency = location.inn ? context.world.currency : undefined;
+      if (location.inn && !innCurrency) {
+        throw new Error('An authored inn requires configured world currency.');
+      }
       return LocationProjectionSchema.parse({
         worldInstanceId: context.worldInstanceId,
         locationId: location.id,
@@ -350,6 +354,16 @@ export const characterPlugin: EnginePlugin = {
           })),
         ],
         occupants: [],
+        ...(location.inn && innCurrency ? {
+          inn: {
+            ...location.inn,
+            currency: {
+              id: innCurrency.id,
+              name: innCurrency.name,
+              symbol: innCurrency.symbol,
+            },
+          },
+        } : {}),
         ...(location.npcs?.length
           ? {
             npcs: location.npcs.map(({ id, name, description, combatProfile, shop }) => ({

@@ -20,3 +20,9 @@ In battle, the Use control opens a menu of currently available combat items inst
 **Why:** The user requested that combat item selection be grouped behind the Use action.
 
 **How to apply:** Keep the combat controls compact; list only items valid for combat in the menu and hide Use when no items can currently be used.
+
+Paid inn rest belongs to the character stream: the server resolves the authored fee and current health, and records the wallet debit and full restoration atomically. The combat plugin remains the owner of maximum-health policy; see `docs/adr/0007-character-scoped-paid-inn-rest.md`.
+
+**Why:** The user chose paid full-health restoration at inns and the existing rules make health, currency, and death character-scoped.
+
+**How to apply:** Reject rest away from an authored inn, during active combat, at full health, without sufficient currency, or after permanent death. Do not move healing or price authority into the client.
