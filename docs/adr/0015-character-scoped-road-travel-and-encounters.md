@@ -9,8 +9,9 @@ The world currently models travel as direct exits between locations. The game ne
 
 ## Decision
 
-- A road is immutable world-pack content: a stable ID, ordered location IDs (endpoints and one or more traversable road segments), an encounter chance per segment, and a pool of authored combatants.
-- Road segments are ordinary locations, so look, map discovery, exits, and text-only navigation continue to use existing location projections and commands.
+- A road is immutable world-pack content: a stable ID, ordered location IDs (endpoints and one or more traversable road segments), an encounter chance per segment, and a pool of authored combatants. It defines a travel route, not a separate room-content container.
+- Every road entry in `locationIds` resolves to the canonical `LocationDefinition` in the world pack. Its required description and optional readables, takeables, interactables, NPCs/shops, inn, exits, and map data remain authored on that location.
+- Road segments use the ordinary location projections and commands for looking, reading, taking items, talking to NPCs, shopping, and map discovery. These systems resolve against the character's current location; no road-specific room handlers or duplicate content definitions are introduced.
 - Exits that are part of a road are marked with their road ID. The client sends a road-step command for those exits; the server verifies that the exit advances exactly one adjacent segment on that authored road.
 - A successful road step appends the ordinary character movement event and, when the server-side random roll selects an encounter, a combat-start event in one character-stream append. The event records the selected combatant and the resolved outcome; replay never rerolls.
 - Road definitions, encounter pools, and encounter probability are shared immutable world content. Journey position and any resulting combat state belong to the individual character stream. Two characters may independently encounter different outcomes on the same road.
@@ -28,6 +29,7 @@ The world currently models travel as direct exits between locations. The game ne
 ## Consequences and trade-offs
 
 - **Positive:** Road length is visible and playable; movement and an encounter are atomic and replayable; existing character-scoped combat rules remain authoritative.
+- **Content authoring:** Authors add room content to a road segment's `LocationDefinition`; road metadata continues to own only route order and encounter configuration.
 - **Negative:** Encounter outcomes are independent for each character, including party members. Shared party ambushes are out of scope.
 - **Compatibility:** Roads are optional world-pack content. Legacy packs without roads and legacy character event streams replay unchanged. No relational schema migration is required.
 - **Security:** The server resolves road membership, adjacency, encounter chance, and combatant stats from validated world content; clients submit only the road exit ID.

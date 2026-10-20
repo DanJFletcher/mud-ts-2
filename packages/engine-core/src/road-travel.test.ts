@@ -4,6 +4,7 @@ import {
   characterPlugin,
   combatPlugin,
   interactionPlugin,
+  merchantPlugin,
   movementPlugin,
   teamCombatPlugin,
   teamCombatRosterPolicyCapability,
@@ -61,6 +62,12 @@ function roadWorld(encounterChancePercent: number) {
     packId: 'road-test',
     packVersion: '1.0.0',
     displayName: 'Road Test',
+    currency: {
+      id: 'moss-mark',
+      name: 'moss mark',
+      symbol: 'm',
+      startingBalance: 12,
+    },
     locations: [
       {
         id: 'road-start',
@@ -74,6 +81,31 @@ function roadWorld(encounterChancePercent: number) {
         id: 'road-segment',
         name: 'Road Segment',
         description: 'A stretch of road.',
+        takeables: [{
+          id: 'road-segment-fallen-token',
+          label: 'Fallen brass token',
+          description: 'A brass token stamped with a tiny fern.',
+          roomDescription: 'A brass token glints in the roadside dust.',
+        }],
+        npcs: [{
+          id: 'roadside-trader',
+          name: 'Pip',
+          description: 'A traveler has set up a small cart beneath the ferns.',
+          greeting: 'Take a look at my travel supplies.',
+          topics: [],
+          unknownTopicResponse: 'I only have the goods in my cart.',
+          shop: {
+            listings: [{
+              id: 'roadside-bandage',
+              item: {
+                id: 'item-roadside-bandage',
+                label: 'Herbal bandage',
+                description: 'A clean strip of linen packed with crushed healing leaves.',
+              },
+              price: 2,
+            }],
+          },
+        }],
         exits: [
           { id: 'segment-to-start', fromLocationId: 'road-segment', toLocationId: 'road-start', label: 'Back', roadId: 'test-road' },
           { id: 'segment-to-end', fromLocationId: 'road-segment', toLocationId: 'road-end', label: 'Onward', roadId: 'test-road' },
@@ -120,6 +152,7 @@ function makeRoadEngine(encounterChancePercent: number, rolls: number[]) {
       interactionPlugin,
       combatPlugin,
       movementPlugin,
+      merchantPlugin,
       roadPartyRosterPlugin,
       teamCombatPlugin,
       roadTravelPlugin,
@@ -192,6 +225,92 @@ describe('stepwise road travel', () => {
         encounterRoll: 1,
         encounterOccurred: false,
       },
+    });
+    await engine.stop();
+  });
+
+  it('supports descriptions, room items, and merchant services on road sections', async () => {
+    const { engine, store } = makeRoadEngine(0, [1]);
+    await engine.start();
+    const characterId = await createRoadCharacter(engine);
+    const travel = await engine.dispatch({
+      type: 'character.road.step',
+      version: 1,
+      commandId: 'road-room-travel',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 1,
+      payload: { exitId: 'start-to-segment' },
+    }, session);
+    expect(travel.receipt.ok).toBe(true);
+
+    const room = await engine.query({
+      type: 'location.describe',
+      version: 1,
+      queryId: 'road-room-look',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      payload: {},
+    }, session);
+    expect(room).toMatchObject({
+      ok: true,
+      value: {
+        title: 'Road Segment',
+        description: expect.stringContaining('A stretch of road.'),
+        objects: [expect.objectContaining({
+          id: 'road-segment-fallen-token',
+          takeable: true,
+        })],
+        npcs: [expect.objectContaining({
+          id: 'roadside-trader',
+          canShop: true,
+        })],
+      },
+    });
+
+    const catalog = await engine.query({
+      type: 'merchant.catalog',
+      version: 1,
+      queryId: 'roadside-merchant-catalog',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      payload: { merchantNpcId: 'roadside-trader' },
+    }, session);
+    expect(catalog).toMatchObject({
+      ok: true,
+      value: {
+        merchantName: 'Pip',
+        listings: [expect.objectContaining({ id: 'roadside-bandage', purchased: false })],
+      },
+    });
+
+    const take = await engine.dispatch({
+      type: 'character.take',
+      version: 1,
+      commandId: 'road-room-take-token',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 2,
+      payload: { itemId: 'road-segment-fallen-token' },
+    }, session);
+    expect(take.receipt.ok).toBe(true);
+    const purchase = await engine.dispatch({
+      type: 'merchant.purchase',
+      version: 1,
+      commandId: 'road-room-buy-bandage',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 3,
+      payload: { merchantNpcId: 'roadside-trader', listingId: 'roadside-bandage' },
+    }, session);
+    expect(purchase.receipt.ok).toBe(true);
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))).toMatchObject({
+      locationId: 'road-segment',
+      wallet: { balance: 10 },
+      inventory: [
+        { id: 'road-segment-fallen-token' },
+        { id: 'item-roadside-bandage' },
+      ],
     });
     await engine.stop();
   });
