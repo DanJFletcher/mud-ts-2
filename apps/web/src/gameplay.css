@@ -353,6 +353,7 @@
   color: var(--terminal-text);
   font: 400 .76rem/1.55 "DM Mono", monospace;
   overflow-wrap: anywhere;
+  white-space: pre-line;
 }
 
 .focused-terminal-history .mudd-log__entry--system {

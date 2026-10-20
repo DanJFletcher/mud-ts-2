@@ -430,7 +430,7 @@ export const characterPlugin: EnginePlugin = {
           ...sharedItemDescriptions,
           ...interactableRoomDescriptions,
           ...roomNpcDescriptions,
-        ].join(' '),
+        ].join('\n\n'),
         exits: location.exits.map((exit) => ({
           id: exit.id,
           label: exit.label,
