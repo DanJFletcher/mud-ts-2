@@ -41,10 +41,29 @@ export const TeamCombatEncounterSchema = z.object({
 }).strict();
 export type TeamCombatEncounter = z.infer<typeof TeamCombatEncounterSchema>;
 
+export const TeamRoadTravelSnapshotSchema = z.object({
+  roadId: IdSchema,
+  exitId: IdSchema,
+  fromLocationId: IdSchema,
+  toLocationId: IdSchema,
+  segmentIndex: z.number().int().positive(),
+  encounterRoll: z.number().int().min(1).max(100),
+}).strict();
+export type TeamRoadTravelSnapshot = z.infer<typeof TeamRoadTravelSnapshotSchema>;
+
 export const TeamCombatStartedEventSchema = z.object({
   type: z.literal('team.combat_started'),
   version: z.literal(1),
   payload: z.object({ encounter: TeamCombatEncounterSchema }).strict(),
+}).strict();
+
+export const TeamRoadEncounterStartedEventSchema = z.object({
+  type: z.literal('team.road_encounter_started'),
+  version: z.literal(1),
+  payload: z.object({
+    encounter: TeamCombatEncounterSchema,
+    roadTravel: TeamRoadTravelSnapshotSchema,
+  }).strict(),
 }).strict();
 
 export const TeamCombatActionResolvedEventSchema = z.object({
@@ -97,6 +116,7 @@ export const TeamCombatInfoQuerySchema = ClientQueryBaseSchema.extend({
 
 export const TeamCombatInfoProjectionSchema = z.object({
   encounter: TeamCombatEncounterSchema.nullable(),
+  roadTravel: TeamRoadTravelSnapshotSchema.optional(),
 }).strict();
 export type TeamCombatInfoProjection = z.infer<typeof TeamCombatInfoProjectionSchema>;
 
@@ -118,6 +138,7 @@ export const TeamCombatOutcomeEffectSchema = z.object({
   encounterId: IdSchema,
   locationId: IdSchema,
   result: z.enum(['victory', 'defeat', 'fled']),
+  roadTravel: TeamRoadTravelSnapshotSchema.optional(),
   players: z.array(z.object({
     characterId: IdSchema,
     health: z.number().int().nonnegative(),

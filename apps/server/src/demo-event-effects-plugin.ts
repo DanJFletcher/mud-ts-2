@@ -29,7 +29,9 @@ export const demoEventEffectsPlugin: EnginePlugin = {
       const location = demoWorld.locations.find((candidate) => candidate.id === effect.toLocationId);
       for (const npc of location?.npcs ?? []) {
         if (!npc.announcements?.length) continue;
-        const sourceEffectId = `${context.effectId}:${npc.id}`;
+        const sourceEffectId = effect.arrivalId
+          ? `${context.worldInstanceId}:${effect.arrivalId}:${npc.id}`
+          : `${context.effectId}:${npc.id}`;
         if (await getRoomChatMessageBySourceEffectId(sourceEffectId)) continue;
         await announceNpcRoomMessage({
           worldInstanceId: context.worldInstanceId,

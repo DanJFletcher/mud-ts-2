@@ -1,5 +1,6 @@
 import {
   CharacterAdvancementAwardedEventV2Schema,
+  CharacterMovedEventSchema,
   CharacterTeamCombatOutcomeAppliedEventSchema,
   TeamCombatActionCommandSchema,
   TeamCombatActionResolvedEventSchema,
@@ -10,13 +11,22 @@ import {
   TeamCombatStartCommandSchema,
   TeamCombatStartedEventSchema,
   TeamCombatEncounterSchema,
+  TeamRoadEncounterStartedEventSchema,
   type TeamCombatEncounter,
+  type TeamRoadTravelSnapshot,
+  type RoadEncounterDefinition,
+  type CharacterProjection,
 } from '@mudd/contracts';
-import type { EnginePlugin, EventEffectContext, ProposedDomainEvent } from '@mudd/engine-core';
+import type { CommandPlan, EngineCommandContext, EnginePlugin, EventEffectContext, ProposedDomainEvent, ProposedEventEffect } from '@mudd/engine-core';
 import { replayCharacter, RuleViolationError } from '@mudd/engine-core';
 import { assertCharacterAlive, characterStateCapability, type CharacterStateCapability } from './character.js';
 import { prepareCharacterRespawn } from './respawn.js';
-import { teamCombatRosterPolicyCapability, type TeamCombatRosterPolicy } from './team-combat-policy.js';
+import {
+  teamCombatRosterPolicyCapability,
+  teamRoadEncounterCapability,
+  type TeamCombatRosterPolicy,
+  type TeamRoadEncounterCapability,
+} from './team-combat-policy.js';
 
 const STREAM_ID = 'world-team-combat';
 const PLAYER_TEAM = 'allies';
@@ -30,6 +40,7 @@ type CombatEvent = {
 
 function project(events: readonly { type: string; version: number; payload: unknown }[]) {
   const encounters = new Map<string, TeamCombatEncounter>();
+  const roadTravelByEncounter = new Map<string, TeamRoadTravelSnapshot>();
   let revision = 0;
   for (const stored of events) {
     const event: CombatEvent = {
@@ -37,7 +48,12 @@ function project(events: readonly { type: string; version: number; payload: unkn
       version: stored.version,
       payload: stored.payload,
     };
-    if (event.type === 'team.combat_started') {
+    if (event.type === 'team.road_encounter_started') {
+      const parsed = TeamRoadEncounterStartedEventSchema.parse(event);
+      encounters.delete(parsed.payload.encounter.encounterId);
+      encounters.set(parsed.payload.encounter.encounterId, parsed.payload.encounter);
+      roadTravelByEncounter.set(parsed.payload.encounter.encounterId, parsed.payload.roadTravel);
+    } else if (event.type === 'team.combat_started') {
       const parsed = TeamCombatStartedEventSchema.parse(event);
       encounters.delete(parsed.payload.encounter.encounterId);
       encounters.set(parsed.payload.encounter.encounterId, parsed.payload.encounter);
@@ -48,7 +64,7 @@ function project(events: readonly { type: string; version: number; payload: unkn
     }
     revision += 1;
   }
-  return { encounters: [...encounters.values()], revision };
+  return { encounters: [...encounters.values()], roadTravelByEncounter, revision };
 }
 
 function encounterFor(events: ReturnType<typeof project>['encounters'], characterId: string) {
@@ -59,6 +75,19 @@ function encounterFor(events: ReturnType<typeof project>['encounters'], characte
 
 function maximumHealth(character: { health?: { maximum: number }; advancement?: { level: number } }) {
   return character.health?.maximum ?? 6 + ((character.advancement?.level ?? 1) - 1) * 2;
+}
+
+function findCombatNpc(
+  context: EngineCommandContext,
+  locationId: string,
+  npcId: string,
+  roadId?: string,
+) {
+  if (roadId) {
+    return context.world.roads.find((road) => road.id === roadId)?.encounters.find((candidate) => candidate.id === npcId);
+  }
+  return context.world.locations.find((location) => location.id === locationId)?.npcs
+    ?.find((candidate) => candidate.id === npcId);
 }
 
 async function applyOutcomes(
@@ -93,7 +122,7 @@ async function applyOutcomes(
         consumedItemIds,
       }),
     }];
-    const effects: import('@mudd/engine-core').ProposedEventEffect[] = [];
+    const effects: ProposedEventEffect[] = [];
     let nextMaximumHealth = previousMaximum;
     if (payload.result === 'victory') {
       const advancement = character.advancement ?? { experience: 0, level: 1 };
@@ -131,13 +160,54 @@ async function applyOutcomes(
         effects.push(...respawn.effects);
       }
     }
+    if (payload.result === 'victory' && payload.roadTravel && health.current > 0) {
+      const movementPayload = CharacterMovedEventSchema.shape.payload.parse({
+        characterId: player.characterId,
+        fromLocationId: payload.roadTravel.fromLocationId,
+        toLocationId: payload.roadTravel.toLocationId,
+        exitId: payload.roadTravel.exitId,
+        roadTravel: {
+          roadId: payload.roadTravel.roadId,
+          segmentIndex: payload.roadTravel.segmentIndex,
+          encounterRoll: payload.roadTravel.encounterRoll,
+          encounterOccurred: true,
+        },
+      });
+      events.push({ type: 'character.moved', version: 1, payload: movementPayload });
+      effects.push({
+        type: 'world.location.entered',
+        version: 1,
+        payload: {
+          characterId: player.characterId,
+          fromLocationId: payload.roadTravel.fromLocationId,
+          toLocationId: payload.roadTravel.toLocationId,
+          arrivalId: `team-road:${payload.encounterId}`,
+        },
+      });
+      effects.push({
+        type: 'engine.domain_event_dispatch',
+        version: 1,
+        payload: {
+          eventType: 'character.moved',
+          eventVersion: 1,
+          actorId: context.actorId ?? 'system:team-combat',
+          payload: movementPayload,
+        },
+      });
+    }
     await context.store.append({
       worldInstanceId: context.worldInstanceId,
       streamId: player.characterId,
       expectedVersion: history.length,
       commandId: `team-combat-outcome:${payload.encounterId}:${player.characterId}`,
       actorId: context.actorId ?? 'system:team-combat',
-      payloadHash: JSON.stringify({ encounterId: payload.encounterId, player }),
+      payloadHash: JSON.stringify({
+        encounterId: payload.encounterId,
+        result: payload.result,
+        locationId: payload.locationId,
+        roadTravel: payload.roadTravel ?? null,
+        player,
+      }),
       events,
       effects,
     });
@@ -150,6 +220,7 @@ export const teamCombatPlugin: EnginePlugin = {
     version: '1.0.0',
     apiVersion: '1.0',
     category: 'core',
+    provides: [teamRoadEncounterCapability.id],
     requires: [characterStateCapability.id, teamCombatRosterPolicyCapability.id],
     requiredPlugins: {
       'mudd.character': '^1.0.0',
@@ -157,15 +228,120 @@ export const teamCombatPlugin: EnginePlugin = {
     },
     eventSchemaVersions: {
       'team.combat_started': 1,
+      'team.road_encounter_started': 1,
       'team.combat_action_resolved': 1,
       'team.combat_ended': 1,
       'character.team_combat_outcome_applied': 1,
       'character.respawned': 1,
     },
   },
-  register({ registerCommand, registerQuery, registerEffect, requireCapability }) {
+  register({ registerCommand, registerQuery, registerEffect, requireCapability, provideCapability }) {
     const characters = requireCapability<CharacterStateCapability>(characterStateCapability);
     const rosterPolicy = requireCapability<TeamCombatRosterPolicy>(teamCombatRosterPolicyCapability);
+
+    const roadEncounterCapability: TeamRoadEncounterCapability = {
+      async plan(
+        context: EngineCommandContext,
+        initiator: CharacterProjection,
+        opponent: RoadEncounterDefinition,
+        roadTravel: TeamRoadTravelSnapshot,
+      ): Promise<CommandPlan | undefined> {
+        const roster = await rosterPolicy.resolveIfPartyPresent(
+          context,
+          initiator.characterId,
+          initiator.locationId,
+        );
+        if (!roster || roster.players.length < 2) return undefined;
+
+        const orderedPlayers = [...roster.players].sort((a, b) =>
+          a.characterId === initiator.characterId ? -1 :
+            b.characterId === initiator.characterId ? 1 : a.playerId.localeCompare(b.playerId),
+        );
+        if (
+          !Number.isInteger(roster.maxPlayers) ||
+          roster.maxPlayers < 2 ||
+          orderedPlayers.length < 2 ||
+          orderedPlayers.length > roster.maxPlayers
+        ) {
+          throw new RuleViolationError('There are not enough eligible party members for a shared road encounter.');
+        }
+
+        const stream = await context.store.readStream(context.worldInstanceId, STREAM_ID);
+        const state = project(stream);
+        const activeCharacterIds = new Set(state.encounters
+          .filter((encounter) => encounter.status === 'active')
+          .flatMap((encounter) => encounter.participants
+            .filter((participant) => participant.kind === 'player' && participant.status === 'active')
+            .map((participant) => participant.characterId!)));
+        if (orderedPlayers.some((player) => activeCharacterIds.has(player.characterId))) {
+          throw new RuleViolationError('A party member is already participating in another encounter.');
+        }
+
+        const players = await Promise.all(orderedPlayers.map(async (player) => {
+          const projection = await characters.load(context, player.characterId);
+          if (!projection || projection.locationId !== initiator.locationId) {
+            throw new RuleViolationError('A party member is no longer in this room.');
+          }
+          assertCharacterAlive(projection);
+          const maximum = maximumHealth(projection);
+          return {
+            participantId: projection.characterId,
+            teamId: PLAYER_TEAM,
+            kind: 'player' as const,
+            characterId: projection.characterId,
+            playerId: player.playerId,
+            displayName: projection.name,
+            health: Math.min(projection.health?.current ?? maximum, maximum),
+            maximumHealth: maximum,
+            defending: false,
+            status: 'active' as const,
+          };
+        }));
+        if (!players.some((player) => player.characterId === initiator.characterId)) {
+          throw new RuleViolationError('You must be present with your party to face a road encounter.');
+        }
+
+        const now = context.now().toISOString();
+        const roadName = context.world.roads.find((road) => road.id === roadTravel.roadId)?.name ?? 'road';
+        const encounter = TeamCombatEncounterSchema.parse({
+          encounterId: context.makeId(),
+          sourceGroupId: roster.sourceGroupId,
+          locationId: initiator.locationId,
+          participants: [
+            ...players,
+            {
+              participantId: context.makeId(),
+              teamId: ENEMY_TEAM,
+              kind: 'npc',
+              npcId: opponent.id,
+              displayName: opponent.name,
+              health: opponent.combatProfile.maxHealth,
+              maximumHealth: opponent.combatProfile.maxHealth,
+              defending: false,
+              status: 'active',
+            },
+          ],
+          contributingPlayerIds: [],
+          currentParticipantId: initiator.characterId,
+          round: 1,
+          status: 'active',
+          lastNarration: `${opponent.name} ambushes ${players.map((player) => player.displayName).join(', ')} on the ${roadName}.`,
+          consumedItemIdsByCharacter: {},
+          createdAt: now,
+          updatedAt: now,
+        });
+        return {
+          streamId: STREAM_ID,
+          expectedVersion: state.revision,
+          events: [{
+            type: 'team.road_encounter_started',
+            version: 1,
+            payload: TeamRoadEncounterStartedEventSchema.shape.payload.parse({ encounter, roadTravel }),
+          }],
+        };
+      },
+    };
+    provideCapability(teamRoadEncounterCapability, roadEncounterCapability);
 
     registerCommand('team.combat.start', TeamCombatStartCommandSchema, async (command, context) => {
       const character = await characters.load(context, command.characterId);
@@ -292,9 +468,12 @@ export const teamCombatPlugin: EnginePlugin = {
           !command.payload.targetParticipantId || enemy.participantId === command.payload.targetParticipantId,
         );
         if (!target) throw new RuleViolationError('There is no active enemy to target.');
-        const npc = context.world.locations
-          .find((location) => location.id === encounter.locationId)?.npcs
-          ?.find((candidate) => candidate.id === target.npcId);
+        const npc = findCombatNpc(
+          context,
+          encounter.locationId,
+          target.npcId!,
+          state.roadTravelByEncounter.get(encounter.encounterId)?.roadId,
+        );
         if (!npc?.combatProfile) throw new RuleViolationError('The opponent is no longer available.');
         const weapon = character.inventory.find((item) => item.id === character.equipment.weaponItemId);
         const defense = npc.combatProfile.style === 'guardian' ? npc.combatProfile.defense ?? 1 : 0;
@@ -349,9 +528,14 @@ export const teamCombatPlugin: EnginePlugin = {
           );
           const target = activeAllies.find((ally) => ally.defending) ??
             activeAllies[(encounter.round - 1) % activeAllies.length]!;
-          const enemyDefinition = context.world.locations
-            .find((location) => location.id === encounter.locationId)?.npcs
-            ?.find((candidate) => candidate.id === enemy?.npcId);
+          const enemyDefinition = enemy?.npcId
+            ? findCombatNpc(
+                context,
+                encounter.locationId,
+                enemy.npcId,
+                state.roadTravelByEncounter.get(encounter.encounterId)?.roadId,
+              )
+            : undefined;
           if (enemy && enemyDefinition?.combatProfile && target) {
             const armor = await characters.load(context, target.characterId!);
             const equippedArmor = armor?.inventory.find((item) =>
@@ -429,6 +613,9 @@ export const teamCombatPlugin: EnginePlugin = {
             encounterId: encounter.encounterId,
             locationId: encounter.locationId,
             result,
+            ...(state.roadTravelByEncounter.get(encounter.encounterId)
+              ? { roadTravel: state.roadTravelByEncounter.get(encounter.encounterId)! }
+              : {}),
             players: participants
               .filter((participant) => participant.kind === 'player')
               .map((participant) => ({
@@ -446,7 +633,12 @@ export const teamCombatPlugin: EnginePlugin = {
     registerQuery('team.combat.info', TeamCombatInfoQuerySchema, async (query, context) => {
       const state = project(await context.store.readStream(context.worldInstanceId, STREAM_ID));
       const encounter = encounterFor(state.encounters, query.characterId);
-      return TeamCombatInfoProjectionSchema.parse({ encounter });
+      return TeamCombatInfoProjectionSchema.parse({
+        encounter,
+        ...(encounter && state.roadTravelByEncounter.has(encounter.encounterId)
+          ? { roadTravel: state.roadTravelByEncounter.get(encounter.encounterId) }
+          : {}),
+      });
     });
 
     registerEffect(

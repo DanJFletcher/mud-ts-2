@@ -13,6 +13,14 @@ export { partyQuestPlugin, partyQuestStreamId } from './party-quests.js';
 export { combatRoomPresenceCapability } from './combat-presence.js';
 export type { ActiveRoomCharacter, CombatRoomPresenceCapability } from './combat-presence.js';
 export { teamCombatRosterPolicyCapability } from './team-combat-policy.js';
+export {
+  teamRoadEncounterCapability,
+} from './team-combat-policy.js';
+export type {
+  TeamCombatRoster,
+  TeamCombatRosterPolicy,
+  TeamRoadEncounterCapability,
+} from './team-combat-policy.js';
 export { partyCombatPolicyPlugin } from './party-combat-policy.js';
 export { teamCombatPlugin } from './team-combat.js';
 export {

@@ -908,4 +908,34 @@ describe('NPC room announcements through the server', () => {
 
     expect(announcementState.attempts).toBe(1);
   });
+
+  it('deduplicates NPC announcements for a shared party arrival', async () => {
+    const handler = state.effectHandlers.get('world.location.entered');
+    expect(handler).toBeDefined();
+    const arrivalId = 'team-road:shared-ambush';
+    for (const [characterId, effectId] of [
+      ['character-alice', 'party-arrival-alice'],
+      ['character-bob', 'party-arrival-bob'],
+    ]) {
+      await handler?.(
+        {
+          characterId,
+          fromLocationId: 'entry-room',
+          toLocationId: 'arrival-room',
+          arrivalId,
+        },
+        {
+          effectId,
+          worldInstanceId: instanceId,
+          sourceStreamId: characterId,
+          causationCommandId: effectId,
+        },
+      );
+    }
+
+    expect(announcementState.attempts).toBe(1);
+    expect(state.messages.filter((message) =>
+      message.roomId === 'arrival-room' && message.speakerType === 'npc',
+    )).toHaveLength(1);
+  });
 });

@@ -1,13 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
-import { WorldPackDraftSchema } from '@mudd/contracts';
+import { TeamCombatInfoProjectionSchema, WorldPackDraftSchema } from '@mudd/contracts';
 import {
   characterPlugin,
   combatPlugin,
   interactionPlugin,
   movementPlugin,
+  teamCombatPlugin,
+  teamCombatRosterPolicyCapability,
   roadTravelPlugin,
   worldItemsPlugin,
 } from '@mudd/core-plugins';
+import type { EnginePlugin } from '@mudd/engine-core';
 import { DEMO_WORLD_INSTANCE_ID } from '@mudd/world-demo';
 import { EngineHost, InMemoryEventStore, replayCharacter } from './index.js';
 
@@ -23,6 +26,33 @@ const session = {
 const authorization = {
   canAccessInstance: async () => true,
   ownsCharacter: async () => true,
+};
+
+let activeRoadPartyRoster: {
+  sourceGroupId: string;
+  maxPlayers: number;
+  players: { playerId: string; characterId: string; displayName: string }[];
+} | undefined;
+
+const roadPartyRosterPlugin: EnginePlugin = {
+  manifest: {
+    id: 'mudd.party-combat-policy',
+    version: '1.0.0',
+    apiVersion: '1.0',
+    category: 'first-party',
+    provides: [teamCombatRosterPolicyCapability.id],
+  },
+  register({ provideCapability }) {
+    provideCapability(teamCombatRosterPolicyCapability, {
+      async resolve() {
+        if (!activeRoadPartyRoster) throw new Error('No test party is active.');
+        return activeRoadPartyRoster;
+      },
+      async resolveIfPartyPresent() {
+        return activeRoadPartyRoster;
+      },
+    });
+  },
 };
 
 function roadWorld(encounterChancePercent: number) {
@@ -84,7 +114,16 @@ function makeRoadEngine(encounterChancePercent: number, rolls: number[]) {
     }),
   };
   const engine = new EngineHost(
-    [worldItemsPlugin, characterPlugin, interactionPlugin, combatPlugin, movementPlugin, roadTravelPlugin],
+    [
+      worldItemsPlugin,
+      characterPlugin,
+      interactionPlugin,
+      combatPlugin,
+      movementPlugin,
+      roadPartyRosterPlugin,
+      teamCombatPlugin,
+      roadTravelPlugin,
+    ],
     store,
     authorization,
     world,
@@ -95,14 +134,18 @@ function makeRoadEngine(encounterChancePercent: number, rolls: number[]) {
   return { engine, store, rng };
 }
 
-async function createRoadCharacter(engine: EngineHost) {
+async function createRoadCharacter(
+  engine: EngineHost,
+  characterSession = session,
+  commandId = 'road-create',
+) {
   const created = await engine.dispatch({
     type: 'character.create',
     version: 1,
-    commandId: 'road-create',
+    commandId,
     worldInstanceId: DEMO_WORLD_INSTANCE_ID,
     payload: { name: 'Wayfarer' },
-  }, session);
+  }, characterSession);
   expect(created.receipt.ok).toBe(true);
   return created.streamId!;
 }
@@ -200,6 +243,163 @@ describe('stepwise road travel', () => {
     expect(attack.receipt).toMatchObject({ ok: true, newAggregateVersion: 5 });
     const resolved = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId));
     expect(resolved.combat).toMatchObject({ status: 'victory', round: 1, opponentHealth: 0 });
+    await engine.stop();
+  });
+
+  it('starts one shared roadside encounter and moves surviving party members together after victory', async () => {
+    activeRoadPartyRoster = undefined;
+    const { engine, store, rng } = makeRoadEngine(100, [1, 1]);
+    await engine.start();
+    const firstSession = { ...session, playerId: 'road-party-player-a', actorId: 'road-party-player-a' };
+    const secondSession = { ...session, playerId: 'road-party-player-b', actorId: 'road-party-player-b' };
+    const firstCharacterId = await createRoadCharacter(engine, firstSession, 'road-party-character-a');
+    const secondCharacterId = await createRoadCharacter(engine, secondSession, 'road-party-character-b');
+    activeRoadPartyRoster = {
+      sourceGroupId: 'road-party-test',
+      maxPlayers: 4,
+      players: [
+        { playerId: firstSession.playerId, characterId: firstCharacterId, displayName: 'Wayfarer A' },
+        { playerId: secondSession.playerId, characterId: secondCharacterId, displayName: 'Wayfarer B' },
+      ],
+    };
+
+    const step = {
+      type: 'character.road.step',
+      version: 1,
+      commandId: 'road-party-ambush',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: firstCharacterId,
+      expectedVersion: 1,
+      payload: { exitId: 'start-to-segment' },
+    };
+    const ambush = await engine.dispatch(step, firstSession);
+    expect(ambush.receipt.ok).toBe(true);
+    expect(ambush.streamId).toBe('world-team-combat');
+    expect(ambush.events.map((event) => event.type)).toEqual(['team.road_encounter_started']);
+    expect((await engine.dispatch(step, firstSession)).receipt).toEqual(ambush.receipt);
+    expect(rng.roll).toHaveBeenCalledTimes(2);
+
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, firstCharacterId))?.locationId)
+      .toBe('road-start');
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, secondCharacterId))?.locationId)
+      .toBe('road-start');
+    const info = await engine.query({
+      type: 'team.combat.info',
+      version: 1,
+      queryId: 'road-party-ambush-info',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: secondCharacterId,
+      payload: {},
+    }, secondSession);
+    const parsedInfo = TeamCombatInfoProjectionSchema.parse((info as { value: unknown }).value);
+    expect(parsedInfo).toMatchObject({
+      roadTravel: {
+        roadId: 'test-road',
+        fromLocationId: 'road-start',
+        toLocationId: 'road-segment',
+        exitId: 'start-to-segment',
+      },
+      encounter: {
+        status: 'active',
+        participants: [
+          { characterId: firstCharacterId, teamId: 'allies' },
+          { characterId: secondCharacterId, teamId: 'allies' },
+          { npcId: 'road-thug', teamId: 'enemies' },
+        ],
+      },
+    });
+    const encounterId = parsedInfo.encounter!.encounterId;
+    const victory = await engine.dispatch({
+      type: 'team.combat.action',
+      version: 1,
+      commandId: 'road-party-ambush-victory',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: firstCharacterId,
+      payload: { encounterId, action: 'attack' },
+    }, firstSession);
+    expect(victory.receipt.ok).toBe(true);
+
+    await engine.processPendingEffects();
+    await engine.processPendingEffects();
+    for (const characterId of [firstCharacterId, secondCharacterId]) {
+      const history = await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId);
+      const movedEvents = history.filter((event) => event.type === 'character.moved');
+      expect(movedEvents).toHaveLength(1);
+      expect(replayCharacter(history)).toMatchObject({
+        locationId: 'road-segment',
+        visitedLocationIds: ['road-start', 'road-segment'],
+      });
+      expect(movedEvents[0]?.payload).toMatchObject({
+        fromLocationId: 'road-start',
+        toLocationId: 'road-segment',
+        roadTravel: { roadId: 'test-road', encounterOccurred: true },
+      });
+    }
+    activeRoadPartyRoster = undefined;
+    await engine.stop();
+  });
+
+  it('keeps the party at the source location when everyone flees a shared road encounter', async () => {
+    activeRoadPartyRoster = undefined;
+    const { engine, store } = makeRoadEngine(100, [1, 1]);
+    await engine.start();
+    const firstSession = { ...session, playerId: 'road-flee-player-a', actorId: 'road-flee-player-a' };
+    const secondSession = { ...session, playerId: 'road-flee-player-b', actorId: 'road-flee-player-b' };
+    const firstCharacterId = await createRoadCharacter(engine, firstSession, 'road-flee-character-a');
+    const secondCharacterId = await createRoadCharacter(engine, secondSession, 'road-flee-character-b');
+    activeRoadPartyRoster = {
+      sourceGroupId: 'road-flee-party',
+      maxPlayers: 4,
+      players: [
+        { playerId: firstSession.playerId, characterId: firstCharacterId, displayName: 'Wayfarer A' },
+        { playerId: secondSession.playerId, characterId: secondCharacterId, displayName: 'Wayfarer B' },
+      ],
+    };
+    const ambush = await engine.dispatch({
+      type: 'character.road.step',
+      version: 1,
+      commandId: 'road-flee-ambush',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: firstCharacterId,
+      expectedVersion: 1,
+      payload: { exitId: 'start-to-segment' },
+    }, firstSession);
+    expect(ambush.receipt.ok).toBe(true);
+    const info = await engine.query({
+      type: 'team.combat.info',
+      version: 1,
+      queryId: 'road-flee-ambush-info',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: firstCharacterId,
+      payload: {},
+    }, firstSession);
+    const encounterId = TeamCombatInfoProjectionSchema.parse((info as { value: unknown }).value)
+      .encounter!.encounterId;
+
+    expect((await engine.dispatch({
+      type: 'team.combat.action',
+      version: 1,
+      commandId: 'road-flee-first',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: firstCharacterId,
+      payload: { encounterId, action: 'flee' },
+    }, firstSession)).receipt.ok).toBe(true);
+    expect((await engine.dispatch({
+      type: 'team.combat.action',
+      version: 1,
+      commandId: 'road-flee-second',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: secondCharacterId,
+      payload: { encounterId, action: 'flee' },
+    }, secondSession)).receipt.ok).toBe(true);
+    await engine.processPendingEffects();
+
+    for (const characterId of [firstCharacterId, secondCharacterId]) {
+      const history = await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId);
+      expect(replayCharacter(history)?.locationId).toBe('road-start');
+      expect(history.some((event) => event.type === 'character.moved')).toBe(false);
+    }
+    activeRoadPartyRoster = undefined;
     await engine.stop();
   });
 });

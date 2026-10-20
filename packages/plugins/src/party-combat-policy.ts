@@ -47,10 +47,13 @@ export const partyCombatPolicyPlugin: EnginePlugin = {
     const characterState = requireCapability<CharacterStateCapability>(characterStateCapability);
     const roomPresence = requireCapability<CombatRoomPresenceCapability>(combatRoomPresenceCapability);
 
-    const policy: TeamCombatRosterPolicy = {
-      async resolve(context, initiatorCharacterId, locationId) {
+    const resolveIfPartyPresent: TeamCombatRosterPolicy['resolveIfPartyPresent'] = async (
+      context,
+      initiatorCharacterId,
+      locationId,
+    ) => {
         const party = await parties.activePartyForPlayer(context, context.session.playerId);
-        if (!party) throw new RuleViolationError('Join or create a party before starting cooperative combat.');
+        if (!party) return undefined;
 
         const pvpEvents = await context.store.readStream(
           context.worldInstanceId,
@@ -84,12 +87,23 @@ export const partyCombatPolicyPlugin: EnginePlugin = {
           player.playerId === context.session.playerId && player.characterId === initiatorCharacterId)) {
           throw new RuleViolationError('You must be online, alive, and in this room to begin the party encounter.');
         }
+        eligible.sort((a, b) =>
+          a.characterId === initiatorCharacterId ? -1 :
+            b.characterId === initiatorCharacterId ? 1 : a.playerId.localeCompare(b.playerId),
+        );
         return {
           sourceGroupId: party.groupId,
           maxPlayers: party.maxMembers,
           players: eligible.slice(0, party.maxMembers),
         };
+    };
+    const policy: TeamCombatRosterPolicy = {
+      async resolve(context, initiatorCharacterId, locationId) {
+        const roster = await resolveIfPartyPresent(context, initiatorCharacterId, locationId);
+        if (!roster) throw new RuleViolationError('Join or create a party before starting cooperative combat.');
+        return roster;
       },
+      resolveIfPartyPresent,
     };
     provideCapability<TeamCombatRosterPolicy>(teamCombatRosterPolicyCapability, policy);
   },

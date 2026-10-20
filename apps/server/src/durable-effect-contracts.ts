@@ -7,6 +7,7 @@ export const LocationEnteredEffectSchema = z.object({
   characterId: z.string().min(1).max(120),
   fromLocationId: z.string().min(1).max(120).optional(),
   toLocationId: z.string().min(1).max(120),
+  arrivalId: z.string().min(1).max(240).optional(),
 }).strict();
 
 export const PlayerRoomMessageEffectSchema = z.object({

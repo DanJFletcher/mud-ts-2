@@ -3,12 +3,14 @@ import {
   RoadStepCommandSchema,
   type RoadDefinition,
   type CharacterProjection,
+  type TeamRoadTravelSnapshot,
 } from '@mudd/contracts';
 import type { EnginePlugin, ProposedDomainEvent } from '@mudd/engine-core';
 import { RuleViolationError } from '@mudd/engine-core';
 import { assertCharacterAlive, characterStateCapability, type CharacterStateCapability } from './character.js';
 import { createRoadEncounterStartEvent } from './combat.js';
 import { movementPolicyCapability, type MovementPolicyCapability } from './movement.js';
+import { teamRoadEncounterCapability, type TeamRoadEncounterCapability } from './team-combat-policy.js';
 
 export const roadTravelPlugin: EnginePlugin = {
   manifest: {
@@ -20,10 +22,12 @@ export const roadTravelPlugin: EnginePlugin = {
       'mudd.character': '^1.0.0',
       'mudd.combat': '^1.0.0',
       'mudd.movement': '^1.0.0',
+      'mudd.team-combat': '^1.0.0',
     },
     requires: [
       characterStateCapability.id,
       movementPolicyCapability.id,
+      teamRoadEncounterCapability.id,
     ],
     eventSchemaVersions: {
       'character.combat_encounter_started': 1,
@@ -32,6 +36,7 @@ export const roadTravelPlugin: EnginePlugin = {
   register({ registerCommand, requireCapability }) {
     const characterState = requireCapability<CharacterStateCapability>(characterStateCapability);
     const movementPolicy = requireCapability<MovementPolicyCapability>(movementPolicyCapability);
+    const teamRoadEncounter = requireCapability<TeamRoadEncounterCapability>(teamRoadEncounterCapability);
 
     registerCommand('character.road.step', RoadStepCommandSchema, async (command, context) => {
       const character = await characterState.load(context, command.characterId);
@@ -50,8 +55,25 @@ export const roadTravelPlugin: EnginePlugin = {
 
       const encounterRoll = context.rng.roll(100);
       const encounterOccurred = encounterRoll <= road.encounterChancePercent;
+      const opponent = encounterOccurred
+        ? selectEncounter(road, context.rng.roll(road.encounters.length))
+        : undefined;
       const movementEvent = movement.events.find((event) => event.type === 'character.moved');
       if (!movementEvent) throw new Error('Movement policy did not return a movement event.');
+      if (encounterOccurred) {
+        if (!opponent) throw new Error('A successful road encounter did not select an opponent.');
+        const roadTravel: TeamRoadTravelSnapshot = {
+          roadId,
+          exitId: movement.exit.id,
+          fromLocationId: movement.exit.fromLocationId,
+          toLocationId: movement.exit.toLocationId,
+          segmentIndex: Math.min(fromIndex, toIndex) + 1,
+          encounterRoll,
+        };
+        const partyEncounter = await teamRoadEncounter.plan(context, character, opponent, roadTravel);
+        if (partyEncounter) return partyEncounter;
+      }
+
       const roadTravel = {
         roadId,
         segmentIndex: Math.min(fromIndex, toIndex) + 1,
@@ -66,7 +88,7 @@ export const roadTravelPlugin: EnginePlugin = {
         { ...movementEvent, payload: movementPayload },
       ];
       if (encounterOccurred) {
-        const opponent = selectEncounter(road, context.rng.roll(road.encounters.length));
+        if (!opponent) throw new Error('A successful road encounter did not select an opponent.');
         events.push(createRoadEncounterStartEvent(context, characterAtDestination(character, movement.exit.toLocationId), opponent));
       }
 

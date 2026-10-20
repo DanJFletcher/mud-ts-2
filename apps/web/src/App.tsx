@@ -794,8 +794,19 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
       const response = exit.roadId
         ? await client.roadStep(snapshot.character.characterId, exit.id, snapshot.location.revision)
         : await client.move(snapshot.character.characterId, exit.id, snapshot.location.revision);
-      const nextSnapshot = await refreshAfterMutation(`You travel ${exit.direction || exit.label}.`, true);
-      if (response.events?.some((event) => event.type === "character.combat_encounter_started")) {
+      const partyAmbush = response.events?.some((event) => event.type === "team.road_encounter_started");
+      const nextSnapshot = await refreshAfterMutation(
+        partyAmbush
+          ? "A roadside ambush interrupts your travel."
+          : `You travel ${exit.direction || exit.label}.`,
+        true,
+      );
+      if (partyAmbush) {
+        const nextTeamInfo = await refreshTeamCombat();
+        if (nextTeamInfo?.encounter) {
+          addEntry("narration", `${nextTeamInfo.encounter.lastNarration} Round ${nextTeamInfo.encounter.round}.`);
+        }
+      } else if (response.events?.some((event) => event.type === "character.combat_encounter_started")) {
         addEntry("narration", nextSnapshot.character?.combat?.lastNarration ?? "A roadside opponent blocks your way.");
       }
       setActiveDialogue(null);
@@ -805,7 +816,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     } finally {
       setPending(null);
     }
-  }, [addEntry, pending, refreshAfterMutation, snapshot]);
+  }, [addEntry, pending, refreshAfterMutation, refreshTeamCombat, snapshot]);
 
   const browseMerchant = useCallback(async (merchantNpcId: string) => {
     if (!snapshot?.character || pending) return;
