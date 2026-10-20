@@ -438,6 +438,7 @@ export const characterPlugin: EnginePlugin = {
           available: !exit.requiredInteractionId || character.itemUseObservations.some((observation) =>
             observation.interactionId === exit.requiredInteractionId && observation.locationId === location.id,
           ),
+          roadId: exit.roadId,
         })),
         objects: [
           ...(location.readables ?? []).map(({ id, label, description }) => ({

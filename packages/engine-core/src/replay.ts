@@ -16,6 +16,7 @@ import {
   CharacterRestoredEventSchema,
   CharacterWalletInitializedEventSchema,
   CharacterInnRestCompletedEventSchema,
+  CharacterCombatEncounterStartedEventSchema,
   CharacterAdvancementAwardedEventSchema,
   CharacterCombatItemUsedEventSchema,
   CharacterPvpOutcomeAppliedEventSchema,
@@ -108,6 +109,29 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         ...state,
         wallet: { ...state.wallet, balance: state.wallet.balance - price },
         health,
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.combat_encounter_started') {
+      if (!state) throw new Error('Combat encounter start encountered before character creation.');
+      const started = CharacterCombatEncounterStartedEventSchema.parse(publicEvent);
+      const encounter = {
+        ...started.payload.encounter,
+        opponentStyle: started.payload.encounter.opponentStyle ?? 'steady',
+      };
+      const maximumHealth = 6 + ((state.advancement?.level ?? 1) - 1) * 2;
+      const expectedHealth = Math.min(state.health?.current ?? maximumHealth, maximumHealth);
+      if (
+        started.payload.characterId !== state.characterId ||
+        encounter.locationId !== state.locationId ||
+        state.combat?.status === 'active' ||
+        encounter.playerHealth !== expectedHealth ||
+        encounter.playerMaxHealth !== maximumHealth
+      ) {
+        throw new Error(`Invalid combat encounter start at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        combat: encounter,
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'character.combat_action_resolved') {

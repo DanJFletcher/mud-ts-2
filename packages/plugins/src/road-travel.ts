@@ -1,0 +1,95 @@
+import {
+  CharacterMovedEventSchema,
+  RoadStepCommandSchema,
+  type RoadDefinition,
+  type CharacterProjection,
+} from '@mudd/contracts';
+import type { EnginePlugin, ProposedDomainEvent } from '@mudd/engine-core';
+import { RuleViolationError } from '@mudd/engine-core';
+import { assertCharacterAlive, characterStateCapability, type CharacterStateCapability } from './character.js';
+import { createRoadEncounterStartEvent } from './combat.js';
+import { movementPolicyCapability, type MovementPolicyCapability } from './movement.js';
+
+export const roadTravelPlugin: EnginePlugin = {
+  manifest: {
+    id: 'mudd.road-travel',
+    version: '1.0.0',
+    apiVersion: '1.0',
+    category: 'first-party',
+    requiredPlugins: {
+      'mudd.character': '^1.0.0',
+      'mudd.combat': '^1.0.0',
+      'mudd.movement': '^1.0.0',
+    },
+    requires: [
+      characterStateCapability.id,
+      movementPolicyCapability.id,
+    ],
+    eventSchemaVersions: {
+      'character.combat_encounter_started': 1,
+    },
+  },
+  register({ registerCommand, requireCapability }) {
+    const characterState = requireCapability<CharacterStateCapability>(characterStateCapability);
+    const movementPolicy = requireCapability<MovementPolicyCapability>(movementPolicyCapability);
+
+    registerCommand('character.road.step', RoadStepCommandSchema, async (command, context) => {
+      const character = await characterState.load(context, command.characterId);
+      if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
+      assertCharacterAlive(character);
+      const movement = movementPolicy.plan(context.world, character, command.payload.exitId, true);
+      const roadId = movement.exit.roadId;
+      if (!roadId) throw new RuleViolationError('That exit is not part of a road.');
+      const road = context.world.roads.find((candidate) => candidate.id === roadId);
+      if (!road) throw new Error(`Exit ${movement.exit.id} references missing road ${roadId}.`);
+      const fromIndex = road.locationIds.indexOf(movement.exit.fromLocationId);
+      const toIndex = road.locationIds.indexOf(movement.exit.toLocationId);
+      if (fromIndex < 0 || Math.abs(toIndex - fromIndex) !== 1) {
+        throw new RuleViolationError('That exit does not lead to the next segment of this road.');
+      }
+
+      const encounterRoll = context.rng.roll(100);
+      const encounterOccurred = encounterRoll <= road.encounterChancePercent;
+      const movementEvent = movement.events.find((event) => event.type === 'character.moved');
+      if (!movementEvent) throw new Error('Movement policy did not return a movement event.');
+      const roadTravel = {
+        roadId,
+        segmentIndex: Math.min(fromIndex, toIndex) + 1,
+        encounterRoll,
+        encounterOccurred,
+      };
+      const movementPayload = CharacterMovedEventSchema.shape.payload.parse({
+        ...movementEvent.payload,
+        roadTravel,
+      });
+      const events: ProposedDomainEvent[] = [
+        { ...movementEvent, payload: movementPayload },
+      ];
+      if (encounterOccurred) {
+        const opponent = selectEncounter(road, context.rng.roll(road.encounters.length));
+        events.push(createRoadEncounterStartEvent(context, characterAtDestination(character, movement.exit.toLocationId), opponent));
+      }
+
+      return {
+        streamId: command.characterId,
+        expectedVersion: command.expectedVersion,
+        events,
+        effects: movement.effects,
+      };
+    });
+  },
+};
+
+function selectEncounter(road: RoadDefinition, roll: number): RoadDefinition['encounters'][number] {
+  if (!Number.isInteger(roll) || roll < 1 || roll > road.encounters.length) {
+    throw new Error('The random source returned an invalid road encounter selection.');
+  }
+  return road.encounters[roll - 1]!;
+}
+
+function characterAtDestination(
+  character: CharacterProjection,
+  locationId: string,
+) {
+  return { ...character, locationId };
+}

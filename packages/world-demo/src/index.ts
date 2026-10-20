@@ -270,6 +270,8 @@ const draft = {
         { id: 'clearing-to-fountain', fromLocationId: 'mossgate-clearing', toLocationId: 'stillwater-fountain', label: 'West to Stillwater Fountain', direction: 'west' },
         { id: 'clearing-to-bridge', fromLocationId: 'mossgate-clearing', toLocationId: 'glasswater-bridge', label: 'North to Glasswater Bridge', direction: 'north' },
         { id: 'clearing-to-tower-west', fromLocationId: 'mossgate-clearing', toLocationId: 'bell-tower-west', label: 'East to West of Old Bell Tower', direction: 'east' },
+        { id: 'clearing-to-fernshade-road', fromLocationId: 'mossgate-clearing', toLocationId: 'fernshade-road', label: 'Southwest along Fernshade Road', direction: 'southwest', roadId: 'fernshade-road' },
+        { id: 'clearing-to-bracken-road', fromLocationId: 'mossgate-clearing', toLocationId: 'bracken-road', label: 'Northwest along Bracken Road', direction: 'northwest', roadId: 'bracken-road' },
       ],
     },
     {
@@ -629,6 +631,62 @@ const draft = {
       ],
     },
     {
+      id: 'fernshade-road',
+      name: 'Fernshade Road',
+      mapPosition: { x: -1, y: -1 },
+      description: 'A narrow dirt track passes beneath arching ferns. Fresh boot prints cross the damp earth.',
+      exits: [
+        { id: 'fernshade-road-to-clearing', fromLocationId: 'fernshade-road', toLocationId: 'mossgate-clearing', label: 'Northeast to Mossgate Clearing', direction: 'northeast', roadId: 'fernshade-road' },
+        { id: 'fernshade-road-to-fork', fromLocationId: 'fernshade-road', toLocationId: 'fernshade-fork', label: 'West to Fernshade Fork', direction: 'west', roadId: 'fernshade-road' },
+      ],
+    },
+    {
+      id: 'fernshade-fork',
+      name: 'Fernshade Fork',
+      mapPosition: { x: -2, y: -1 },
+      description: 'The track opens into a small fern-ringed clearing. The road leads southeast back toward Mossgate.',
+      exits: [
+        { id: 'fernshade-fork-to-road', fromLocationId: 'fernshade-fork', toLocationId: 'fernshade-road', label: 'East along Fernshade Road', direction: 'east', roadId: 'fernshade-road' },
+      ],
+    },
+    {
+      id: 'bracken-road',
+      name: 'Bracken Road',
+      mapPosition: { x: -1, y: 1 },
+      description: 'A rutted road descends through bracken and wet grass. The clearing lies northeast; the road continues southwest.',
+      exits: [
+        { id: 'bracken-road-to-clearing', fromLocationId: 'bracken-road', toLocationId: 'mossgate-clearing', label: 'Southeast to Mossgate Clearing', direction: 'southeast', roadId: 'bracken-road' },
+        { id: 'bracken-road-to-mile', fromLocationId: 'bracken-road', toLocationId: 'bracken-mile', label: 'West along Bracken Road', direction: 'west', roadId: 'bracken-road' },
+      ],
+    },
+    {
+      id: 'bracken-mile',
+      name: 'Bracken Mile',
+      mapPosition: { x: -2, y: 1 },
+      description: 'A milepost leans beside the road, its lettering softened by rain. The track continues southwest through the reeds.',
+      readables: [
+        {
+          id: 'bracken-milepost',
+          label: 'Leaning milepost',
+          description: 'A rain-worn milepost stands at the edge of the road.',
+          text: 'SEDGEWATCH — ONE MILE',
+        },
+      ],
+      exits: [
+        { id: 'bracken-mile-to-road', fromLocationId: 'bracken-mile', toLocationId: 'bracken-road', label: 'East along Bracken Road', direction: 'east', roadId: 'bracken-road' },
+        { id: 'bracken-mile-to-sedgewatch', fromLocationId: 'bracken-mile', toLocationId: 'sedgewatch', label: 'West to Sedgewatch', direction: 'west', roadId: 'bracken-road' },
+      ],
+    },
+    {
+      id: 'sedgewatch',
+      name: 'Sedgewatch',
+      mapPosition: { x: -3, y: 1 },
+      description: 'A raised patch of ground overlooks a broad bed of reeds. Bracken Road continues northeast toward Mossgate.',
+      exits: [
+        { id: 'sedgewatch-to-mile', fromLocationId: 'sedgewatch', toLocationId: 'bracken-mile', label: 'East along Bracken Road', direction: 'east', roadId: 'bracken-road' },
+      ],
+    },
+    {
       id: 'willowrest-inn',
       name: 'Willowrest Inn',
       mapPosition: { x: 2, y: 2 },
@@ -640,6 +698,34 @@ const draft = {
       },
       exits: [
         { id: 'willowrest-to-reedbank', fromLocationId: 'willowrest-inn', toLocationId: 'reedbank-stalls', label: 'West to Reedbank Stalls', direction: 'west' },
+      ],
+    },
+  ],
+  roads: [
+    {
+      id: 'fernshade-road',
+      name: 'Fernshade Road',
+      locationIds: ['mossgate-clearing', 'fernshade-road', 'fernshade-fork'],
+      encounterChancePercent: 15,
+      encounters: [
+        {
+          id: 'fernshade-road-stray-hound',
+          name: 'Stray Hound',
+          combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' },
+        },
+      ],
+    },
+    {
+      id: 'bracken-road',
+      name: 'Bracken Road',
+      locationIds: ['mossgate-clearing', 'bracken-road', 'bracken-mile', 'sedgewatch'],
+      encounterChancePercent: 20,
+      encounters: [
+        {
+          id: 'bracken-road-trail-thief',
+          name: 'Trail Thief',
+          combatProfile: { maxHealth: 5, attackDamage: 1, style: 'heavy' },
+        },
       ],
     },
   ],

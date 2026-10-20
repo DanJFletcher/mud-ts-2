@@ -18,6 +18,22 @@ export const ExitDefinitionSchema = z.object({
   label: z.string().min(1).max(120),
   direction: z.string().max(40).optional(),
   requiredInteractionId: IdSchema.optional(),
+  roadId: IdSchema.optional(),
+}).strict();
+
+export const RoadEncounterDefinitionSchema = z.object({
+  id: IdSchema,
+  name: z.string().min(1).max(120),
+  combatProfile: NpcCombatProfileSchema,
+}).strict();
+
+export const RoadDefinitionSchema = z.object({
+  id: IdSchema,
+  name: z.string().min(1).max(160),
+  /** Ordered endpoints and traversable road-segment locations. */
+  locationIds: z.array(IdSchema).min(3).max(100),
+  encounterChancePercent: z.number().int().min(0).max(100),
+  encounters: z.array(RoadEncounterDefinitionSchema).min(1).max(24),
 }).strict();
 
 export const MapPositionSchema = z.object({
@@ -196,6 +212,7 @@ export const WorldPackDraftSchema = z.object({
   currency: WorldCurrencyDefinitionSchema.optional(),
   respawn: z.object({ locationId: IdSchema }).strict().optional(),
   locations: z.array(LocationDefinitionSchema),
+  roads: z.array(RoadDefinitionSchema).default([]),
   quests: z.array(QuestDefinitionSchema).default([]),
 }).strict().superRefine((world, context) => {
   if (
@@ -207,6 +224,92 @@ export const WorldPackDraftSchema = z.object({
       path: ['respawn', 'locationId'],
       message: 'The respawn location must be included in the world pack.',
     });
+  }
+  const locationIds = new Set(world.locations.map(({ id }) => id));
+  const roadIds = new Set<string>();
+  const encounterIds = new Set<string>();
+  const npcIds = new Set(world.locations.flatMap((location) =>
+    (location.npcs ?? []).map((npc) => npc.id),
+  ));
+  for (const [roadIndex, road] of world.roads.entries()) {
+    if (roadIds.has(road.id)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['roads', roadIndex, 'id'],
+        message: `Duplicate road ID ${road.id}.`,
+      });
+    }
+    roadIds.add(road.id);
+    if (road.locationIds.some((id) => !locationIds.has(id))) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['roads', roadIndex, 'locationIds'],
+        message: `Road ${road.id} references a location not present in the world pack.`,
+      });
+    }
+    if (new Set(road.locationIds).size !== road.locationIds.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['roads', roadIndex, 'locationIds'],
+        message: `Road ${road.id} cannot visit the same location more than once.`,
+      });
+    }
+    for (const [encounterIndex, encounter] of road.encounters.entries()) {
+      if (encounterIds.has(encounter.id)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['roads', roadIndex, 'encounters', encounterIndex, 'id'],
+          message: `Duplicate road encounter ID ${encounter.id}.`,
+        });
+      }
+      encounterIds.add(encounter.id);
+      if (npcIds.has(encounter.id)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['roads', roadIndex, 'encounters', encounterIndex, 'id'],
+          message: `Road encounter ID ${encounter.id} conflicts with an authored NPC ID.`,
+        });
+      }
+    }
+    for (let index = 0; index < road.locationIds.length - 1; index += 1) {
+      const fromLocationId = road.locationIds[index]!;
+      const toLocationId = road.locationIds[index + 1]!;
+      const hasRoadExit = world.locations.some((location) =>
+        location.exits.some((exit) =>
+          exit.roadId === road.id &&
+          ((exit.fromLocationId === fromLocationId && exit.toLocationId === toLocationId) ||
+            (exit.fromLocationId === toLocationId && exit.toLocationId === fromLocationId)),
+        ),
+      );
+      if (!hasRoadExit) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['roads', roadIndex, 'locationIds', index],
+          message: `Road ${road.id} is missing an exit between ${fromLocationId} and ${toLocationId}.`,
+        });
+      }
+    }
+  }
+  for (const [locationIndex, location] of world.locations.entries()) {
+    for (const [exitIndex, exit] of location.exits.entries()) {
+      if (!exit.roadId) continue;
+      const road = world.roads.find(({ id }) => id === exit.roadId);
+      const fromIndex = road?.locationIds.indexOf(exit.fromLocationId) ?? -1;
+      const toIndex = road?.locationIds.indexOf(exit.toLocationId) ?? -1;
+      if (!road) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['locations', locationIndex, 'exits', exitIndex, 'roadId'],
+          message: `Exit ${exit.id} references missing road ${exit.roadId}.`,
+        });
+      } else if (fromIndex < 0 || Math.abs(toIndex - fromIndex) !== 1) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['locations', locationIndex, 'exits', exitIndex, 'roadId'],
+          message: `Exit ${exit.id} must connect adjacent locations on road ${exit.roadId}.`,
+        });
+      }
+    }
   }
 });
 
@@ -269,6 +372,7 @@ export const ExitProjectionSchema = z.object({
   label: z.string(),
   direction: z.string().optional(),
   available: z.boolean(),
+  roadId: IdSchema.optional(),
 }).strict();
 
 export const RoomOccupantProjectionSchema = z.object({
@@ -322,6 +426,8 @@ export type ExitDefinition = z.infer<typeof ExitDefinitionSchema>;
 export type MapPosition = z.infer<typeof MapPositionSchema>;
 export type LocationDefinition = z.infer<typeof LocationDefinitionSchema>;
 export type WorldPackDraft = z.infer<typeof WorldPackDraftSchema>;
+export type RoadDefinition = z.infer<typeof RoadDefinitionSchema>;
+export type RoadEncounterDefinition = z.infer<typeof RoadEncounterDefinitionSchema>;
 export type LocationDescribeQuery = z.infer<typeof LocationDescribeQuerySchema>;
 export type ObjectReadQuery = z.infer<typeof ObjectReadQuerySchema>;
 export type ObjectInspectQuery = z.infer<typeof ObjectInspectQuerySchema>;

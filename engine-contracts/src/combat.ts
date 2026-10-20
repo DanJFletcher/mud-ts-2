@@ -4,6 +4,7 @@ import { IdSchema, NonNegativeIntSchema, PositiveIntSchema } from './ids.js';
 import { CharacterHealthSchema } from './health.js';
 
 export const CombatActionIdSchema = z.enum(['attack', 'defend', 'flee', 'use-item']);
+const CombatLastActionSchema = z.enum(['attack', 'defend', 'flee', 'use-item', 'encounter']);
 export const CombatOutcomeSchema = z.enum(['active', 'victory', 'defeat', 'fled']);
 export const CombatStyleSchema = z.enum(['steady', 'heavy', 'guardian']);
 
@@ -21,13 +22,13 @@ export const CombatEncounterProjectionSchema = z.object({
   opponentNpcId: IdSchema,
   opponentName: z.string().min(1).max(120),
   opponentStyle: CombatStyleSchema.default('steady'),
-  round: PositiveIntSchema,
+  round: NonNegativeIntSchema,
   playerHealth: NonNegativeIntSchema.max(1000),
   playerMaxHealth: PositiveIntSchema.max(1000),
   opponentHealth: NonNegativeIntSchema.max(1000),
   opponentMaxHealth: PositiveIntSchema.max(1000),
   status: CombatOutcomeSchema,
-  lastAction: CombatActionIdSchema,
+  lastAction: CombatLastActionSchema,
   lastNarration: z.string().min(1).max(1000),
 }).strict().superRefine((combat, context) => {
   if (combat.playerHealth > combat.playerMaxHealth) {
@@ -43,6 +44,28 @@ export const CombatEncounterProjectionSchema = z.object({
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['status'], message: 'Defeat requires the player to be at zero health.' });
   }
 });
+
+export const CharacterCombatEncounterStartedEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('character.combat_encounter_started'),
+  version: z.literal(1),
+  payload: z.object({
+    characterId: IdSchema,
+    encounter: CombatEncounterProjectionSchema,
+  }).strict().superRefine(({ encounter }, context) => {
+    if (
+      encounter.status !== 'active' ||
+      encounter.round !== 0 ||
+      encounter.lastAction !== 'encounter' ||
+      encounter.opponentHealth <= 0
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['encounter'],
+        message: 'A new encounter must be active and awaiting the player’s first action.',
+      });
+    }
+  }),
+}).strict();
 
 export const CombatActionCommandSchema = ClientCommandBaseSchema.extend({
   type: z.literal('combat.action'),
@@ -109,6 +132,13 @@ const CombatActionResolvedPayloadV3Schema = CombatActionResolvedPayloadSchema.ex
   consumedItemId: IdSchema.optional(),
   healingDone: NonNegativeIntSchema.max(1000).default(0),
 }).strict().superRefine((payload, context) => {
+  if (payload.encounter.round < 1 || payload.encounter.lastAction === 'encounter') {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['encounter'],
+      message: 'A resolved combat action must follow the encounter start.',
+    });
+  }
   const usedItem = payload.encounter.lastAction === 'use-item';
   if (usedItem !== Boolean(payload.consumedItemId)) {
     context.addIssue({

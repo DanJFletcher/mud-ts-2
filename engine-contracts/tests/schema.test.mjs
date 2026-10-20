@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   MoveCharacterCommandSchema, CharacterMovedEventSchema, CommandReceiptSchema,
+  RoadStepCommandSchema,
   PluginManifestSchema, LocationDescribeQuerySchema, ObjectReadQuerySchema, ObjectInspectQuerySchema, TakeCharacterItemCommandSchema,
   DropCharacterItemCommandSchema, InventoryItemProjectionSchema, WorldPackDraftSchema,
   validateDraftWorldGraph,
@@ -21,6 +22,53 @@ test('movement event requires committed metadata', () => {
     aggregateVersion: 3, causationCommandId: 'cmd1', actorId: 'player1', occurredAt: '2026-10-17T15:00:00Z', tick: 4,
     payload: { characterId: 'char1', fromLocationId: 'r1', toLocationId: 'r2', exitId: 'north' },
   }).success, true);
+});
+
+test('road travel uses a validated one-exit command', () => {
+  assert.equal(RoadStepCommandSchema.safeParse({
+    type: 'character.road.step',
+    version: 1,
+    commandId: 'road-step',
+    worldInstanceId: 'world1',
+    characterId: 'char1',
+    expectedVersion: 3,
+    payload: { exitId: 'road-to-segment' },
+  }).success, true);
+  assert.equal(RoadStepCommandSchema.safeParse({
+    type: 'character.road.step',
+    version: 1,
+    commandId: 'road-step',
+    worldInstanceId: 'world1',
+    characterId: 'char1',
+    expectedVersion: 3,
+    payload: { exitId: 'road-to-segment', encounterRoll: 1 },
+  }).success, false);
+});
+
+test('world roads require adjacent authored locations and valid road-tagged exits', () => {
+  const roadPack = {
+    formatVersion: 1,
+    packId: 'road-pack',
+    packVersion: '1.0.0',
+    displayName: 'Road Pack',
+    locations: [
+      { id: 'start', name: 'Start', description: 'Start.', exits: [{ id: 'start-to-road', fromLocationId: 'start', toLocationId: 'segment', label: 'Road', roadId: 'long-road' }] },
+      { id: 'segment', name: 'Segment', description: 'Road.', exits: [{ id: 'segment-to-end', fromLocationId: 'segment', toLocationId: 'end', label: 'Onward', roadId: 'long-road' }] },
+      { id: 'end', name: 'End', description: 'End.', exits: [] },
+    ],
+    roads: [{
+      id: 'long-road',
+      name: 'Long Road',
+      locationIds: ['start', 'segment', 'end'],
+      encounterChancePercent: 25,
+      encounters: [{ id: 'road-enemy', name: 'Road Enemy', combatProfile: { maxHealth: 4, attackDamage: 1 } }],
+    }],
+  };
+  assert.equal(WorldPackDraftSchema.safeParse(roadPack).success, true);
+  assert.equal(WorldPackDraftSchema.safeParse({
+    ...roadPack,
+    roads: [{ ...roadPack.roads[0], locationIds: ['start', 'end', 'segment'] }],
+  }).success, false);
 });
 
 test('receipt is a success/error discriminated union', () => {

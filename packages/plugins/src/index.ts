@@ -1,5 +1,8 @@
 export { characterPlugin } from './character.js';
 export { movementPlugin } from './movement.js';
+export { movementPolicyCapability } from './movement.js';
+export type { MovementPolicyCapability } from './movement.js';
+export { roadTravelPlugin } from './road-travel.js';
 export { npcDialoguePlugin } from './npc-dialogue.js';
 export { merchantPlugin } from './merchant.js';
 export { combatPlugin } from './combat.js';

@@ -10,6 +10,7 @@ import {
   NpcTalkQuerySchema,
   ObjectInspectQuerySchema,
   MoveCharacterCommandSchema,
+  RoadStepCommandSchema,
   TakeCharacterItemCommandSchema,
   DropCharacterItemCommandSchema,
   EquipCharacterItemCommandSchema,
@@ -599,6 +600,19 @@ export class MuddHttpClient {
   async move(characterId: string, exitId: string, expectedVersion: number, commandId = crypto.randomUUID()): Promise<CommandResponse> {
     const command = MoveCharacterCommandSchema.parse({
       type: 'character.move',
+      version: 1,
+      commandId,
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      expectedVersion,
+      payload: { exitId },
+    });
+    return this.send(command);
+  }
+
+  async roadStep(characterId: string, exitId: string, expectedVersion: number, commandId = crypto.randomUUID()): Promise<CommandResponse> {
+    const command = RoadStepCommandSchema.parse({
+      type: 'character.road.step',
       version: 1,
       commandId,
       worldInstanceId: this.options.worldInstanceId,

@@ -1,5 +1,6 @@
 import {
   CharacterAdvancementAwardedEventV2Schema,
+  CharacterCombatEncounterStartedEventSchema,
   CharacterCombatItemUsedEventSchema,
   CharacterInnRestCompletedEventSchema,
   CombatActionCommandSchema,
@@ -7,6 +8,13 @@ import {
   InnRestCommandSchema,
 } from '@mudd/contracts';
 import type { EnginePlugin, ProposedDomainEvent, ProposedEventEffect } from '@mudd/engine-core';
+import type {
+  CharacterProjection,
+  NpcCombatProfile,
+  RoadEncounterDefinition,
+  WorldPackDraft,
+} from '@mudd/contracts';
+import type { EngineCommandContext } from '@mudd/engine-core';
 import { RuleViolationError } from '@mudd/engine-core';
 import { assertCharacterAlive, characterStateCapability, type CharacterStateCapability } from './character.js';
 import { prepareCharacterRespawn } from './respawn.js';
@@ -19,12 +27,58 @@ const PLAYER_ATTACK_DAMAGE = 2;
 const VICTORY_EXPERIENCE_REWARD = 10;
 const MAX_LEVEL = 10;
 
-function experienceRequiredForNextLevel(level: number): number {
-  return level * 20;
-}
-
 function maximumHealthForLevel(level: number): number {
   return PLAYER_BASE_MAX_HEALTH + (level - 1) * PLAYER_HEALTH_PER_LEVEL;
+}
+
+export function createRoadEncounterStartEvent(
+  context: EngineCommandContext,
+  character: CharacterProjection,
+  opponent: RoadEncounterDefinition,
+): ProposedDomainEvent {
+  const playerMaxHealth = maximumHealthForLevel(character.advancement?.level ?? 1);
+  const playerHealth = Math.min(character.health?.current ?? playerMaxHealth, playerMaxHealth);
+  if (playerHealth <= 0) throw new RuleViolationError('You are too hurt to survive a road encounter.');
+  const encounter = {
+    encounterId: context.makeId(),
+    locationId: character.locationId,
+    opponentNpcId: opponent.id,
+    opponentName: opponent.name,
+    opponentStyle: opponent.combatProfile.style ?? 'steady',
+    round: 0,
+    playerHealth,
+    playerMaxHealth,
+    opponentHealth: opponent.combatProfile.maxHealth,
+    opponentMaxHealth: opponent.combatProfile.maxHealth,
+    status: 'active',
+    lastAction: 'encounter',
+    lastNarration: `${opponent.name} ambushes you on the road!`,
+  };
+  const payload = { characterId: character.characterId, encounter };
+  CharacterCombatEncounterStartedEventSchema.shape.payload.parse(payload);
+  return { type: 'character.combat_encounter_started', version: 1, payload };
+}
+
+function findCombatOpponent(
+  world: WorldPackDraft,
+  locationId: string,
+  opponentId: string,
+): { id: string; name: string; combatProfile: NpcCombatProfile } | undefined {
+  const localNpc = world.locations
+    .find((location) => location.id === locationId)
+    ?.npcs?.find((candidate) => candidate.id === opponentId && candidate.combatProfile);
+  if (localNpc?.combatProfile) {
+    return { id: localNpc.id, name: localNpc.name, combatProfile: localNpc.combatProfile };
+  }
+  for (const road of world.roads) {
+    const encounter = road.encounters.find((candidate) => candidate.id === opponentId);
+    if (encounter) return { id: encounter.id, name: encounter.name, combatProfile: encounter.combatProfile };
+  }
+  return undefined;
+}
+
+function experienceRequiredForNextLevel(level: number): number {
+  return level * 20;
 }
 
 export const combatPlugin: EnginePlugin = {
@@ -37,6 +91,7 @@ export const combatPlugin: EnginePlugin = {
     requiredPlugins: { 'mudd.character': '^1.0.0', 'mudd.interactions': '^1.0.0' },
     eventSchemaVersions: {
       'character.combat_action_resolved': 3,
+      'character.combat_encounter_started': 1,
       'character.advancement_awarded': 2,
       'character.combat_item_used': 1,
       'character.inn_rest_completed': 1,
@@ -138,9 +193,7 @@ export const combatPlugin: EnginePlugin = {
         if (command.payload.action !== 'attack' || !targetNpcId) {
           throw new RuleViolationError('Choose a combatant here to begin a fight.');
         }
-        const npc = context.world.locations
-          .find((location) => location.id === character.locationId)
-          ?.npcs?.find((candidate) => candidate.id === targetNpcId && candidate.combatProfile);
+        const npc = findCombatOpponent(context.world, character.locationId, targetNpcId);
         if (!npc?.combatProfile) {
           throw new RuleViolationError('That opponent is not available here.');
         }
@@ -166,9 +219,7 @@ export const combatPlugin: EnginePlugin = {
         };
       }
 
-      const npc = context.world.locations
-        .find((location) => location.id === encounter.locationId)
-        ?.npcs?.find((candidate) => candidate.id === encounter.opponentNpcId && candidate.combatProfile);
+      const npc = findCombatOpponent(context.world, encounter.locationId, encounter.opponentNpcId);
       if (!npc?.combatProfile) throw new RuleViolationError('That opponent is no longer available.');
 
       const action = command.payload.action;

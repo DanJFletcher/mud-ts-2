@@ -539,6 +539,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     addDefaultLook(nextSnapshot.location);
     if (announceQuestObjectives) announceNewQuestObjectives(nextSnapshot);
     else rememberCompletedQuestObjectives(nextSnapshot);
+    return nextSnapshot;
   }, [addDefaultLook, addEntry, announceNewQuestObjectives, rememberCompletedQuestObjectives]);
 
   const inspect = useCallback(async (target?: string) => {
@@ -790,8 +791,13 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     }
     setPending("move");
     try {
-      await client.move(snapshot.character.characterId, exit.id, snapshot.location.revision);
-      await refreshAfterMutation(`You travel ${exit.direction || exit.label}.`, true);
+      const response = exit.roadId
+        ? await client.roadStep(snapshot.character.characterId, exit.id, snapshot.location.revision)
+        : await client.move(snapshot.character.characterId, exit.id, snapshot.location.revision);
+      const nextSnapshot = await refreshAfterMutation(`You travel ${exit.direction || exit.label}.`, true);
+      if (response.events?.some((event) => event.type === "character.combat_encounter_started")) {
+        addEntry("narration", nextSnapshot.character?.combat?.lastNarration ?? "A roadside opponent blocks your way.");
+      }
       setActiveDialogue(null);
       setActiveMerchantCatalog(null);
     } catch (error) {
