@@ -1058,10 +1058,10 @@ describe('MUDD engine host', () => {
       commandId: 'tower-route-enter-tower',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
-      expectedVersion: 4,
+      expectedVersion: 6,
       payload: { exitId: 'bell-tower-west-to-tower' },
     }, session);
-    expect(enterTower.receipt).toMatchObject({ ok: true, newAggregateVersion: 5 });
+    expect(enterTower.receipt).toMatchObject({ ok: true, newAggregateVersion: 7 });
 
     const useFromTowerFloor = await engine.dispatch({
       type: 'character.use',
@@ -1069,7 +1069,7 @@ describe('MUDD engine host', () => {
       commandId: 'tower-route-use-from-ground-floor',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
-      expectedVersion: 5,
+      expectedVersion: 7,
       payload: { itemId: 'mossgate-loose-stone', targetId: 'tower-cracked-bell' },
     }, session);
     expect(useFromTowerFloor.receipt).toMatchObject({
@@ -1083,10 +1083,10 @@ describe('MUDD engine host', () => {
       commandId: 'tower-route-climb-to-belfry',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
-      expectedVersion: 5,
+      expectedVersion: 7,
       payload: { exitId: 'tower-to-belfry' },
     }, session);
-    expect(climbToBelfry.receipt).toMatchObject({ ok: true, newAggregateVersion: 6 });
+    expect(climbToBelfry.receipt).toMatchObject({ ok: true, newAggregateVersion: 8 });
 
     const strikeBell = await engine.dispatch({
       type: 'character.use',
@@ -1094,12 +1094,20 @@ describe('MUDD engine host', () => {
       commandId: 'tower-route-strike-bell',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
-      expectedVersion: 6,
+      expectedVersion: 8,
       payload: { itemId: 'mossgate-loose-stone', targetId: 'tower-cracked-bell' },
     }, session);
-    expect(strikeBell.receipt).toMatchObject({ ok: true, newAggregateVersion: 7 });
+    expect(strikeBell.receipt).toMatchObject({ ok: true, newAggregateVersion: 9 });
     expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))?.visitedLocationIds)
-      .toEqual(['mossgate-clearing', 'glasswater-bridge', 'bell-tower-west', 'bell-tower', 'bell-tower-belfry']);
+      .toEqual([
+        'mossgate-clearing',
+        'glasswater-approach',
+        'glasswater-bridge',
+        'tower-ridge',
+        'bell-tower-west',
+        'bell-tower',
+        'bell-tower-belfry',
+      ]);
 
     await engine.stop();
   });

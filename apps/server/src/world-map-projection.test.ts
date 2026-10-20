@@ -156,8 +156,8 @@ describe('visited world map projection', () => {
       toLocationId: 'willowrest-lane',
     });
     expect(innSnapshot.map?.connections).toContainEqual({
-      fromLocationId: 'willowrest-lane',
-      toLocationId: 'willowrest-inn',
+      fromLocationId: 'willowrest-inn',
+      toLocationId: 'willowrest-lane',
     });
     expect(innSnapshot.map?.connections).not.toContainEqual({
       fromLocationId: 'reedbank-stalls',

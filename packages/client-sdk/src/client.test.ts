@@ -116,6 +116,7 @@ const testPlugins = [
 ];
 
 const demoRoadRoutes = {
+  'fountain-to-clearing': ['fountain-to-stillwater-path', 'stillwater-path-to-clearing'],
   'clearing-to-bridge': ['clearing-to-glasswater-road', 'glasswater-approach-to-bridge'],
   'bridge-to-clearing': ['bridge-to-glasswater-road', 'glasswater-approach-to-clearing'],
   'bridge-to-tower-west': ['bridge-to-tower-ridge', 'tower-ridge-to-west'],
@@ -677,10 +678,10 @@ describe('MuddHttpClient', () => {
     } as const;
     const store = new InMemoryEventStore();
     const engine = new EngineHost(
-      [worldItemsPlugin, characterPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin],
+      testPlugins,
       store,
       { canAccessInstance: async () => true, ownsCharacter: async () => true },
-      demoWorld,
+      demoTestWorld(),
     );
     await engine.start();
     const fetcher: typeof fetch = async (input, init = {}) => {
@@ -855,10 +856,10 @@ describe('MuddHttpClient', () => {
     } as const;
     const store = new InMemoryEventStore();
     const engine = new EngineHost(
-      [worldItemsPlugin, characterPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin],
+      testPlugins,
       store,
       { canAccessInstance: async () => true, ownsCharacter: async () => true },
-      demoWorld,
+      demoTestWorld(),
     );
     await engine.start();
     const fetcher: typeof fetch = async (input, init = {}) => {

@@ -59,6 +59,7 @@ const testPlugins = [
 ];
 
 const demoRoadRoutes = {
+  'fountain-to-clearing': ['fountain-to-stillwater-path', 'stillwater-path-to-clearing'],
   'clearing-to-bridge': ['clearing-to-glasswater-road', 'glasswater-approach-to-bridge'],
   'bridge-to-clearing': ['bridge-to-glasswater-road', 'glasswater-approach-to-clearing'],
   'bridge-to-tower-west': ['bridge-to-tower-ridge', 'tower-ridge-to-west'],
@@ -594,7 +595,8 @@ describe('turn-based PvE combat', () => {
     expect(state.health).toEqual({ current: 6, maximum: 6 });
     expect(state.combat).toBeUndefined();
     expect(state.visitedLocationIds).toContain('stillwater-fountain');
-    expect((await client.move(
+    expect((await moveAlongDemoRoad(
+      client,
       characterId,
       'fountain-to-clearing',
       state.revision,
