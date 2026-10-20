@@ -1,10 +1,44 @@
 import { describe, expect, it } from 'vitest';
 import { CharacterProjectionSchema, type WorldPackDraft } from '@mudd/contracts';
-import { EngineHost, InMemoryEventStore, replayCharacter } from '@mudd/engine-core';
-import { characterPlugin, merchantPlugin, movementPlugin, worldItemsPlugin } from '@mudd/core-plugins';
+import { EngineHost, InMemoryEventStore, replayCharacter, type EnginePlugin } from '@mudd/engine-core';
+import {
+  characterPlugin,
+  combatPlugin,
+  combatRoomPresenceCapability,
+  groupsPlugin,
+  interactionPlugin,
+  merchantPlugin,
+  movementPlugin,
+  partyCombatPolicyPlugin,
+  partyPlugin,
+  partyQuestPlugin,
+  roadTravelPlugin,
+  teamCombatPlugin,
+  worldItemsPlugin,
+} from '@mudd/core-plugins';
 import { MuddHttpClient } from '@mudd/client-sdk';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import { projectWorldMap } from './world-map-projection.js';
+
+const testCombatPresencePlugin: EnginePlugin = {
+  manifest: {
+    id: 'mudd.room-combat-presence',
+    version: '1.0.0',
+    apiVersion: '1.0',
+    category: 'core',
+    provides: [combatRoomPresenceCapability.id],
+  },
+  register({ provideCapability }) {
+    provideCapability(combatRoomPresenceCapability, {
+      listActiveCharacters: async () => [],
+    });
+  },
+};
+
+const demoRoadRoutes: Record<string, readonly [string, string]> = {
+  'clearing-to-bridge': ['clearing-to-glasswater-road', 'glasswater-approach-to-bridge'],
+  'bridge-to-tower-west': ['bridge-to-tower-ridge', 'tower-ridge-to-west'],
+};
 
 const basementRooms: WorldPackDraft['locations'] = [
   {
@@ -101,9 +135,25 @@ describe('current-area and Z-level maps', () => {
 
   it('switches maps after real down/up movement and remembers both maps when revisiting', async () => {
     const store = new InMemoryEventStore();
+    const testWorld = structuredClone(demoWorld);
+    for (const road of testWorld.roads ?? []) road.encounterChancePercent = 0;
     const engine = new EngineHost(
-      [worldItemsPlugin, characterPlugin, merchantPlugin, movementPlugin], store,
-      { canAccessInstance: async () => true, ownsCharacter: async () => true }, demoWorld,
+      [
+        worldItemsPlugin,
+        characterPlugin,
+        groupsPlugin,
+        partyPlugin,
+        partyQuestPlugin,
+        interactionPlugin,
+        combatPlugin,
+        testCombatPresencePlugin,
+        partyCombatPolicyPlugin,
+        teamCombatPlugin,
+        movementPlugin,
+        roadTravelPlugin,
+        merchantPlugin,
+      ], store,
+      { canAccessInstance: async () => true, ownsCharacter: async () => true }, testWorld,
     );
     await engine.start();
     const session = {
@@ -127,8 +177,22 @@ describe('current-area and Z-level maps', () => {
       },
     });
     const characterId = (await client.createCharacter('Briar', 'level-create')).streamId!;
-    const move = async (exitId: string, commandId: string) =>
-      client.move(characterId, exitId, (await getCharacter()).revision, commandId);
+    const move = async (exitId: string, commandId: string) => {
+      const character = await getCharacter();
+      const route = demoRoadRoutes[exitId];
+      if (!route) return client.move(characterId, exitId, character.revision, commandId);
+      let result;
+      for (const [index, roadExitId] of route.entries()) {
+        result = await client.roadStep(
+          characterId,
+          roadExitId,
+          character.revision + index,
+          `${commandId}-step-${index + 1}`,
+        );
+        if (!result.receipt.ok) return result;
+      }
+      return result!;
+    };
 
     await client.take(characterId, 'mossgate-loose-stone', (await getCharacter()).revision, 'level-take-stone');
     await move('clearing-to-bridge', 'level-go-bridge');
@@ -142,6 +206,8 @@ describe('current-area and Z-level maps', () => {
       'bell-tower-west',
       'glasswater-bridge',
       'bell-tower',
+      'glasswater-approach',
+      'tower-ridge',
     ]);
     expect(surface.locations.map(({ id }) => id)).not.toContain('bell-tower-belfry');
 

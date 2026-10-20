@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { EngineHost, InMemoryEventStore, replayCharacter } from '@mudd/engine-core';
+import { EngineHost, InMemoryEventStore, replayCharacter, type EnginePlugin } from '@mudd/engine-core';
 import {
   characterPlugin,
   combatPlugin,
+  combatRoomPresenceCapability,
+  groupsPlugin,
   interactionPlugin,
   merchantPlugin,
   movementPlugin,
+  partyCombatPolicyPlugin,
+  partyPlugin,
+  partyQuestPlugin,
+  roadTravelPlugin,
+  teamCombatPlugin,
   worldItemsPlugin,
 } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
@@ -20,13 +27,81 @@ const session = {
   authenticated: true,
 } as const;
 
+const testCombatPresencePlugin: EnginePlugin = {
+  manifest: {
+    id: 'mudd.room-combat-presence',
+    version: '1.0.0',
+    apiVersion: '1.0',
+    category: 'core',
+    provides: [combatRoomPresenceCapability.id],
+  },
+  register({ provideCapability }) {
+    provideCapability(combatRoomPresenceCapability, {
+      listActiveCharacters: async () => [],
+    });
+  },
+};
+
+const testPlugins = [
+  worldItemsPlugin,
+  characterPlugin,
+  groupsPlugin,
+  partyPlugin,
+  partyQuestPlugin,
+  interactionPlugin,
+  combatPlugin,
+  testCombatPresencePlugin,
+  partyCombatPolicyPlugin,
+  teamCombatPlugin,
+  movementPlugin,
+  roadTravelPlugin,
+  merchantPlugin,
+];
+
+const demoRoadRoutes = {
+  'clearing-to-bridge': ['clearing-to-glasswater-road', 'glasswater-approach-to-bridge'],
+  'bridge-to-clearing': ['bridge-to-glasswater-road', 'glasswater-approach-to-clearing'],
+  'bridge-to-tower-west': ['bridge-to-tower-ridge', 'tower-ridge-to-west'],
+  'bell-tower-west-to-bridge': ['bell-tower-west-to-tower-ridge', 'tower-ridge-to-bridge'],
+  'clearing-to-tower-west': ['clearing-to-bellwarden-track', 'bellwarden-track-to-tower-west'],
+  'bell-tower-west-to-clearing': ['bell-tower-west-to-bellwarden-track', 'bellwarden-track-to-clearing'],
+  'bridge-to-reedbank': ['bridge-to-reedbank-road', 'reedbank-road-to-stalls'],
+  'reedbank-to-bridge': ['reedbank-to-reedbank-road', 'reedbank-road-to-bridge'],
+  'reedbank-to-willowrest': ['reedbank-to-willowrest-lane', 'willowrest-lane-to-inn'],
+  'willowrest-to-reedbank': ['willowrest-to-lane', 'willowrest-lane-to-reedbank'],
+} as const;
+
+type DemoRoadRoute = keyof typeof demoRoadRoutes;
+
+async function moveAlongDemoRoad(
+  client: MuddHttpClient,
+  characterId: string,
+  route: DemoRoadRoute,
+  expectedVersion: number,
+  commandId: string,
+) {
+  let result;
+  for (const [index, exitId] of demoRoadRoutes[route].entries()) {
+    result = await client.roadStep(
+      characterId,
+      exitId,
+      expectedVersion + index,
+      `${commandId}-step-${index + 1}`,
+    );
+    if (!result.receipt.ok) return result;
+  }
+  return result!;
+}
+
 function makeClient(world = demoWorld) {
   const store = new InMemoryEventStore();
+  const testWorld = structuredClone(world);
+  for (const road of testWorld.roads ?? []) road.encounterChancePercent = 0;
   const engine = new EngineHost(
-    [worldItemsPlugin, characterPlugin, combatPlugin, interactionPlugin, merchantPlugin, movementPlugin],
+    testPlugins,
     store,
     { canAccessInstance: async () => true, ownsCharacter: async () => true },
-    world,
+    testWorld,
   );
   const ready = engine.start();
   const fetcher: typeof fetch = async (input, init = {}) => {
@@ -70,13 +145,13 @@ async function travelToWillowrestInn(
     state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
   }
 
-  const path = [
+  const path: DemoRoadRoute[] = [
     'clearing-to-bridge',
     'bridge-to-reedbank',
     'reedbank-to-willowrest',
   ];
-  for (const [index, exitId] of path.entries()) {
-    await client.move(characterId, exitId, state.revision, `${commandPrefix}-move-${index}`);
+  for (const [index, route] of path.entries()) {
+    await moveAlongDemoRoad(client, characterId, route, state.revision, `${commandPrefix}-move-${index}`);
     state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
   }
   return state;
@@ -119,7 +194,7 @@ describe('turn-based PvE combat', () => {
     expect(retriedAttack.receipt).toEqual(attack.receipt);
     expect((await store.readStream(DEMO_WORLD_INSTANCE_ID, firstId))).toHaveLength(2);
     expect((await store.readStream(DEMO_WORLD_INSTANCE_ID, firstId))[1]?.version).toBe(3);
-    await expect(client.move(firstId, 'clearing-to-bridge', firstState.revision, 'combat-move-during'))
+    await expect(client.roadStep(firstId, 'clearing-to-glasswater-road', firstState.revision, 'combat-move-during'))
       .rejects.toThrow('You cannot leave while combat is active. Flee first.');
 
     await client.performCombatAction(
@@ -156,7 +231,7 @@ describe('turn-based PvE combat', () => {
     );
     expect(retriedVictory.receipt).toEqual(victory.receipt);
     expect(await store.readStream(DEMO_WORLD_INSTANCE_ID, firstId)).toHaveLength(eventCountAfterVictory);
-    await expect(client.move(firstId, 'clearing-to-bridge', wonState.revision, 'combat-move-after'))
+    await expect(moveAlongDemoRoad(client, firstId, 'clearing-to-bridge', wonState.revision, 'combat-move-after'))
       .resolves.toMatchObject({ receipt: { ok: true } });
 
     const second = await client.createCharacter('Alder', 'combat-create-second');
@@ -181,7 +256,7 @@ describe('turn-based PvE combat', () => {
     );
     const fledState = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, secondId))!;
     expect(fledState.combat?.status).toBe('fled');
-    await expect(client.move(secondId, 'clearing-to-bridge', fledState.revision, 'combat-move-after-flee'))
+    await expect(moveAlongDemoRoad(client, secondId, 'clearing-to-bridge', fledState.revision, 'combat-move-after-flee'))
       .resolves.toMatchObject({ receipt: { ok: true } });
     expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, firstId))?.combat?.status)
       .toBe('victory');
@@ -257,9 +332,9 @@ describe('turn-based PvE combat', () => {
     const characterId = created.streamId!;
     let state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
 
-    await client.move(characterId, 'clearing-to-bridge', state.revision, 'combat-potion-to-bridge');
+    await moveAlongDemoRoad(client, characterId, 'clearing-to-bridge', state.revision, 'combat-potion-to-bridge');
     state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-    await client.move(characterId, 'bridge-to-reedbank', state.revision, 'combat-potion-to-stalls');
+    await moveAlongDemoRoad(client, characterId, 'bridge-to-reedbank', state.revision, 'combat-potion-to-stalls');
     state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
     await client.purchaseMerchantListing(
       characterId,
@@ -272,9 +347,9 @@ describe('turn-based PvE combat', () => {
     const potion = state.inventory.find((item) => item.consumable?.effect === 'heal')!;
     expect(potion.consumable?.amount).toBe(3);
 
-    await client.move(characterId, 'reedbank-to-bridge', state.revision, 'combat-potion-back-bridge');
+    await moveAlongDemoRoad(client, characterId, 'reedbank-to-bridge', state.revision, 'combat-potion-back-bridge');
     state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-    await client.move(characterId, 'bridge-to-clearing', state.revision, 'combat-potion-back-clearing');
+    await moveAlongDemoRoad(client, characterId, 'bridge-to-clearing', state.revision, 'combat-potion-back-clearing');
     state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
     await client.performCombatAction(
       characterId,
@@ -326,9 +401,9 @@ describe('turn-based PvE combat', () => {
     const created = await client.createCharacter('Fern', 'combat-potion-outside-create');
     const characterId = created.streamId!;
     let state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-    await client.move(characterId, 'clearing-to-bridge', state.revision, 'combat-potion-outside-to-bridge');
+    await moveAlongDemoRoad(client, characterId, 'clearing-to-bridge', state.revision, 'combat-potion-outside-to-bridge');
     state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-    await client.move(characterId, 'bridge-to-reedbank', state.revision, 'combat-potion-outside-to-stalls');
+    await moveAlongDemoRoad(client, characterId, 'bridge-to-reedbank', state.revision, 'combat-potion-outside-to-stalls');
     state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
     await client.purchaseMerchantListing(
       characterId,
@@ -340,9 +415,9 @@ describe('turn-based PvE combat', () => {
     state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
     const potion = state.inventory.find((item) => item.consumable?.effect === 'heal')!;
 
-    await client.move(characterId, 'reedbank-to-bridge', state.revision, 'combat-potion-outside-back-bridge');
+    await moveAlongDemoRoad(client, characterId, 'reedbank-to-bridge', state.revision, 'combat-potion-outside-back-bridge');
     state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-    await client.move(characterId, 'bridge-to-clearing', state.revision, 'combat-potion-outside-back-clearing');
+    await moveAlongDemoRoad(client, characterId, 'bridge-to-clearing', state.revision, 'combat-potion-outside-back-clearing');
     state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
     await client.performCombatAction(
       characterId,
@@ -387,9 +462,9 @@ describe('turn-based PvE combat', () => {
     const created = await client.createCharacter('Elm', 'combat-potion-full-create');
     const characterId = created.streamId!;
     let state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-    await client.move(characterId, 'clearing-to-bridge', state.revision, 'combat-potion-full-to-bridge');
+    await moveAlongDemoRoad(client, characterId, 'clearing-to-bridge', state.revision, 'combat-potion-full-to-bridge');
     state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-    await client.move(characterId, 'bridge-to-reedbank', state.revision, 'combat-potion-full-to-stalls');
+    await moveAlongDemoRoad(client, characterId, 'bridge-to-reedbank', state.revision, 'combat-potion-full-to-stalls');
     state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
     await client.purchaseMerchantListing(
       characterId,
@@ -411,9 +486,9 @@ describe('turn-based PvE combat', () => {
     expect(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).toHaveLength(fullHealthStreamLength);
     expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))?.inventory)
       .toEqual(state.inventory);
-    await client.move(characterId, 'reedbank-to-bridge', state.revision, 'combat-potion-full-back-bridge');
+    await moveAlongDemoRoad(client, characterId, 'reedbank-to-bridge', state.revision, 'combat-potion-full-back-bridge');
     state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-    await client.move(characterId, 'bridge-to-clearing', state.revision, 'combat-potion-full-back-clearing');
+    await moveAlongDemoRoad(client, characterId, 'bridge-to-clearing', state.revision, 'combat-potion-full-back-clearing');
     state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
     await client.performCombatAction(
       characterId,
@@ -535,9 +610,9 @@ describe('turn-based PvE combat', () => {
     const characterId = created.streamId!;
     let state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
 
-    await client.move(characterId, 'clearing-to-bridge', state.revision, 'combat-gear-to-bridge');
+    await moveAlongDemoRoad(client, characterId, 'clearing-to-bridge', state.revision, 'combat-gear-to-bridge');
     state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-    await client.move(characterId, 'bridge-to-reedbank', state.revision, 'combat-gear-to-stalls');
+    await moveAlongDemoRoad(client, characterId, 'bridge-to-reedbank', state.revision, 'combat-gear-to-stalls');
     state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
 
     await client.purchaseMerchantListing(characterId, 'sella-reedbank-merchant', 'reedbank-practice-blade', state.revision, 'combat-buy-blade');
@@ -555,9 +630,9 @@ describe('turn-based PvE combat', () => {
     await expect(client.drop(characterId, vest.id, state.revision, 'combat-drop-equipped-vest'))
       .rejects.toThrow('Unequip that item before dropping it.');
 
-    await client.move(characterId, 'reedbank-to-bridge', state.revision, 'combat-gear-return-bridge');
+    await moveAlongDemoRoad(client, characterId, 'reedbank-to-bridge', state.revision, 'combat-gear-return-bridge');
     state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-    await client.move(characterId, 'bridge-to-clearing', state.revision, 'combat-gear-return-clearing');
+    await moveAlongDemoRoad(client, characterId, 'bridge-to-clearing', state.revision, 'combat-gear-return-clearing');
     state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
     await client.performCombatAction(characterId, 'attack', state.revision, { targetNpcId: 'mossgate-training-sentinel' }, 'combat-gear-first-attack');
     state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;

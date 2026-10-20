@@ -12,6 +12,7 @@ import {
   partyPlugin,
   partyQuestPlugin,
   projectGroups,
+  roadTravelPlugin,
   worldItemsPlugin,
   teamCombatPlugin,
   type ActiveRoomCharacter,
@@ -51,15 +52,68 @@ const testCombatPresencePlugin: EnginePlugin = {
 function makeEngine(world = demoWorld) {
   let id = 0;
   const store = new InMemoryEventStore();
+  const testWorld = structuredClone(world);
+  for (const road of testWorld.roads ?? []) road.encounterChancePercent = 0;
   const engine = new EngineHost(
-    [worldItemsPlugin, movementPlugin, characterPlugin, groupsPlugin, partyPlugin, partyQuestPlugin],
+    [
+      worldItemsPlugin,
+      characterPlugin,
+      groupsPlugin,
+      partyPlugin,
+      partyQuestPlugin,
+      interactionPlugin,
+      combatPlugin,
+      testCombatPresencePlugin,
+      partyCombatPolicyPlugin,
+      teamCombatPlugin,
+      movementPlugin,
+      roadTravelPlugin,
+    ],
     store,
     authorization,
-    world,
+    testWorld,
     () => `test-id-${++id}`,
     () => new Date('2026-10-17T12:00:00.000Z'),
   );
   return { engine, store };
+}
+
+const demoRoadRoutes = {
+  'clearing-to-bridge': ['clearing-to-glasswater-road', 'glasswater-approach-to-bridge'],
+  'bridge-to-clearing': ['bridge-to-glasswater-road', 'glasswater-approach-to-clearing'],
+  'bridge-to-tower-west': ['bridge-to-tower-ridge', 'tower-ridge-to-west'],
+  'bell-tower-west-to-bridge': ['bell-tower-west-to-tower-ridge', 'tower-ridge-to-bridge'],
+  'clearing-to-tower-west': ['clearing-to-bellwarden-track', 'bellwarden-track-to-tower-west'],
+  'bell-tower-west-to-clearing': ['bell-tower-west-to-bellwarden-track', 'bellwarden-track-to-clearing'],
+  'bridge-to-reedbank': ['bridge-to-reedbank-road', 'reedbank-road-to-stalls'],
+  'reedbank-to-bridge': ['reedbank-to-reedbank-road', 'reedbank-road-to-bridge'],
+  'reedbank-to-willowrest': ['reedbank-to-willowrest-lane', 'willowrest-lane-to-inn'],
+  'willowrest-to-reedbank': ['willowrest-to-lane', 'willowrest-lane-to-reedbank'],
+} as const;
+
+type DemoRoadRoute = keyof typeof demoRoadRoutes;
+
+async function moveAlongDemoRoad(
+  engine: EngineHost,
+  characterId: string,
+  route: DemoRoadRoute,
+  expectedVersion: number,
+  commandId: string,
+) {
+  let result;
+  for (const [index, exitId] of demoRoadRoutes[route].entries()) {
+    result = await engine.dispatch({
+      type: 'character.road.step',
+      version: 1,
+      commandId: `${commandId}-step-${index + 1}`,
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: expectedVersion + index,
+      payload: { exitId },
+    }, session);
+    if (!result.receipt.ok) return result;
+  }
+  return result!;
 }
 
 describe('MUDD engine host', () => {
@@ -877,22 +931,14 @@ describe('MUDD engine host', () => {
     }, session);
     expect(cannotTakeSign.receipt).toMatchObject({ ok: false, code: 'RULE_VIOLATION' });
 
-    const movedAfterTake = await engine.dispatch({
-      type: 'character.move',
-      version: 1,
-      commandId: 'move-1',
-      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
-      characterId: created.streamId,
-      expectedVersion: 2,
-      payload: { exitId: 'clearing-to-bridge' },
-    }, session);
-    expect(movedAfterTake.receipt).toMatchObject({ ok: true, newAggregateVersion: 3 });
+    const movedAfterTake = await moveAlongDemoRoad(engine, created.streamId!, 'clearing-to-bridge', 2, 'move-1');
+    expect(movedAfterTake.receipt).toMatchObject({ ok: true, newAggregateVersion: 4 });
     const projection = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, created.streamId!));
     expect(projection).toMatchObject({
       characterId: created.streamId,
       locationId: 'glasswater-bridge',
-      visitedLocationIds: ['mossgate-clearing', 'glasswater-bridge'],
-      revision: 3,
+      visitedLocationIds: ['mossgate-clearing', 'glasswater-approach', 'glasswater-bridge'],
+      revision: 4,
       inventory: [{
         id: 'mossgate-loose-stone',
         label: 'Loose stone',
@@ -900,18 +946,10 @@ describe('MUDD engine host', () => {
       }],
     });
 
-    const returned = await engine.dispatch({
-      type: 'character.move',
-      version: 1,
-      commandId: 'return-to-clearing',
-      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
-      characterId: created.streamId,
-      expectedVersion: 3,
-      payload: { exitId: 'bridge-to-clearing' },
-    }, session);
-    expect(returned.receipt).toMatchObject({ ok: true, newAggregateVersion: 4 });
+    const returned = await moveAlongDemoRoad(engine, created.streamId!, 'bridge-to-clearing', 4, 'return-to-clearing');
+    expect(returned.receipt).toMatchObject({ ok: true, newAggregateVersion: 6 });
     expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, created.streamId!))?.visitedLocationIds)
-      .toEqual(['mossgate-clearing', 'glasswater-bridge']);
+      .toEqual(['mossgate-clearing', 'glasswater-approach', 'glasswater-bridge']);
     await engine.stop();
   });
 
@@ -964,16 +1002,8 @@ describe('MUDD engine host', () => {
     }, session);
     expect(takeStone.receipt).toMatchObject({ ok: true, newAggregateVersion: 2 });
 
-    const reachBridge = await engine.dispatch({
-      type: 'character.move',
-      version: 1,
-      commandId: 'tower-route-to-bridge',
-      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
-      characterId,
-      expectedVersion: 2,
-      payload: { exitId: 'clearing-to-bridge' },
-    }, session);
-    expect(reachBridge.receipt).toMatchObject({ ok: true, newAggregateVersion: 3 });
+    const reachBridge = await moveAlongDemoRoad(engine, characterId, 'clearing-to-bridge', 2, 'tower-route-to-bridge');
+    expect(reachBridge.receipt).toMatchObject({ ok: true, newAggregateVersion: 4 });
 
     const bridgeBypass = await engine.dispatch({
       type: 'character.move',
@@ -981,7 +1011,7 @@ describe('MUDD engine host', () => {
       commandId: 'tower-route-bridge-bypass',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
-      expectedVersion: 3,
+      expectedVersion: 4,
       payload: { exitId: 'test-direct-bridge-to-tower' },
     }, session);
     expect(bridgeBypass.receipt).toMatchObject({
@@ -990,16 +1020,8 @@ describe('MUDD engine host', () => {
       message: 'You must first visit West of Old Bell Tower before entering Old Bell Tower.',
     });
 
-    const reachWesternApproach = await engine.dispatch({
-      type: 'character.move',
-      version: 1,
-      commandId: 'tower-route-to-west',
-      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
-      characterId,
-      expectedVersion: 3,
-      payload: { exitId: 'bridge-to-tower-west' },
-    }, session);
-    expect(reachWesternApproach.receipt).toMatchObject({ ok: true, newAggregateVersion: 4 });
+    const reachWesternApproach = await moveAlongDemoRoad(engine, characterId, 'bridge-to-tower-west', 4, 'tower-route-to-west');
+    expect(reachWesternApproach.receipt).toMatchObject({ ok: true, newAggregateVersion: 6 });
 
     const prematureBellStrike = await engine.dispatch({
       type: 'character.use',
@@ -1007,7 +1029,7 @@ describe('MUDD engine host', () => {
       commandId: 'tower-route-premature-bell',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
-      expectedVersion: 4,
+      expectedVersion: 6,
       payload: { itemId: 'mossgate-loose-stone', targetId: 'tower-cracked-bell' },
     }, session);
     expect(prematureBellStrike.receipt).toMatchObject({
@@ -1021,7 +1043,7 @@ describe('MUDD engine host', () => {
       commandId: 'tower-route-belfry-bypass',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
-      expectedVersion: 4,
+      expectedVersion: 6,
       payload: { exitId: 'test-direct-west-to-belfry' },
     }, session);
     expect(belfryBypass.receipt).toMatchObject({
@@ -1112,25 +1134,17 @@ describe('MUDD engine host', () => {
       expectedVersion: 1,
       payload: { itemId: 'mossgate-loose-stone' },
     }, session);
-    await engine.dispatch({
-      type: 'character.move',
-      version: 1,
-      commandId: 'tower-strike-gate-to-bridge',
-      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
-      characterId,
-      expectedVersion: 2,
-      payload: { exitId: 'clearing-to-bridge' },
-    }, session);
+    await moveAlongDemoRoad(engine, characterId, 'clearing-to-bridge', 2, 'tower-strike-gate-to-bridge');
     const directEntry = await engine.dispatch({
       type: 'character.move',
       version: 1,
       commandId: 'tower-strike-gate-shortcut',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
-      expectedVersion: 3,
+      expectedVersion: 4,
       payload: { exitId: 'test-direct-bridge-to-tower' },
     }, session);
-    expect(directEntry.receipt).toMatchObject({ ok: true, newAggregateVersion: 4 });
+    expect(directEntry.receipt).toMatchObject({ ok: true, newAggregateVersion: 5 });
 
     const climbToBelfry = await engine.dispatch({
       type: 'character.move',
@@ -1138,10 +1152,10 @@ describe('MUDD engine host', () => {
       commandId: 'tower-strike-gate-climb',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
-      expectedVersion: 4,
+      expectedVersion: 5,
       payload: { exitId: 'tower-to-belfry' },
     }, session);
-    expect(climbToBelfry.receipt).toMatchObject({ ok: true, newAggregateVersion: 5 });
+    expect(climbToBelfry.receipt).toMatchObject({ ok: true, newAggregateVersion: 6 });
 
     const prematureStrike = await engine.dispatch({
       type: 'character.use',
@@ -1149,7 +1163,7 @@ describe('MUDD engine host', () => {
       commandId: 'tower-strike-gate-premature',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
-      expectedVersion: 5,
+      expectedVersion: 6,
       payload: { itemId: 'mossgate-loose-stone', targetId: 'tower-cracked-bell' },
     }, session);
     expect(prematureStrike.receipt).toMatchObject({
@@ -1164,50 +1178,50 @@ describe('MUDD engine host', () => {
       commandId: 'tower-strike-gate-to-west',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
-      expectedVersion: 5,
+      expectedVersion: 6,
       payload: { exitId: 'belfry-to-tower' },
     }, session);
-    expect(visitApproach.receipt).toMatchObject({ ok: true, newAggregateVersion: 6 });
+    expect(visitApproach.receipt).toMatchObject({ ok: true, newAggregateVersion: 7 });
     const exitTower = await engine.dispatch({
       type: 'character.move',
       version: 1,
       commandId: 'tower-strike-gate-visit-west',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
-      expectedVersion: 6,
+      expectedVersion: 7,
       payload: { exitId: 'tower-to-west-approach' },
     }, session);
-    expect(exitTower.receipt).toMatchObject({ ok: true, newAggregateVersion: 7 });
+    expect(exitTower.receipt).toMatchObject({ ok: true, newAggregateVersion: 8 });
     const reenterTower = await engine.dispatch({
       type: 'character.move',
       version: 1,
       commandId: 'tower-strike-gate-reenter',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
-      expectedVersion: 7,
+      expectedVersion: 8,
       payload: { exitId: 'bell-tower-west-to-tower' },
     }, session);
-    expect(reenterTower.receipt).toMatchObject({ ok: true, newAggregateVersion: 8 });
+    expect(reenterTower.receipt).toMatchObject({ ok: true, newAggregateVersion: 9 });
     const reenterBelfry = await engine.dispatch({
       type: 'character.move',
       version: 1,
       commandId: 'tower-strike-gate-reclimb',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
-      expectedVersion: 8,
+      expectedVersion: 9,
       payload: { exitId: 'tower-to-belfry' },
     }, session);
-    expect(reenterBelfry.receipt).toMatchObject({ ok: true, newAggregateVersion: 9 });
+    expect(reenterBelfry.receipt).toMatchObject({ ok: true, newAggregateVersion: 10 });
     const strikeAfterVisit = await engine.dispatch({
       type: 'character.use',
       version: 1,
       commandId: 'tower-strike-gate-after-visit',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
-      expectedVersion: 9,
+      expectedVersion: 10,
       payload: { itemId: 'mossgate-loose-stone', targetId: 'tower-cracked-bell' },
     }, session);
-    expect(strikeAfterVisit.receipt).toMatchObject({ ok: true, newAggregateVersion: 10 });
+    expect(strikeAfterVisit.receipt).toMatchObject({ ok: true, newAggregateVersion: 11 });
 
     await engine.stop();
   });
@@ -1260,15 +1274,7 @@ describe('MUDD engine host', () => {
       expectedVersion: 1,
       payload: { itemId: 'mossgate-loose-stone' },
     }, session);
-    await engine.dispatch({
-      type: 'character.move',
-      version: 1,
-      commandId: 'inspect-move',
-      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
-      characterId,
-      expectedVersion: 2,
-      payload: { exitId: 'clearing-to-bridge' },
-    }, session);
+    await moveAlongDemoRoad(engine, characterId, 'clearing-to-bridge', 2, 'inspect-move');
 
     const carriedItem = await engine.query({
       type: 'object.inspect',
@@ -1305,7 +1311,7 @@ describe('MUDD engine host', () => {
       commandId: 'inspect-drop-stone',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
-      expectedVersion: 3,
+      expectedVersion: 4,
       payload: { itemId: 'mossgate-loose-stone' },
     }, session);
     expect(droppedItem.receipt).toMatchObject({
@@ -1345,26 +1351,18 @@ describe('MUDD engine host', () => {
       payload: { itemId: 'drop-test-pebble' },
     }, session);
     expect(take.receipt).toMatchObject({ ok: true, newAggregateVersion: 2 });
-    const moveToBridge = await engine.dispatch({
-      type: 'character.move',
-      version: 1,
-      commandId: 'drop-move-to-bridge',
-      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
-      characterId,
-      expectedVersion: 2,
-      payload: { exitId: 'clearing-to-bridge' },
-    }, session);
-    expect(moveToBridge.receipt).toMatchObject({ ok: true, newAggregateVersion: 3 });
+    const moveToBridge = await moveAlongDemoRoad(engine, characterId, 'clearing-to-bridge', 2, 'drop-move-to-bridge');
+    expect(moveToBridge.receipt).toMatchObject({ ok: true, newAggregateVersion: 4 });
     const drop = await engine.dispatch({
       type: 'character.drop',
       version: 1,
       commandId: 'drop-stone',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
-      expectedVersion: 3,
+      expectedVersion: 4,
       payload: { itemId: 'drop-test-pebble' },
     }, session);
-    expect(drop.receipt).toMatchObject({ ok: true, newAggregateVersion: 4 });
+    expect(drop.receipt).toMatchObject({ ok: true, newAggregateVersion: 5 });
     expect(drop.events[0]).toMatchObject({
       type: 'character.item_dropped',
       version: 1,
@@ -1372,7 +1370,7 @@ describe('MUDD engine host', () => {
     });
     expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))).toMatchObject({
       locationId: 'glasswater-bridge',
-      revision: 4,
+      revision: 5,
       inventory: [],
       itemLocations: [{
         item: { id: 'drop-test-pebble' },
@@ -1391,16 +1389,8 @@ describe('MUDD engine host', () => {
       ok: true,
       value: { objects: expect.arrayContaining([expect.objectContaining({ id: 'drop-test-pebble', takeable: true })]) },
     });
-    const moveBackToClearing = await engine.dispatch({
-      type: 'character.move',
-      version: 1,
-      commandId: 'drop-move-back-to-clearing',
-      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
-      characterId,
-      expectedVersion: 4,
-      payload: { exitId: 'bridge-to-clearing' },
-    }, session);
-    expect(moveBackToClearing.receipt).toMatchObject({ ok: true, newAggregateVersion: 5 });
+    const moveBackToClearing = await moveAlongDemoRoad(engine, characterId, 'bridge-to-clearing', 5, 'drop-move-back-to-clearing');
+    expect(moveBackToClearing.receipt).toMatchObject({ ok: true, newAggregateVersion: 7 });
     const originalRoom = await engine.query({
       type: 'location.describe',
       version: 1,
@@ -1421,26 +1411,18 @@ describe('MUDD engine host', () => {
       ok: true,
       value: { objects: expect.arrayContaining([expect.objectContaining({ id: 'drop-test-pebble' })]) },
     });
-    const returnToBridge = await engine.dispatch({
-      type: 'character.move',
-      version: 1,
-      commandId: 'drop-return-to-bridge',
-      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
-      characterId,
-      expectedVersion: 5,
-      payload: { exitId: 'clearing-to-bridge' },
-    }, session);
-    expect(returnToBridge.receipt).toMatchObject({ ok: true, newAggregateVersion: 6 });
+    const returnToBridge = await moveAlongDemoRoad(engine, characterId, 'clearing-to-bridge', 7, 'drop-return-to-bridge');
+    expect(returnToBridge.receipt).toMatchObject({ ok: true, newAggregateVersion: 9 });
     const takeAgain = await engine.dispatch({
       type: 'character.take',
       version: 1,
       commandId: 'take-dropped-pebble',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
-      expectedVersion: 6,
+      expectedVersion: 9,
       payload: { itemId: 'drop-test-pebble' },
     }, session);
-    expect(takeAgain.receipt).toMatchObject({ ok: true, newAggregateVersion: 7 });
+    expect(takeAgain.receipt).toMatchObject({ ok: true, newAggregateVersion: 10 });
     expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))).toMatchObject({
       inventory: [{ id: 'drop-test-pebble' }],
       itemLocations: [{ item: { id: 'drop-test-pebble' }, locationId: null }],
@@ -1496,13 +1478,13 @@ describe('MUDD engine host', () => {
       .toMatchObject({ name: 'Sedge', archived: false, revision: 1 });
 
     const moveArchived = await engine.dispatch({
-      type: 'character.move',
+      type: 'character.road.step',
       version: 1,
       commandId: 'move-archived',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId: first.streamId,
       expectedVersion: 3,
-      payload: { exitId: 'clearing-to-bridge' },
+      payload: { exitId: 'clearing-to-glasswater-road' },
     }, session);
     expect(moveArchived.receipt).toMatchObject({ ok: false, code: 'RULE_VIOLATION' });
 
@@ -1520,13 +1502,13 @@ describe('MUDD engine host', () => {
       .toMatchObject({ name: 'Fern', archived: false, revision: 4 });
 
     const movedAfterRestore = await engine.dispatch({
-      type: 'character.move',
+      type: 'character.road.step',
       version: 1,
       commandId: 'move-restored',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId: first.streamId,
       expectedVersion: 4,
-      payload: { exitId: 'clearing-to-bridge' },
+      payload: { exitId: 'clearing-to-glasswater-road' },
     }, session);
     expect(movedAfterRestore.receipt.ok).toBe(true);
     await engine.stop();
@@ -1543,13 +1525,13 @@ describe('MUDD engine host', () => {
       payload: { name: 'Rill' },
     }, session);
     const command = {
-      type: 'character.move',
+      type: 'character.road.step',
       version: 1,
       commandId: 'move-race-a',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId: created.streamId,
       expectedVersion: 1,
-      payload: { exitId: 'clearing-to-bridge' },
+      payload: { exitId: 'clearing-to-glasswater-road' },
     };
     const [firstAttempt, secondAttempt] = await Promise.all([
       engine.dispatch(command, session),
@@ -1558,7 +1540,7 @@ describe('MUDD engine host', () => {
     expect([firstAttempt.commitOutcome, secondAttempt.commitOutcome].sort()).toEqual(['committed', 'duplicate']);
     expect(firstAttempt.receipt).toMatchObject({ ok: true, newAggregateVersion: 2 });
     expect(secondAttempt.receipt).toMatchObject({ ok: true, newAggregateVersion: 2 });
-    const competing = await engine.dispatch({ ...command, commandId: 'move-race-b', payload: { exitId: 'clearing-to-tower-west' } }, session);
+    const competing = await engine.dispatch({ ...command, commandId: 'move-race-b', payload: { exitId: 'clearing-to-bellwarden-track' } }, session);
     expect(competing.receipt).toMatchObject({ ok: false, code: 'VERSION_CONFLICT' });
     expect((await store.readStream(DEMO_WORLD_INSTANCE_ID, created.streamId!))).toHaveLength(2);
     await engine.stop();

@@ -103,7 +103,7 @@ const draft = {
       name: 'Mossgate Clearing',
       mapPosition: { x: 0, y: 0 },
       description:
-        'A circle of pale stones breaks through the moss. A narrow path runs north, a path leads west to a quiet fountain, and a weathered marker points east toward the western approach to the Old Bell Tower.',
+        'A circle of pale stones breaks through the moss. Roads leave north toward Glasswater Bridge and west toward Stillwater Fountain. A weathered marker points east toward the western approach to the Old Bell Tower.',
       readables: [
         {
           id: 'mossgate-marker',
@@ -267,9 +267,9 @@ const draft = {
         },
       ],
       exits: [
-        { id: 'clearing-to-fountain', fromLocationId: 'mossgate-clearing', toLocationId: 'stillwater-fountain', label: 'West to Stillwater Fountain', direction: 'west' },
-        { id: 'clearing-to-bridge', fromLocationId: 'mossgate-clearing', toLocationId: 'glasswater-bridge', label: 'North to Glasswater Bridge', direction: 'north' },
-        { id: 'clearing-to-tower-west', fromLocationId: 'mossgate-clearing', toLocationId: 'bell-tower-west', label: 'East to West of Old Bell Tower', direction: 'east' },
+        { id: 'clearing-to-stillwater-path', fromLocationId: 'mossgate-clearing', toLocationId: 'stillwater-path', label: 'West along Willowshade Track', direction: 'west', roadId: 'willowshade-track' },
+        { id: 'clearing-to-glasswater-road', fromLocationId: 'mossgate-clearing', toLocationId: 'glasswater-approach', label: 'North along Glasswater Road', direction: 'north', roadId: 'glasswater-road' },
+        { id: 'clearing-to-bellwarden-track', fromLocationId: 'mossgate-clearing', toLocationId: 'bellwarden-track', label: 'East along Bellwarden Road', direction: 'east', roadId: 'bellwarden-road' },
         { id: 'clearing-to-fernshade-road', fromLocationId: 'mossgate-clearing', toLocationId: 'fernshade-road', label: 'Southwest along Fernshade Road', direction: 'southwest', roadId: 'fernshade-road' },
         { id: 'clearing-to-bracken-road', fromLocationId: 'mossgate-clearing', toLocationId: 'bracken-road', label: 'Northwest along Bracken Road', direction: 'northwest', roadId: 'bracken-road' },
       ],
@@ -277,20 +277,20 @@ const draft = {
     {
       id: 'bell-tower-west',
       name: 'West of Old Bell Tower',
-      mapPosition: { x: 1, y: 0 },
+      mapPosition: { x: 2, y: 0 },
       description:
-        'A worn track meets the western foot of the Old Bell Tower. Its low entrance stands to the east beneath the cracked bell’s frame; the path returns west to Mossgate Clearing, while a northwest trail leads to Glasswater Bridge.',
+        'A worn track meets the western foot of the Old Bell Tower. Its low entrance stands to the east beneath the cracked bell’s frame; roads return west to Mossgate Clearing and northwest toward Glasswater Bridge.',
       exits: [
-        { id: 'bell-tower-west-to-clearing', fromLocationId: 'bell-tower-west', toLocationId: 'mossgate-clearing', label: 'West to Mossgate Clearing', direction: 'west' },
-        { id: 'bell-tower-west-to-bridge', fromLocationId: 'bell-tower-west', toLocationId: 'glasswater-bridge', label: 'Northwest to Glasswater Bridge', direction: 'northwest' },
+        { id: 'bell-tower-west-to-bellwarden-track', fromLocationId: 'bell-tower-west', toLocationId: 'bellwarden-track', label: 'West along Bellwarden Road', direction: 'west', roadId: 'bellwarden-road' },
+        { id: 'bell-tower-west-to-tower-ridge', fromLocationId: 'bell-tower-west', toLocationId: 'tower-ridge', label: 'Northwest along Tower Ridge Road', direction: 'northwest', roadId: 'tower-ridge-road' },
         { id: 'bell-tower-west-to-tower', fromLocationId: 'bell-tower-west', toLocationId: 'bell-tower', label: 'East into the Old Bell Tower', direction: 'east' },
       ],
     },
     {
       id: 'stillwater-fountain',
       name: 'Stillwater Fountain',
-      mapPosition: { x: -1, y: 0 },
-      description: 'A low stone court opens beneath willow branches. In its middle, a clear fountain spills into a shallow round basin, its steady water carrying the quiet of the grove.',
+      mapPosition: { x: -2, y: 0 },
+      description: 'A low stone court opens beneath willow branches. In its middle, a clear fountain spills into a shallow round basin, its steady water carrying the quiet of the grove. A track leads east toward Mossgate Clearing.',
       interactables: [
         {
           id: 'stillwater-fountain-basin',
@@ -300,15 +300,15 @@ const draft = {
         },
       ],
       exits: [
-        { id: 'fountain-to-clearing', fromLocationId: 'stillwater-fountain', toLocationId: 'mossgate-clearing', label: 'East to Mossgate Clearing', direction: 'east' },
+        { id: 'fountain-to-stillwater-path', fromLocationId: 'stillwater-fountain', toLocationId: 'stillwater-path', label: 'East along Willowshade Track', direction: 'east', roadId: 'willowshade-track' },
       ],
     },
     {
       id: 'glasswater-bridge',
       name: 'Glasswater Bridge',
-      mapPosition: { x: 0, y: 1 },
+      mapPosition: { x: 0, y: 2 },
       description:
-        'A low stone bridge crosses clear water. Reeds stir below it. Paths lead south to the clearing, southeast to the western approach of the Old Bell Tower, and northeast to Reedbank Stalls.',
+        'A low stone bridge crosses clear water. Reeds stir below it. Roads lead south toward the clearing, southeast toward the western approach of the Old Bell Tower, and northeast to Reedbank Stalls.',
       takeables: [
         {
           id: 'glasswater-reed',
@@ -457,15 +457,15 @@ const draft = {
         },
       ],
       exits: [
-        { id: 'bridge-to-clearing', fromLocationId: 'glasswater-bridge', toLocationId: 'mossgate-clearing', label: 'South to Mossgate Clearing', direction: 'south' },
-        { id: 'bridge-to-tower-west', fromLocationId: 'glasswater-bridge', toLocationId: 'bell-tower-west', label: 'Southeast to West of Old Bell Tower', direction: 'southeast' },
-        { id: 'bridge-to-reedbank', fromLocationId: 'glasswater-bridge', toLocationId: 'reedbank-stalls', label: 'Northeast to Reedbank Stalls', direction: 'northeast' },
+        { id: 'bridge-to-glasswater-road', fromLocationId: 'glasswater-bridge', toLocationId: 'glasswater-approach', label: 'South along Glasswater Road', direction: 'south', roadId: 'glasswater-road' },
+        { id: 'bridge-to-tower-ridge', fromLocationId: 'glasswater-bridge', toLocationId: 'tower-ridge', label: 'Southeast along Tower Ridge Road', direction: 'southeast', roadId: 'tower-ridge-road' },
+        { id: 'bridge-to-reedbank-road', fromLocationId: 'glasswater-bridge', toLocationId: 'reedbank-road', label: 'Northeast along Reedbank Road', direction: 'northeast', roadId: 'reedbank-road' },
       ],
     },
     {
       id: 'bell-tower',
       name: 'Old Bell Tower',
-      mapPosition: { x: 2, y: 0 },
+      mapPosition: { x: 4, y: 0 },
       requiredVisitedLocationId: 'bell-tower-west',
       description:
         'The tower’s shadowed ground floor is empty except for a narrow stone stair that winds up toward the bell. The western entrance opens onto the tower’s outer approach.',
@@ -555,8 +555,8 @@ const draft = {
     {
       id: 'reedbank-stalls',
       name: 'Reedbank Stalls',
-      mapPosition: { x: 1, y: 2 },
-      description: 'A row of canvas awnings faces the river. The air smells of waxed rope and lamp oil; the path leads southwest to Glasswater Bridge.',
+      mapPosition: { x: 2, y: 4 },
+      description: 'A row of canvas awnings faces the river. The air smells of waxed rope and lamp oil; Reedbank Road runs southwest toward Glasswater Bridge, and a lane leads east to Willowrest Inn.',
       npcs: [
         {
           id: 'sella-reedbank-merchant',
@@ -626,14 +626,14 @@ const draft = {
         },
       ],
       exits: [
-        { id: 'reedbank-to-bridge', fromLocationId: 'reedbank-stalls', toLocationId: 'glasswater-bridge', label: 'Southwest to Glasswater Bridge', direction: 'southwest' },
-        { id: 'reedbank-to-willowrest', fromLocationId: 'reedbank-stalls', toLocationId: 'willowrest-inn', label: 'East to Willowrest Inn', direction: 'east' },
+        { id: 'reedbank-to-reedbank-road', fromLocationId: 'reedbank-stalls', toLocationId: 'reedbank-road', label: 'Southwest along Reedbank Road', direction: 'southwest', roadId: 'reedbank-road' },
+        { id: 'reedbank-to-willowrest-lane', fromLocationId: 'reedbank-stalls', toLocationId: 'willowrest-lane', label: 'East along Willowrest Lane', direction: 'east', roadId: 'willowrest-lane' },
       ],
     },
     {
       id: 'fernshade-road',
       name: 'Fernshade Road',
-      mapPosition: { x: -1, y: -1 },
+      mapPosition: { x: -2, y: -2 },
       description: 'A narrow dirt track passes beneath arching ferns. Fresh boot prints cross the damp earth.',
       exits: [
         { id: 'fernshade-road-to-clearing', fromLocationId: 'fernshade-road', toLocationId: 'mossgate-clearing', label: 'Northeast to Mossgate Clearing', direction: 'northeast', roadId: 'fernshade-road' },
@@ -643,8 +643,8 @@ const draft = {
     {
       id: 'fernshade-fork',
       name: 'Fernshade Fork',
-      mapPosition: { x: -2, y: -1 },
-      description: 'The track opens into a small fern-ringed clearing. The road leads southeast back toward Mossgate.',
+      mapPosition: { x: -4, y: -2 },
+      description: 'The track opens into a small fern-ringed clearing. Fernshade Road runs east toward Mossgate Clearing.',
       exits: [
         { id: 'fernshade-fork-to-road', fromLocationId: 'fernshade-fork', toLocationId: 'fernshade-road', label: 'East along Fernshade Road', direction: 'east', roadId: 'fernshade-road' },
       ],
@@ -652,8 +652,8 @@ const draft = {
     {
       id: 'bracken-road',
       name: 'Bracken Road',
-      mapPosition: { x: -1, y: 1 },
-      description: 'A rutted road descends through bracken and wet grass. The clearing lies northeast; the road continues southwest.',
+      mapPosition: { x: -2, y: 2 },
+      description: 'A rutted road descends through bracken and wet grass. Mossgate Clearing lies southeast; Bracken Road continues west toward Sedgewatch.',
       exits: [
         { id: 'bracken-road-to-clearing', fromLocationId: 'bracken-road', toLocationId: 'mossgate-clearing', label: 'Southeast to Mossgate Clearing', direction: 'southeast', roadId: 'bracken-road' },
         { id: 'bracken-road-to-mile', fromLocationId: 'bracken-road', toLocationId: 'bracken-mile', label: 'West along Bracken Road', direction: 'west', roadId: 'bracken-road' },
@@ -662,8 +662,8 @@ const draft = {
     {
       id: 'bracken-mile',
       name: 'Bracken Mile',
-      mapPosition: { x: -2, y: 1 },
-      description: 'A milepost leans beside the road, its lettering softened by rain. The track continues southwest through the reeds.',
+      mapPosition: { x: -4, y: 2 },
+      description: 'A milepost leans beside the road, its lettering softened by rain. The road continues west through the reeds to Sedgewatch.',
       readables: [
         {
           id: 'bracken-milepost',
@@ -680,8 +680,8 @@ const draft = {
     {
       id: 'sedgewatch',
       name: 'Sedgewatch',
-      mapPosition: { x: -3, y: 1 },
-      description: 'A raised patch of ground overlooks a broad bed of reeds. Bracken Road continues northeast toward Mossgate.',
+      mapPosition: { x: -6, y: 2 },
+      description: 'A raised patch of ground overlooks a broad bed of reeds. Bracken Road runs east through Bracken Mile toward Mossgate.',
       exits: [
         { id: 'sedgewatch-to-mile', fromLocationId: 'sedgewatch', toLocationId: 'bracken-mile', label: 'East along Bracken Road', direction: 'east', roadId: 'bracken-road' },
       ],
@@ -689,19 +689,157 @@ const draft = {
     {
       id: 'willowrest-inn',
       name: 'Willowrest Inn',
-      mapPosition: { x: 2, y: 2 },
-      description: 'A warm timber inn stands at the edge of Reedbank, its windows bright against the river mist. A painted sign promises a full night’s rest for five moss marks.',
+      mapPosition: { x: 4, y: 4 },
+      description: 'A warm timber inn stands at the edge of Reedbank, its windows bright against the river mist. A painted sign promises a full night’s rest for five moss marks. A lamp-lit lane leads west to Reedbank Stalls.',
       inn: {
         id: 'willowrest-inn-service',
         name: 'Willowrest Inn',
         restPrice: 5,
       },
       exits: [
-        { id: 'willowrest-to-reedbank', fromLocationId: 'willowrest-inn', toLocationId: 'reedbank-stalls', label: 'West to Reedbank Stalls', direction: 'west' },
+        { id: 'willowrest-to-lane', fromLocationId: 'willowrest-inn', toLocationId: 'willowrest-lane', label: 'West along Willowrest Lane', direction: 'west', roadId: 'willowrest-lane' },
+      ],
+    },
+    {
+      id: 'stillwater-path',
+      name: 'Willowshade Track',
+      mapPosition: { x: -1, y: 0 },
+      description: 'Willow branches arch over a narrow track between the fountain court and Mossgate Clearing.',
+      exits: [
+        { id: 'stillwater-path-to-clearing', fromLocationId: 'stillwater-path', toLocationId: 'mossgate-clearing', label: 'East to Mossgate Clearing', direction: 'east', roadId: 'willowshade-track' },
+        { id: 'stillwater-path-to-fountain', fromLocationId: 'stillwater-path', toLocationId: 'stillwater-fountain', label: 'West to Stillwater Fountain', direction: 'west', roadId: 'willowshade-track' },
+      ],
+    },
+    {
+      id: 'glasswater-approach',
+      name: 'Glasswater Approach',
+      mapPosition: { x: 0, y: 1 },
+      description: 'The northbound road narrows along a low stone embankment. Mossgate Clearing lies south; Glasswater Bridge lies north.',
+      exits: [
+        { id: 'glasswater-approach-to-clearing', fromLocationId: 'glasswater-approach', toLocationId: 'mossgate-clearing', label: 'South to Mossgate Clearing', direction: 'south', roadId: 'glasswater-road' },
+        { id: 'glasswater-approach-to-bridge', fromLocationId: 'glasswater-approach', toLocationId: 'glasswater-bridge', label: 'North to Glasswater Bridge', direction: 'north', roadId: 'glasswater-road' },
+      ],
+    },
+    {
+      id: 'bellwarden-track',
+      name: 'Bellwarden Track',
+      mapPosition: { x: 1, y: 0 },
+      description: 'A grassy track skirts the old clearing stones. It runs east to the tower’s western approach and west to Mossgate.',
+      exits: [
+        { id: 'bellwarden-track-to-clearing', fromLocationId: 'bellwarden-track', toLocationId: 'mossgate-clearing', label: 'West to Mossgate Clearing', direction: 'west', roadId: 'bellwarden-road' },
+        { id: 'bellwarden-track-to-tower-west', fromLocationId: 'bellwarden-track', toLocationId: 'bell-tower-west', label: 'East to West of Old Bell Tower', direction: 'east', roadId: 'bellwarden-road' },
+      ],
+    },
+    {
+      id: 'tower-ridge',
+      name: 'Tower Ridge',
+      mapPosition: { x: 1, y: 1 },
+      description: 'A low ridge opens a view of the river. The track slopes northwest to Glasswater Bridge and southeast to the tower’s outer approach.',
+      exits: [
+        { id: 'tower-ridge-to-bridge', fromLocationId: 'tower-ridge', toLocationId: 'glasswater-bridge', label: 'Northwest to Glasswater Bridge', direction: 'northwest', roadId: 'tower-ridge-road' },
+        { id: 'tower-ridge-to-west', fromLocationId: 'tower-ridge', toLocationId: 'bell-tower-west', label: 'Southeast to West of Old Bell Tower', direction: 'southeast', roadId: 'tower-ridge-road' },
+      ],
+    },
+    {
+      id: 'reedbank-road',
+      name: 'Reedbank Road',
+      mapPosition: { x: 1, y: 3 },
+      description: 'The packed earth road follows a broad bed of reeds. It runs northeast toward Reedbank Stalls and southwest toward Glasswater Bridge.',
+      exits: [
+        { id: 'reedbank-road-to-bridge', fromLocationId: 'reedbank-road', toLocationId: 'glasswater-bridge', label: 'Southwest to Glasswater Bridge', direction: 'southwest', roadId: 'reedbank-road' },
+        { id: 'reedbank-road-to-stalls', fromLocationId: 'reedbank-road', toLocationId: 'reedbank-stalls', label: 'Northeast to Reedbank Stalls', direction: 'northeast', roadId: 'reedbank-road' },
+      ],
+    },
+    {
+      id: 'willowrest-lane',
+      name: 'Willowrest Lane',
+      mapPosition: { x: 3, y: 4 },
+      description: 'A lamp-lit lane runs east from Reedbank Stalls to the timber inn, with canvas awnings behind you.',
+      exits: [
+        { id: 'willowrest-lane-to-reedbank', fromLocationId: 'willowrest-lane', toLocationId: 'reedbank-stalls', label: 'West to Reedbank Stalls', direction: 'west', roadId: 'willowrest-lane' },
+        { id: 'willowrest-lane-to-inn', fromLocationId: 'willowrest-lane', toLocationId: 'willowrest-inn', label: 'East to Willowrest Inn', direction: 'east', roadId: 'willowrest-lane' },
       ],
     },
   ],
   roads: [
+    {
+      id: 'willowshade-track',
+      name: 'Willowshade Track',
+      locationIds: ['mossgate-clearing', 'stillwater-path', 'stillwater-fountain'],
+      encounterChancePercent: 5,
+      encounters: [
+        {
+          id: 'willowshade-track-stray',
+          name: 'Stray Hound',
+          combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' },
+        },
+      ],
+    },
+    {
+      id: 'glasswater-road',
+      name: 'Glasswater Road',
+      locationIds: ['mossgate-clearing', 'glasswater-approach', 'glasswater-bridge'],
+      encounterChancePercent: 10,
+      encounters: [
+        {
+          id: 'glasswater-road-thief',
+          name: 'Roadside Thief',
+          combatProfile: { maxHealth: 5, attackDamage: 1, style: 'heavy' },
+        },
+      ],
+    },
+    {
+      id: 'bellwarden-road',
+      name: 'Bellwarden Road',
+      locationIds: ['mossgate-clearing', 'bellwarden-track', 'bell-tower-west'],
+      encounterChancePercent: 10,
+      encounters: [
+        {
+          id: 'bellwarden-road-hound',
+          name: 'Track Hound',
+          combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' },
+        },
+      ],
+    },
+    {
+      id: 'tower-ridge-road',
+      name: 'Tower Ridge Road',
+      locationIds: ['bell-tower-west', 'tower-ridge', 'glasswater-bridge'],
+      encounterChancePercent: 12,
+      encounters: [
+        {
+          id: 'tower-ridge-road-ambusher',
+          name: 'Ridgeway Ambusher',
+          combatProfile: { maxHealth: 5, attackDamage: 1, style: 'heavy' },
+        },
+      ],
+    },
+    {
+      id: 'reedbank-road',
+      name: 'Reedbank Road',
+      locationIds: ['glasswater-bridge', 'reedbank-road', 'reedbank-stalls'],
+      encounterChancePercent: 15,
+      encounters: [
+        {
+          id: 'reedbank-road-raider',
+          name: 'Reedbank Raider',
+          combatProfile: { maxHealth: 5, attackDamage: 1, style: 'heavy' },
+        },
+      ],
+    },
+    {
+      id: 'willowrest-lane',
+      name: 'Willowrest Lane',
+      locationIds: ['reedbank-stalls', 'willowrest-lane', 'willowrest-inn'],
+      encounterChancePercent: 5,
+      encounters: [
+        {
+          id: 'willowrest-lane-stray',
+          name: 'Lantern Fox',
+          combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' },
+        },
+      ],
+    },
     {
       id: 'fernshade-road',
       name: 'Fernshade Road',

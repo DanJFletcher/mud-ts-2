@@ -1,7 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { MuddHttpClient } from './index.js';
-import { EngineHost, InMemoryEventStore, projectQuestJournal, replayCharacter } from '@mudd/engine-core';
-import { characterPlugin, merchantPlugin, movementPlugin, npcDialoguePlugin, worldItemsPlugin } from '@mudd/core-plugins';
+import { EngineHost, InMemoryEventStore, projectQuestJournal, replayCharacter, type EnginePlugin } from '@mudd/engine-core';
+import {
+  characterPlugin,
+  combatPlugin,
+  combatRoomPresenceCapability,
+  groupsPlugin,
+  interactionPlugin,
+  merchantPlugin,
+  movementPlugin,
+  npcDialoguePlugin,
+  partyCombatPolicyPlugin,
+  partyPlugin,
+  partyQuestPlugin,
+  roadTravelPlugin,
+  teamCombatPlugin,
+  worldItemsPlugin,
+} from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import { InitializeCharacterWalletCommandSchema } from '@mudd/contracts';
 
@@ -40,7 +55,106 @@ describe('demo world navigation', () => {
       }
     }
   });
+
+  it('keeps every new overland connection as a bidirectional, segmented road', () => {
+    const expectedRoadIds = [
+      'willowshade-track',
+      'glasswater-road',
+      'bellwarden-road',
+      'tower-ridge-road',
+      'reedbank-road',
+      'willowrest-lane',
+    ];
+    const roads = new Map((demoWorld.roads ?? []).map((road) => [road.id, road]));
+
+    for (const roadId of expectedRoadIds) {
+      const road = roads.get(roadId);
+      expect(road, roadId).toBeDefined();
+      expect(road!.locationIds.length, roadId).toBeGreaterThanOrEqual(3);
+      for (let index = 0; index < road!.locationIds.length - 1; index += 1) {
+        const fromLocationId = road!.locationIds[index]!;
+        const toLocationId = road!.locationIds[index + 1]!;
+        const from = demoWorld.locations.find((location) => location.id === fromLocationId)!;
+        const to = demoWorld.locations.find((location) => location.id === toLocationId)!;
+        expect(from.exits.some((exit) => exit.toLocationId === toLocationId && exit.roadId === roadId), roadId).toBe(true);
+        expect(to.exits.some((exit) => exit.toLocationId === fromLocationId && exit.roadId === roadId), roadId).toBe(true);
+      }
+    }
+  });
 });
+
+const testCombatPresencePlugin: EnginePlugin = {
+  manifest: {
+    id: 'mudd.room-combat-presence',
+    version: '1.0.0',
+    apiVersion: '1.0',
+    category: 'core',
+    provides: [combatRoomPresenceCapability.id],
+  },
+  register({ provideCapability }) {
+    provideCapability(combatRoomPresenceCapability, {
+      listActiveCharacters: async () => [],
+    });
+  },
+};
+
+const testPlugins = [
+  worldItemsPlugin,
+  characterPlugin,
+  groupsPlugin,
+  partyPlugin,
+  partyQuestPlugin,
+  interactionPlugin,
+  combatPlugin,
+  testCombatPresencePlugin,
+  partyCombatPolicyPlugin,
+  teamCombatPlugin,
+  movementPlugin,
+  roadTravelPlugin,
+  npcDialoguePlugin,
+  merchantPlugin,
+];
+
+const demoRoadRoutes = {
+  'clearing-to-bridge': ['clearing-to-glasswater-road', 'glasswater-approach-to-bridge'],
+  'bridge-to-clearing': ['bridge-to-glasswater-road', 'glasswater-approach-to-clearing'],
+  'bridge-to-tower-west': ['bridge-to-tower-ridge', 'tower-ridge-to-west'],
+  'bell-tower-west-to-bridge': ['bell-tower-west-to-tower-ridge', 'tower-ridge-to-bridge'],
+  'clearing-to-tower-west': ['clearing-to-bellwarden-track', 'bellwarden-track-to-tower-west'],
+  'bell-tower-west-to-clearing': ['bell-tower-west-to-bellwarden-track', 'bellwarden-track-to-clearing'],
+  'bridge-to-reedbank': ['bridge-to-reedbank-road', 'reedbank-road-to-stalls'],
+  'reedbank-to-bridge': ['reedbank-to-reedbank-road', 'reedbank-road-to-bridge'],
+  'reedbank-to-willowrest': ['reedbank-to-willowrest-lane', 'willowrest-lane-to-inn'],
+  'willowrest-to-reedbank': ['willowrest-to-lane', 'willowrest-lane-to-reedbank'],
+} as const;
+
+type DemoRoadRoute = keyof typeof demoRoadRoutes;
+
+async function moveAlongDemoRoad(
+  client: MuddHttpClient,
+  characterId: string,
+  route: DemoRoadRoute,
+  expectedVersion: number,
+  commandId: string,
+) {
+  let result;
+  for (const [index, exitId] of demoRoadRoutes[route].entries()) {
+    result = await client.roadStep(
+      characterId,
+      exitId,
+      expectedVersion + index,
+      `${commandId}-step-${index + 1}`,
+    );
+    if (!result.receipt.ok) return result;
+  }
+  return result!;
+}
+
+function demoTestWorld() {
+  const world = structuredClone(demoWorld);
+  for (const road of world.roads ?? []) road.encounterChancePercent = 0;
+  return world;
+}
 
 describe('MuddHttpClient', () => {
   it('starts a guest session through the same-origin API', async () => {
@@ -100,7 +214,7 @@ describe('MuddHttpClient', () => {
       authenticated: true,
     } as const;
     const store = new InMemoryEventStore();
-    const testWorld = structuredClone(demoWorld);
+    const testWorld = demoTestWorld();
     testWorld.locations.find((location) => location.id === 'mossgate-clearing')!.takeables!.push({
       id: 'sdk-test-pebble',
       label: 'Test pebble',
@@ -108,7 +222,7 @@ describe('MuddHttpClient', () => {
       roomDescription: 'A plain test pebble lies nearby.',
     });
     const engine = new EngineHost(
-      [worldItemsPlugin, characterPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin],
+      testPlugins,
       store,
       { canAccessInstance: async () => true, ownsCharacter: async () => true },
       testWorld,
@@ -263,7 +377,7 @@ describe('MuddHttpClient', () => {
     }));
     const takenAgain = await client.take(characterId, 'sdk-test-pebble', afterDrop.revision, 'sdk-take-again');
     expect(takenAgain.receipt).toMatchObject({ ok: true, newAggregateVersion: afterDrop.revision + 1 });
-    const moved = await client.move(characterId, 'clearing-to-bridge', afterDrop.revision + 1, 'sdk-move');
+    const moved = await moveAlongDemoRoad(client, characterId, 'clearing-to-bridge', afterDrop.revision + 1, 'sdk-move');
     expect(moved.receipt.ok).toBe(true);
     const nextRoom = await client.look(characterId, 'sdk-look-2');
     expect(nextRoom.title).toBe('Glasswater Bridge');
@@ -284,7 +398,7 @@ describe('MuddHttpClient', () => {
       nextRoom.revision,
       'sdk-use-target-away',
     )).rejects.toThrow('That is not a usable target in this room.');
-    const movedToWest = await client.move(characterId, 'bridge-to-tower-west', nextRoom.revision, 'sdk-move-tower-west');
+    const movedToWest = await moveAlongDemoRoad(client, characterId, 'bridge-to-tower-west', nextRoom.revision, 'sdk-move-tower-west');
     expect(movedToWest.receipt.ok).toBe(true);
     const westApproach = await client.look(characterId, 'sdk-look-tower-west');
     const movedToTower = await client.move(
@@ -372,10 +486,10 @@ describe('MuddHttpClient', () => {
     } as const;
     const store = new InMemoryEventStore();
     const engine = new EngineHost(
-      [worldItemsPlugin, characterPlugin, movementPlugin, npcDialoguePlugin, merchantPlugin],
+      testPlugins,
       store,
       { canAccessInstance: async () => true, ownsCharacter: async () => true },
-      demoWorld,
+      demoTestWorld(),
     );
     await engine.start();
     const fetcher: typeof fetch = async (input, init = {}) => {
@@ -392,7 +506,7 @@ describe('MuddHttpClient', () => {
     const clearing = await client.look(characterId, 'puzzle-look-clearing');
     await client.take(characterId, 'mossgate-loose-stone', clearing.revision, 'puzzle-take-stone');
     const afterStone = await client.look(characterId, 'puzzle-look-after-stone');
-    await client.move(characterId, 'clearing-to-bridge', afterStone.revision, 'puzzle-go-bridge');
+    await moveAlongDemoRoad(client, characterId, 'clearing-to-bridge', afterStone.revision, 'puzzle-go-bridge');
     const bridge = await client.look(characterId, 'puzzle-look-bridge');
     const eddaOpening = await client.talk(characterId, 'edda-bellwright', undefined, 'puzzle-talk-edda');
     expect(eddaOpening.choices).toContainEqual({
@@ -411,7 +525,7 @@ describe('MuddHttpClient', () => {
     const afterAccept = await client.look(characterId, 'puzzle-look-after-accept');
     await client.take(characterId, 'glasswater-reed', afterAccept.revision, 'puzzle-take-reed');
     const bridgeWithReed = await client.look(characterId, 'puzzle-look-bridge-with-reed');
-    await client.move(characterId, 'bridge-to-tower-west', bridgeWithReed.revision, 'puzzle-go-tower-west');
+    await moveAlongDemoRoad(client, characterId, 'bridge-to-tower-west', bridgeWithReed.revision, 'puzzle-go-tower-west');
     const towerWest = await client.look(characterId, 'puzzle-look-tower-west');
     await client.move(characterId, 'bell-tower-west-to-tower', towerWest.revision, 'puzzle-go-tower');
 
@@ -445,11 +559,11 @@ describe('MuddHttpClient', () => {
     const towerFloorAfterReading = await client.look(characterId, 'puzzle-look-tower-floor-after-reading');
     await client.move(characterId, 'tower-to-west-approach', towerFloorAfterReading.revision, 'puzzle-return-to-west-for-hint-two');
     const westForHintTwo = await client.look(characterId, 'puzzle-look-west-for-hint-two');
-    await client.move(characterId, 'bell-tower-west-to-bridge', westForHintTwo.revision, 'puzzle-return-for-hint-two');
+    await moveAlongDemoRoad(client, characterId, 'bell-tower-west-to-bridge', westForHintTwo.revision, 'puzzle-return-for-hint-two');
     const bridgeForHintTwo = await client.look(characterId, 'puzzle-look-for-hint-two');
     const secondHint = await client.talk(characterId, 'edda-bellwright', 'hint', 'puzzle-hint-two');
     expect(secondHint.text).toContain('Hint 2');
-    await client.move(characterId, 'bridge-to-tower-west', bridgeForHintTwo.revision, 'puzzle-return-to-west-for-bell');
+    await moveAlongDemoRoad(client, characterId, 'bridge-to-tower-west', bridgeForHintTwo.revision, 'puzzle-return-to-west-for-bell');
     const westForBell = await client.look(characterId, 'puzzle-look-west-for-bell');
     await client.move(characterId, 'bell-tower-west-to-tower', westForBell.revision, 'puzzle-return-for-bell');
     const towerForBell = await client.look(characterId, 'puzzle-look-for-bell');
@@ -482,11 +596,11 @@ describe('MuddHttpClient', () => {
     const towerFloorForHintThree = await client.look(characterId, 'puzzle-look-tower-floor-for-hint-three');
     await client.move(characterId, 'tower-to-west-approach', towerFloorForHintThree.revision, 'puzzle-return-to-west-for-hint-three');
     const westForHintThree = await client.look(characterId, 'puzzle-look-west-for-hint-three');
-    await client.move(characterId, 'bell-tower-west-to-bridge', westForHintThree.revision, 'puzzle-return-for-hint-three');
+    await moveAlongDemoRoad(client, characterId, 'bell-tower-west-to-bridge', westForHintThree.revision, 'puzzle-return-for-hint-three');
     const bridgeForHintThree = await client.look(characterId, 'puzzle-look-for-hint-three');
     const thirdHint = await client.talk(characterId, 'edda-bellwright', 'hint', 'puzzle-hint-three');
     expect(thirdHint.text).toContain('Hint 3');
-    await client.move(characterId, 'bridge-to-tower-west', bridgeForHintThree.revision, 'puzzle-return-to-west-for-finish');
+    await moveAlongDemoRoad(client, characterId, 'bridge-to-tower-west', bridgeForHintThree.revision, 'puzzle-return-to-west-for-finish');
     const westForReed = await client.look(characterId, 'puzzle-look-west-for-reed');
     await client.move(characterId, 'bell-tower-west-to-tower', westForReed.revision, 'puzzle-return-to-tower-for-finish');
     const towerForReed = await client.look(characterId, 'puzzle-look-for-reed');
@@ -529,7 +643,7 @@ describe('MuddHttpClient', () => {
     const towerAgain = await client.look(characterId, 'puzzle-look-tower-again');
     await client.move(characterId, 'tower-to-west-approach', towerAgain.revision, 'puzzle-return-to-west-before-bridge');
     const westBeforeBridge = await client.look(characterId, 'puzzle-look-west-before-bridge');
-    await client.move(characterId, 'bell-tower-west-to-bridge', westBeforeBridge.revision, 'puzzle-return-bridge');
+    await moveAlongDemoRoad(client, characterId, 'bell-tower-west-to-bridge', westBeforeBridge.revision, 'puzzle-return-bridge');
     const bridgeAgain = await client.look(characterId, 'puzzle-look-bridge-again');
     const eddaAfter = await client.talk(characterId, 'edda-bellwright', undefined, 'puzzle-talk-edda-after');
     expect(eddaAfter.choices).toContainEqual({
@@ -655,7 +769,7 @@ describe('MuddHttpClient', () => {
           label: 'Ask about the bell tower',
         }]),
       });
-    await client.move(characterId, 'clearing-to-tower-west', afterRead.revision, 'quest-visit-tower-west');
+    await moveAlongDemoRoad(client, characterId, 'clearing-to-tower-west', afterRead.revision, 'quest-visit-tower-west');
     const westApproach = await client.look(characterId, 'quest-look-tower-west');
     await client.move(characterId, 'bell-tower-west-to-tower', westApproach.revision, 'quest-visit-tower');
     const atTower = await client.look(characterId, 'quest-look-at-tower');
@@ -667,7 +781,7 @@ describe('MuddHttpClient', () => {
 
     await client.move(characterId, 'tower-to-west-approach', atTower.revision, 'quest-return-to-west');
     const westOnReturn = await client.look(characterId, 'quest-look-west-on-return');
-    await client.move(characterId, 'bell-tower-west-to-clearing', westOnReturn.revision, 'quest-return-to-mara');
+    await moveAlongDemoRoad(client, characterId, 'bell-tower-west-to-clearing', westOnReturn.revision, 'quest-return-to-mara');
     const backAtMara = await client.look(characterId, 'quest-look-back-at-mara');
     const reportDialogue = await client.talk(characterId, 'mara-waykeeper', undefined, 'quest-report-dialogue');
     expect(reportDialogue.text)
@@ -759,9 +873,9 @@ describe('MuddHttpClient', () => {
 
     async function reachStalls(characterId: string, prefix: string) {
       const clearing = await client.look(characterId, `${prefix}-clearing`);
-      await client.move(characterId, 'clearing-to-bridge', clearing.revision, `${prefix}-move-bridge`);
+      await moveAlongDemoRoad(client, characterId, 'clearing-to-bridge', clearing.revision, `${prefix}-move-bridge`);
       const bridge = await client.look(characterId, `${prefix}-bridge`);
-      await client.move(characterId, 'bridge-to-reedbank', bridge.revision, `${prefix}-move-stalls`);
+      await moveAlongDemoRoad(client, characterId, 'bridge-to-reedbank', bridge.revision, `${prefix}-move-stalls`);
     }
 
     const first = await client.createCharacter('Briar', 'merchant-create-first');

@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { EngineHost, InMemoryEventStore, replayCharacter } from '@mudd/engine-core';
+import { EngineHost, InMemoryEventStore, replayCharacter, type EnginePlugin } from '@mudd/engine-core';
 import {
   characterPlugin,
   combatPlugin,
+  combatRoomPresenceCapability,
+  groupsPlugin,
   interactionPlugin,
   merchantPlugin,
   movementPlugin,
+  partyCombatPolicyPlugin,
+  partyPlugin,
+  partyQuestPlugin,
+  roadTravelPlugin,
+  teamCombatPlugin,
   worldItemsPlugin,
 } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
@@ -21,14 +28,65 @@ const session = {
   authenticated: true,
 } as const;
 
+const testCombatPresencePlugin: EnginePlugin = {
+  manifest: {
+    id: 'mudd.room-combat-presence',
+    version: '1.0.0',
+    apiVersion: '1.0',
+    category: 'core',
+    provides: [combatRoomPresenceCapability.id],
+  },
+  register({ provideCapability }) {
+    provideCapability(combatRoomPresenceCapability, {
+      listActiveCharacters: async () => [],
+    });
+  },
+};
+
+async function moveAlongRoad(
+  client: MuddHttpClient,
+  characterId: string,
+  exitIds: readonly [string, string],
+  expectedVersion: number,
+  commandId: string,
+) {
+  let result;
+  for (const [index, exitId] of exitIds.entries()) {
+    result = await client.roadStep(
+      characterId,
+      exitId,
+      expectedVersion + index,
+      `${commandId}-step-${index + 1}`,
+    );
+    if (!result.receipt.ok) return result;
+  }
+  return result!;
+}
+
 describe('visited world map projection', () => {
-  it('reveals Willowrest Inn and its Reedbank connection only after the traveler arrives', async () => {
+  it('reveals Willowrest Inn and its connecting road segments only after the traveler arrives', async () => {
     const store = new InMemoryEventStore();
+    const testWorld = structuredClone(demoWorld);
+    for (const road of testWorld.roads ?? []) road.encounterChancePercent = 0;
     const engine = new EngineHost(
-      [worldItemsPlugin, characterPlugin, combatPlugin, interactionPlugin, merchantPlugin, movementPlugin],
+      [
+        worldItemsPlugin,
+        characterPlugin,
+        groupsPlugin,
+        partyPlugin,
+        partyQuestPlugin,
+        interactionPlugin,
+        combatPlugin,
+        testCombatPresencePlugin,
+        partyCombatPolicyPlugin,
+        teamCombatPlugin,
+        movementPlugin,
+        roadTravelPlugin,
+        merchantPlugin,
+      ],
       store,
       { canAccessInstance: async () => true, ownsCharacter: async () => true },
-      demoWorld,
+      testWorld,
     );
     const ready = engine.start();
     const activeCharacter: { id?: string } = {};
@@ -60,8 +118,12 @@ describe('visited world map projection', () => {
     expect(initialSnapshot.map?.locations.map(({ id }) => id)).not.toContain('willowrest-inn');
 
     let character = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, activeCharacter.id))!;
-    for (const [index, exitId] of ['clearing-to-bridge', 'bridge-to-reedbank'].entries()) {
-      await client.move(activeCharacter.id, exitId, character.revision, `map-journey-to-reedbank-${index}`);
+    const toReedbank = [
+      ['clearing-to-glasswater-road', 'glasswater-approach-to-bridge'],
+      ['bridge-to-reedbank-road', 'reedbank-road-to-stalls'],
+    ] as const;
+    for (const [index, exitIds] of toReedbank.entries()) {
+      await moveAlongRoad(client, activeCharacter.id, exitIds, character.revision, `map-journey-to-reedbank-${index}`);
       character = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, activeCharacter.id))!;
     }
 
@@ -71,19 +133,33 @@ describe('visited world map projection', () => {
     expect(reedbankSnapshot.map?.locations.map(({ id }) => id)).not.toContain('willowrest-inn');
     expect(reedbankSnapshot.map?.connections).not.toContainEqual({
       fromLocationId: 'reedbank-stalls',
-      toLocationId: 'willowrest-inn',
+      toLocationId: 'willowrest-lane',
     });
 
-    await client.move(activeCharacter.id, 'reedbank-to-willowrest', character.revision, 'map-journey-to-willowrest');
+    await moveAlongRoad(
+      client,
+      activeCharacter.id,
+      ['reedbank-to-willowrest-lane', 'willowrest-lane-to-inn'],
+      character.revision,
+      'map-journey-to-willowrest',
+    );
     const innSnapshot = await client.getGame();
     expect(innSnapshot.map?.currentLocationId).toBe('willowrest-inn');
     expect(innSnapshot.map?.locations).toContainEqual({
       id: 'willowrest-inn',
       name: 'Willowrest Inn',
-      x: 2,
-      y: 2,
+      x: 4,
+      y: 4,
     });
     expect(innSnapshot.map?.connections).toContainEqual({
+      fromLocationId: 'reedbank-stalls',
+      toLocationId: 'willowrest-lane',
+    });
+    expect(innSnapshot.map?.connections).toContainEqual({
+      fromLocationId: 'willowrest-lane',
+      toLocationId: 'willowrest-inn',
+    });
+    expect(innSnapshot.map?.connections).not.toContainEqual({
       fromLocationId: 'reedbank-stalls',
       toLocationId: 'willowrest-inn',
     });
