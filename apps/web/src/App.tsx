@@ -2209,26 +2209,6 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                         </div>
                       ) : null}
                     </section>
-                  ) : visibleTeamCombat ? (
-                    <section className="focused-terminal-combat" aria-label="Last cooperative encounter">
-                      <div className="focused-terminal-combat__status" role="status">
-                        <strong>
-                          {visibleTeamCombat.status === "victory"
-                            ? "Victory"
-                            : visibleTeamCombat.status === "defeat"
-                              ? "Defeat"
-                              : "Encounter ended"}
-                        </strong>
-                        <span>{visibleTeamCombat.lastNarration}</span>
-                      </div>
-                    </section>
-                  ) : visibleCombat ? (
-                    <section className="focused-terminal-combat" aria-label="Last combat">
-                      <div className="focused-terminal-combat__status" role="status">
-                        <strong>{visibleCombat.status === "victory" ? "Victory" : visibleCombat.status === "defeat" ? "Defeat" : "Encounter ended"} · {visibleCombat.opponentName}</strong>
-                        <span>{visibleCombat.lastNarration}</span>
-                      </div>
-                    </section>
                   ) : null}
                   {!isAnyCombatActive && !visiblePvp && (
                     <NavigationControls
