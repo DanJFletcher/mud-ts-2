@@ -7,7 +7,7 @@ import {
   type TouchEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, ChevronUp, Maximize2, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Maximize2, Minus, Plus, RotateCcw, X } from 'lucide-react';
 import type { WorldMapProjection } from '@mudd/contracts';
 import { trapDialogTab } from './dialog-focus.js';
 import { DisclosureButton } from '@mudd/ui';
@@ -35,6 +35,9 @@ const MAP_TILE_SIZE = 18;
 const MAP_GRID_STEP = 30;
 const MAP_PADDING = 18;
 const MINIMAP_ZOOM = 2;
+const MIN_MAP_ZOOM = 0.5;
+const MAX_MAP_ZOOM = 4;
+const MAP_ZOOM_FACTOR = 1.25;
 const MINIMAP_OFFSET_STORAGE_KEY = 'mudd.mobile-map-minimap-offset.v1';
 const MINIMAP_EDGE_GAP = 8;
 
@@ -120,6 +123,20 @@ function minimapViewBox(layout: MapLayout, points: readonly MapPoint[], currentL
   return `${centerX - width / 2} ${centerY - height / 2} ${width} ${height}`;
 }
 
+function fullMapViewBox(layout: MapLayout, focus: MapPoint | undefined, zoom: number): string {
+  const width = layout.width / zoom;
+  const height = layout.height / zoom;
+  const centerX = focus?.screenX ?? layout.width / 2;
+  const centerY = focus?.screenY ?? layout.height / 2;
+  const x = width <= layout.width
+    ? Math.max(0, Math.min(layout.width - width, centerX - width / 2))
+    : centerX - width / 2;
+  const y = height <= layout.height
+    ? Math.max(0, Math.min(layout.height - height, centerY - height / 2))
+    : centerY - height / 2;
+  return `${x} ${y} ${width} ${height}`;
+}
+
 function connectionPath(from: MapPoint, to: MapPoint, direction?: string): string {
   const halfTile = MAP_TILE_SIZE / 2;
   const gap = 4;
@@ -160,6 +177,7 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
   const [fullscreenClosing, setFullscreenClosing] = useState(false);
   const [selectedLocationId, setSelectedLocationId] = useState<string>();
   const [minimapOffset, setMinimapOffset] = useState(readMinimapOffset);
+  const [mapZoom, setMapZoom] = useState(1);
   const expandButtonRef = useRef<HTMLButtonElement>(null);
   const minimapButtonRef = useRef<HTMLButtonElement>(null);
   const minimapOffsetRef = useRef(minimapOffset);
@@ -176,6 +194,15 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
     ? selectedLocationId
     : map?.currentLocationId;
   const focusedLocation = points.find((point) => point.id === focusedLocationId);
+  const adjustMapZoom = (direction: 1 | -1) => {
+    setMapZoom((current) => Math.max(
+      MIN_MAP_ZOOM,
+      Math.min(
+        MAX_MAP_ZOOM,
+        Number((current * (direction === 1 ? MAP_ZOOM_FACTOR : 1 / MAP_ZOOM_FACTOR)).toFixed(2)),
+      ),
+    ));
+  };
 
   const updateMinimapOffset = useCallback((offset: MinimapOffset) => {
     minimapOffsetRef.current = offset;
@@ -356,6 +383,43 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
             </span>
           </DisclosureButton>
         )}
+        {fullscreenPresent && (
+          <div className="focused-world-map__zoom-controls" role="group" aria-label="Map zoom controls">
+            <button
+              className="focused-world-map__zoom-button"
+              type="button"
+              aria-label="Zoom out"
+              title="Zoom out"
+              onClick={() => adjustMapZoom(-1)}
+              disabled={mapZoom <= MIN_MAP_ZOOM}
+            >
+              <Minus size={17} aria-hidden="true" />
+            </button>
+            <span className="focused-world-map__zoom-level" aria-live="polite">
+              {Math.round(mapZoom * 100)}%
+            </span>
+            <button
+              className="focused-world-map__zoom-button"
+              type="button"
+              aria-label="Zoom in"
+              title="Zoom in"
+              onClick={() => adjustMapZoom(1)}
+              disabled={mapZoom >= MAX_MAP_ZOOM}
+            >
+              <Plus size={17} aria-hidden="true" />
+            </button>
+            <button
+              className="focused-world-map__zoom-button"
+              type="button"
+              aria-label="Reset map zoom"
+              title="Reset map zoom"
+              onClick={() => setMapZoom(1)}
+              disabled={mapZoom === 1}
+            >
+              <RotateCcw size={15} aria-hidden="true" />
+            </button>
+          </div>
+        )}
         <button
           ref={fullscreenPresent ? closeButtonRef : expandButtonRef}
           className="focused-world-map__button"
@@ -372,7 +436,7 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
           <>
             <svg
               className="focused-world-map__svg"
-              viewBox={`0 0 ${layout.width} ${layout.height}`}
+              viewBox={fullMapViewBox(layout, focusedLocation, mapZoom)}
               role="group"
               aria-label="Directional map of visited locations"
               preserveAspectRatio="xMidYMid meet"

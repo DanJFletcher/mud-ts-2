@@ -128,6 +128,29 @@ describe('map switching between floors', () => {
     expect(viewY).toBeGreaterThan(0);
   });
 
+  it('zooms the full-screen map in and out and can reset to the full map', () => {
+    render(<WorldMapPanel map={denseMap} fullscreen onFullscreenChange={vi.fn()} />);
+    const svg = document.querySelector<SVGSVGElement>('.focused-world-map__svg')!;
+    const readViewBox = () => svg.getAttribute('viewBox')!.split(/\s+/).map(Number);
+    const initialViewBox = readViewBox();
+
+    expect(screen.getByRole('group', { name: 'Map zoom controls' })).toBeVisible();
+    expect(screen.getByText('100%')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Reset map zoom' })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+    expect(screen.getByText('125%')).toBeVisible();
+    expect(readViewBox()[2]).toBeCloseTo(initialViewBox[2]! / 1.25);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom out' }));
+    expect(screen.getByText('100%')).toBeVisible();
+    expect(readViewBox()).toEqual(initialViewBox);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reset map zoom' }));
+    expect(readViewBox()).toEqual(initialViewBox);
+  });
+
   it('lets the minimap be dragged without opening the map and remembers its position', () => {
     window.localStorage.removeItem('mudd.mobile-map-minimap-offset.v1');
     const onFullscreenChange = vi.fn();

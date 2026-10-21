@@ -1003,6 +1003,53 @@
   outline-offset: -2px;
 }
 
+.focused-world-map__zoom-controls {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--mudd-border);
+  border-radius: 8px;
+}
+
+.focused-world-map__zoom-button {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  color: var(--mudd-text);
+  background: transparent;
+  cursor: pointer;
+}
+
+.focused-world-map__zoom-button:hover:not(:disabled) {
+  color: var(--mudd-accent);
+  background: color-mix(in srgb, var(--mudd-accent) 10%, transparent);
+}
+
+.focused-world-map__zoom-button:focus-visible {
+  outline: 2px solid var(--mudd-accent);
+  outline-offset: -2px;
+}
+
+.focused-world-map__zoom-button:disabled {
+  color: var(--mudd-muted);
+  cursor: not-allowed;
+  opacity: .5;
+}
+
+.focused-world-map__zoom-level {
+  min-width: 40px;
+  color: var(--mudd-muted);
+  font: 600 .66rem/1 "DM Mono", monospace;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 .focused-world-map__content {
   display: grid;
   min-height: 0;
