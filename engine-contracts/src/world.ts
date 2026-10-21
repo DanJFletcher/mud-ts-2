@@ -124,6 +124,28 @@ export const NpcRoomChatReactionDefinitionSchema = z.object({
   response: z.string().min(1).max(500),
 }).strict();
 
+const NpcMovementNarrativeSchema = z.object({
+  arrival: z.string().min(1).max(500).optional(),
+  departure: z.string().min(1).max(500).optional(),
+}).strict();
+
+export const NpcMovementBehaviorSchema = z.discriminatedUnion('strategy', [
+  z.object({
+    strategy: z.literal('wander'),
+    intervalMs: z.number().int().min(5_000).max(3_600_000),
+    stayChancePercent: z.number().int().min(0).max(100).default(10),
+    allowedLocationIds: z.array(IdSchema).min(2).max(100),
+    narrative: NpcMovementNarrativeSchema.optional(),
+  }).strict(),
+  z.object({
+    strategy: z.literal('route'),
+    intervalMs: z.number().int().min(5_000).max(3_600_000),
+    /** A repeating ordered cycle; repeat intermediate waypoints to reverse direction. */
+    routeLocationIds: z.array(IdSchema).min(2).max(100),
+    narrative: NpcMovementNarrativeSchema.optional(),
+  }).strict(),
+]);
+
 export const NpcQuestStateConditionSchema = z.object({
   questId: IdSchema,
   status: z.enum(['active', 'completed']).optional(),
@@ -189,6 +211,7 @@ export const NpcDefinitionSchema = z.object({
   unknownTopicResponse: z.string().min(1).max(2000),
   announcements: z.array(z.string().min(1).max(500)).max(24).optional(),
   roomChatReactions: z.array(NpcRoomChatReactionDefinitionSchema).max(24).optional(),
+  movement: NpcMovementBehaviorSchema.optional(),
   combatProfile: NpcCombatProfileSchema.optional(),
   shop: MerchantCatalogDefinitionSchema.optional(),
 }).strict();
@@ -309,7 +332,63 @@ export const WorldPackDraftSchema = z.object({
       }
     }
   }
+  const movementNpcIds = new Set<string>();
   for (const [locationIndex, location] of world.locations.entries()) {
+    for (const [npcIndex, npc] of (location.npcs ?? []).entries()) {
+      if (!npc.movement) continue;
+      if (movementNpcIds.has(npc.id)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['locations', locationIndex, 'npcs', npcIndex, 'movement'],
+          message: `Mobile NPC ID ${npc.id} must be unique in the world.`,
+        });
+      }
+      movementNpcIds.add(npc.id);
+      if (npc.combatProfile) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['locations', locationIndex, 'npcs', npcIndex, 'movement'],
+          message: `Combatant NPC ${npc.id} cannot have autonomous movement.`,
+        });
+      }
+      const itinerary = npc.movement.strategy === 'wander'
+        ? npc.movement.allowedLocationIds
+        : npc.movement.routeLocationIds;
+      if (!itinerary.includes(location.id)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['locations', locationIndex, 'npcs', npcIndex, 'movement'],
+          message: `The movement plan for ${npc.id} must include its authored starting location.`,
+        });
+      }
+      if (itinerary.some((id) => !locationIds.has(id))) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['locations', locationIndex, 'npcs', npcIndex, 'movement'],
+          message: `The movement plan for ${npc.id} references a location not present in the world.`,
+        });
+      }
+      if (npc.movement.strategy === 'route') {
+        for (let stepIndex = 0; stepIndex < npc.movement.routeLocationIds.length; stepIndex += 1) {
+          const fromLocationId = npc.movement.routeLocationIds[stepIndex]!;
+          const toLocationId = npc.movement.routeLocationIds[(stepIndex + 1) % npc.movement.routeLocationIds.length]!;
+          const hasTraversableExit = world.locations
+            .find((candidate) => candidate.id === fromLocationId)
+            ?.exits.some((exit) =>
+              exit.toLocationId === toLocationId &&
+              !exit.requiredInteractionId &&
+              !world.locations.find((candidate) => candidate.id === toLocationId)?.requiredVisitedLocationId,
+            ) ?? false;
+          if (!hasTraversableExit) {
+            context.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['locations', locationIndex, 'npcs', npcIndex, 'movement', 'routeLocationIds', stepIndex],
+              message: `The route for ${npc.id} has no ungated exit from ${fromLocationId} to ${toLocationId}.`,
+            });
+          }
+        }
+      }
+    }
     const stateIds = new Set((location.states ?? []).map((state) => state.id));
     if (stateIds.size !== (location.states ?? []).length) {
       context.addIssue({

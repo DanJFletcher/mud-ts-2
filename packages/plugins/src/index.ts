@@ -1,5 +1,12 @@
 export { characterPlugin } from './character.js';
 export { movementPlugin } from './movement.js';
+export { autonomousNpcsPlugin, autonomousNpcStateCapability } from './autonomous-npcs.js';
+export {
+  autonomousNpcStreamId,
+  mobileNpcDefinitions,
+  projectAutonomousNpcPosition,
+} from './autonomous-npcs.js';
+export type { AutonomousNpcStateCapability, AutonomousNpcPosition } from './autonomous-npcs.js';
 export { movementPolicyCapability } from './movement.js';
 export type { MovementPolicyCapability } from './movement.js';
 export { roadTravelPlugin } from './road-travel.js';

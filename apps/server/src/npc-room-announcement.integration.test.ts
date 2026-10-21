@@ -494,18 +494,25 @@ vi.mock('./room-chat-service.js', () => ({
     const character = state.characters[input.characterId as keyof typeof state.characters];
     const session = state.sessions.get(input.playerId);
     if (!character || character.locationId !== input.roomId || session?.characterId !== input.characterId) return undefined;
-    return state.messages.filter((message) =>
+    const roomMessages = state.messages.filter((message) =>
       message.worldInstanceId === input.worldInstanceId &&
-      message.roomId === input.roomId &&
-      (input.afterId === undefined || message.id > input.afterId))
-      .map((message) => ({
+      message.roomId === input.roomId);
+    const cursor = roomMessages.at(-1)?.id ?? input.afterId ?? 0;
+    return {
+      messages: roomMessages
+        .filter((message) =>
+          (input.afterId !== undefined || !message.sourceEffectId?.startsWith('world-npc-movement:')) &&
+          (input.afterId === undefined || message.id > input.afterId))
+        .map((message) => ({
         id: message.id,
         roomId: message.roomId,
         speakerType: message.speakerType,
         speakerName: message.speakerName,
         text: message.message,
         createdAt: message.createdAt.toISOString(),
-      }));
+        })),
+      cursor,
+    };
   },
   publishNpcRoomMessage: async (input: {
     worldInstanceId: string;

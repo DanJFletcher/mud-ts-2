@@ -45,6 +45,7 @@ describe('RoomChatPanel message polling', () => {
       return new Response(JSON.stringify({
         roomId: 'test-room',
         messages: storedMessages.filter((message) => message.id > afterId),
+        cursor: Math.max(afterId, ...storedMessages.map((message) => message.id), 0),
       }), { headers: { 'content-type': 'application/json' } });
     });
     vi.stubGlobal('fetch', fetchMock);

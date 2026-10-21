@@ -111,6 +111,7 @@ const secureRng: RngPort = {
 
 export class EngineHost {
   private readonly commands = new Map<string, CommandDefinition>();
+  private readonly systemCommands = new Map<string, CommandDefinition>();
   private readonly queries = new Map<string, QueryDefinition>();
   private readonly effects = new Map<string, EventEffectDefinition>();
   private readonly eventHandlers = new Map<string, Array<{
@@ -151,8 +152,16 @@ export class EngineHost {
     });
     const context: PluginContext = {
       registerCommand: (type, schema, handle) => {
-        if (this.commands.has(type)) throw new Error(`Duplicate command registration: ${type}`);
+        if (this.commands.has(type) || this.systemCommands.has(type)) {
+          throw new Error(`Duplicate command registration: ${type}`);
+        }
         this.commands.set(type, { schema, handle } as CommandDefinition);
+      },
+      registerSystemCommand: (type, schema, handle) => {
+        if (this.commands.has(type) || this.systemCommands.has(type)) {
+          throw new Error(`Duplicate command registration: ${type}`);
+        }
+        this.systemCommands.set(type, { schema, handle } as CommandDefinition);
       },
       registerQuery: (type, schema, handle) => {
         if (this.queries.has(type)) throw new Error(`Duplicate query registration: ${type}`);
@@ -179,6 +188,14 @@ export class EngineHost {
       requireCapability: <T>(token: CapabilityToken<T>): T => {
         const capability = this.capabilities.get(token.id);
         if (!capability) throw new Error(`Missing capability: ${token.id}`);
+        if (capability.version !== token.version) {
+          throw new Error(`Capability ${token.id} requires version ${token.version}, found ${capability.version}.`);
+        }
+        return capability.implementation as T;
+      },
+      optionalCapability: <T>(token: CapabilityToken<T>): T | undefined => {
+        const capability = this.capabilities.get(token.id);
+        if (!capability) return undefined;
         if (capability.version !== token.version) {
           throw new Error(`Capability ${token.id} requires version ${token.version}, found ${capability.version}.`);
         }
@@ -400,6 +417,103 @@ export class EngineHost {
       console.error(`[${correlationId}] Engine command failed`, error);
       return {
         receipt: failure(commandId, 'INTERNAL_ERROR', 'The server could not complete that command.'),
+        events: [],
+        correlationId,
+      };
+    }
+  }
+
+  /**
+   * Dispatch a trusted host-generated command. System commands are held in a
+   * separate registry, so a player session can never invoke them through
+   * dispatch(), even if it knows the command shape.
+   */
+  async dispatchSystem(
+    raw: unknown,
+    actorId: string,
+    correlationId = globalThis.crypto.randomUUID(),
+  ): Promise<DispatchResult> {
+    const untrusted = typeof raw === 'object' && raw !== null ? raw as Record<string, unknown> : {};
+    const commandId = typeof untrusted.commandId === 'string' ? untrusted.commandId : this.makeId();
+    const type = typeof untrusted.type === 'string' ? untrusted.type : '';
+    if (!this.started) return { receipt: failure(commandId, 'INTERNAL_ERROR', 'Engine is not ready.'), events: [] };
+    const definition = this.systemCommands.get(type);
+    if (!definition) {
+      return { receipt: failure(commandId, 'UNKNOWN_COMMAND', `Unknown system command: ${type || '(missing type)'}.`), events: [] };
+    }
+    const parsed = definition.schema.safeParse(raw);
+    if (!parsed.success) {
+      return { receipt: failure(commandId, 'INVALID_COMMAND', 'System command did not match its supported contract.'), events: [] };
+    }
+    const command = parsed.data as Record<string, unknown>;
+    const worldInstanceId = String(command.worldInstanceId ?? '');
+    try {
+      const payloadHash = await hashPayload(command);
+      const prior = await this.store.lookupCommand(worldInstanceId, actorId, commandId, payloadHash);
+      if (prior) {
+        return {
+          receipt: CommandReceiptSchema.parse(prior.receipt),
+          streamId: prior.streamId,
+          events: prior.events,
+          commitOutcome: prior.kind,
+        };
+      }
+      const context: EngineCommandContext = {
+        session: {
+          sessionId: `system:${actorId}`,
+          playerId: actorId,
+          actorId,
+          worldInstanceId,
+          grantedPermissions: ['system'],
+          authenticated: true,
+        },
+        commandId,
+        worldInstanceId,
+        expectedVersion: typeof command.expectedVersion === 'number' ? command.expectedVersion : 0,
+        store: this.store,
+        world: this.world,
+        makeId: this.makeId,
+        now: this.now,
+        rng: this.rng,
+      };
+      const plan = await definition.handle(command, context);
+      const eventEffects = plan.events.flatMap((event) =>
+        this.eventHandlers.has(`${event.type}@${event.version}`)
+          ? [{
+              type: DOMAIN_EVENT_EFFECT,
+              version: 1,
+              payload: {
+                eventType: event.type,
+                eventVersion: event.version,
+                actorId,
+                payload: event.payload,
+              },
+            }]
+          : [],
+      );
+      const outcome = await this.store.append({
+        worldInstanceId,
+        streamId: plan.streamId,
+        actorId,
+        commandId,
+        payloadHash,
+        expectedVersion: plan.expectedVersion,
+        events: plan.events,
+        effects: [...(plan.effects ?? []), ...eventEffects],
+      });
+      return {
+        receipt: CommandReceiptSchema.parse(outcome.receipt),
+        streamId: outcome.streamId,
+        events: outcome.events,
+        commitOutcome: outcome.kind,
+      };
+    } catch (error) {
+      if (isRuleViolationError(error)) {
+        return { receipt: failure(commandId, 'RULE_VIOLATION', error.message), events: [] };
+      }
+      console.error(`[${correlationId}] Engine system command failed`, error);
+      return {
+        receipt: failure(commandId, 'INTERNAL_ERROR', 'The server could not complete that system command.'),
         events: [],
         correlationId,
       };

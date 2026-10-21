@@ -20,11 +20,16 @@ import { RuleViolationError } from '@mudd/engine-core';
 import type { CharacterStateCapability } from './character.js';
 import { assertCharacterAlive, characterStateCapability } from './character.js';
 import { projectQuestJournal, questObjectivesAreComplete } from '@mudd/engine-core';
+import {
+  autonomousNpcStateCapability,
+  type AutonomousNpcStateCapability,
+} from './autonomous-npcs.js';
 
 function currentNpc(
   context: EngineCommandContext | QueryContext,
   character: CharacterProjection,
   npcId: string,
+  autonomousNpcs?: AutonomousNpcStateCapability,
 ): NpcDefinition {
   if (character.archived) throw new RuleViolationError('That character is no longer available.');
   const location = context.world.locations.find((candidate) => candidate.id === character.locationId);
@@ -129,13 +134,18 @@ export const npcDialoguePlugin: EnginePlugin = {
     requiredPlugins: { 'mudd.character': '^1.0.0' },
     requires: ['mudd.character.state.v1'],
   },
-  register({ registerQuery, registerCommand, requireCapability }) {
+  register({ registerQuery, registerCommand, requireCapability, optionalCapability }) {
     const characterState = requireCapability<CharacterStateCapability>(characterStateCapability);
+    const autonomousNpcs = optionalCapability<AutonomousNpcStateCapability>(autonomousNpcStateCapability);
 
     registerQuery('npc.talk', NpcTalkQuerySchema, async (query, context) => {
       const character = await characterState.load(context, query.characterId);
       if (!character) throw new RuleViolationError('That character is no longer available.');
-      const npc = currentNpc(context, character, query.payload.npcId);
+      const npc = autonomousNpcs
+        ? (await autonomousNpcs.atLocation(context, character.locationId))
+          .find((candidate) => candidate.id === query.payload.npcId)
+        : currentNpc(context, character, query.payload.npcId);
+      if (!npc) throw new RuleViolationError('That person is not here.');
       return dialogueProjection(npc, character, context.world, query.payload.topic);
     });
 
@@ -143,7 +153,11 @@ export const npcDialoguePlugin: EnginePlugin = {
       const character = await characterState.load(context, command.characterId);
       if (!character) throw new RuleViolationError('That character is no longer available.');
       assertCharacterAlive(character);
-      const npc = currentNpc(context, character, command.payload.npcId);
+      const npc = autonomousNpcs
+        ? (await autonomousNpcs.atLocation(context, character.locationId))
+          .find((candidate) => candidate.id === command.payload.npcId)
+        : currentNpc(context, character, command.payload.npcId);
+      if (!npc) throw new RuleViolationError('That person is not here.');
       const choice = npc.dialogue?.choices.find((candidate) => candidate.id === command.payload.choiceId);
       if (!choice) throw new RuleViolationError('That choice is not available here.');
 

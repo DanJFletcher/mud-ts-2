@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { EngineHost, InMemoryEventStore, replayCharacter, type EnginePlugin } from './index.js';
 import {
+  autonomousNpcsPlugin,
+  autonomousNpcStreamId,
   characterPlugin,
   combatPlugin,
   combatRoomPresenceCapability,
@@ -1792,5 +1794,97 @@ describe('MUDD engine host', () => {
 
     expect(() => new EngineHost([first, second], new InMemoryEventStore(), authorization, demoWorld))
       .toThrow(/dependency cycle/i);
+  });
+
+  it('keeps autonomous NPC ticks system-only and persists patrol position and route progress', async () => {
+    let now = new Date('2026-10-21T12:00:00.000Z');
+    const store = new InMemoryEventStore();
+    const engine = new EngineHost(
+      [autonomousNpcsPlugin],
+      store,
+      authorization,
+      demoWorld,
+      () => 'autonomous-test-id',
+      () => now,
+      { roll: (sides) => sides },
+    );
+    await engine.start();
+    const command = {
+      type: 'world.npc.tick',
+      version: 1,
+      commandId: 'npc-tick-first',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      npcId: 'mossgate-patrolling-guard',
+    };
+
+    const playerAttempt = await engine.dispatch(command, session);
+    expect(playerAttempt.receipt).toMatchObject({ ok: false, code: 'UNKNOWN_COMMAND' });
+
+    const firstStep = await engine.dispatchSystem(command, 'system:autonomous-npc-scheduler');
+    expect(firstStep.receipt.ok).toBe(true);
+    expect(firstStep.events[0]).toMatchObject({
+      type: 'world.npc.moved',
+      payload: {
+        npcId: 'mossgate-patrolling-guard',
+        fromLocationId: 'mossgate-clearing',
+        toLocationId: 'bellwarden-track',
+        routeIndex: 1,
+      },
+    });
+
+    const earlyRetry = await engine.dispatchSystem({
+      ...command,
+      commandId: 'npc-tick-too-soon',
+    }, 'system:autonomous-npc-scheduler');
+    expect(earlyRetry.receipt).toMatchObject({ ok: false, code: 'RULE_VIOLATION' });
+
+    now = new Date(now.getTime() + 60_000);
+    const secondStep = await engine.dispatchSystem({
+      ...command,
+      commandId: 'npc-tick-second',
+    }, 'system:autonomous-npc-scheduler');
+    expect(secondStep.events[0]).toMatchObject({
+      type: 'world.npc.moved',
+      payload: {
+        fromLocationId: 'bellwarden-track',
+        toLocationId: 'bell-tower-west',
+        routeIndex: 2,
+      },
+    });
+
+    const history = await store.readStream(
+      DEMO_WORLD_INSTANCE_ID,
+      autonomousNpcStreamId('mossgate-patrolling-guard'),
+    );
+    expect(history.map((event) => event.type)).toEqual(['world.npc.moved', 'world.npc.moved']);
+    await engine.stop();
+  });
+
+  it('persists a wait instead of traversing a gated NPC exit', async () => {
+    const gatedWorld = structuredClone(demoWorld);
+    const clearing = gatedWorld.locations.find((location) => location.id === 'mossgate-clearing')!;
+    clearing.exits.find((exit) => exit.id === 'clearing-to-bellwarden-track')!.requiredInteractionId = 'sealed';
+    const engine = new EngineHost(
+      [autonomousNpcsPlugin],
+      new InMemoryEventStore(),
+      authorization,
+      gatedWorld,
+      () => 'gated-npc-id',
+      () => new Date('2026-10-21T12:00:00.000Z'),
+      { roll: (sides) => sides },
+    );
+    await engine.start();
+    const result = await engine.dispatchSystem({
+      type: 'world.npc.tick',
+      version: 1,
+      commandId: 'npc-gated-tick',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      npcId: 'mossgate-patrolling-guard',
+    }, 'system:autonomous-npc-scheduler');
+    expect(result.events[0]).toMatchObject({
+      type: 'world.npc.movement_waited',
+      payload: { locationId: 'mossgate-clearing' },
+    });
+    await engine.stop();
   });
 });

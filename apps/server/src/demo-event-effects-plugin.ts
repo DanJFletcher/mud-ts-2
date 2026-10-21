@@ -5,6 +5,8 @@ import {
   getRoomChatMessageBySourceEffectId,
   publishNpcRoomMessage,
 } from './room-chat-service.js';
+import { WorldNpcMovedEventSchema } from '@mudd/contracts';
+import { NPC_MOVEMENT_MESSAGE_SOURCE_PREFIX } from './room-chat-service.js';
 import { createNpcRoomAnnouncer } from './npc-announcer.js';
 import { createNpcRoomChatReactor } from './npc-chat-reactor.js';
 import {
@@ -21,13 +23,56 @@ export const demoEventEffectsPlugin: EnginePlugin = {
     apiVersion: '1.0',
     category: 'first-party',
   },
-  register({ registerEffect }) {
+  register({ registerEffect, registerEventHandler }) {
     const announceNpcRoomMessage = createNpcRoomAnnouncer(publishNpcRoomMessage);
     const reactToNpcRoomChat = createNpcRoomChatReactor(publishNpcRoomMessage);
+
+    registerEventHandler(
+      'world.npc.moved',
+      1,
+      WorldNpcMovedEventSchema.shape.payload,
+      async (event, context) => {
+        const npc = context.world.locations
+          .flatMap((location) => location.npcs ?? [])
+          .find((candidate) => candidate.id === event.npcId);
+        if (!npc) return;
+        const departureDirection = event.direction ?? 'onward';
+        const reverseExit = context.world.locations
+          .find((location) => location.id === event.toLocationId)
+          ?.exits.find((exit) => exit.toLocationId === event.fromLocationId);
+        const arrivalDirection = reverseExit?.direction ?? oppositeDirection(departureDirection);
+        const narrative = npc.movement?.narrative;
+        const departure = formatMovementNarrative(
+          narrative?.departure ?? `${npc.name} heads {direction}.`,
+          departureDirection,
+        );
+        const arrival = formatMovementNarrative(
+          narrative?.arrival ?? `${npc.name} arrives from the {direction}.`,
+          arrivalDirection,
+        );
+        await publishNpcRoomMessage({
+          worldInstanceId: context.worldInstanceId,
+          roomId: event.fromLocationId,
+          npcId: npc.id,
+          npcName: npc.name,
+          text: departure,
+          sourceEffectId: `${NPC_MOVEMENT_MESSAGE_SOURCE_PREFIX}${context.effectId}:departure`,
+        });
+        await publishNpcRoomMessage({
+          worldInstanceId: context.worldInstanceId,
+          roomId: event.toLocationId,
+          npcId: npc.id,
+          npcName: npc.name,
+          text: arrival,
+          sourceEffectId: `${NPC_MOVEMENT_MESSAGE_SOURCE_PREFIX}${context.effectId}:arrival`,
+        });
+      },
+    );
 
     registerEffect(LOCATION_ENTERED_EFFECT, 1, LocationEnteredEffectSchema, async (effect, context) => {
       const location = demoWorld.locations.find((candidate) => candidate.id === effect.toLocationId);
       for (const npc of location?.npcs ?? []) {
+        if (npc.movement) continue;
         if (!npc.announcements?.length) continue;
         const sourceEffectId = effect.arrivalId
           ? `${context.worldInstanceId}:${effect.arrivalId}:${npc.id}`
@@ -66,3 +111,19 @@ export const demoEventEffectsPlugin: EnginePlugin = {
     });
   },
 };
+
+function formatMovementNarrative(template: string, direction: string): string {
+  return template.replaceAll('{direction}', direction);
+}
+
+function oppositeDirection(direction: string): string {
+  const opposites: Record<string, string> = {
+    north: 'south',
+    south: 'north',
+    east: 'west',
+    west: 'east',
+    up: 'down',
+    down: 'up',
+  };
+  return opposites[direction.toLocaleLowerCase()] ?? direction;
+}

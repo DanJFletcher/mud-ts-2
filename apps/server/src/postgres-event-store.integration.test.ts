@@ -478,7 +478,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
       playerId,
       characterId: chatCharacterId,
       roomId: 'glasswater-bridge',
-    })).toEqual([]);
+    })).toEqual({ messages: [], cursor: 0 });
 
     const persisted = await db.select().from(roomChatMessages).where(
       (await import('drizzle-orm')).eq(roomChatMessages.submissionId, submissionId),
@@ -505,6 +505,30 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
       }),
     ]);
     expect(retriedNpcReply.id).toBe(firstNpcReply.id);
+    const movementNotice = await publishNpcRoomMessage({
+      worldInstanceId: chatWorldInstanceId,
+      roomId: 'glasswater-bridge',
+      npcId: 'npc-effect-test',
+      npcName: 'Fixture NPC',
+      text: 'The NPC leaves.',
+      sourceEffectId: `world-npc-movement:${randomUUID()}:departure`,
+    });
+    const chatHistory = await listRoomChatMessages({
+      worldInstanceId: chatWorldInstanceId,
+      playerId,
+      characterId: chatCharacterId,
+      roomId: 'glasswater-bridge',
+    });
+    expect(chatHistory?.messages.some((message) => message.id === movementNotice.id)).toBe(false);
+    expect(chatHistory?.cursor).toBe(movementNotice.id);
+    const liveMessages = await listRoomChatMessages({
+      worldInstanceId: chatWorldInstanceId,
+      playerId,
+      characterId: chatCharacterId,
+      roomId: 'glasswater-bridge',
+      afterId: movementNotice.id - 1,
+    });
+    expect(liveMessages?.messages.some((message) => message.id === movementNotice.id)).toBe(true);
     await db.delete(characters).where((await import('drizzle-orm')).eq(characters.id, chatCharacterId));
   });
 });

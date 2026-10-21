@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, isNull, notLike, or, sql } from 'drizzle-orm';
 import { replayCharacter } from '@mudd/engine-core';
 import { db } from './db/client.js';
 import { characters, durableEffects, gameEvents, roomChatMessages, worldSessions } from './db/schema.js';
@@ -8,6 +8,7 @@ import { PLAYER_ROOM_MESSAGE_EFFECT } from './durable-effect-contracts.js';
 export const MAX_ROOM_CHAT_MESSAGE_LENGTH = 500;
 const INITIAL_ROOM_CHAT_LIMIT = 50;
 const ROOM_CHAT_POLL_LIMIT = 100;
+export const NPC_MOVEMENT_MESSAGE_SOURCE_PREFIX = 'world-npc-movement:';
 type CharacterProjection = NonNullable<ReturnType<typeof replayCharacter>>;
 
 export type RoomChatSpeakerType = 'player' | 'npc';
@@ -293,7 +294,7 @@ export async function listRoomChatMessages(input: Readonly<{
   characterId: string;
   roomId: string;
   afterId?: number;
-}>): Promise<readonly RoomChatMessage[] | undefined> {
+}>): Promise<{ messages: readonly RoomChatMessage[]; cursor: number } | undefined> {
   return db.transaction(async (tx) => {
     await lockCharacterStream(tx, input.worldInstanceId, input.characterId);
     const character = await readAuthorizedRoomCharacter(tx, input);
@@ -309,13 +310,28 @@ export async function listRoomChatMessages(input: Readonly<{
         .where(and(...conditions, gt(roomChatMessages.id, input.afterId)))
         .orderBy(asc(roomChatMessages.id))
         .limit(ROOM_CHAT_POLL_LIMIT);
-      return rows.map(toRoomChatMessage);
+      return {
+        messages: rows.map(toRoomChatMessage),
+        cursor: rows.at(-1)?.id ?? input.afterId,
+      };
     }
 
+    const [latest] = await tx.select({
+      id: sql<number>`coalesce(max(${roomChatMessages.id}), 0)`,
+    }).from(roomChatMessages).where(and(...conditions));
     const rows = await tx.select().from(roomChatMessages)
-      .where(and(...conditions))
+      .where(and(
+        ...conditions,
+        or(
+          isNull(roomChatMessages.sourceEffectId),
+          notLike(roomChatMessages.sourceEffectId, `${NPC_MOVEMENT_MESSAGE_SOURCE_PREFIX}%`),
+        ),
+      ))
       .orderBy(desc(roomChatMessages.id))
       .limit(INITIAL_ROOM_CHAT_LIMIT);
-    return rows.reverse().map(toRoomChatMessage);
+    return {
+      messages: rows.reverse().map(toRoomChatMessage),
+      cursor: Number(latest?.id ?? 0),
+    };
   });
 }

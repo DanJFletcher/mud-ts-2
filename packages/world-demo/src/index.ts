@@ -265,6 +265,46 @@ const draft = {
           unknownTopicResponse: 'The guardian answers with a firm tap of wood against wood.',
           combatProfile: { maxHealth: 6, attackDamage: 1, style: 'guardian', defense: 1 },
         },
+        {
+          id: 'mossgate-wandering-villager',
+          name: 'Wandering Villager',
+          description: 'A villager strolls by, hands clasped behind their back.',
+          greeting: 'The villager offers a quiet nod.',
+          topics: [],
+          unknownTopicResponse: 'The villager smiles and continues on their way.',
+          movement: {
+            strategy: 'wander',
+            intervalMs: 45_000,
+            stayChancePercent: 20,
+            allowedLocationIds: ['mossgate-clearing', 'glasswater-approach', 'glasswater-bridge'],
+            narrative: {
+              arrival: 'A villager strolls in from the {direction}, hands clasped behind their back.',
+              departure: 'A villager heads {direction}, hands clasped behind their back.',
+            },
+          },
+        },
+        {
+          id: 'mossgate-patrolling-guard',
+          name: 'Patrolling Guard',
+          description: 'A town guard marches through, surveying the surroundings.',
+          greeting: 'The guard gives a brief nod before continuing the patrol.',
+          topics: [],
+          unknownTopicResponse: 'The guard remains focused on the patrol.',
+          movement: {
+            strategy: 'route',
+            intervalMs: 60_000,
+            routeLocationIds: [
+              'mossgate-clearing',
+              'bellwarden-track',
+              'bell-tower-west',
+              'bellwarden-track',
+            ],
+            narrative: {
+              arrival: 'A town guard marches in from the {direction}, surveying the surroundings.',
+              departure: 'The guard continues the patrol to the {direction}.',
+            },
+          },
+        },
       ],
       exits: [
         { id: 'clearing-to-stillwater-path', fromLocationId: 'mossgate-clearing', toLocationId: 'stillwater-path', label: 'West along Willowshade Track', direction: 'west', roadId: 'willowshade-track' },

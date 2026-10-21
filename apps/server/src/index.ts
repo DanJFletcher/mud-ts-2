@@ -29,6 +29,7 @@ import {
 import { EngineHost, projectQuestJournal, replayCharacter } from '@mudd/engine-core';
 import {
   characterPlugin,
+  autonomousNpcsPlugin,
   combatPlugin,
   groupsPlugin,
   interactionPlugin,
@@ -52,6 +53,7 @@ import { PostgresEventStore } from './persistence/postgres-event-store.js';
 import { listRoomOccupants, touchWorldSessionPresence } from './room-presence-service.js';
 import { combatPresencePlugin } from './combat-presence-plugin.js';
 import { demoEventEffectsPlugin } from './demo-event-effects-plugin.js';
+import { createAutonomousNpcScheduler } from './autonomous-npc-scheduler.js';
 import { LOCATION_ENTERED_EFFECT } from './durable-effect-contracts.js';
 import { projectWorldMap } from './world-map-projection.js';
 import {
@@ -106,6 +108,7 @@ const authorization = {
 const engine = new EngineHost(
   [
     worldItemsPlugin,
+    autonomousNpcsPlugin,
     characterPlugin,
     groupsPlugin,
     partyPlugin,
@@ -126,6 +129,17 @@ const engine = new EngineHost(
   demoWorld,
 );
 await engine.start();
+
+const autonomousNpcScheduler = createAutonomousNpcScheduler({
+  engine,
+  store,
+  world: demoWorld,
+  worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+  onError(error, npcId) {
+    console.error(`Could not run autonomous movement for NPC ${npcId}.`, error);
+  },
+});
+autonomousNpcScheduler.start();
 
 let effectBatchRunning = false;
 async function runPendingEffectBatch() {
@@ -512,7 +526,7 @@ app.get('/api/chat', async (req, res, next) => {
       afterId: parsedAfterId?.success ? parsedAfterId.data : undefined,
     });
     if (!messages) return res.status(409).json({ message: 'You have moved to a different room.' });
-    return res.json({ roomId: roomId.data, messages });
+    return res.json({ roomId: roomId.data, messages: messages.messages, cursor: messages.cursor });
   } catch (error) {
     next(error);
   }

@@ -152,6 +152,8 @@ export interface QueryDefinition<T = unknown, R = unknown> {
 
 export interface PluginContext {
   registerCommand<T>(type: string, schema: z.ZodType<T>, handler: CommandHandler<T>): void;
+  /** Register a command callable only through the trusted host system-command API. */
+  registerSystemCommand<T>(type: string, schema: z.ZodType<T>, handler: CommandHandler<T>): void;
   registerQuery<T, R>(type: string, schema: z.ZodType<T>, handler: QueryHandler<T, R>): void;
   registerEffect<T>(type: string, version: number, schema: z.ZodType<T>, handler: EventEffectHandler<T>): void;
   registerEventHandler<T>(
@@ -162,6 +164,7 @@ export interface PluginContext {
   ): void;
   provideCapability<T>(token: CapabilityToken<T>, implementation: T): void;
   requireCapability<T>(token: CapabilityToken<T>): T;
+  optionalCapability<T>(token: CapabilityToken<T>): T | undefined;
 }
 
 export interface EnginePlugin {

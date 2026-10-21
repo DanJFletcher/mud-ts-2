@@ -39,6 +39,10 @@ import {
   type WorldItemsStateCapability,
 } from './world-items.js';
 import { exitsForLocationState, resolveLocationState } from './location-state.js';
+import {
+  autonomousNpcStateCapability,
+  type AutonomousNpcStateCapability,
+} from './autonomous-npcs.js';
 
 export interface CharacterStateCapability {
   load(context: EngineCommandContext | QueryContext, characterId: string): Promise<CharacterProjection | undefined>;
@@ -70,8 +74,9 @@ export const characterPlugin: EnginePlugin = {
       'character.respawned': 1,
     },
   },
-  register({ registerCommand, registerQuery, provideCapability, requireCapability }) {
+  register({ registerCommand, registerQuery, provideCapability, requireCapability, optionalCapability }) {
     const worldItems = requireCapability<WorldItemsStateCapability>(worldItemsStateCapability);
+    const autonomousNpcs = optionalCapability<AutonomousNpcStateCapability>(autonomousNpcStateCapability);
     const state: CharacterStateCapability = {
       async load(context, characterId) {
         if ('characterProjection' in context && context.characterProjection?.characterId === characterId) {
@@ -393,6 +398,9 @@ export const characterPlugin: EnginePlugin = {
       }
       const location = context.world.locations.find((item) => item.id === character.locationId);
       if (!location) throw new Error('The character location is not present in this world version.');
+      const roomNpcs = autonomousNpcs
+        ? await autonomousNpcs.atLocation(context, location.id)
+        : location.npcs ?? [];
       const locationState = resolveLocationState(location, character.locationStateId);
       const availableExits = exitsForLocationState(location, locationState?.id);
       const sharedItems = (await worldItems.load(context)).items
@@ -414,7 +422,7 @@ export const characterPlugin: EnginePlugin = {
         return roomDescription ? [roomDescription] : [];
       });
       const sharedItemDescriptions = sharedItems.map(({ item }) => `${item.label} lies here.`);
-      const roomNpcDescriptions = (location.npcs ?? []).map(
+      const roomNpcDescriptions = roomNpcs.map(
         ({ name, description }) => `${name} is here. ${description}`,
       );
       const interactableRoomDescriptions = (location.interactables ?? []).flatMap(({ roomDescription }) =>
@@ -475,9 +483,9 @@ export const characterPlugin: EnginePlugin = {
             },
           },
         } : {}),
-        ...(location.npcs?.length
+        ...(roomNpcs.length
           ? {
-            npcs: location.npcs.map(({ id, name, description, combatProfile, shop }) => ({
+            npcs: roomNpcs.map(({ id, name, description, combatProfile, shop }) => ({
               id,
               name,
               description,

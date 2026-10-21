@@ -19,7 +19,7 @@ type RoomChatPanelProps = Readonly<{
   onFullscreenChange: (fullscreen: boolean) => void;
   embedded?: boolean;
 }>;
-type RoomChatResponse = Readonly<{ roomId: string; messages: readonly RoomChatMessage[] }>;
+type RoomChatResponse = Readonly<{ roomId: string; messages: readonly RoomChatMessage[]; cursor?: number }>;
 type MessageResponse = Readonly<{ message: RoomChatMessage; npcMessage?: RoomChatMessage }>;
 
 function errorMessage(body: unknown, fallback: string) {
@@ -131,6 +131,9 @@ export function RoomChatPanel({ roomId, fullscreen, onFullscreenChange, embedded
         if (!active) return;
 
         initialLoadCompleteRef.current = true;
+        if (typeof body.cursor === 'number' && Number.isSafeInteger(body.cursor)) {
+          lastMessageIdRef.current = Math.max(lastMessageIdRef.current, body.cursor);
+        }
         if (body.messages.length) {
           lastMessageIdRef.current = Math.max(
             lastMessageIdRef.current,

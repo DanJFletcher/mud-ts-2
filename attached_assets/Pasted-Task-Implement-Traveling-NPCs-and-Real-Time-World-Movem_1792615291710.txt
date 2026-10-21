@@ -1,0 +1,346 @@
+Task: Implement Traveling NPCs and Real-Time World Movement Notifications
+
+Objective
+
+Extend the MUD engine to support traveling NPCs that move autonomously between rooms and locations in the game world.
+
+Players should experience the world as a living environment where NPCs travel independently, even when players are not issuing commands.
+
+When an NPC enters or leaves a room occupied by players, those players must receive real-time narrative notifications in their terminals.
+
+This feature must follow the project's modular, plugin-first architecture, with a clear separation between generic engine capabilities and game-specific NPC behavior.
+
+1. Expected Player Experience
+
+NPC Entering a Room
+
+A player is standing in the village square.
+
+Without the player issuing any commands, an NPC enters the room.
+
+The terminal automatically displays:
+
+A villager strolls by, hands clasped behind their back.
+
+The NPC should now appear in the room's list of occupants and be available for normal NPC interactions.
+
+NPC Leaving a Room
+
+After some time, the NPC decides to travel north.
+
+All players currently occupying the room receive:
+
+A villager exits to the north, hands clasped behind their back.
+
+The NPC is removed from the room's occupant list and appears in the destination room.
+
+Players in the destination room receive an appropriate arrival message.
+
+For example:
+
+A villager arrives from the south, quietly humming.
+
+Real-Time Delivery
+
+These notifications must appear automatically without requiring players to enter "look", refresh the terminal, or issue another command.
+
+They should use the existing real-time session and notification infrastructure.
+
+The client's command input must remain usable, and incoming notifications must not interrupt commands the player is typing.
+
+2. Architectural Requirements
+
+Engine Responsibilities
+
+The engine must support autonomous movement of world entities.
+
+Where appropriate, extend the existing movement, navigation, world state, time, and event systems.
+
+The engine should provide generic mechanisms for:
+
+- Moving NPCs between connected rooms.
+- Validating movement against the world's room connections and navigation rules.
+- Updating authoritative world state.
+- Scheduling autonomous actions over time.
+- Publishing movement lifecycle events.
+- Notifying interested plugins when an entity changes locations.
+- Broadcasting relevant world events to players in affected rooms.
+- Supporting multiple NPCs moving independently.
+
+The engine should not hard-code NPC personalities, travel routes, schedules, movement descriptions, or AI behavior.
+
+The engine knows that an entity moved. The game plugin knows why it moved and how to describe that movement.
+
+Game Plugin Responsibilities
+
+Game plugins should control NPC behavior, including:
+
+- Whether an NPC is stationary or capable of autonomous movement.
+- Where an NPC is allowed to travel.
+- How often the NPC attempts to move.
+- How it chooses its next destination.
+- What messages players receive when the NPC arrives or departs.
+- Whether the NPC follows a predefined route, wanders randomly, or follows another behavior strategy.
+
+The initial implementation should include at least one simple traveling NPC behavior.
+
+Avoid implementing complex AI or advanced NPC decision-making in this task.
+
+3. NPC Movement Behaviors
+
+Design an extensible movement behavior system that can eventually support multiple strategies.
+
+For the MVP, implement two simple behavior strategies where practical.
+
+Random Wandering
+
+An NPC periodically selects a valid adjacent room and moves there.
+
+Requirements:
+
+- NPCs only select destinations reachable through valid room connections.
+- Movement intervals should be configurable.
+- NPCs must respect blocked or otherwise invalid exits.
+- An NPC may remain in its current room rather than move.
+- The behavior should use the existing RNG abstraction where applicable.
+
+Fixed Route / Patrol
+
+An NPC can follow an ordered sequence of rooms or waypoints.
+
+For example:
+
+"Village Square → Market Street → Northern Gate → Market Street → Village Square"
+
+The NPC repeatedly travels this route.
+
+This provides a foundation for future guards, merchants, caravans, and scheduled NPC activities.
+
+Both behaviors should use the same underlying engine movement APIs rather than implementing their own world-state manipulation.
+
+4. Real-Time Movement Events
+
+The engine should publish movement events that other plugins can subscribe to.
+
+Illustrative event types:
+
+entity.movement.started
+entity.room.left
+entity.room.entered
+entity.movement.completed
+
+Use the repository's existing event conventions. Do not introduce unnecessary events if an appropriate mechanism already exists.
+
+Movement event data should provide sufficient information to identify:
+
+- The entity that moved.
+- The originating room.
+- The destination room.
+- The direction of travel, when applicable.
+- The movement outcome.
+
+Game plugins should be able to listen for these events and generate appropriate narratives.
+
+For example, a departure event could trigger:
+
+"A villager exits to the north, hands clasped behind their back."
+
+An arrival event could trigger:
+
+"A villager enters from the south, carrying a basket of apples."
+
+Narrative generation should be customizable per NPC or NPC type.
+
+Notification Rules
+
+- Players in the originating room receive departure messages.
+- Players in the destination room receive arrival messages.
+- Players elsewhere in the world receive neither message.
+- Multiple players in the same room receive the same relevant event.
+- Notifications must not be duplicated.
+- Players who enter a room after an NPC has departed should not receive outdated departure notifications.
+- Arrival directions should be calculated using the actual room connection when available, rather than assuming all exits have conventional opposites.
+
+Use the existing client messaging infrastructure rather than introducing a separate NPC notification channel.
+
+5. Autonomous Movement Scheduling
+
+NPCs must be able to act without player input.
+
+Use or extend the engine's existing time and scheduling systems.
+
+Requirements:
+
+- NPC movement is initiated server-side.
+- Individual NPCs can have configurable movement intervals.
+- Multiple NPCs can operate independently.
+- Movement stops when an NPC is removed or its movement behavior is disabled.
+- The system must avoid duplicate scheduled actions.
+- Movement must not depend on whether a player has the NPC's room open in their client.
+- The scheduling implementation should avoid unnecessary processing for large numbers of inactive NPCs.
+
+Prefer reusable scheduling abstractions that can later support other autonomous behaviors.
+
+Do not introduce a second competing time system.
+
+6. World State and Persistence
+
+Traveling NPCs must exist as entities within the authoritative game world.
+
+When an NPC moves:
+
+1. Validate the movement.
+2. Update the NPC's current location.
+3. Update the room occupancy state.
+4. Publish the appropriate movement events.
+5. Notify players in the affected rooms.
+
+These operations should remain consistent even when multiple movements occur concurrently.
+
+Reuse existing persistence and world-state infrastructure.
+
+If persistent NPC locations are supported by the current architecture, preserve their locations across server restarts.
+
+Ensure reconnecting players receive the correct current room state rather than outdated NPC positions.
+
+7. Interaction With Existing Systems
+
+Room Navigation
+
+NPCs must use the existing room navigation and movement infrastructure.
+
+Avoid maintaining a separate NPC-specific map or room connectivity system.
+
+Combat
+
+An NPC participating in an active combat encounter should not continue wandering unless explicitly permitted by its behavior rules.
+
+Reuse existing combat participation checks.
+
+Do not modify the underlying combat rules as part of this task.
+
+Player Interactions
+
+Traveling NPCs should remain compatible with existing NPC interactions.
+
+Players should be able to inspect or interact with an NPC while it occupies their room, subject to existing game rules.
+
+After the NPC leaves, it should no longer be available for room-local interactions.
+
+Multiplayer Parties
+
+Players in the same room, including party members, should independently receive relevant NPC movement notifications.
+
+Party membership must not be required to observe NPC movement.
+
+8. Demonstration NPCs
+
+Create two simple demonstration NPCs using the existing game's content/plugin system.
+
+Wandering Villager
+
+A villager who randomly travels between connected village rooms.
+
+Example descriptions:
+
+Arrival:
+
+"A villager strolls by, hands clasped behind their back."
+
+Departure:
+
+"A villager exits to the north, hands clasped behind their back."
+
+Patrolling Guard
+
+A town guard who follows a predefined patrol route.
+
+Example descriptions:
+
+Arrival:
+
+"A town guard marches into the square, surveying the surroundings."
+
+Departure:
+
+"The guard continues their patrol to the east."
+
+These descriptions must belong to game content or configuration rather than the engine core.
+
+9. Testing and Acceptance Criteria
+
+Autonomous Movement
+
+- [ ] NPCs can move between connected rooms.
+- [ ] NPCs move without receiving player commands.
+- [ ] Random wandering respects valid navigation paths.
+- [ ] Fixed-route NPCs follow their configured routes.
+- [ ] Movement intervals are configurable.
+- [ ] Multiple NPCs can move independently.
+- [ ] NPCs cannot move through invalid or blocked exits.
+
+Real-Time Notifications
+
+- [ ] Players receive NPC arrival notifications automatically.
+- [ ] Players receive NPC departure notifications automatically.
+- [ ] Notifications contain the appropriate direction and narrative.
+- [ ] Players outside affected rooms receive no notification.
+- [ ] Multiple players in the same room receive the relevant notifications.
+- [ ] Incoming messages do not break terminal command input.
+- [ ] NPC movement appears correctly in room descriptions and occupant lists.
+
+Engine Integration
+
+- [ ] NPC movement uses existing navigation infrastructure.
+- [ ] NPC movement events are available to other plugins.
+- [ ] Game plugins control NPC movement behavior and narration.
+- [ ] The engine contains no hard-coded NPC personalities or travel descriptions.
+- [ ] NPC world state remains consistent during simultaneous movement operations.
+- [ ] NPCs do not wander away during combat unless explicitly allowed.
+- [ ] Existing player movement and combat systems continue working correctly.
+
+10. Out of Scope
+
+Do not implement the following features yet:
+
+- Advanced NPC artificial intelligence
+- LLM-powered NPC decision-making
+- NPC conversations or dialogue trees
+- Complex daily schedules
+- NPC employment or professions
+- NPC trading or economies
+- Dynamic quest generation
+- NPC hunger, thirst, or survival needs
+- Long-distance travel simulation beyond existing world navigation
+
+However, design the architecture so these capabilities can be added as separate plugins in the future.
+
+11. Implementation Instructions
+
+Before writing code:
+
+1. Inspect the existing repository architecture and developer documentation.
+2. Identify the current NPC/entity, room, navigation, world-state, scheduling, and event systems.
+3. Determine whether generic autonomous entity movement is already supported.
+4. Reuse existing engine functionality wherever possible.
+5. Implement missing reusable abstractions without introducing unnecessary complexity.
+6. Build the demonstration NPC behaviors in the game layer.
+7. Add automated tests for movement, notifications, state consistency, and multiplayer behavior.
+8. Verify the functionality using independently connected player sessions.
+
+Avoid unrelated refactoring or introducing redundant architectural systems.
+
+12. Final Deliverables
+
+Implement the working feature in the existing repository.
+
+Provide a summary of:
+
+1. Engine components added or modified.
+2. Game plugin components responsible for NPC behavior.
+3. How autonomous movement is scheduled and executed.
+4. How real-time room notifications are generated and delivered.
+5. How additional NPC movement strategies can be implemented.
+6. Instructions for manually testing the feature with multiple connected players.
+
+Primary architectural principle: The engine provides generic autonomous entity movement, scheduling, navigation, and event delivery. Game plugins define NPC behavior and the narrative experience presented to players.
