@@ -20,6 +20,16 @@ type WorldMapPanelProps = Readonly<{
 
 type MapPoint = WorldMapProjection['locations'][number] & { screenX: number; screenY: number };
 type MapLayout = Readonly<{ points: MapPoint[]; width: number; height: number }>;
+type MapViewBox = Readonly<{ x: number; y: number; width: number; height: number }>;
+type MapPanOffset = Readonly<{ x: number; y: number }>;
+type MapPanDrag = {
+  pointerId: number;
+  pointerX: number;
+  pointerY: number;
+  rect: DOMRect;
+  viewBox: MapViewBox;
+  moved: boolean;
+};
 type MinimapOffset = Readonly<{ x: number; y: number }>;
 type MinimapRect = Readonly<{ left: number; top: number; width: number; height: number }>;
 type MinimapDrag = {
@@ -123,18 +133,32 @@ function minimapViewBox(layout: MapLayout, points: readonly MapPoint[], currentL
   return `${centerX - width / 2} ${centerY - height / 2} ${width} ${height}`;
 }
 
-function fullMapViewBox(layout: MapLayout, focus: MapPoint | undefined, zoom: number): string {
+function fullMapViewBox(
+  layout: MapLayout,
+  focus: MapPoint | undefined,
+  zoom: number,
+  panOffset: MapPanOffset = { x: 0, y: 0 },
+): MapViewBox {
   const width = layout.width / zoom;
   const height = layout.height / zoom;
   const centerX = focus?.screenX ?? layout.width / 2;
   const centerY = focus?.screenY ?? layout.height / 2;
-  const x = width <= layout.width
+  const baseX = width <= layout.width
     ? Math.max(0, Math.min(layout.width - width, centerX - width / 2))
     : centerX - width / 2;
-  const y = height <= layout.height
+  const baseY = height <= layout.height
     ? Math.max(0, Math.min(layout.height - height, centerY - height / 2))
     : centerY - height / 2;
-  return `${x} ${y} ${width} ${height}`;
+  return {
+    x: width <= layout.width
+      ? Math.max(0, Math.min(layout.width - width, baseX + panOffset.x))
+      : baseX + panOffset.x,
+    y: height <= layout.height
+      ? Math.max(0, Math.min(layout.height - height, baseY + panOffset.y))
+      : baseY + panOffset.y,
+    width,
+    height,
+  };
 }
 
 function connectionPath(from: MapPoint, to: MapPoint, direction?: string): string {
@@ -178,6 +202,7 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
   const [selectedLocationId, setSelectedLocationId] = useState<string>();
   const [minimapOffset, setMinimapOffset] = useState(readMinimapOffset);
   const [mapZoom, setMapZoom] = useState(1);
+  const [mapPanOffset, setMapPanOffset] = useState<MapPanOffset>({ x: 0, y: 0 });
   const expandButtonRef = useRef<HTMLButtonElement>(null);
   const minimapButtonRef = useRef<HTMLButtonElement>(null);
   const minimapOffsetRef = useRef(minimapOffset);
@@ -185,6 +210,8 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
   const ignoreMinimapClickRef = useRef(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const mapPanDragRef = useRef<MapPanDrag | null>(null);
+  const suppressMapClickRef = useRef(false);
   const wasFullscreenRef = useRef(false);
 
   const layout = projectMapPoints(map);
@@ -194,6 +221,7 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
     ? selectedLocationId
     : map?.currentLocationId;
   const focusedLocation = points.find((point) => point.id === focusedLocationId);
+  const mapViewBox = fullMapViewBox(layout, focusedLocation, mapZoom, mapPanOffset);
   const adjustMapZoom = (direction: 1 | -1) => {
     setMapZoom((current) => Math.max(
       MIN_MAP_ZOOM,
@@ -202,6 +230,55 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
         Number((current * (direction === 1 ? MAP_ZOOM_FACTOR : 1 / MAP_ZOOM_FACTOR)).toFixed(2)),
       ),
     ));
+  };
+  const handleMapPointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (!fullscreenPresent || mapZoom <= 1 || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+
+    mapPanDragRef.current = {
+      pointerId: event.pointerId,
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+      rect,
+      viewBox: mapViewBox,
+      moved: false,
+    };
+  };
+
+  const handleMapPointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
+    const drag = mapPanDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    const deltaX = event.clientX - drag.pointerX;
+    const deltaY = event.clientY - drag.pointerY;
+    if (!drag.moved && Math.hypot(deltaX, deltaY) < 4) return;
+    if (!drag.moved) event.currentTarget.setPointerCapture?.(event.pointerId);
+    drag.moved = true;
+    event.preventDefault();
+
+    const nextX = Math.max(
+      0,
+      Math.min(layout.width - drag.viewBox.width, drag.viewBox.x - deltaX * drag.viewBox.width / drag.rect.width),
+    );
+    const nextY = Math.max(
+      0,
+      Math.min(layout.height - drag.viewBox.height, drag.viewBox.y - deltaY * drag.viewBox.height / drag.rect.height),
+    );
+    const baseViewBox = fullMapViewBox(layout, focusedLocation, mapZoom);
+    setMapPanOffset({ x: nextX - baseViewBox.x, y: nextY - baseViewBox.y });
+  };
+
+  const finishMapPan = (event: ReactPointerEvent<SVGSVGElement>) => {
+    const drag = mapPanDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    mapPanDragRef.current = null;
+    if (drag.moved) {
+      suppressMapClickRef.current = true;
+      window.setTimeout(() => {
+        suppressMapClickRef.current = false;
+      }, 0);
+    }
   };
 
   const updateMinimapOffset = useCallback((offset: MinimapOffset) => {
@@ -333,6 +410,10 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
     if (!fullscreenPresent) return;
     const touch = event.touches[0];
     const target = event.target;
+    if (mapZoom > 1 && target instanceof Element && target.closest('.focused-world-map__svg')) {
+      touchStartRef.current = null;
+      return;
+    }
     if (!touch || (target instanceof Element && target.closest('button, a, input, textarea, select'))) {
       touchStartRef.current = null;
       return;
@@ -413,7 +494,10 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
               type="button"
               aria-label="Reset map zoom"
               title="Reset map zoom"
-              onClick={() => setMapZoom(1)}
+              onClick={() => {
+                setMapZoom(1);
+                setMapPanOffset({ x: 0, y: 0 });
+              }}
               disabled={mapZoom === 1}
             >
               <RotateCcw size={15} aria-hidden="true" />
@@ -435,11 +519,18 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
         {points.length > 0 ? (
           <>
             <svg
-              className="focused-world-map__svg"
-              viewBox={fullMapViewBox(layout, focusedLocation, mapZoom)}
+              className={[
+                'focused-world-map__svg',
+                fullscreenPresent && mapZoom > 1 ? 'focused-world-map__svg--pannable' : '',
+              ].filter(Boolean).join(' ')}
+              viewBox={`${mapViewBox.x} ${mapViewBox.y} ${mapViewBox.width} ${mapViewBox.height}`}
               role="group"
               aria-label="Directional map of visited locations"
               preserveAspectRatio="xMidYMid meet"
+              onPointerDown={handleMapPointerDown}
+              onPointerMove={handleMapPointerMove}
+              onPointerUp={finishMapPan}
+              onPointerCancel={finishMapPan}
             >
               <title>Directional map of visited locations</title>
               <desc>
@@ -499,7 +590,16 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
                       isCurrent ? 'focused-world-map__location--current' : '',
                       isSelected ? 'focused-world-map__location--selected' : '',
                     ].filter(Boolean).join(' ')}
-                    onClick={() => setSelectedLocationId(point.id)}
+                    onClick={(event) => {
+                      if (suppressMapClickRef.current) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        suppressMapClickRef.current = false;
+                        return;
+                      }
+                      setSelectedLocationId(point.id);
+                      setMapPanOffset({ x: 0, y: 0 });
+                    }}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' || event.key === ' ') {
                         event.preventDefault();

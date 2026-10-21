@@ -1069,6 +1069,15 @@
   overflow: visible;
 }
 
+.focused-world-map__svg--pannable {
+  cursor: grab;
+  touch-action: none;
+}
+
+.focused-world-map__svg--pannable:active {
+  cursor: grabbing;
+}
+
 .focused-world-map__path {
   stroke: var(--mudd-border);
   stroke-width: 1.3;

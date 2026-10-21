@@ -151,6 +151,54 @@ describe('map switching between floors', () => {
     expect(readViewBox()).toEqual(initialViewBox);
   });
 
+  it('pans the full-screen map by dragging after zooming in', () => {
+    render(<WorldMapPanel map={denseMap} fullscreen onFullscreenChange={vi.fn()} />);
+    const svg = document.querySelector<SVGSVGElement>('.focused-world-map__svg')!;
+    const readViewBox = () => svg.getAttribute('viewBox')!.split(/\s+/).map(Number);
+    const currentRoom = screen.getByRole('button', {
+      name: 'Focus High Lantern Overlook on map, current location',
+    });
+    vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 400, 300));
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+    const zoomedViewBox = readViewBox();
+
+    fireEvent.pointerDown(svg, {
+      pointerId: 1,
+      pointerType: 'touch',
+      button: 0,
+      clientX: 200,
+      clientY: 150,
+    });
+    fireEvent.pointerMove(svg, {
+      pointerId: 1,
+      pointerType: 'touch',
+      clientX: 160,
+      clientY: 150,
+    });
+    fireEvent.pointerUp(svg, { pointerId: 1, pointerType: 'touch' });
+
+    expect(readViewBox()[0]).toBeGreaterThan(zoomedViewBox[0]!);
+    expect(currentRoom).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('keeps location taps working while zoomed', () => {
+    render(<WorldMapPanel map={denseMap} fullscreen onFullscreenChange={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+    const destination = screen.getByRole('button', { name: 'Focus Reedbank Market Road on map' });
+
+    fireEvent.pointerDown(destination, {
+      pointerId: 2,
+      pointerType: 'touch',
+      button: 0,
+      clientX: 200,
+      clientY: 150,
+    });
+    fireEvent.pointerUp(destination, { pointerId: 2, pointerType: 'touch' });
+    fireEvent.click(destination);
+
+    expect(destination).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('lets the minimap be dragged without opening the map and remembers its position', () => {
     window.localStorage.removeItem('mudd.mobile-map-minimap-offset.v1');
     const onFullscreenChange = vi.fn();
