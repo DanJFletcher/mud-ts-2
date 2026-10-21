@@ -41,6 +41,8 @@ export const MapPositionSchema = z.object({
   y: z.number().int().min(-10000).max(10000),
   /** Omitted for legacy surface content (level zero). */
   z: z.number().int().min(-10000).max(10000).optional(),
+  /** Presentation-only map tile category; movement and rules do not depend on it. */
+  terrain: z.enum(['land', 'river', 'building']).optional(),
 }).strict();
 
 export const ReadableObjectDefinitionSchema = z.object({
@@ -415,10 +417,14 @@ export const WorldMapProjectionSchema = z.object({
     name: z.string().min(1).max(160),
     x: z.number().int().min(-10000).max(10000),
     y: z.number().int().min(-10000).max(10000),
+    terrain: z.enum(['land', 'river', 'building']).optional(),
+    verticalExits: z.array(z.enum(['up', 'down'])).max(2).optional(),
   }).strict()).min(1).max(500),
   connections: z.array(z.object({
     fromLocationId: IdSchema,
     toLocationId: IdSchema,
+    direction: z.string().max(40).optional(),
+    oneWay: z.boolean().optional(),
   }).strict()).max(2000),
 }).strict();
 

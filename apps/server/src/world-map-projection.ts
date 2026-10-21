@@ -12,12 +12,19 @@ export function projectWorldMap(character: CharacterProjection, world: WorldPack
     (location.mapAreaId ?? 'overworld') === currentAreaId &&
     (location.mapPosition?.z ?? 0) === currentLevel,
   );
-  const locations = visitedLocations.map((location, index) => ({
-    id: location.id,
-    name: location.name,
-    x: location.mapPosition?.x ?? index,
-    y: location.mapPosition?.y ?? 0,
-  }));
+  const locations = visitedLocations.map((location, index) => {
+    const verticalExits = [...new Set(location.exits
+      .map((exit) => exit.direction)
+      .filter((direction): direction is 'up' | 'down' => direction === 'up' || direction === 'down'))];
+    return {
+      id: location.id,
+      name: location.name,
+      x: location.mapPosition?.x ?? index,
+      y: location.mapPosition?.y ?? 0,
+      ...(location.mapPosition?.terrain ? { terrain: location.mapPosition.terrain } : {}),
+      ...(verticalExits.length ? { verticalExits } : {}),
+    };
+  });
   const visibleLocationIds = new Set(locations.map((location) => location.id));
   const seenPaths = new Set<string>();
   const connections = visitedLocations.flatMap((location) => location.exits.flatMap((exit) => {
@@ -25,7 +32,15 @@ export function projectWorldMap(character: CharacterProjection, world: WorldPack
     const pathKey = [exit.fromLocationId, exit.toLocationId].sort().join(':');
     if (seenPaths.has(pathKey)) return [];
     seenPaths.add(pathKey);
-    return [{ fromLocationId: exit.fromLocationId, toLocationId: exit.toLocationId }];
+    const reverseExitExists = world.locations
+      .find((candidate) => candidate.id === exit.toLocationId)
+      ?.exits.some((candidate) => candidate.toLocationId === exit.fromLocationId) ?? false;
+    return [{
+      fromLocationId: exit.fromLocationId,
+      toLocationId: exit.toLocationId,
+      direction: exit.direction,
+      oneWay: !reverseExitExists,
+    }];
   }));
 
   return WorldMapProjectionSchema.parse({

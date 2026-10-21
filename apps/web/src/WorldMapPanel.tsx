@@ -12,24 +12,70 @@ type WorldMapPanelProps = Readonly<{
 }>;
 
 type MapPoint = WorldMapProjection['locations'][number] & { screenX: number; screenY: number };
+type MapLayout = Readonly<{ points: MapPoint[]; width: number; height: number }>;
 
-function projectMapPoints(map: WorldMapProjection | undefined): MapPoint[] {
-  if (!map?.locations.length) return [];
+const MAP_TILE_SIZE = 18;
+const MAP_GRID_STEP = 30;
+const MAP_PADDING = 18;
 
+function projectMapPoints(map: WorldMapProjection | undefined): MapLayout {
+  if (!map?.locations.length) return { points: [], width: 100, height: 100 };
   const xValues = map.locations.map((location) => location.x);
   const yValues = map.locations.map((location) => location.y);
   const minX = Math.min(...xValues);
   const maxX = Math.max(...xValues);
   const minY = Math.min(...yValues);
   const maxY = Math.max(...yValues);
-  const project = (value: number, min: number, max: number) =>
-    min === max ? 50 : 16 + ((value - min) / (max - min)) * 68;
 
-  return map.locations.map((location) => ({
-    ...location,
-    screenX: project(location.x, minX, maxX),
-    screenY: 84 - project(location.y, minY, maxY),
-  }));
+  return {
+    points: map.locations.map((location) => ({
+      ...location,
+      screenX: MAP_PADDING + (location.x - minX) * MAP_GRID_STEP + MAP_TILE_SIZE / 2,
+      screenY: MAP_PADDING + (maxY - location.y) * MAP_GRID_STEP + MAP_TILE_SIZE / 2,
+    })),
+    width: Math.max(
+      MAP_TILE_SIZE + MAP_PADDING * 2,
+      (maxX - minX) * MAP_GRID_STEP + MAP_TILE_SIZE + MAP_PADDING * 2,
+    ),
+    height: Math.max(
+      MAP_TILE_SIZE + MAP_PADDING * 2,
+      (maxY - minY) * MAP_GRID_STEP + MAP_TILE_SIZE + MAP_PADDING * 2,
+    ),
+  };
+}
+
+function connectionPath(from: MapPoint, to: MapPoint, direction?: string): string {
+  const halfTile = MAP_TILE_SIZE / 2;
+  const gap = 4;
+  if (direction === 'north' || direction === 'south') {
+    const sign = direction === 'north' ? -1 : 1;
+    const startY = from.screenY + sign * (halfTile + gap);
+    const endY = to.screenY - sign * (halfTile + gap);
+    const bendY = (startY + endY) / 2;
+    return `M ${from.screenX} ${startY} V ${bendY} H ${to.screenX} V ${endY}`;
+  }
+  if (direction === 'east' || direction === 'west') {
+    const sign = direction === 'east' ? 1 : -1;
+    const startX = from.screenX + sign * (halfTile + gap);
+    const endX = to.screenX - sign * (halfTile + gap);
+    const bendX = (startX + endX) / 2;
+    return `M ${startX} ${from.screenY} H ${bendX} V ${to.screenY} H ${endX}`;
+  }
+
+  const dx = to.screenX - from.screenX;
+  const dy = to.screenY - from.screenY;
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    const sign = Math.sign(dx) || 1;
+    const startX = from.screenX + sign * (halfTile + gap);
+    const endX = to.screenX - sign * (halfTile + gap);
+    const bendX = (startX + endX) / 2;
+    return `M ${startX} ${from.screenY} H ${bendX} V ${to.screenY} H ${endX}`;
+  }
+  const sign = Math.sign(dy) || 1;
+  const startY = from.screenY + sign * (halfTile + gap);
+  const endY = to.screenY - sign * (halfTile + gap);
+  const bendY = (startY + endY) / 2;
+  return `M ${from.screenX} ${startY} V ${bendY} H ${to.screenX} V ${endY}`;
 }
 
 export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapPanelProps) {
@@ -42,12 +88,13 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const wasFullscreenRef = useRef(false);
 
-  const points = projectMapPoints(map);
+  const layout = projectMapPoints(map);
+  const points = layout.points;
   const pointById = new Map(points.map((point) => [point.id, point]));
-  const currentLocation = map?.locations.find((location) => location.id === map.currentLocationId);
   const focusedLocationId = points.some((point) => point.id === selectedLocationId)
     ? selectedLocationId
     : map?.currentLocationId;
+  const focusedLocation = points.find((point) => point.id === focusedLocationId);
 
   useEffect(() => {
     if (fullscreen) {
@@ -132,7 +179,6 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
     >
       <div className="focused-world-map__header">
         <h2>Map</h2>
-        {currentLocation && <span className="focused-world-map__current-name">{currentLocation.name}</span>}
         {!fullscreenPresent && (
           <DisclosureButton
             className="focused-world-map__button"
@@ -159,98 +205,114 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
           {fullscreenPresent ? <X size={17} aria-hidden="true" /> : <Maximize2 size={17} aria-hidden="true" />}
         </button>
       </div>
-      <div className="focused-world-map__content focused-world-map__content--readable" id="world-map-content">
+      <div className="focused-world-map__content" id="world-map-content">
         {points.length > 0 ? (
           <>
             <svg
               className="focused-world-map__svg"
-              viewBox="0 0 100 100"
-              role="img"
-              aria-label="Map of visited locations"
+              viewBox={`0 0 ${layout.width} ${layout.height}`}
+              role="group"
+              aria-label="Directional map of visited locations"
               preserveAspectRatio="xMidYMid meet"
             >
-              <title>Map of visited locations</title>
+              <title>Directional map of visited locations</title>
               <desc>
-                North is up. Numbered markers correspond to the visited locations list.
-                {currentLocation ? ` ${currentLocation.name} is your current location.` : ''}
+                North is up. Blue squares are river locations; beige squares are inside buildings.
+                White lines connect exits, arrows mark one-way exits, and black triangles mark up or down passages.
+                {focusedLocation ? ` ${focusedLocation.name} is selected.` : ''}
               </desc>
+              <defs>
+                <marker
+                  id="world-map-one-way-arrow"
+                  className="focused-world-map__arrowhead"
+                  markerWidth="7"
+                  markerHeight="7"
+                  refX="5.6"
+                  refY="3.5"
+                  orient="auto"
+                  markerUnits="userSpaceOnUse"
+                >
+                  <path d="M0 0 7 3.5 0 7Z" />
+                </marker>
+              </defs>
               {map?.connections.map((connection) => {
                 const from = pointById.get(connection.fromLocationId);
                 const to = pointById.get(connection.toLocationId);
                 if (!from || !to) return null;
                 return (
-                  <line
+                  <path
                     key={`${connection.fromLocationId}-${connection.toLocationId}`}
-                    className="focused-world-map__path"
-                    x1={from.screenX}
-                    y1={from.screenY}
-                    x2={to.screenX}
-                    y2={to.screenY}
-                  />
+                    className={[
+                      'focused-world-map__path',
+                      connection.oneWay ? 'focused-world-map__path--one-way' : '',
+                    ].filter(Boolean).join(' ')}
+                    d={connectionPath(from, to, connection.direction)}
+                    markerEnd={connection.oneWay ? 'url(#world-map-one-way-arrow)' : undefined}
+                  >
+                    <title>
+                      {connection.oneWay
+                        ? `One-way exit from ${from.name} to ${to.name}`
+                        : `Exit between ${from.name} and ${to.name}`}
+                    </title>
+                  </path>
                 );
               })}
-              <g className="focused-world-map__compass" aria-hidden="true" transform="translate(92 12)">
-                <circle className="focused-world-map__compass-face" r="4.8" />
-                <path className="focused-world-map__compass-needle--north" d="M0 -3.7 1.4 1 0 0 -1.4 1Z" />
-                <path className="focused-world-map__compass-needle--south" d="M0 3.7 1.4 -1 0 0 -1.4 -1Z" />
-                <text className="focused-world-map__compass-direction" x="0" y="-6.5" textAnchor="middle">N</text>
-                <text className="focused-world-map__compass-direction" x="7.1" y="1" textAnchor="middle">E</text>
-                <text className="focused-world-map__compass-direction" x="0" y="8.3" textAnchor="middle">S</text>
-                <text className="focused-world-map__compass-direction" x="-7.1" y="1" textAnchor="middle">W</text>
-              </g>
-              {points.map((point, index) => {
+              {points.map((point) => {
                 const isCurrent = point.id === map?.currentLocationId;
                 const isSelected = point.id === focusedLocationId;
                 return (
                   <g
                     key={point.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Focus ${point.name} on map${isCurrent ? ', current location' : ''}`}
+                    aria-current={isCurrent ? 'location' : undefined}
+                    aria-pressed={isSelected}
                     className={[
                       'focused-world-map__location',
                       isCurrent ? 'focused-world-map__location--current' : '',
                       isSelected ? 'focused-world-map__location--selected' : '',
                     ].filter(Boolean).join(' ')}
+                    onClick={() => setSelectedLocationId(point.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        setSelectedLocationId(point.id);
+                      }
+                    }}
                   >
-                    {isCurrent && <circle className="focused-world-map__current-ring" cx={point.screenX} cy={point.screenY} r="7" />}
-                    {isSelected && !isCurrent && <circle className="focused-world-map__selected-ring" cx={point.screenX} cy={point.screenY} r="8" />}
-                    <circle className="focused-world-map__marker" cx={point.screenX} cy={point.screenY} r="4" />
-                    <text
-                      className="focused-world-map__marker-number"
-                      x={point.screenX}
-                      y={point.screenY + 1.2}
-                      textAnchor="middle"
-                      aria-hidden="true"
-                    >
-                      {index + 1}
-                    </text>
+                    <title>{point.name}</title>
+                    <rect
+                      className={[
+                        'focused-world-map__tile',
+                        `focused-world-map__tile--${point.terrain ?? 'land'}`,
+                      ].join(' ')}
+                      x={point.screenX - MAP_TILE_SIZE / 2}
+                      y={point.screenY - MAP_TILE_SIZE / 2}
+                      width={MAP_TILE_SIZE}
+                      height={MAP_TILE_SIZE}
+                    />
+                    {(point.verticalExits ?? []).map((direction, index) => (
+                      <path
+                        key={`${point.id}-${direction}`}
+                        className="focused-world-map__vertical-arrow"
+                        d={direction === 'up'
+                          ? `M ${point.screenX - 4 + index * 8} ${point.screenY + 2} l 4 -4 4 4 Z`
+                          : `M ${point.screenX - 4 + index * 8} ${point.screenY - 2} l 4 4 4 -4 Z`}
+                        aria-hidden="true"
+                      />
+                    ))}
                   </g>
                 );
               })}
             </svg>
-            <ol className="focused-world-map__places" aria-label="Visited locations">
-              {points.map((point, index) => {
-                const isCurrent = point.id === map?.currentLocationId;
-                const isSelected = point.id === focusedLocationId;
-                return (
-                  <li className="focused-world-map__place" key={point.id}>
-                    <button
-                      type="button"
-                      className="focused-world-map__place-button"
-                      aria-label={`Focus ${point.name} on map`}
-                      aria-current={isCurrent ? 'location' : undefined}
-                      aria-pressed={isSelected}
-                      onClick={() => setSelectedLocationId(point.id)}
-                    >
-                      <span className="focused-world-map__place-number" aria-hidden="true">{index + 1}</span>
-                      <span className="focused-world-map__place-name">{point.name}</span>
-                      {isCurrent && <span className="focused-world-map__place-status">HERE</span>}
-                    </button>
-                  </li>
-                );
-              })}
-            </ol>
+            <p className="focused-world-map__current-name">{focusedLocation?.name ?? 'Map'}</p>
             <div className="focused-world-map__legend" aria-label="Map legend">
-              <span><i className="focused-world-map__legend-marker focused-world-map__legend-marker--current" /> You are here</span>
-              <span><i className="focused-world-map__legend-marker" /> Visited</span>
+              <span><i className="focused-world-map__legend-tile focused-world-map__legend-tile--land" /> Land</span>
+              <span><i className="focused-world-map__legend-tile focused-world-map__legend-tile--river" /> River</span>
+              <span><i className="focused-world-map__legend-tile focused-world-map__legend-tile--building" /> Building</span>
+              <span><i className="focused-world-map__legend-line" /> Exit</span>
+              <span><i className="focused-world-map__legend-arrow" /> One-way</span>
             </div>
           </>
         ) : (

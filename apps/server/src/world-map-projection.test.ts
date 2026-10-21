@@ -64,6 +64,16 @@ async function moveAlongRoad(
 }
 
 describe('visited world map projection', () => {
+  it('uses only the game’s four compass and two vertical travel directions', () => {
+    const supportedDirections = new Set(['north', 'east', 'south', 'west', 'up', 'down']);
+    const unsupportedExits = demoWorld.locations.flatMap((location) =>
+      location.exits
+        .filter((exit) => !supportedDirections.has(exit.direction ?? ''))
+        .map((exit) => `${location.id}: ${exit.direction ?? '(missing)'}`),
+    );
+    expect(unsupportedExits).toEqual([]);
+  });
+
   it('reveals Willowrest Inn and its connecting road segments only after the traveler arrives', async () => {
     const store = new InMemoryEventStore();
     const testWorld = structuredClone(demoWorld);
@@ -118,6 +128,30 @@ describe('visited world map projection', () => {
     expect(initialSnapshot.map?.locations.map(({ id }) => id)).not.toContain('willowrest-inn');
 
     let character = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, activeCharacter.id))!;
+    const towerMap = projectWorldMap({
+      ...character,
+      locationId: 'bell-tower',
+      visitedLocationIds: [...character.visitedLocationIds, 'bell-tower'],
+    });
+    expect(towerMap.locations.find(({ id }) => id === 'bell-tower')).toMatchObject({
+      terrain: 'building',
+      verticalExits: ['up'],
+    });
+    const oneWayWorld = structuredClone(demoWorld);
+    const reedbankRoad = oneWayWorld.locations.find(({ id }) => id === 'reedbank-road')!;
+    const reverseExitIndex = reedbankRoad.exits.findIndex((exit) => exit.toLocationId === 'glasswater-bridge');
+    reedbankRoad.exits.splice(reverseExitIndex, 1);
+    const oneWayMap = projectWorldMap({
+      ...character,
+      locationId: 'glasswater-bridge',
+      visitedLocationIds: ['glasswater-bridge', 'reedbank-road'],
+    }, oneWayWorld);
+    expect(oneWayMap.connections).toContainEqual(expect.objectContaining({
+      fromLocationId: 'glasswater-bridge',
+      toLocationId: 'reedbank-road',
+      direction: 'north',
+      oneWay: true,
+    }));
     const toReedbank = [
       ['clearing-to-glasswater-road', 'glasswater-approach-to-bridge'],
       ['bridge-to-reedbank-road', 'reedbank-road-to-stalls'],
@@ -150,15 +184,19 @@ describe('visited world map projection', () => {
       name: 'Willowrest Inn',
       x: 4,
       y: 4,
+      terrain: 'building',
     });
-    expect(innSnapshot.map?.connections).toContainEqual({
+    expect(innSnapshot.map?.connections).toContainEqual(expect.objectContaining({
       fromLocationId: 'reedbank-stalls',
       toLocationId: 'willowrest-lane',
-    });
-    expect(innSnapshot.map?.connections).toContainEqual({
+      oneWay: false,
+    }));
+    expect(innSnapshot.map?.connections).toContainEqual(expect.objectContaining({
       fromLocationId: 'willowrest-inn',
       toLocationId: 'willowrest-lane',
-    });
+      direction: 'west',
+      oneWay: false,
+    }));
     expect(innSnapshot.map?.connections).not.toContainEqual({
       fromLocationId: 'reedbank-stalls',
       toLocationId: 'willowrest-inn',

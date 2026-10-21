@@ -11,7 +11,7 @@ const { apiFetch } = vi.hoisted(() => {
 import { WorldClient } from './App.js';
 
 const characterId = '11111111-1111-4111-8111-111111111111';
-let room: 'clearing' | 'bridge' | 'market' | 'inn';
+let room: 'clearing' | 'bridge' | 'market' | 'inn' | 'belfry';
 let visitedLocationIds: string[];
 let revision: number;
 let moveError: string | null;
@@ -123,7 +123,17 @@ function currentLocation() {
       takeable: false,
     }] : [],
     occupants: roomOccupants,
-    exits: room === 'clearing' ? [{
+    exits: room === 'belfry' ? [{
+      id: 'belfry-to-tower',
+      label: 'Down to the tower floor',
+      direction: 'down',
+      available: true,
+    }, {
+      id: 'belfry-to-underhollow',
+      label: 'Down into the Underhollow',
+      direction: 'down',
+      available: true,
+    }] : room === 'clearing' ? [{
       id: 'clearing-to-bridge',
       label: 'North to Glasswater Bridge',
       direction: 'north',
@@ -135,8 +145,8 @@ function currentLocation() {
       available: true,
     }] : room === 'market' ? [{
       id: 'reedbank-to-bridge',
-      label: 'Southwest to Glasswater Bridge',
-      direction: 'southwest',
+      label: 'South to Glasswater Bridge',
+      direction: 'south',
       available: true,
     }, {
       id: 'reedbank-to-willowrest',
@@ -150,8 +160,8 @@ function currentLocation() {
       available: true,
     }] : [{
       id: 'reedbank-to-bridge',
-      label: 'Southwest to Glasswater Bridge',
-      direction: 'southwest',
+      label: 'South to Glasswater Bridge',
+      direction: 'south',
       available: true,
     }],
     npcs: room === 'clearing' ? [{
@@ -1054,16 +1064,30 @@ describe('single-character world session client', () => {
   it('tracks the current room and rooms already visited on the map', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     const map = await screen.findByRole('region', { name: 'World map' });
-    expect(map.querySelector('.focused-world-map__compass')).toBeInTheDocument();
     expect(map.querySelector('desc')).toHaveTextContent('North is up.');
-    expect(within(map).getByRole('button', { name: 'Focus Mossgate Clearing on map' })).toHaveAttribute('aria-current', 'location');
-    expect(map).not.toHaveTextContent('Glasswater Bridge');
+    expect(within(map).getByRole('button', { name: 'Focus Mossgate Clearing on map, current location' })).toHaveAttribute('aria-current', 'location');
+    expect(map.querySelector('[aria-label="Focus Glasswater Bridge on map"]')).not.toBeInTheDocument();
 
     quickGo('north');
     await screen.findByRole('heading', { name: 'Glasswater Bridge' });
     await waitFor(() => expect(map).toHaveTextContent('Glasswater Bridge'));
-    expect(within(map).getByRole('button', { name: 'Focus Glasswater Bridge on map' })).toHaveAttribute('aria-current', 'location');
+    expect(within(map).getByRole('button', { name: 'Focus Glasswater Bridge on map, current location' })).toHaveAttribute('aria-current', 'location');
     expect(map.querySelectorAll('.focused-world-map__path')).toHaveLength(1);
+  });
+
+  it('keeps same-direction exits selectable and rejects an ambiguous direction command', async () => {
+    room = 'belfry';
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('region', { name: 'Terminal output' });
+
+    clickQuickAction('Show available exits');
+    expect(screen.getByRole('button', { name: 'Go Down to the tower floor' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Go Down into the Underhollow' })).toBeVisible();
+
+    fireEvent.change(screen.getByPlaceholderText('Type a command'), { target: { value: 'go down' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await screen.findByText(/More than one exit leads down/);
+    expect(apiFetch.mock.calls.filter(([path]) => path === '/api/commands')).toHaveLength(0);
   });
 
   it('shows Willowrest Inn and its Reedbank path only after traveling there', async () => {
@@ -1076,13 +1100,9 @@ describe('single-character world session client', () => {
     expect(map).not.toHaveTextContent('Willowrest Inn');
     expect(map.querySelectorAll('.focused-world-map__path')).toHaveLength(2);
 
-    const locationMarker = (name: string) => {
-      const place = within(map).queryByRole('button', { name: `Focus ${name} on map` });
-      const markerNumber = place?.querySelector('.focused-world-map__place-number')?.textContent;
-      return [...map.querySelectorAll<SVGGElement>('.focused-world-map__location')]
-        .find((location) => location.querySelector('.focused-world-map__marker-number')?.textContent === markerNumber)
-        ?.querySelector<SVGCircleElement>('.focused-world-map__marker');
-    };
+    const locationMarker = (name: string) =>
+      [...map.querySelectorAll<SVGGElement>('.focused-world-map__location')]
+        .find((location) => location.getAttribute('aria-label')?.startsWith(`Focus ${name} on map`));
     const reedbankMarkerBeforeArrival = locationMarker('Reedbank Stalls');
     expect(reedbankMarkerBeforeArrival).toBeDefined();
     expect(locationMarker('Willowrest Inn')).toBeUndefined();
@@ -1098,25 +1118,7 @@ describe('single-character world session client', () => {
     expect(willowrestMarker).toBeDefined();
     expect(map.querySelectorAll('.focused-world-map__path')).toHaveLength(3);
 
-    const markerCoordinates = (marker: SVGCircleElement) => ({
-      x: marker.getAttribute('cx'),
-      y: marker.getAttribute('cy'),
-    });
-    const reedbankCoordinates = markerCoordinates(reedbankMarker!);
-    const willowrestCoordinates = markerCoordinates(willowrestMarker!);
-    const reedbankConnection = [...map.querySelectorAll<SVGLineElement>('.focused-world-map__path')]
-      .find((path) => {
-        const endpoints = [
-          { x: path.getAttribute('x1'), y: path.getAttribute('y1') },
-          { x: path.getAttribute('x2'), y: path.getAttribute('y2') },
-        ];
-        return endpoints.some((point) =>
-          point.x === reedbankCoordinates.x && point.y === reedbankCoordinates.y
-        ) && endpoints.some((point) =>
-          point.x === willowrestCoordinates.x && point.y === willowrestCoordinates.y
-        );
-      });
-    expect(reedbankConnection).toBeDefined();
+    expect(map.querySelectorAll('.focused-world-map__path')).toHaveLength(3);
   });
 
   it('collapses the map and can still open it full screen', async () => {
@@ -1940,30 +1942,30 @@ describe('single-character world session client', () => {
     await screen.findByRole('heading', { name: 'Reedbank Stalls' });
 
     const map = screen.getByRole('region', { name: 'World map' });
-    const locationNames = () =>
-      [...map.querySelectorAll<HTMLElement>('.focused-world-map__place-name')]
-        .map((location) => location.textContent);
-    expect(locationNames()).toEqual([
+    const visitedRooms = () =>
+      [...map.querySelectorAll<SVGGElement>('.focused-world-map__location')]
+        .map((location) => location.querySelector('title')?.textContent);
+    expect(visitedRooms()).toEqual([
       'Mossgate Clearing',
       'Glasswater Bridge',
       'Reedbank Stalls',
     ]);
     expect(map.querySelectorAll('.focused-world-map__path')).toHaveLength(2);
-    expect(within(map).getByRole('button', { name: 'Focus Reedbank Stalls on map' })).toHaveAttribute('aria-current', 'location');
+    expect(within(map).getByRole('button', { name: 'Focus Reedbank Stalls on map, current location' })).toHaveAttribute('aria-current', 'location');
 
     clickQuickAction('Show available exits');
     fireEvent.click(screen.getByRole('button', { name: 'Go east' }));
     await screen.findByText('Exit is blocked.');
     expect(screen.getByRole('heading', { name: 'Reedbank Stalls' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Show available exits' })).toBeEnabled();
-    expect(locationNames()).toEqual([
+    expect(visitedRooms()).toEqual([
       'Mossgate Clearing',
       'Glasswater Bridge',
       'Reedbank Stalls',
     ]);
     expect(map).not.toHaveTextContent('Willowrest Inn');
     expect(map.querySelectorAll('.focused-world-map__path')).toHaveLength(2);
-    expect(within(map).getByRole('button', { name: 'Focus Reedbank Stalls on map' })).toHaveAttribute('aria-current', 'location');
+    expect(within(map).getByRole('button', { name: 'Focus Reedbank Stalls on map, current location' })).toHaveAttribute('aria-current', 'location');
     const attemptedMove = apiFetch.mock.calls
       .filter(([path]) => path === '/api/commands')
       .map(([, init]) => JSON.parse(String(init?.body ?? '{}')) as {

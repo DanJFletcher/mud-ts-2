@@ -6,15 +6,15 @@ import { WorldMapPanel } from './WorldMapPanel.js';
 const overworld: WorldMapProjection = {
   worldInstanceId: 'world', currentLocationId: 'tower',
   locations: [
-    { id: 'clearing', name: 'Clearing', x: 0, y: 0 },
-    { id: 'tower', name: 'Bell Tower', x: 1, y: 0 },
+    { id: 'clearing', name: 'Clearing', x: 0, y: 0, terrain: 'land' },
+    { id: 'tower', name: 'Bell Tower', x: 1, y: 0, terrain: 'building', verticalExits: ['up'] },
   ],
-  connections: [{ fromLocationId: 'clearing', toLocationId: 'tower' }],
+  connections: [{ fromLocationId: 'clearing', toLocationId: 'tower', direction: 'east' }],
 };
 const basement: WorldMapProjection = {
   worldInstanceId: 'world', currentLocationId: 'basement',
   locations: [
-    { id: 'basement', name: 'Basement', x: 1, y: 0 },
+    { id: 'basement', name: 'Basement', x: 1, y: 0, terrain: 'building', verticalExits: ['up'] },
     { id: 'corridor', name: 'Lower Corridor', x: 2, y: 0 },
   ],
   connections: [{ fromLocationId: 'basement', toLocationId: 'corridor' }],
@@ -23,13 +23,13 @@ const denseMap: WorldMapProjection = {
   worldInstanceId: 'world',
   currentLocationId: 'overlook',
   locations: [
-    { id: 'overlook', name: 'High Lantern Overlook', x: 1, y: 1 },
-    { id: 'bell-west', name: 'West of Old Bell Tower', x: 1.01, y: 1.01 },
-    { id: 'bridge-approach', name: 'Glasswater Bridge Approach', x: 1.02, y: 1 },
-    { id: 'reedbank-road', name: 'Reedbank Market Road', x: 1.03, y: 1.02 },
+    { id: 'overlook', name: 'High Lantern Overlook', x: 1, y: 1, terrain: 'land' },
+    { id: 'bell-west', name: 'West of Old Bell Tower', x: 1, y: 2, terrain: 'building' },
+    { id: 'bridge-approach', name: 'Glasswater Bridge Approach', x: 2, y: 1, terrain: 'river', verticalExits: ['down'] },
+    { id: 'reedbank-road', name: 'Reedbank Market Road', x: 3, y: 2, terrain: 'land' },
   ],
   connections: [
-    { fromLocationId: 'overlook', toLocationId: 'bell-west' },
+    { fromLocationId: 'overlook', toLocationId: 'bell-west', direction: 'south', oneWay: true },
     { fromLocationId: 'bell-west', toLocationId: 'bridge-approach' },
     { fromLocationId: 'bridge-approach', toLocationId: 'reedbank-road' },
   ],
@@ -43,14 +43,12 @@ describe('map switching between floors', () => {
         <WorldMapPanel map={overworld} fullscreen={fullscreen} onFullscreenChange={onFullscreenChange} />,
       );
       const assertCurrentMap = (current: string, visited: string, absent: string) => {
-        const svg = screen.getByRole('img', { name: 'Map of visited locations' });
-        const list = screen.getByRole('list', { name: 'Visited locations' });
+        const svg = screen.getByRole('group', { name: 'Directional map of visited locations' });
         expect(svg.querySelector('desc')).toHaveTextContent(current);
-        expect(svg).not.toHaveTextContent(absent);
-        expect(within(list).getByRole('button', { name: `Focus ${current} on map` })).toHaveAttribute('aria-current', 'location');
-        expect(within(list).getByRole('button', { name: `Focus ${visited} on map` })).toBeInTheDocument();
-        expect(within(list).queryByRole('button', { name: `Focus ${absent} on map` })).not.toBeInTheDocument();
-        expect(svg.querySelectorAll('.focused-world-map__marker-number')).toHaveLength(2);
+        expect(within(svg).getByRole('button', { name: `Focus ${current} on map, current location` })).toHaveAttribute('aria-current', 'location');
+        expect(within(svg).getByRole('button', { name: `Focus ${visited} on map` })).toBeInTheDocument();
+        expect(within(svg).queryByRole('button', { name: `Focus ${absent} on map` })).not.toBeInTheDocument();
+        expect(svg.querySelectorAll('.focused-world-map__tile')).toHaveLength(2);
         expect(svg.querySelectorAll('.focused-world-map__path')).toHaveLength(1);
       };
       assertCurrentMap('Bell Tower', 'Clearing', 'Basement');
@@ -67,27 +65,35 @@ describe('map switching between floors', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Collapse map' }));
     rerender(<WorldMapPanel {...props} map={basement} />);
     fireEvent.click(screen.getByRole('button', { name: 'Expand map' }));
-    const list = screen.getByRole('list', { name: 'Visited locations' });
-    expect(within(list).getByRole('button', { name: 'Focus Basement on map' })).toHaveAttribute('aria-current', 'location');
-    expect(within(list).queryByRole('button', { name: 'Focus Bell Tower on map' })).not.toBeInTheDocument();
+    const map = screen.getByRole('group', { name: 'Directional map of visited locations' });
+    expect(within(map).getByRole('button', { name: 'Focus Basement on map, current location' })).toHaveAttribute('aria-current', 'location');
+    expect(within(map).queryByRole('button', { name: 'Focus Bell Tower on map' })).not.toBeInTheDocument();
   });
 
-  it('uses numbered markers and a readable directory for dense locations', () => {
+  it('uses distinct room tiles, exit symbols, and accessible names without map labels', () => {
     const { container } = render(
       <WorldMapPanel map={denseMap} fullscreen={false} onFullscreenChange={vi.fn()} />,
     );
-    const svg = screen.getByRole('img', { name: 'Map of visited locations' });
-    const list = screen.getByRole('list', { name: 'Visited locations' });
+    const svg = screen.getByRole('group', { name: 'Directional map of visited locations' });
 
-    expect(svg.querySelectorAll('.focused-world-map__marker-number')).toHaveLength(denseMap.locations.length);
+    expect(svg.querySelectorAll('.focused-world-map__tile')).toHaveLength(denseMap.locations.length);
     expect(svg.querySelector('.focused-world-map__label')).not.toBeInTheDocument();
+    expect(svg.querySelector('.focused-world-map__tile--river')).toBeInTheDocument();
+    expect(svg.querySelector('.focused-world-map__tile--building')).toBeInTheDocument();
+    expect(svg.querySelector('.focused-world-map__vertical-arrow')).toBeInTheDocument();
+    expect(svg.querySelector('.focused-world-map__path--one-way')).toHaveAttribute(
+      'marker-end',
+      'url(#world-map-one-way-arrow)',
+    );
     for (const location of denseMap.locations) {
-      expect(within(list).getByRole('button', { name: `Focus ${location.name} on map` })).toBeInTheDocument();
+      expect(within(svg).getByRole('button', {
+        name: `Focus ${location.name} on map${location.id === 'overlook' ? ', current location' : ''}`,
+      })).toBeInTheDocument();
     }
 
-    const destination = within(list).getByRole('button', { name: 'Focus West of Old Bell Tower on map' });
+    const destination = within(svg).getByRole('button', { name: 'Focus West of Old Bell Tower on map' });
     fireEvent.click(destination);
     expect(destination).toHaveAttribute('aria-pressed', 'true');
-    expect(container.querySelector('.focused-world-map__selected-ring')).toBeInTheDocument();
+    expect(container.querySelector('.focused-world-map__location--selected')).toBeInTheDocument();
   });
 });

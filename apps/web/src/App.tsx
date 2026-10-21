@@ -1509,16 +1509,20 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     }
     if (verb.toLowerCase() === "go" && target) {
       const exits = snapshot?.location?.exits ?? [];
-      const match = exits.find((exit) => exit.available && (
+      const matches = exits.filter((exit) => exit.available && (
         exit.label.toLowerCase() === target.toLowerCase() ||
         exit.direction?.toLowerCase() === target.toLowerCase()
       ));
       addEntry("system", `> ${value}`);
-      if (!match) {
+      if (matches.length === 0) {
         addEntry("error", `No available exit matches “${target}”.`);
         return;
       }
-      await move(match.id);
+      if (matches.length > 1) {
+        addEntry("error", `More than one exit leads ${target}. Choose one: ${matches.map((exit) => exit.label).join('; ')}.`);
+        return;
+      }
+      await move(matches[0]!.id);
       return;
     }
     addEntry("system", `> ${value}`);
@@ -1558,14 +1562,17 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
 
   const exits = useMemo(() => snapshot?.location?.exits ?? [], [snapshot?.location?.exits]);
   const quickDirections = useMemo(() => {
-    const seen = new Set<string>();
-    return exits.flatMap((exit) => {
-      if (!exit.available) return [];
-      const target = exit.direction?.trim() || exit.label.trim();
-      const normalizedTarget = target.toLowerCase();
-      if (!target || seen.has(normalizedTarget)) return [];
-      seen.add(normalizedTarget);
-      return [{ target, label: normalizedTarget }];
+    const availableExits = exits.filter((exit) => exit.available);
+    const directionCounts = new Map<string, number>();
+    for (const exit of availableExits) {
+      const direction = (exit.direction?.trim() || exit.label.trim()).toLowerCase();
+      directionCounts.set(direction, (directionCounts.get(direction) ?? 0) + 1);
+    }
+    return availableExits.map((exit) => {
+      const direction = exit.direction?.trim() || exit.label.trim();
+      const isAmbiguous = (directionCounts.get(direction.toLowerCase()) ?? 0) > 1;
+      const target = isAmbiguous ? exit.label.trim() : direction;
+      return { target, label: isAmbiguous ? exit.label.trim() : direction.toLowerCase() };
     });
   }, [exits]);
   const quickLookTargets = useMemo(() => {
