@@ -153,6 +153,35 @@ const demoRoadRoutes = {
   ],
   'clearing-to-tower-west': ['clearing-to-bellwarden-track', 'bellwarden-track-to-tower-west'],
   'bell-tower-west-to-clearing': ['bell-tower-west-to-bellwarden-track', 'bellwarden-track-to-clearing'],
+  'clearing-to-sedgewatch': [
+    'clearing-to-bracken-road',
+    'bracken-road-to-mile',
+    'bracken-mile-to-sedgewatch',
+  ],
+  'sedgewatch-to-bridge': [
+    'sedgewatch-to-mile',
+    'bracken-mile-to-road',
+    'bracken-road-to-clearing',
+    'clearing-to-glasswater-road',
+    'glasswater-approach-to-bridge',
+  ],
+  'bridge-to-sedgewatch': [
+    'bridge-to-glasswater-road',
+    'glasswater-approach-to-clearing',
+    'clearing-to-bracken-road',
+    'bracken-road-to-mile',
+    'bracken-mile-to-sedgewatch',
+  ],
+  'sedgewatch-to-clearing': [
+    'sedgewatch-to-mile',
+    'bracken-mile-to-road',
+    'bracken-road-to-clearing',
+  ],
+  'clearing-to-fernshade': [
+    'clearing-to-stillwater-path',
+    'stillwater-path-to-fernshade-road',
+    'fernshade-road-to-fork',
+  ],
   'bridge-to-reedbank': ['bridge-to-reedbank-road', 'reedbank-road-to-stalls'],
   'reedbank-to-bridge': ['reedbank-to-reedbank-road', 'reedbank-road-to-bridge'],
   'reedbank-to-willowrest': ['reedbank-to-willowrest-lane', 'willowrest-lane-to-inn'],
@@ -1163,6 +1192,180 @@ describe('MuddHttpClient', () => {
         text: 'The marker is old, but the carving still points east toward the western approach to the Old Bell Tower.',
         choices: [],
       });
+    await engine.stop();
+  });
+
+  it('lets cottage residents talk and completes Talla’s waterline quest through reading and turn-in', async () => {
+    const session = {
+      sessionId: 'session-cottage-quest',
+      playerId: 'player-cottage-quest',
+      actorId: 'player-cottage-quest',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      grantedPermissions: [],
+      authenticated: true,
+    } as const;
+    const store = new InMemoryEventStore();
+    const engine = new EngineHost(
+      testPlugins,
+      store,
+      { canAccessInstance: async () => true, ownsCharacter: async () => true },
+      demoTestWorld(),
+    );
+    await engine.start();
+    const fetcher: typeof fetch = async (input, init = {}) => {
+      const body = JSON.parse(String(init.body ?? '{}')) as unknown;
+      const result = String(input).endsWith('/commands')
+        ? await engine.dispatch(body, session)
+        : await engine.query(body, session);
+      return Response.json(result);
+    };
+    const client = new MuddHttpClient({ worldInstanceId: DEMO_WORLD_INSTANCE_ID, fetcher });
+    const created = await client.createCharacter('Rowan', 'cottage-quest-create');
+    const characterId = created.streamId!;
+
+    const start = await client.look(characterId, 'cottage-quest-start');
+    await moveAlongDemoRoad(
+      client,
+      characterId,
+      'clearing-to-sedgewatch',
+      start.revision,
+      'cottage-quest-to-sedgewatch',
+    );
+    const atSedgewatch = await client.look(characterId, 'cottage-quest-look-sedgewatch');
+    await client.move(
+      characterId,
+      'sedgewatch-to-cottage',
+      atSedgewatch.revision,
+      'cottage-quest-enter-sedgewatch-home',
+    );
+    const atTalla = await client.look(characterId, 'cottage-quest-look-talla');
+    const opening = await client.talk(characterId, 'talla-sedgewatch', undefined, 'cottage-quest-talk-talla');
+    expect(opening.choices).toContainEqual({
+      id: 'accept-sedgewatch-waterline',
+      label: 'I will check the bridge',
+    });
+
+    await client.chooseNpcDialogue(
+      characterId,
+      'talla-sedgewatch',
+      'accept-sedgewatch-waterline',
+      atTalla.revision,
+      'cottage-quest-accept',
+    );
+    const acceptedState = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(projectQuestJournal(acceptedState, demoWorld)).toMatchObject([{
+      questId: 'sedgewatch-waterline',
+      status: 'active',
+      objectives: [{ id: 'read-waterline', completed: false }],
+    }]);
+
+    const afterAccept = await client.look(characterId, 'cottage-quest-after-accept');
+    await client.move(
+      characterId,
+      'sedgewatch-cottage-to-sedgewatch',
+      afterAccept.revision,
+      'cottage-quest-leave-sedgewatch-home',
+    );
+    const readyForBridge = await client.look(characterId, 'cottage-quest-ready-for-bridge');
+    await moveAlongDemoRoad(
+      client,
+      characterId,
+      'sedgewatch-to-bridge',
+      readyForBridge.revision,
+      'cottage-quest-to-bridge',
+    );
+    const atBridge = await client.look(characterId, 'cottage-quest-look-bridge');
+    const gauge = await client.read(
+      characterId,
+      'glasswater-waterline-gauge',
+      atBridge.revision,
+      'cottage-quest-read-gauge',
+    );
+    expect(gauge.text).toBe('The lowest notch is wet. The middle and high notches are dry.');
+
+    const afterReading = await client.look(characterId, 'cottage-quest-after-reading');
+    await moveAlongDemoRoad(
+      client,
+      characterId,
+      'bridge-to-sedgewatch',
+      afterReading.revision,
+      'cottage-quest-return-to-sedgewatch',
+    );
+    const backAtSedgewatch = await client.look(characterId, 'cottage-quest-look-return');
+    await client.move(
+      characterId,
+      'sedgewatch-to-cottage',
+      backAtSedgewatch.revision,
+      'cottage-quest-reenter-home',
+    );
+    const readyToReport = await client.look(characterId, 'cottage-quest-ready-to-report');
+    const reportDialogue = await client.talk(
+      characterId,
+      'talla-sedgewatch',
+      undefined,
+      'cottage-quest-report-dialogue',
+    );
+    expect(reportDialogue.choices).toContainEqual({
+      id: 'report-sedgewatch-waterline',
+      label: 'Report the waterline',
+    });
+    await client.chooseNpcDialogue(
+      characterId,
+      'talla-sedgewatch',
+      'report-sedgewatch-waterline',
+      readyToReport.revision,
+      'cottage-quest-turn-in',
+    );
+    const completedState = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(projectQuestJournal(completedState, demoWorld)).toMatchObject([{
+      questId: 'sedgewatch-waterline',
+      status: 'completed',
+      objectives: [{ id: 'read-waterline', completed: true }],
+    }]);
+
+    const afterTurnIn = await client.look(characterId, 'cottage-quest-after-turn-in');
+    await client.move(
+      characterId,
+      'sedgewatch-cottage-to-sedgewatch',
+      afterTurnIn.revision,
+      'cottage-quest-leave-after-turn-in',
+    );
+    const readyForClearing = await client.look(characterId, 'cottage-quest-ready-for-clearing');
+    await moveAlongDemoRoad(
+      client,
+      characterId,
+      'sedgewatch-to-clearing',
+      readyForClearing.revision,
+      'cottage-quest-to-clearing',
+    );
+    const atClearing = await client.look(characterId, 'cottage-quest-look-clearing');
+    await moveAlongDemoRoad(
+      client,
+      characterId,
+      'clearing-to-fernshade',
+      atClearing.revision,
+      'cottage-quest-to-fernshade',
+    );
+    const atFork = await client.look(characterId, 'cottage-quest-look-fork');
+    await client.move(
+      characterId,
+      'fernshade-fork-to-cottage',
+      atFork.revision,
+      'cottage-quest-enter-fernshade-home',
+    );
+    const atNim = await client.look(characterId, 'cottage-quest-look-nim');
+    const nimDialogue = await client.talk(characterId, 'nim-fernshade', undefined, 'cottage-quest-talk-nim');
+    expect(nimDialogue.choices).toContainEqual({
+      id: 'nim-ask-baskets',
+      label: 'Ask about the baskets',
+    });
+    await client.chooseNpcDialogue(
+      characterId,
+      'nim-fernshade',
+      'nim-ask-baskets',
+      atNim.revision,
+      'cottage-quest-talk-baskets',
+    );
     await engine.stop();
   });
 

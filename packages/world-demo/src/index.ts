@@ -96,6 +96,24 @@ const draft = {
         },
       ],
     },
+    {
+      id: 'sedgewatch-waterline',
+      version: '1.0.0',
+      scope: 'character',
+      title: 'The Waterline Mark',
+      summary: 'Read the gauge beneath Glasswater Bridge and report whether the high mark is wet.',
+      giverNpcId: 'talla-sedgewatch',
+      turnInNpcId: 'talla-sedgewatch',
+      objectives: [
+        {
+          id: 'read-waterline',
+          label: 'Read the waterline gauge beneath Glasswater Bridge',
+          type: 'read-object',
+          objectId: 'glasswater-waterline-gauge',
+          locationId: 'glasswater-bridge',
+        },
+      ],
+    },
   ],
   locations: [
     {
@@ -356,6 +374,14 @@ const draft = {
       ],
       description:
         'A low stone bridge crosses clear water. Reeds stir below it. Glasswater Road leads south toward Mossgate Clearing, and Reedbank Road continues north toward the stalls.',
+      readables: [
+        {
+          id: 'glasswater-waterline-gauge',
+          label: 'Stone waterline gauge',
+          description: 'Three shallow notches are cut into the bridge pier beneath the arch.',
+          text: 'The lowest notch is wet. The middle and high notches are dry.',
+        },
+      ],
       takeables: [
         {
           id: 'glasswater-reed',
@@ -970,6 +996,38 @@ const draft = {
       name: 'Fernshade Cottage',
       mapPosition: { x: -3, y: 1, terrain: 'building' },
       description: 'A low cottage of pale timber and woven fern panels sits in the quiet clearing. Its worn front door faces east toward Fernshade Fork.',
+      npcs: [
+        {
+          id: 'nim-fernshade',
+          name: 'Nim',
+          description: 'A basket-maker sorts long fern fronds beside the cottage hearth, setting the sound ones apart from the brittle.',
+          greeting: 'Mind the drying fronds by the door. They take a full day to soften.',
+          dialogue: {
+            prompt: 'Nim pauses their work. What would you like to ask?',
+            choices: [
+              {
+                id: 'nim-ask-baskets',
+                label: 'Ask about the baskets',
+                response: 'Fernshade fronds bend without splitting once they have dried by the hearth.',
+                progressFlagId: 'nim-asked-baskets',
+              },
+            ],
+          },
+          topics: [
+            {
+              id: 'fern-baskets',
+              keywords: ['basket', 'baskets', 'fronds'],
+              response: 'I weave the young fern fronds into carrying baskets. The older fronds crack too easily.',
+            },
+            {
+              id: 'fernshade-path',
+              keywords: ['path', 'fork', 'road'],
+              response: 'The fork outside joins Fernshade Road to the east. Bracken Road is the quicker route back toward the village.',
+            },
+          ],
+          unknownTopicResponse: 'Ask me about the baskets or the paths through the ferns.',
+        },
+      ],
       exits: [
         { id: 'fernshade-cottage-to-fork', fromLocationId: 'fernshade-cottage', toLocationId: 'fernshade-fork', label: 'East to Fernshade Fork', direction: 'east' },
       ],
@@ -1017,6 +1075,85 @@ const draft = {
       name: 'Sedgewatch Cottage',
       mapPosition: { x: -3, y: -1, terrain: 'building' },
       description: 'A modest reed-thatch home stands on firmer ground beside the wetland. Its east-facing door opens toward Sedgewatch.',
+      npcs: [
+        {
+          id: 'talla-sedgewatch',
+          name: 'Talla',
+          description: 'A reed thatcher ties roof bundles beside a small stone gauge, checking each reed for damp.',
+          greeting: 'The river has been rising. I need to know whether it has reached the high notch beneath the bridge.',
+          dialogue: {
+            prompt: 'Talla looks up from the reeds. What would you like to ask?',
+            questResponses: [
+              {
+                questId: 'sedgewatch-waterline',
+                status: 'active',
+                requiresCompletedObjectiveIds: [],
+                requiresIncompleteObjectiveIds: ['read-waterline'],
+                response: 'The gauge is cut into the stone pier beneath Glasswater Bridge. Read the notches, then come back and tell me what is wet.',
+              },
+              {
+                questId: 'sedgewatch-waterline',
+                status: 'active',
+                requiresCompletedObjectiveIds: ['read-waterline'],
+                requiresIncompleteObjectiveIds: [],
+                response: 'You found the gauge. Report its marks when you are ready.',
+              },
+              {
+                questId: 'sedgewatch-waterline',
+                status: 'completed',
+                requiresCompletedObjectiveIds: [],
+                requiresIncompleteObjectiveIds: [],
+                response: 'Thank you. I can leave the roof bundles where they are; the high mark is still dry.',
+              },
+            ],
+            choices: [
+              {
+                id: 'talla-ask-gauge',
+                label: 'Ask about the waterline gauge',
+                response: 'It is carved into the bridge pier beneath the arch. The high notch tells me whether the river is close to the reed beds.',
+                progressFlagId: 'talla-asked-gauge',
+              },
+              {
+                id: 'accept-sedgewatch-waterline',
+                label: 'I will check the bridge',
+                response: 'Read the stone waterline gauge beneath Glasswater Bridge, then come back and report what it says.',
+                progressFlagId: 'talla-accepted-waterline',
+                questAction: { type: 'accept', questId: 'sedgewatch-waterline' },
+              },
+              {
+                id: 'report-sedgewatch-waterline',
+                label: 'Report the waterline',
+                response: 'Only the lowest notch is wet. The middle and high marks are dry.',
+                progressFlagId: 'talla-reported-waterline',
+                questCondition: {
+                  questId: 'sedgewatch-waterline',
+                  status: 'active',
+                  requiresCompletedObjectiveIds: ['read-waterline'],
+                  requiresIncompleteObjectiveIds: [],
+                },
+                questAction: { type: 'turn-in', questId: 'sedgewatch-waterline' },
+              },
+            ],
+          },
+          topics: [
+            {
+              id: 'waterline',
+              keywords: ['water', 'river', 'gauge', 'notch'],
+              response: 'The stone gauge is beneath Glasswater Bridge. Its high mark tells me whether the reed beds need to be cleared.',
+              questResponses: [
+                {
+                  questId: 'sedgewatch-waterline',
+                  status: 'active',
+                  requiresCompletedObjectiveIds: ['read-waterline'],
+                  requiresIncompleteObjectiveIds: [],
+                  response: 'You have read the gauge. The high notch is the one I was worried about.',
+                },
+              ],
+            },
+          ],
+          unknownTopicResponse: 'Ask me about the waterline or the roof reeds.',
+        },
+      ],
       exits: [
         { id: 'sedgewatch-cottage-to-sedgewatch', fromLocationId: 'sedgewatch-cottage', toLocationId: 'sedgewatch', label: 'East to Sedgewatch', direction: 'east' },
       ],
