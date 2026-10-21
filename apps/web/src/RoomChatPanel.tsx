@@ -17,6 +17,7 @@ type RoomChatPanelProps = Readonly<{
   roomId: string;
   fullscreen: boolean;
   onFullscreenChange: (fullscreen: boolean) => void;
+  embedded?: boolean;
 }>;
 type RoomChatResponse = Readonly<{ roomId: string; messages: readonly RoomChatMessage[] }>;
 type MessageResponse = Readonly<{ message: RoomChatMessage; npcMessage?: RoomChatMessage }>;
@@ -34,7 +35,7 @@ function mergeMessages(current: readonly RoomChatMessage[], incoming: readonly R
   return [...messages.values()].sort((left, right) => left.id - right.id).slice(-100);
 }
 
-export function RoomChatPanel({ roomId, fullscreen, onFullscreenChange }: RoomChatPanelProps) {
+export function RoomChatPanel({ roomId, fullscreen, onFullscreenChange, embedded = false }: RoomChatPanelProps) {
   const [messages, setMessages] = useState<readonly RoomChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(true);
@@ -213,6 +214,7 @@ export function RoomChatPanel({ roomId, fullscreen, onFullscreenChange }: RoomCh
     <section
       className={[
         'focused-room-chat',
+        embedded ? 'focused-room-chat--embedded' : '',
         !fullscreenPresent && collapsed ? 'focused-room-chat--collapsed' : '',
         fullscreenPresent ? 'focused-room-chat--fullscreen' : '',
         fullscreenClosing ? 'focused-room-chat--closing' : '',

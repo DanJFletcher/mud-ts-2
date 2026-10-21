@@ -676,6 +676,33 @@
   display: none;
 }
 
+.focused-terminal .focused-room-chat--embedded {
+  height: 176px;
+  min-height: 0;
+  flex: 0 0 176px;
+  grid-template-rows: 44px minmax(0, 1fr) auto auto;
+  border: 0;
+  border-top: 1px solid var(--terminal-border);
+  border-bottom: 1px solid var(--terminal-border);
+  border-radius: 0;
+  background: var(--terminal-inset);
+}
+
+.focused-terminal .focused-room-chat--embedded.focused-room-chat--collapsed {
+  height: auto;
+  flex-basis: auto;
+  grid-template-rows: auto;
+}
+
+.focused-terminal .focused-room-chat--embedded .focused-room-chat__messages {
+  padding: 6px 10px;
+  background: color-mix(in srgb, var(--terminal-surface) 72%, transparent);
+}
+
+.focused-terminal .focused-room-chat--embedded .focused-room-chat__composer {
+  padding: 6px 8px;
+}
+
 .focused-room-chat__header {
   display: flex;
   min-height: 44px;

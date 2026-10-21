@@ -934,6 +934,7 @@ describe('single-character world session client', () => {
     expect(screen.getByRole('textbox', { name: 'Enter a command' })).toBeVisible();
     expect(screen.getByRole('link', { name: 'Traveler' })).toBeVisible();
     expect(screen.getByRole('link', { name: 'Field notes' })).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Room chat' }).closest('.focused-terminal')).toBeNull();
     expect(screen.queryByText(/No rush|Guest identity|room:mosgate/)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('link', { name: 'Traveler' }));
@@ -1245,6 +1246,42 @@ describe('single-character world session client', () => {
       text: 'The way is clear.',
       clientMessageId: expect.any(String),
     });
+  });
+
+  it('embeds room chat below quick actions in the mobile terminal', async () => {
+    const originalDescriptor = Object.getOwnPropertyDescriptor(window, 'matchMedia');
+    const mobileMediaQuery = {
+      matches: false,
+      media: '(min-width: 700px)',
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(() => true),
+    } as unknown as MediaQueryList;
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn(() => mobileMediaQuery),
+    });
+    const view = render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    try {
+      await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+      const chat = await screen.findByRole('region', { name: 'Room chat' });
+      const quickActions = document.querySelector('.focused-quick-commands');
+
+      expect(chat).toHaveClass('focused-room-chat--embedded');
+      expect(chat.closest('.focused-terminal')).not.toBeNull();
+      expect(chat.closest('.focused-terminal-body')).not.toBeNull();
+      expect(quickActions).not.toBeNull();
+      expect(Boolean(quickActions!.compareDocumentPosition(chat) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+      expect(screen.getByRole('textbox', { name: 'Message the room' })).toBeVisible();
+    } finally {
+      view.unmount();
+      if (originalDescriptor) Object.defineProperty(window, 'matchMedia', originalDescriptor);
+      else Reflect.deleteProperty(window, 'matchMedia');
+    }
   });
 
   it('shows an authored NPC response immediately after a matching public room message', async () => {

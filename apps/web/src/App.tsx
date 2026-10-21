@@ -213,6 +213,10 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const [quickCommandPageSize, setQuickCommandPageSize] = useState(() =>
     window.matchMedia?.("(min-width: 700px)").matches ? 6 : 4
   );
+  const [isMobileViewport, setIsMobileViewport] = useState(() => {
+    const desktopQuery = window.matchMedia?.("(min-width: 700px)");
+    return desktopQuery ? !desktopQuery.matches : window.innerWidth < 700;
+  });
   const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "go" | "look" | "read" | "drop" | "take" | "talk" | "attack" | "shop" | "buy" | "use" | "use-target" | "equip" | "unequip">("quick");
   const [quickUseItemId, setQuickUseItemId] = useState<string | null>(null);
   const [combatUseMenuOpen, setCombatUseMenuOpen] = useState(false);
@@ -1797,12 +1801,21 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   }, [quickCommandItems, quickCommandPageSize]);
   useEffect(() => {
     const desktopQuery = window.matchMedia?.("(min-width: 700px)");
-    if (!desktopQuery) return;
+    if (!desktopQuery) {
+      const updateMobileViewport = () => setIsMobileViewport(window.innerWidth < 700);
+      updateMobileViewport();
+      window.addEventListener("resize", updateMobileViewport);
+      return () => window.removeEventListener("resize", updateMobileViewport);
+    }
 
-    const updatePageSize = () => setQuickCommandPageSize(desktopQuery.matches ? 6 : 4);
-    updatePageSize();
-    desktopQuery.addEventListener("change", updatePageSize);
-    return () => desktopQuery.removeEventListener("change", updatePageSize);
+    const updateViewport = () => {
+      const isDesktop = desktopQuery.matches;
+      setQuickCommandPageSize(isDesktop ? 6 : 4);
+      setIsMobileViewport(!isDesktop);
+    };
+    updateViewport();
+    desktopQuery.addEventListener("change", updateViewport);
+    return () => desktopQuery.removeEventListener("change", updateViewport);
   }, []);
   const visibleQuickCommandPage = Math.min(quickCommandPage, quickCommandPages.length);
   const visibleQuickCommandItems = quickCommandPages[visibleQuickCommandPage - 1] ?? [];
@@ -2585,6 +2598,14 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                       ) : null}
                     </div>
                   </section>}
+                  {isMobileViewport && (
+                    <RoomChatPanel
+                      roomId={snapshot.location.locationId}
+                      fullscreen={chatFullscreen}
+                      onFullscreenChange={handleChatFullscreenChange}
+                      embedded
+                    />
+                  )}
                   {!isAnyCombatActive && !visiblePvp && <section
                     className={`focused-command ${mobileCommandInputOpen ? "focused-command--mobile-open" : "focused-command--mobile-hidden"}`}
                     aria-label="Text command"
@@ -2607,11 +2628,13 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                     </form>
                   </section>}
                 </TerminalPanel>
-                <RoomChatPanel
-                  roomId={snapshot.location.locationId}
-                  fullscreen={chatFullscreen}
-                  onFullscreenChange={handleChatFullscreenChange}
-                />
+                {!isMobileViewport && (
+                  <RoomChatPanel
+                    roomId={snapshot.location.locationId}
+                    fullscreen={chatFullscreen}
+                    onFullscreenChange={handleChatFullscreenChange}
+                  />
+                )}
                 <WorldMapPanel
                   map={snapshot.map}
                   fullscreen={mapFullscreen}
