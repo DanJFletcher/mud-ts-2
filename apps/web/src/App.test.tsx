@@ -944,8 +944,24 @@ describe('single-character world session client', () => {
     expect(screen.getByText('No current quests.')).toBeVisible();
     expect(screen.getByText('No completed quests yet.')).toBeVisible();
     expect(screen.getByText('A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east. One loose stone bears a pale stripe.')).toBeVisible();
+    expect(document.querySelector('.focused-topbar')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+    expect(screen.getByRole('region', { name: 'Menu' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: /Characters/ }));
     expect(onLeaveWorld).toHaveBeenCalledOnce();
+  });
+
+  it('closes the bottom navigation menu on Escape and restores focus to its trigger', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const menuTrigger = screen.getByRole('button', { name: 'Open menu' });
+
+    fireEvent.click(menuTrigger);
+    expect(screen.getByRole('region', { name: 'Menu' })).toBeVisible();
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.queryByRole('region', { name: 'Menu' })).not.toBeInTheDocument();
+    expect(menuTrigger).toHaveFocus();
   });
 
   it('shows active and completed quest objectives on Field notes', async () => {
@@ -1984,6 +2000,7 @@ describe('single-character world session client', () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     expect(screen.getByRole('main')).toHaveAttribute('data-theme', 'dark');
+    fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
     fireEvent.click(screen.getByRole('button', { name: 'Switch to light theme' }));
     expect(document.documentElement).toHaveAttribute('data-theme', 'light');
     expect(window.localStorage.getItem('mudd-theme')).toBe('light');

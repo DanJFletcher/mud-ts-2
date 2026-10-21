@@ -18,7 +18,7 @@ import {
   TextInput,
   type ActivityEntry,
 } from "@mudd/ui";
-import { Compass, Moon, NotebookText, Sun, UserRound, Users } from "lucide-react";
+import { Compass, Menu, Moon, NotebookText, Sun, UserRound, Users, X } from "lucide-react";
 import { RoomChatPanel } from "./RoomChatPanel.js";
 import { TerminalPanel } from "./TerminalPanel.js";
 import { WorldMapPanel } from "./WorldMapPanel.js";
@@ -228,9 +228,12 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     window.localStorage.getItem("mudd-theme") === "dark" ? "dark" : "light"
   );
   const [screen, setScreen] = useState<Screen>(currentScreen);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [chatFullscreen, setChatFullscreen] = useState(false);
   const [mapFullscreen, setMapFullscreen] = useState(false);
   const contentRef = useRef<HTMLElement>(null);
+  const navMenuRef = useRef<HTMLDivElement>(null);
+  const navMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const terminalHistoryRef = useRef<HTMLDivElement>(null);
   const terminalFollowsLatestRef = useRef(true);
   const lastRoomLookIdRef = useRef<string | null>(null);
@@ -239,6 +242,30 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const knownPvpUpdateRef = useRef<string | null>(null);
   const knownPartyRevisionRef = useRef<number | null>(null);
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [screen]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (event.target instanceof Node && !navMenuRef.current?.contains(event.target)) {
+        setMenuOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setMenuOpen(false);
+      navMenuTriggerRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [menuOpen]);
 
   const handleChatFullscreenChange = useCallback((fullscreen: boolean) => {
     setChatFullscreen(fullscreen);
@@ -1807,26 +1834,6 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
 
   return (
     <main className="focused-client" data-theme={theme}>
-      <header className="focused-topbar">
-        <div className="focused-brand"><span className="focused-brand-mark" aria-hidden="true" /> MUDD</div>
-        <div className="focused-top-actions">
-          <Button type="button" variant="quiet" className="focused-leave-world" onClick={() => void handleLeaveWorld()} disabled={leaving}>
-            <Users size={16} /><span>Characters</span>
-          </Button>
-          <Button
-            type="button"
-            variant="quiet"
-            className="focused-theme-toggle"
-            onClick={toggleTheme}
-            aria-label={`Switch to ${theme === "light" ? "dark" : "light"} theme`}
-            title={`Switch to ${theme === "light" ? "dark" : "light"} theme`}
-          >
-            {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
-            <span>{theme === "light" ? "Night" : "Day"}</span>
-          </Button>
-        </div>
-      </header>
-
       <section
         className="focused-content"
         key={screen}
@@ -2799,9 +2806,58 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
 
       {!isGameOver && (
         <nav className="focused-bottom-nav" aria-label="Game screens">
-          <a href="#/play" className="focused-tab" aria-current={screen === "play" ? "page" : undefined}><Compass aria-hidden="true" /><span>Play</span></a>
-          <a href="#/traveler" className="focused-tab" aria-current={screen === "traveler" ? "page" : undefined}><UserRound aria-hidden="true" /><span>Traveler</span></a>
-          <a href="#/notes" className="focused-tab" aria-current={screen === "notes" ? "page" : undefined}><NotebookText aria-hidden="true" /><span>Field notes</span></a>
+          <a href="#/play" className="focused-tab" aria-current={screen === "play" ? "page" : undefined} onClick={() => setMenuOpen(false)}><Compass aria-hidden="true" /><span>Play</span></a>
+          <a href="#/traveler" className="focused-tab" aria-current={screen === "traveler" ? "page" : undefined} onClick={() => setMenuOpen(false)}><UserRound aria-hidden="true" /><span>Traveler</span></a>
+          <a href="#/notes" className="focused-tab" aria-current={screen === "notes" ? "page" : undefined} onClick={() => setMenuOpen(false)}><NotebookText aria-hidden="true" /><span>Field notes</span></a>
+          <div className="focused-nav-menu" ref={navMenuRef}>
+            <button
+              ref={navMenuTriggerRef}
+              className="focused-tab focused-nav-menu__trigger"
+              type="button"
+              aria-label={menuOpen ? "Close menu" : "Open menu"}
+              aria-expanded={menuOpen}
+              aria-controls="focused-nav-menu-panel"
+              onClick={() => setMenuOpen((open) => !open)}
+            >
+              {menuOpen ? <X aria-hidden="true" /> : <Menu aria-hidden="true" />}
+              <span>Menu</span>
+            </button>
+            <div
+              id="focused-nav-menu-panel"
+              className="focused-nav-menu__panel"
+              role="region"
+              aria-label="Menu"
+              hidden={!menuOpen}
+            >
+              <div className="focused-nav-menu__brand">
+                <span className="focused-brand-mark" aria-hidden="true" />
+                <span>MUDD</span>
+              </div>
+              <Button
+                type="button"
+                variant="quiet"
+                className="focused-nav-menu__action"
+                onClick={() => {
+                  setMenuOpen(false);
+                  void handleLeaveWorld();
+                }}
+                disabled={leaving}
+              >
+                <Users size={18} aria-hidden="true" /><span>Characters</span>
+              </Button>
+              <Button
+                type="button"
+                variant="quiet"
+                className="focused-nav-menu__action"
+                onClick={toggleTheme}
+                aria-label={`Switch to ${theme === "light" ? "dark" : "light"} theme`}
+                title={`Switch to ${theme === "light" ? "dark" : "light"} theme`}
+              >
+                {theme === "light" ? <Moon size={18} aria-hidden="true" /> : <Sun size={18} aria-hidden="true" />}
+                <span>{theme === "light" ? "Dark theme" : "Light theme"}</span>
+              </Button>
+            </div>
+          </div>
         </nav>
       )}
     </main>
