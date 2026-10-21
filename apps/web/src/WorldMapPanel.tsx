@@ -36,6 +36,7 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
   const [collapsed, setCollapsed] = useState(false);
   const [fullscreenPresent, setFullscreenPresent] = useState(fullscreen);
   const [fullscreenClosing, setFullscreenClosing] = useState(false);
+  const [selectedLocationId, setSelectedLocationId] = useState<string>();
   const expandButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -44,6 +45,9 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
   const points = projectMapPoints(map);
   const pointById = new Map(points.map((point) => [point.id, point]));
   const currentLocation = map?.locations.find((location) => location.id === map.currentLocationId);
+  const focusedLocationId = points.some((point) => point.id === selectedLocationId)
+    ? selectedLocationId
+    : map?.currentLocationId;
 
   useEffect(() => {
     if (fullscreen) {
@@ -155,7 +159,7 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
           {fullscreenPresent ? <X size={17} aria-hidden="true" /> : <Maximize2 size={17} aria-hidden="true" />}
         </button>
       </div>
-      <div className="focused-world-map__content" id="world-map-content">
+      <div className="focused-world-map__content focused-world-map__content--readable" id="world-map-content">
         {points.length > 0 ? (
           <>
             <svg
@@ -167,7 +171,8 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
             >
               <title>Map of visited locations</title>
               <desc>
-                North is up. {points.map((point) => `${point.name}${point.id === map?.currentLocationId ? ', current location' : ', visited'}`).join('. ')}
+                North is up. Numbered markers correspond to the visited locations list.
+                {currentLocation ? ` ${currentLocation.name} is your current location.` : ''}
               </desc>
               {map?.connections.map((connection) => {
                 const from = pointById.get(connection.fromLocationId);
@@ -193,33 +198,60 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
                 <text className="focused-world-map__compass-direction" x="0" y="8.3" textAnchor="middle">S</text>
                 <text className="focused-world-map__compass-direction" x="-7.1" y="1" textAnchor="middle">W</text>
               </g>
-              {points.map((point) => {
+              {points.map((point, index) => {
                 const isCurrent = point.id === map?.currentLocationId;
+                const isSelected = point.id === focusedLocationId;
                 return (
                   <g
                     key={point.id}
-                    className={`focused-world-map__location${isCurrent ? ' focused-world-map__location--current' : ''}`}
+                    className={[
+                      'focused-world-map__location',
+                      isCurrent ? 'focused-world-map__location--current' : '',
+                      isSelected ? 'focused-world-map__location--selected' : '',
+                    ].filter(Boolean).join(' ')}
                   >
                     {isCurrent && <circle className="focused-world-map__current-ring" cx={point.screenX} cy={point.screenY} r="7" />}
+                    {isSelected && !isCurrent && <circle className="focused-world-map__selected-ring" cx={point.screenX} cy={point.screenY} r="8" />}
                     <circle className="focused-world-map__marker" cx={point.screenX} cy={point.screenY} r="4" />
-                    <text className="focused-world-map__label" x={point.screenX} y={point.screenY + 11} textAnchor="middle">
-                      {point.name}
+                    <text
+                      className="focused-world-map__marker-number"
+                      x={point.screenX}
+                      y={point.screenY + 1.2}
+                      textAnchor="middle"
+                      aria-hidden="true"
+                    >
+                      {index + 1}
                     </text>
                   </g>
                 );
               })}
             </svg>
+            <ol className="focused-world-map__places" aria-label="Visited locations">
+              {points.map((point, index) => {
+                const isCurrent = point.id === map?.currentLocationId;
+                const isSelected = point.id === focusedLocationId;
+                return (
+                  <li className="focused-world-map__place" key={point.id}>
+                    <button
+                      type="button"
+                      className="focused-world-map__place-button"
+                      aria-label={`Focus ${point.name} on map`}
+                      aria-current={isCurrent ? 'location' : undefined}
+                      aria-pressed={isSelected}
+                      onClick={() => setSelectedLocationId(point.id)}
+                    >
+                      <span className="focused-world-map__place-number" aria-hidden="true">{index + 1}</span>
+                      <span className="focused-world-map__place-name">{point.name}</span>
+                      {isCurrent && <span className="focused-world-map__place-status">HERE</span>}
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
             <div className="focused-world-map__legend" aria-label="Map legend">
               <span><i className="focused-world-map__legend-marker focused-world-map__legend-marker--current" /> You are here</span>
               <span><i className="focused-world-map__legend-marker" /> Visited</span>
             </div>
-            <ul className="focused-world-map__screen-reader-only" aria-label="Visited locations">
-              {points.map((point) => (
-                <li key={point.id}>
-                  {point.name}{point.id === map?.currentLocationId ? ' — current location' : ' — visited'}
-                </li>
-              ))}
-            </ul>
           </>
         ) : (
           <p className="focused-world-map__empty">Your map will fill in as you explore.</p>

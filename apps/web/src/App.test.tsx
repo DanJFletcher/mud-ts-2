@@ -1056,13 +1056,13 @@ describe('single-character world session client', () => {
     const map = await screen.findByRole('region', { name: 'World map' });
     expect(map.querySelector('.focused-world-map__compass')).toBeInTheDocument();
     expect(map.querySelector('desc')).toHaveTextContent('North is up.');
-    expect(map.querySelector('.focused-world-map__location--current')).toHaveTextContent('Mossgate Clearing');
+    expect(within(map).getByRole('button', { name: 'Focus Mossgate Clearing on map' })).toHaveAttribute('aria-current', 'location');
     expect(map).not.toHaveTextContent('Glasswater Bridge');
 
     quickGo('north');
     await screen.findByRole('heading', { name: 'Glasswater Bridge' });
     await waitFor(() => expect(map).toHaveTextContent('Glasswater Bridge'));
-    expect(map.querySelector('.focused-world-map__location--current')).toHaveTextContent('Glasswater Bridge');
+    expect(within(map).getByRole('button', { name: 'Focus Glasswater Bridge on map' })).toHaveAttribute('aria-current', 'location');
     expect(map.querySelectorAll('.focused-world-map__path')).toHaveLength(1);
   });
 
@@ -1076,10 +1076,13 @@ describe('single-character world session client', () => {
     expect(map).not.toHaveTextContent('Willowrest Inn');
     expect(map.querySelectorAll('.focused-world-map__path')).toHaveLength(2);
 
-    const locationMarker = (name: string) =>
-      [...map.querySelectorAll<SVGGElement>('.focused-world-map__location')]
-        .find((location) => location.querySelector('text')?.textContent === name)
+    const locationMarker = (name: string) => {
+      const place = within(map).queryByRole('button', { name: `Focus ${name} on map` });
+      const markerNumber = place?.querySelector('.focused-world-map__place-number')?.textContent;
+      return [...map.querySelectorAll<SVGGElement>('.focused-world-map__location')]
+        .find((location) => location.querySelector('.focused-world-map__marker-number')?.textContent === markerNumber)
         ?.querySelector<SVGCircleElement>('.focused-world-map__marker');
+    };
     const reedbankMarkerBeforeArrival = locationMarker('Reedbank Stalls');
     expect(reedbankMarkerBeforeArrival).toBeDefined();
     expect(locationMarker('Willowrest Inn')).toBeUndefined();
@@ -1938,15 +1941,15 @@ describe('single-character world session client', () => {
 
     const map = screen.getByRole('region', { name: 'World map' });
     const locationNames = () =>
-      [...map.querySelectorAll<SVGGElement>('.focused-world-map__location')]
-        .map((location) => location.querySelector('text')?.textContent);
+      [...map.querySelectorAll<HTMLElement>('.focused-world-map__place-name')]
+        .map((location) => location.textContent);
     expect(locationNames()).toEqual([
       'Mossgate Clearing',
       'Glasswater Bridge',
       'Reedbank Stalls',
     ]);
     expect(map.querySelectorAll('.focused-world-map__path')).toHaveLength(2);
-    expect(map.querySelector('.focused-world-map__location--current')).toHaveTextContent('Reedbank Stalls');
+    expect(within(map).getByRole('button', { name: 'Focus Reedbank Stalls on map' })).toHaveAttribute('aria-current', 'location');
 
     clickQuickAction('Show available exits');
     fireEvent.click(screen.getByRole('button', { name: 'Go east' }));
@@ -1960,7 +1963,7 @@ describe('single-character world session client', () => {
     ]);
     expect(map).not.toHaveTextContent('Willowrest Inn');
     expect(map.querySelectorAll('.focused-world-map__path')).toHaveLength(2);
-    expect(map.querySelector('.focused-world-map__location--current')).toHaveTextContent('Reedbank Stalls');
+    expect(within(map).getByRole('button', { name: 'Focus Reedbank Stalls on map' })).toHaveAttribute('aria-current', 'location');
     const attemptedMove = apiFetch.mock.calls
       .filter(([path]) => path === '/api/commands')
       .map(([, init]) => JSON.parse(String(init?.body ?? '{}')) as {

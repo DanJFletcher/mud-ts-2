@@ -19,6 +19,21 @@ const basement: WorldMapProjection = {
   ],
   connections: [{ fromLocationId: 'basement', toLocationId: 'corridor' }],
 };
+const denseMap: WorldMapProjection = {
+  worldInstanceId: 'world',
+  currentLocationId: 'overlook',
+  locations: [
+    { id: 'overlook', name: 'High Lantern Overlook', x: 1, y: 1 },
+    { id: 'bell-west', name: 'West of Old Bell Tower', x: 1.01, y: 1.01 },
+    { id: 'bridge-approach', name: 'Glasswater Bridge Approach', x: 1.02, y: 1 },
+    { id: 'reedbank-road', name: 'Reedbank Market Road', x: 1.03, y: 1.02 },
+  ],
+  connections: [
+    { fromLocationId: 'overlook', toLocationId: 'bell-west' },
+    { fromLocationId: 'bell-west', toLocationId: 'bridge-approach' },
+    { fromLocationId: 'bridge-approach', toLocationId: 'reedbank-road' },
+  ],
+};
 
 describe('map switching between floors', () => {
   for (const fullscreen of [false, true]) {
@@ -30,12 +45,12 @@ describe('map switching between floors', () => {
       const assertCurrentMap = (current: string, visited: string, absent: string) => {
         const svg = screen.getByRole('img', { name: 'Map of visited locations' });
         const list = screen.getByRole('list', { name: 'Visited locations' });
-        expect(svg).toHaveTextContent(current);
-        expect(svg).toHaveTextContent(visited);
+        expect(svg.querySelector('desc')).toHaveTextContent(current);
         expect(svg).not.toHaveTextContent(absent);
-        expect(within(list).getByText(`${current} — current location`)).toBeInTheDocument();
-        expect(within(list).getByText(`${visited} — visited`)).toBeInTheDocument();
-        expect(list).not.toHaveTextContent(absent);
+        expect(within(list).getByRole('button', { name: `Focus ${current} on map` })).toHaveAttribute('aria-current', 'location');
+        expect(within(list).getByRole('button', { name: `Focus ${visited} on map` })).toBeInTheDocument();
+        expect(within(list).queryByRole('button', { name: `Focus ${absent} on map` })).not.toBeInTheDocument();
+        expect(svg.querySelectorAll('.focused-world-map__marker-number')).toHaveLength(2);
         expect(svg.querySelectorAll('.focused-world-map__path')).toHaveLength(1);
       };
       assertCurrentMap('Bell Tower', 'Clearing', 'Basement');
@@ -52,8 +67,27 @@ describe('map switching between floors', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Collapse map' }));
     rerender(<WorldMapPanel {...props} map={basement} />);
     fireEvent.click(screen.getByRole('button', { name: 'Expand map' }));
+    const list = screen.getByRole('list', { name: 'Visited locations' });
+    expect(within(list).getByRole('button', { name: 'Focus Basement on map' })).toHaveAttribute('aria-current', 'location');
+    expect(within(list).queryByRole('button', { name: 'Focus Bell Tower on map' })).not.toBeInTheDocument();
+  });
+
+  it('uses numbered markers and a readable directory for dense locations', () => {
+    const { container } = render(
+      <WorldMapPanel map={denseMap} fullscreen={false} onFullscreenChange={vi.fn()} />,
+    );
     const svg = screen.getByRole('img', { name: 'Map of visited locations' });
-    expect(svg).toHaveTextContent('Basement');
-    expect(svg).not.toHaveTextContent('Bell Tower');
+    const list = screen.getByRole('list', { name: 'Visited locations' });
+
+    expect(svg.querySelectorAll('.focused-world-map__marker-number')).toHaveLength(denseMap.locations.length);
+    expect(svg.querySelector('.focused-world-map__label')).not.toBeInTheDocument();
+    for (const location of denseMap.locations) {
+      expect(within(list).getByRole('button', { name: `Focus ${location.name} on map` })).toBeInTheDocument();
+    }
+
+    const destination = within(list).getByRole('button', { name: 'Focus West of Old Bell Tower on map' });
+    fireEvent.click(destination);
+    expect(destination).toHaveAttribute('aria-pressed', 'true');
+    expect(container.querySelector('.focused-world-map__selected-ring')).toBeInTheDocument();
   });
 });
