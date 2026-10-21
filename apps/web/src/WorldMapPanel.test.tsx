@@ -113,19 +113,45 @@ describe('map switching between floors', () => {
     expect(onFullscreenChange).toHaveBeenCalledWith(true);
   });
 
-  it('zooms the minimap to twice the previous scale around the current location', () => {
-    const { container } = render(
+  it('keeps a fixed minimap scale across different map sizes and centers on the current room', () => {
+    const { container, rerender } = render(
       <WorldMapPanel map={overworld} fullscreen={false} onFullscreenChange={vi.fn()} />,
     );
     const svg = container.querySelector<SVGSVGElement>('.focused-world-map__minimap-svg')!;
-    const [viewX, viewY, viewWidth, viewHeight] = svg.getAttribute('viewBox')!.split(/\s+/).map(Number);
-    const fullMap = screen.getByRole('group', { name: 'Directional map of visited locations' });
-    const [, , fullMapWidth, fullMapHeight] = fullMap.getAttribute('viewBox')!.split(/\s+/).map(Number);
+    const readViewBox = () => svg.getAttribute('viewBox')!.split(/\s+/).map(Number);
+    const assertCurrentRoomCentered = (viewBox: number[]) => {
+      const currentTile = svg.querySelector<SVGRectElement>(
+        '.focused-world-map__minimap-point--current .focused-world-map__tile',
+      )!;
+      const tileX = Number(currentTile.getAttribute('x')) + Number(currentTile.getAttribute('width')) / 2;
+      const tileY = Number(currentTile.getAttribute('y')) + Number(currentTile.getAttribute('height')) / 2;
+      expect(viewBox[0]! + viewBox[2]! / 2).toBeCloseTo(tileX);
+      expect(viewBox[1]! + viewBox[3]! / 2).toBeCloseTo(tileY);
+    };
+    const smallMapViewBox = readViewBox();
+    assertCurrentRoomCentered(smallMapViewBox);
 
-    expect(viewWidth).toBeCloseTo(fullMapWidth! / 2);
-    expect(viewHeight).toBeCloseTo(fullMapHeight! / 2);
-    expect(viewX).toBeGreaterThan(0);
-    expect(viewY).toBeGreaterThan(0);
+    rerender(<WorldMapPanel map={denseMap} fullscreen={false} onFullscreenChange={vi.fn()} />);
+    const denseMapViewBox = readViewBox();
+    expect(denseMapViewBox.slice(2)).toEqual(smallMapViewBox.slice(2));
+    assertCurrentRoomCentered(denseMapViewBox);
+
+    const largerMap: WorldMapProjection = {
+      worldInstanceId: 'world',
+      currentLocationId: 'line-4',
+      locations: Array.from({ length: 9 }, (_, x) => ({
+        id: `line-${x}`,
+        name: `Line ${x}`,
+        x,
+        y: 0,
+        terrain: 'land' as const,
+      })),
+      connections: [],
+    };
+    rerender(<WorldMapPanel map={largerMap} fullscreen={false} onFullscreenChange={vi.fn()} />);
+    const largerMapViewBox = readViewBox();
+    expect(largerMapViewBox.slice(2)).toEqual(smallMapViewBox.slice(2));
+    assertCurrentRoomCentered(largerMapViewBox);
   });
 
   it('zooms the full-screen map in and out and can reset to the full map', () => {

@@ -44,7 +44,8 @@ type MinimapDrag = {
 const MAP_TILE_SIZE = 18;
 const MAP_GRID_STEP = 30;
 const MAP_PADDING = 18;
-const MINIMAP_ZOOM = 2;
+const MINIMAP_VIEW_WIDTH = MAP_GRID_STEP * 4;
+const MINIMAP_VIEW_HEIGHT = MAP_GRID_STEP * 5;
 const MIN_MAP_ZOOM = 0.5;
 const MAX_MAP_ZOOM = 4;
 const MAP_ZOOM_FACTOR = 1.25;
@@ -124,13 +125,19 @@ function projectMapPoints(map: WorldMapProjection | undefined): MapLayout {
 
 function minimapViewBox(layout: MapLayout, points: readonly MapPoint[], currentLocationId?: string): string {
   const current = points.find((point) => point.id === currentLocationId) ?? points[0];
-  const width = layout.width / MINIMAP_ZOOM;
-  const height = layout.height / MINIMAP_ZOOM;
-  if (!current) return `0 0 ${width} ${height}`;
+  const width = MINIMAP_VIEW_WIDTH;
+  const height = MINIMAP_VIEW_HEIGHT;
+  if (!current) {
+    return `${layout.width / 2 - width / 2} ${layout.height / 2 - height / 2} ${width} ${height}`;
+  }
 
-  const centerX = Math.max(width / 2, Math.min(layout.width - width / 2, current.screenX));
-  const centerY = Math.max(height / 2, Math.min(layout.height - height / 2, current.screenY));
-  return `${centerX - width / 2} ${centerY - height / 2} ${width} ${height}`;
+  const x = width <= layout.width
+    ? Math.max(0, Math.min(layout.width - width, current.screenX - width / 2))
+    : current.screenX - width / 2;
+  const y = height <= layout.height
+    ? Math.max(0, Math.min(layout.height - height, current.screenY - height / 2))
+    : current.screenY - height / 2;
+  return `${x} ${y} ${width} ${height}`;
 }
 
 function fullMapViewBox(
