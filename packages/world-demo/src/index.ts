@@ -635,7 +635,7 @@ const draft = {
       mapPosition: { x: -1, y: 1 },
       description: 'A narrow dirt track passes beneath arching ferns. Fresh boot prints cross the damp earth.',
       exits: [
-        { id: 'fernshade-road-to-stillwater-path', fromLocationId: 'fernshade-road', toLocationId: 'stillwater-path', label: 'North toward Willowshade Track', direction: 'north', roadId: 'fernshade-road' },
+        { id: 'fernshade-road-to-stillwater-path', fromLocationId: 'fernshade-road', toLocationId: 'stillwater-path', label: 'South toward Willowshade Track', direction: 'south', roadId: 'fernshade-road' },
         { id: 'fernshade-road-to-fork', fromLocationId: 'fernshade-road', toLocationId: 'fernshade-fork', label: 'West to Fernshade Fork', direction: 'west', roadId: 'fernshade-road' },
       ],
     },
@@ -707,7 +707,7 @@ const draft = {
       exits: [
         { id: 'stillwater-path-to-clearing', fromLocationId: 'stillwater-path', toLocationId: 'mossgate-clearing', label: 'East to Mossgate Clearing', direction: 'east', roadId: 'willowshade-track' },
         { id: 'stillwater-path-to-fountain', fromLocationId: 'stillwater-path', toLocationId: 'stillwater-fountain', label: 'West to Stillwater Fountain', direction: 'west', roadId: 'willowshade-track' },
-        { id: 'stillwater-path-to-fernshade-road', fromLocationId: 'stillwater-path', toLocationId: 'fernshade-road', label: 'South along Fernshade Road', direction: 'south', roadId: 'fernshade-road' },
+        { id: 'stillwater-path-to-fernshade-road', fromLocationId: 'stillwater-path', toLocationId: 'fernshade-road', label: 'North along Fernshade Road', direction: 'north', roadId: 'fernshade-road' },
       ],
     },
     {

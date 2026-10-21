@@ -182,7 +182,7 @@ describe('visited world map projection', () => {
     expect(innSnapshot.map?.locations).toContainEqual({
       id: 'willowrest-inn',
       name: 'Willowrest Inn',
-      x: 4,
+      x: 2,
       y: 4,
       terrain: 'building',
     });

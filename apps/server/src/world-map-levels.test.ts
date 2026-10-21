@@ -105,7 +105,12 @@ describe('current-area and Z-level maps', () => {
     const map = projectWorldMap(character, extendedWorld);
     expect(map.locations.map(({ id }) => id)).toEqual(['bell-underhollow', 'basement-corridor']);
     expect(map.connections).toEqual([
-      { fromLocationId: 'bell-underhollow', toLocationId: 'basement-corridor' },
+      {
+        fromLocationId: 'bell-underhollow',
+        toLocationId: 'basement-corridor',
+        direction: 'east',
+        oneWay: false,
+      },
     ]);
   });
 
