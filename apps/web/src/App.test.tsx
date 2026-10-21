@@ -290,9 +290,9 @@ async function collectQuickActionPages() {
   return pages;
 }
 
-function quickGo(direction: 'north' | 'south') {
-  clickQuickAction('Show available exits');
-  fireEvent.click(screen.getByRole('button', { name: `Go ${direction}` }));
+function quickGo(direction: 'north' | 'south' | 'east' | 'west' | 'up' | 'down') {
+  const navigation = screen.getByRole('navigation', { name: 'Quick navigation' });
+  fireEvent.click(within(navigation).getByRole('button', { name: direction[0]!.toUpperCase() + direction.slice(1) }));
 }
 
 function fireTouchSwipe(
@@ -798,7 +798,6 @@ describe('single-character world session client', () => {
     expect(pages.flat()).toEqual([
       'Show look targets',
       'Show readable objects',
-      'Show available exits',
       'Show items to take',
       'Show people to talk to',
       'Show opponents to attack',
@@ -834,10 +833,7 @@ describe('single-character world session client', () => {
         );
       expect(firstPageActions).toHaveLength(6);
       expect(desktopMediaQuery.addEventListener).toHaveBeenCalledWith('change', expect.any(Function));
-
-      fireEvent.click(within(firstPage).getByRole('button', { name: 'Show quick actions page 2' }));
-      const secondPage = await screen.findByRole('group', { name: 'Quick commands, page 2' });
-      expect(within(secondPage).getAllByRole('button')).toHaveLength(2);
+      expect(within(firstPage).queryByRole('button', { name: 'Show quick actions page 2' })).not.toBeInTheDocument();
     } finally {
       if (originalDescriptor) Object.defineProperty(window, 'matchMedia', originalDescriptor);
       else Reflect.deleteProperty(window, 'matchMedia');
@@ -849,7 +845,7 @@ describe('single-character world session client', () => {
     render(<WorldClient onLeaveWorld={async () => undefined} />);
     await screen.findByRole('heading', { name: 'Glasswater Bridge' });
 
-    expect(quickActionVisibleAnywhere('Show available exits')).toBe(true);
+    expect(quickActionVisibleAnywhere('Show available exits')).toBe(false);
     expect(quickActionVisibleAnywhere('Show items to take')).toBe(false);
     expect(quickActionVisibleAnywhere('Show people to talk to')).toBe(false);
     expect(quickActionVisibleAnywhere('Show opponents to attack')).toBe(false);
@@ -1158,9 +1154,11 @@ describe('single-character world session client', () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('region', { name: 'Terminal output' });
 
-    clickQuickAction('Show available exits');
-    expect(screen.getByRole('button', { name: 'Go Down to the tower floor' })).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Go Down into the Underhollow' })).toBeVisible();
+    const navigation = screen.getByRole('navigation', { name: 'Quick navigation' });
+    fireEvent.click(within(navigation).getByRole('button', { name: 'Down, choose a destination' }));
+    const destinationChoices = screen.getByRole('group', { name: 'Choose a destination' });
+    expect(within(destinationChoices).getByRole('button', { name: 'Down to the tower floor' })).toBeVisible();
+    expect(within(destinationChoices).getByRole('button', { name: 'Down into the Underhollow' })).toBeVisible();
 
     fireEvent.change(screen.getByPlaceholderText('Type a command'), { target: { value: 'go down' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
@@ -1185,8 +1183,7 @@ describe('single-character world session client', () => {
     expect(reedbankMarkerBeforeArrival).toBeDefined();
     expect(locationMarker('Willowrest Inn')).toBeUndefined();
 
-    clickQuickAction('Show available exits');
-    fireEvent.click(screen.getByRole('button', { name: 'Go east' }));
+    quickGo('east');
 
     await screen.findByRole('heading', { name: 'Willowrest Inn' });
     await waitFor(() => expect(map).toHaveTextContent('Willowrest Inn'));
@@ -1438,10 +1435,8 @@ describe('single-character world session client', () => {
     });
     expect(apiFetch.mock.calls.some(([path]) => path === '/api/queries')).toBe(true);
     expect(history).toHaveTextContent('> look');
-    clickQuickAction('Show available exits');
-    expect(screen.getByRole('group', { name: 'Available directions' })).toContainElement(
-      screen.getByRole('button', { name: 'Go north' }),
-    );
+    expect(within(screen.getByRole('navigation', { name: 'Quick navigation' }))
+      .getByRole('button', { name: 'North' })).toBeEnabled();
   });
 
   it('shows the command list and command-specific help in the terminal', async () => {
@@ -1912,7 +1907,7 @@ describe('single-character world session client', () => {
     )).toBe(true);
   });
 
-  it('shows look targets and switches quick commands to available directions', async () => {
+  it('keeps quick actions available while moving with directional controls', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     const history = screen.getByRole('region', { name: 'Terminal output' });
@@ -1927,17 +1922,12 @@ describe('single-character world session client', () => {
     expect(screen.getByRole('button', { name: 'Show look targets' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Show quick actions page 2' })).toBeVisible();
 
-    clickQuickAction('Show available exits');
-    expect(screen.queryByRole('button', { name: 'Show look targets' })).not.toBeInTheDocument();
-    expect(screen.getByRole('group', { name: 'Available directions' })).toContainElement(
-      screen.getByRole('button', { name: 'Go north' }),
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: 'Go north' }));
+    const quickNavigation = screen.getByRole('navigation', { name: 'Quick navigation' });
+    fireEvent.click(within(quickNavigation).getByRole('button', { name: 'North' }));
     await screen.findByRole('heading', { name: 'Glasswater Bridge' });
-    expect(history).toHaveTextContent('> go north');
     expect(history).toHaveTextContent('You travel north.');
-    expect(screen.queryByRole('button', { name: 'Go south' })).not.toBeInTheDocument();
+    expect(within(screen.getByRole('navigation', { name: 'Quick navigation' }))
+      .getByRole('button', { name: 'South' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Show look targets' })).toBeVisible();
 
     const moveCommand = JSON.parse(
@@ -1950,11 +1940,6 @@ describe('single-character world session client', () => {
       payload: { exitId: 'clearing-to-bridge' },
     });
 
-    clickQuickAction('Show available exits');
-    expect(screen.getByRole('group', { name: 'Available directions' })).toContainElement(
-      screen.getByRole('button', { name: 'Go south' }),
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Return to quick commands' }));
     expect(screen.getByRole('button', { name: 'Show look targets' })).toBeVisible();
   });
 
@@ -2070,11 +2055,11 @@ describe('single-character world session client', () => {
     expect(map.querySelectorAll('.focused-world-map__path')).toHaveLength(2);
     expect(within(map).getByRole('button', { name: 'Focus Reedbank Stalls on map, current location' })).toHaveAttribute('aria-current', 'location');
 
-    clickQuickAction('Show available exits');
-    fireEvent.click(screen.getByRole('button', { name: 'Go east' }));
+    quickGo('east');
     await screen.findByText('Exit is blocked.');
     expect(screen.getByRole('heading', { name: 'Reedbank Stalls' })).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Show available exits' })).toBeEnabled();
+    expect(within(screen.getByRole('navigation', { name: 'Quick navigation' }))
+      .getByRole('button', { name: 'East' })).toBeEnabled();
     expect(visitedRooms()).toEqual([
       'Mossgate Clearing',
       'Glasswater Bridge',

@@ -220,7 +220,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     const desktopQuery = window.matchMedia?.("(min-width: 700px)");
     return desktopQuery ? !desktopQuery.matches : window.innerWidth < 700;
   });
-  const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "go" | "look" | "read" | "drop" | "take" | "talk" | "attack" | "shop" | "buy" | "use" | "use-target" | "equip" | "unequip">("quick");
+  const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "choose-exit" | "look" | "read" | "drop" | "take" | "talk" | "attack" | "shop" | "buy" | "use" | "use-target" | "equip" | "unequip">("quick");
   const [quickUseItemId, setQuickUseItemId] = useState<string | null>(null);
   const [combatUseMenuOpen, setCombatUseMenuOpen] = useState(false);
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
@@ -1700,7 +1700,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     const actions: QuickAction[] = [];
     const addMode = (
       id: string,
-      mode: "look" | "read" | "drop" | "go" | "take" | "use" | "talk" | "shop" | "buy" | "attack" | "equip" | "unequip",
+      mode: "look" | "read" | "drop" | "take" | "use" | "talk" | "shop" | "buy" | "attack" | "equip" | "unequip",
       ariaLabel: string,
     ) => actions.push({ id, label: id, ariaLabel, opensMenu: true, onSelect: () => setQuickCommandMode(mode) });
     const inventory = snapshot?.character?.inventory ?? [];
@@ -1716,7 +1716,6 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     addMode("look", "look", "Show look targets");
     if (readableObjects.length > 0) addMode("read", "read", "Show readable objects");
     if (unequippedInventory.length > 0) addMode("drop", "drop", "Show items to drop");
-    if (quickDirections.length > 0) addMode("go", "go", "Show available exits");
     if (quickTakeableObjects.length > 0) addMode("take", "take", "Show items to take");
     if (quickUseItems.length > 0) {
       addMode("use", "use", "Show items to use");
@@ -1781,7 +1780,6 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   }, [
     challengeableNpcs.length,
     quickBuyListings.length,
-    quickDirections.length,
     quickShopNpcs.length,
     quickTakeableObjects.length,
     quickUseItems.length,
@@ -2200,7 +2198,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                       onMove={(exitId) => void move(exitId)}
                       onAmbiguousDirection={() => {
                         setQuickCommandPage(1);
-                        setQuickCommandMode("go");
+                        setQuickCommandMode("choose-exit");
                       }}
                       disabled={!snapshot.character || pending !== null}
                     />
@@ -2208,7 +2206,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                   {!isAnyCombatActive && !visiblePvp && <section className="focused-quick-commands" aria-label="Quick commands">
                     {quickCommandMode !== "quick" && (
                       <span className="focused-quick-commands__label" aria-hidden="true">
-                        {quickCommandMode === "go" ? "Go"
+                        {quickCommandMode === "choose-exit" ? "Choose destination"
                           : quickCommandMode === "look" ? "Look"
                             : quickCommandMode === "read" ? "Read"
                               : quickCommandMode === "drop" ? "Drop"
@@ -2227,7 +2225,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                       aria-label={
                         quickCommandMode === "quick"
                           ? `Quick commands, page ${visibleQuickCommandPage}`
-                          : quickCommandMode === "go" ? "Available directions"
+                          : quickCommandMode === "choose-exit" ? "Choose a destination"
                             : quickCommandMode === "look" ? "Things to look at"
                               : quickCommandMode === "read" ? "Readable objects"
                                 : quickCommandMode === "drop" ? "Items to drop"
@@ -2261,7 +2259,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                             <button key={slot} type="button" className="focused-quick-command" onClick={() => submitQuickCommand(`unequip ${slot}`)} aria-label={`Unequip ${slot}`} disabled={pending !== null}>{slot}</button>
                           ))}
                         </>
-                      ) : quickCommandMode === "go" ? (
+                      ) : quickCommandMode === "choose-exit" ? (
                         <>
                           <button
                             type="button"
@@ -2278,7 +2276,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                               type="button"
                               className="focused-quick-command"
                               onClick={() => submitQuickCommand(`go ${direction.target}`)}
-                              aria-label={`Go ${direction.label}`}
+                              aria-label={direction.label}
                               disabled={pending !== null}
                             >
                               {direction.label}
