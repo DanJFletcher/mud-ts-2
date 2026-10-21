@@ -98,4 +98,18 @@ describe('map switching between floors', () => {
     expect(destination).toHaveAttribute('aria-pressed', 'true');
     expect(container.querySelector('.focused-world-map__location--selected')).toBeInTheDocument();
   });
+
+  it('opens the full-screen map when the mobile minimap is tapped', () => {
+    const onFullscreenChange = vi.fn();
+    const { container } = render(
+      <WorldMapPanel map={overworld} fullscreen={false} onFullscreenChange={onFullscreenChange} />,
+    );
+    const minimap = container.querySelector<HTMLButtonElement>('.focused-world-map__minimap');
+
+    expect(minimap).toHaveAttribute('aria-label', 'Open map from minimap in full screen');
+    expect(minimap?.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+
+    fireEvent.click(minimap!);
+    expect(onFullscreenChange).toHaveBeenCalledWith(true);
+  });
 });

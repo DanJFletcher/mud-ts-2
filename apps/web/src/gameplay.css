@@ -1156,6 +1156,10 @@
   animation: focused-world-map-exit 240ms cubic-bezier(.4, 0, .6, 1) both;
 }
 
+.focused-world-map__minimap {
+  display: none;
+}
+
 .focused-world-map--fullscreen .focused-world-map__header {
   min-height: 52px;
   padding-inline: 12px;
@@ -1197,6 +1201,55 @@
 
   .focused-world-map--fullscreen .focused-world-map__content--readable {
     grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
+  }
+}
+
+@media (max-width: 719px) {
+  .focused-world-map:not(.focused-world-map--fullscreen) {
+    display: none;
+  }
+
+  .focused-world-map__minimap {
+    position: fixed;
+    z-index: 30;
+    top: calc(env(safe-area-inset-top) + 60px);
+    right: 10px;
+    display: grid;
+    width: clamp(88px, 28vw, 112px);
+    aspect-ratio: 4 / 5;
+    place-items: center;
+    overflow: hidden;
+    padding: 4px;
+    border: 1px solid color-mix(in srgb, var(--mudd-border) 55%, transparent);
+    border-radius: 3px;
+    background: rgb(23 25 27 / 92%);
+    box-shadow: 0 5px 16px rgb(0 0 0 / 22%);
+    -webkit-backdrop-filter: blur(3px);
+    backdrop-filter: blur(3px);
+    cursor: pointer;
+  }
+
+  .focused-world-map__minimap:focus-visible {
+    outline: 2px solid var(--mudd-warm);
+    outline-offset: 2px;
+  }
+
+  .focused-world-map__minimap-svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .focused-world-map__minimap-point--current .focused-world-map__tile {
+    stroke: var(--mudd-warm);
+    stroke-width: 2.4;
+  }
+
+  .focused-world-map__minimap-empty {
+    color: #f2f2ee;
+    font: 600 .62rem/1 "DM Mono", monospace;
+    letter-spacing: .1em;
+    text-transform: uppercase;
   }
 }
 

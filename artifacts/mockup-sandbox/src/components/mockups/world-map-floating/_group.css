@@ -1,0 +1,132 @@
+@import "../mudd-client/_group.css";
+
+.minimap-demo {
+  min-height: 100dvh;
+  overflow: hidden;
+  color: #ecebe4;
+  background: #17191b;
+  font-family: "Literata", Georgia, serif;
+}
+
+.minimap-demo__topbar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  height: 50px;
+  align-items: center;
+  padding-inline: 18px;
+  border-bottom: 1px solid rgb(242 242 238 / 12%);
+  color: #f2f2ee;
+  font: 600 .76rem/1 "DM Mono", monospace;
+  letter-spacing: .14em;
+}
+
+.minimap-demo__transcript {
+  height: calc(100dvh - 50px);
+  overflow: auto;
+  padding: 20px 28px 40px 18px;
+  color: #e3e2dc;
+  font-size: 1.15rem;
+  line-height: 1.55;
+}
+
+.minimap-demo__transcript h1 {
+  margin: 0 0 10px;
+  color: #f0efe9;
+  font-size: 1.35rem;
+  font-weight: 600;
+}
+
+.minimap-demo__transcript p {
+  margin: 0 0 14px;
+}
+
+.minimap-demo__transcript .minimap-demo__muted {
+  color: #929398;
+}
+
+.minimap-demo__open {
+  position: fixed;
+  z-index: 5;
+  top: 60px;
+  right: 8px;
+  display: grid;
+  width: clamp(88px, 28vw, 112px);
+  aspect-ratio: 4 / 5;
+  place-items: center;
+  overflow: hidden;
+  padding: 4px;
+  border: 1px solid rgb(242 242 238 / 14%);
+  border-radius: 3px;
+  background: rgb(23 25 27 / 92%);
+  box-shadow: 0 5px 16px rgb(0 0 0 / 22%);
+  backdrop-filter: blur(3px);
+  cursor: pointer;
+}
+
+.minimap-demo__open:focus-visible {
+  outline: 2px solid #dfae7d;
+  outline-offset: 2px;
+}
+
+.minimap-demo__mini-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.minimap-demo__line {
+  fill: none;
+  stroke: #f2f2ee;
+  stroke-width: 1.4;
+  stroke-linecap: square;
+}
+
+.minimap-demo__tile {
+  stroke: #202326;
+  stroke-width: 1.1;
+  shape-rendering: crispEdges;
+}
+
+.minimap-demo__tile--land { fill: #74777d; }
+.minimap-demo__tile--water { fill: #4ba5cf; }
+.minimap-demo__tile--building { fill: #b9a083; }
+.minimap-demo__tile--current { stroke: #dfae7d; stroke-width: 2.4; }
+
+.minimap-demo__fullscreen {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  padding: env(safe-area-inset-top) 10px env(safe-area-inset-bottom);
+  background: #17191b;
+}
+
+.minimap-demo__fullscreen-header {
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgb(242 242 238 / 16%);
+  color: #f2f2ee;
+  font-size: 1.25rem;
+}
+
+.minimap-demo__close {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 0;
+  color: #f2f2ee;
+  background: transparent;
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+.minimap-demo__full-svg {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}

@@ -84,6 +84,7 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
   const [fullscreenClosing, setFullscreenClosing] = useState(false);
   const [selectedLocationId, setSelectedLocationId] = useState<string>();
   const expandButtonRef = useRef<HTMLButtonElement>(null);
+  const minimapButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const wasFullscreenRef = useRef(false);
@@ -116,7 +117,10 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
 
   useEffect(() => {
     if (!fullscreenPresent) {
-      if (wasFullscreenRef.current) expandButtonRef.current?.focus();
+      if (wasFullscreenRef.current) {
+        const isMobile = window.matchMedia?.('(max-width: 719px)').matches ?? false;
+        (isMobile ? minimapButtonRef.current : expandButtonRef.current)?.focus();
+      }
       wasFullscreenRef.current = false;
       return;
     }
@@ -322,5 +326,71 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
     </section>
   );
 
-  return fullscreenPresent ? createPortal(panel, document.body) : panel;
+  const minimap = !fullscreenPresent ? (
+    <button
+      ref={minimapButtonRef}
+      className="focused-world-map__minimap"
+      type="button"
+      onClick={() => onFullscreenChange(true)}
+      aria-label="Open map from minimap in full screen"
+      title="Open map full screen"
+    >
+      {points.length > 0 ? (
+        <svg
+          className="focused-world-map__minimap-svg"
+          viewBox={`0 0 ${layout.width} ${layout.height}`}
+          preserveAspectRatio="xMidYMid meet"
+          aria-hidden="true"
+          focusable="false"
+        >
+          {map?.connections.map((connection) => {
+            const from = pointById.get(connection.fromLocationId);
+            const to = pointById.get(connection.toLocationId);
+            if (!from || !to) return null;
+            return (
+              <path
+                key={`${connection.fromLocationId}-${connection.toLocationId}`}
+                className="focused-world-map__path"
+                d={connectionPath(from, to, connection.direction)}
+              />
+            );
+          })}
+          {points.map((point) => (
+            <g
+              key={point.id}
+              className={point.id === map?.currentLocationId ? 'focused-world-map__minimap-point--current' : ''}
+            >
+              <rect
+                className={`focused-world-map__tile focused-world-map__tile--${point.terrain ?? 'land'}`}
+                x={point.screenX - MAP_TILE_SIZE / 2}
+                y={point.screenY - MAP_TILE_SIZE / 2}
+                width={MAP_TILE_SIZE}
+                height={MAP_TILE_SIZE}
+              />
+              {(point.verticalExits ?? []).map((direction, index) => (
+                <path
+                  key={`${point.id}-${direction}`}
+                  className="focused-world-map__vertical-arrow"
+                  d={direction === 'up'
+                    ? `M ${point.screenX - 4 + index * 8} ${point.screenY + 2} l 4 -4 4 4 Z`
+                    : `M ${point.screenX - 4 + index * 8} ${point.screenY - 2} l 4 4 4 -4 Z`}
+                />
+              ))}
+            </g>
+          ))}
+        </svg>
+      ) : (
+        <span className="focused-world-map__minimap-empty">Map</span>
+      )}
+    </button>
+  ) : null;
+
+  return fullscreenPresent
+    ? createPortal(panel, document.body)
+    : (
+      <>
+        {panel}
+        {minimap}
+      </>
+    );
 }
