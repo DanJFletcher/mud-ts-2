@@ -76,6 +76,14 @@ let activePartyInfo: {
   createdAt: string;
   leaderName: string;
 } | null;
+let partyRevision: number;
+let partyActivity: Array<{
+  revision: number;
+  groupId: string;
+  type: 'created' | 'joined' | 'left' | 'closed';
+  playerId?: string;
+  displayName?: string;
+}>;
 let teamCombatEncounter: TeamCombatEncounter | null;
 
 function currentLocation() {
@@ -338,6 +346,8 @@ beforeEach(() => {
   characterHealth = null;
   combatEncounter = null;
   activePartyInfo = null;
+  partyRevision = 0;
+  partyActivity = [];
   teamCombatEncounter = null;
   apiFetch.mockReset();
   apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
@@ -436,7 +446,7 @@ beforeEach(() => {
         payload?: { objectId?: string; npcId?: string; topic?: string; merchantNpcId?: string };
       };
       if (query.type === 'party.info') {
-        return json({ ok: true, value: { party: activePartyInfo, revision: 0, activity: [] } });
+        return json({ ok: true, value: { party: activePartyInfo, revision: partyRevision, activity: partyActivity } });
       }
       if (query.type === 'team.combat.info') {
         return json({ ok: true, value: { encounter: teamCombatEncounter } });
@@ -973,6 +983,41 @@ describe('single-character world session client', () => {
     expect(screen.getByRole('region', { name: 'Menu' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: /Characters/ }));
     expect(onLeaveWorld).toHaveBeenCalledOnce();
+  });
+
+  it('preserves terminal scroll position for live updates and offers a scroll-to-latest control', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+    let scrollTop = 60;
+    Object.defineProperties(history, {
+      scrollHeight: { configurable: true, value: 600 },
+      clientHeight: { configurable: true, value: 200 },
+      scrollTop: {
+        configurable: true,
+        get: () => scrollTop,
+        set: (value: number) => { scrollTop = Math.max(0, Math.min(value, 400)); },
+      },
+    });
+    fireEvent.scroll(history);
+    expect(screen.getByRole('button', { name: 'Scroll to latest' })).toBeVisible();
+
+    partyRevision = 1;
+    partyActivity = [{
+      revision: 1,
+      groupId: 'party-terminal-scroll-test',
+      type: 'joined',
+      playerId: 'other-player',
+      displayName: 'Aster',
+    }];
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    expect(await screen.findByText('Aster joined the party.')).toBeVisible();
+    expect(scrollTop).toBe(60);
+    fireEvent.click(screen.getByRole('button', { name: 'Scroll to latest' }));
+    expect(scrollTop).toBe(400);
   });
 
   it('closes the bottom navigation menu on Escape and restores focus to its trigger', async () => {

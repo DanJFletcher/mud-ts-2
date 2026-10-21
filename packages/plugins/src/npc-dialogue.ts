@@ -29,7 +29,6 @@ function currentNpc(
   context: EngineCommandContext | QueryContext,
   character: CharacterProjection,
   npcId: string,
-  autonomousNpcs?: AutonomousNpcStateCapability,
 ): NpcDefinition {
   if (character.archived) throw new RuleViolationError('That character is no longer available.');
   const location = context.world.locations.find((candidate) => candidate.id === character.locationId);

@@ -7,13 +7,17 @@ import {
 } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import { demoEventEffectsPlugin } from './demo-event-effects-plugin.js';
-import { createAutonomousNpcScheduler } from './autonomous-npc-scheduler.js';
+import {
+  AUTONOMOUS_NPC_SYSTEM_ACTOR_ID,
+  createAutonomousNpcScheduler,
+} from './autonomous-npc-scheduler.js';
 
 const { publishNpcMessage } = vi.hoisted(() => ({
   publishNpcMessage: vi.fn(),
 }));
 
 vi.mock('./room-chat-service.js', () => ({
+  NPC_MOVEMENT_MESSAGE_SOURCE_PREFIX: 'world-npc-movement:',
   getRoomChatMessageById: vi.fn(),
   getRoomChatMessageBySourceEffectId: vi.fn(),
   publishNpcRoomMessage: publishNpcMessage,
@@ -71,7 +75,7 @@ describe('autonomous NPC scheduler and room movement messages', () => {
   });
 
   it('publishes deduplicated departure and arrival narratives with actual reverse-exit directions', async () => {
-    let now = new Date('2026-10-21T12:00:00.000Z');
+    const now = new Date('2026-10-21T12:00:00.000Z');
     const store = new InMemoryEventStore();
     const engine = new EngineHost(
       [autonomousNpcsPlugin, demoEventEffectsPlugin],
@@ -89,7 +93,7 @@ describe('autonomous NPC scheduler and room movement messages', () => {
       commandId: 'movement-notification-test',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       npcId: 'mossgate-patrolling-guard',
-    }, 'system:autonomous-npc-scheduler');
+    }, AUTONOMOUS_NPC_SYSTEM_ACTOR_ID);
     expect(result.receipt.ok).toBe(true);
 
     expect(await engine.processPendingEffects()).toBe(1);

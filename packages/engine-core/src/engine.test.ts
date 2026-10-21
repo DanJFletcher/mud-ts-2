@@ -10,6 +10,7 @@ import {
   groupsPlugin,
   interactionPlugin,
   movementPlugin,
+  npcDialoguePlugin,
   partyCombatPolicyPlugin,
   partyPlugin,
   partyQuestPlugin,
@@ -1820,7 +1821,8 @@ describe('MUDD engine host', () => {
     const playerAttempt = await engine.dispatch(command, session);
     expect(playerAttempt.receipt).toMatchObject({ ok: false, code: 'UNKNOWN_COMMAND' });
 
-    const firstStep = await engine.dispatchSystem(command, 'system:autonomous-npc-scheduler');
+    const systemActorId = '00000000-0000-4000-8000-000000000001';
+    const firstStep = await engine.dispatchSystem(command, systemActorId);
     expect(firstStep.receipt.ok).toBe(true);
     expect(firstStep.events[0]).toMatchObject({
       type: 'world.npc.moved',
@@ -1835,14 +1837,14 @@ describe('MUDD engine host', () => {
     const earlyRetry = await engine.dispatchSystem({
       ...command,
       commandId: 'npc-tick-too-soon',
-    }, 'system:autonomous-npc-scheduler');
+    }, systemActorId);
     expect(earlyRetry.receipt).toMatchObject({ ok: false, code: 'RULE_VIOLATION' });
 
     now = new Date(now.getTime() + 60_000);
     const secondStep = await engine.dispatchSystem({
       ...command,
       commandId: 'npc-tick-second',
-    }, 'system:autonomous-npc-scheduler');
+    }, systemActorId);
     expect(secondStep.events[0]).toMatchObject({
       type: 'world.npc.moved',
       payload: {
@@ -1880,11 +1882,73 @@ describe('MUDD engine host', () => {
       commandId: 'npc-gated-tick',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       npcId: 'mossgate-patrolling-guard',
-    }, 'system:autonomous-npc-scheduler');
+    }, '00000000-0000-4000-8000-000000000001');
     expect(result.events[0]).toMatchObject({
       type: 'world.npc.movement_waited',
       payload: { locationId: 'mossgate-clearing' },
     });
+    await engine.stop();
+  });
+
+  it('shows mobile NPCs only in their current room and prevents talking to them after they leave', async () => {
+    const engine = new EngineHost(
+      [worldItemsPlugin, autonomousNpcsPlugin, characterPlugin, npcDialoguePlugin],
+      new InMemoryEventStore(),
+      authorization,
+      demoWorld,
+      () => globalThis.crypto.randomUUID(),
+      () => new Date('2026-10-21T12:00:00.000Z'),
+      { roll: (sides) => sides },
+    );
+    await engine.start();
+    const created = await engine.dispatch({
+      type: 'character.create',
+      version: 1,
+      commandId: 'mobile-npc-room-visibility',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      payload: { name: 'Rowan' },
+    }, session);
+    const characterId = created.streamId!;
+    const before = await engine.query({
+      type: 'location.describe',
+      version: 1,
+      queryId: 'mobile-npc-before-move',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      payload: {},
+    }, session);
+    expect(before).toMatchObject({ ok: true, value: { npcs: expect.arrayContaining([
+      expect.objectContaining({ id: 'mossgate-patrolling-guard' }),
+    ]) } });
+
+    await engine.dispatchSystem({
+      type: 'world.npc.tick',
+      version: 1,
+      commandId: 'mobile-npc-leave-room',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      npcId: 'mossgate-patrolling-guard',
+    }, 'system:autonomous-npc-scheduler');
+
+    const after = await engine.query({
+      type: 'location.describe',
+      version: 1,
+      queryId: 'mobile-npc-after-move',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      payload: {},
+    }, session);
+    expect(after).toMatchObject({ ok: true, value: { npcs: expect.not.arrayContaining([
+      expect.objectContaining({ id: 'mossgate-patrolling-guard' }),
+    ]) } });
+    const talk = await engine.query({
+      type: 'npc.talk',
+      version: 1,
+      queryId: 'mobile-npc-talk-after-move',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      payload: { npcId: 'mossgate-patrolling-guard' },
+    }, session);
+    expect(talk).toMatchObject({ ok: false, code: 'RULE_VIOLATION', message: 'That person is not here.' });
     await engine.stop();
   });
 });

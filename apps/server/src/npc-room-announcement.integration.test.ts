@@ -111,6 +111,7 @@ vi.mock('@mudd/contracts', async () => {
     LocationDescribeQuerySchema: unusedSchema,
     MerchantCatalogQuerySchema: unusedSchema,
     NpcTalkQuerySchema: unusedSchema,
+    WorldNpcMovedEventSchema: { shape: { payload: unusedSchema } },
     ObjectReadQuerySchema: unusedSchema,
     ObjectInspectQuerySchema: unusedSchema,
     RestoreCharacterCommandSchema: unusedSchema,
@@ -119,6 +120,7 @@ vi.mock('@mudd/contracts', async () => {
 });
 
 vi.mock('@mudd/core-plugins', () => ({
+  autonomousNpcsPlugin: {},
   characterPlugin: {},
   combatPlugin: {},
   groupsPlugin: {},
@@ -155,6 +157,7 @@ vi.mock('@mudd/engine-core', () => ({
             _schema: unknown,
             handler: (payload: unknown, context: unknown) => Promise<void>,
           ) => state.effectHandlers.set(type, handler),
+          registerEventHandler: () => undefined,
         } as never);
       }
     }
@@ -216,6 +219,14 @@ vi.mock('@mudd/engine-core', () => ({
     }
   },
   replayCharacter: (character: unknown) => character,
+}));
+
+vi.mock('./autonomous-npc-scheduler.js', () => ({
+  createAutonomousNpcScheduler: () => ({
+    start: vi.fn(),
+    stop: vi.fn(),
+    tick: vi.fn(),
+  }),
 }));
 
 vi.mock('./npc-announcer.js', async (importOriginal) => {
@@ -402,6 +413,7 @@ vi.mock('./db/client.js', async () => {
 
 vi.mock('./room-chat-service.js', () => ({
   MAX_ROOM_CHAT_MESSAGE_LENGTH: 500,
+  NPC_MOVEMENT_MESSAGE_SOURCE_PREFIX: 'world-npc-movement:',
   createPlayerRoomChatMessage: async (input: {
     worldInstanceId: string;
     playerId: string;
@@ -661,6 +673,7 @@ describe('NPC room announcements through the server', () => {
         _schema: unknown,
         handler: (payload: unknown, context: unknown) => Promise<void>,
       ) => state.effectHandlers.set(type, handler),
+      registerEventHandler: () => undefined,
     } as never);
     state.nextMoveId = 1;
     announcementState.attempts = 0;

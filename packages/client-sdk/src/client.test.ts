@@ -298,6 +298,18 @@ describe('MuddHttpClient', () => {
       description: 'A broad wooden figure keeps a round shield angled toward the trail, guarding its center.',
       canChallenge: true,
       canShop: false,
+    }, {
+      id: 'mossgate-wandering-villager',
+      name: 'Wandering Villager',
+      description: 'A villager strolls by, hands clasped behind their back.',
+      canChallenge: false,
+      canShop: false,
+    }, {
+      id: 'mossgate-patrolling-guard',
+      name: 'Patrolling Guard',
+      description: 'A town guard marches through, surveying the surroundings.',
+      canChallenge: false,
+      canShop: false,
     }]);
     expect(firstRoom.objects).toEqual([
       {

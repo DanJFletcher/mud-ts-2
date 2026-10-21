@@ -6,7 +6,7 @@ import {
 import type { EngineHost, EventStorePort } from '@mudd/engine-core';
 import type { WorldPackDraft } from '@mudd/contracts';
 
-const SYSTEM_ACTOR_ID = 'system:autonomous-npc-scheduler';
+export const AUTONOMOUS_NPC_SYSTEM_ACTOR_ID = '00000000-0000-4000-8000-000000000001';
 
 export function createAutonomousNpcScheduler(input: Readonly<{
   engine: EngineHost;
@@ -47,7 +47,7 @@ export function createAutonomousNpcScheduler(input: Readonly<{
             commandId: `npc-tick:${globalThis.crypto.randomUUID()}`,
             worldInstanceId: input.worldInstanceId,
             npcId: npc.id,
-          }, SYSTEM_ACTOR_ID);
+          }, AUTONOMOUS_NPC_SYSTEM_ACTOR_ID);
           attempted += 1;
           if (!result.receipt.ok && result.receipt.code !== 'VERSION_CONFLICT') {
             input.onError?.(new Error(result.receipt.message), npc.id);
