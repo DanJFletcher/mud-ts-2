@@ -35,9 +35,14 @@ const testCombatPresencePlugin: EnginePlugin = {
   },
 };
 
-const demoRoadRoutes: Record<string, readonly [string, string]> = {
+const demoRoadRoutes: Record<string, readonly string[]> = {
   'clearing-to-bridge': ['clearing-to-glasswater-road', 'glasswater-approach-to-bridge'],
-  'bridge-to-tower-west': ['bridge-to-tower-ridge', 'tower-ridge-to-west'],
+  'bridge-to-tower-west': [
+    'bridge-to-glasswater-road',
+    'glasswater-approach-to-clearing',
+    'clearing-to-bellwarden-track',
+    'bellwarden-track-to-tower-west',
+  ],
 };
 
 const basementRooms: WorldPackDraft['locations'] = [
@@ -223,7 +228,7 @@ describe('current-area and Z-level maps', () => {
       'glasswater-bridge',
       'bell-tower',
       'glasswater-approach',
-      'tower-ridge',
+      'bellwarden-track',
       'glasswater-west-reach',
       'glasswater-east-reach',
       'glasswater-willow-reach',

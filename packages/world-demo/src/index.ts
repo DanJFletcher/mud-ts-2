@@ -278,10 +278,9 @@ const draft = {
       name: 'West of Old Bell Tower',
       mapPosition: { x: 2, y: 0 },
       description:
-        'A worn track meets the western foot of the Old Bell Tower. Its low entrance stands to the east beneath the cracked bell’s frame; the road returns west toward Mossgate Clearing, and a ridge path leads north toward Glasswater Bridge.',
+        'A worn track meets the western foot of the Old Bell Tower. Its low entrance stands to the east beneath the cracked bell’s frame; Bellwarden Road leads west toward Mossgate Clearing.',
       exits: [
         { id: 'bell-tower-west-to-bellwarden-track', fromLocationId: 'bell-tower-west', toLocationId: 'bellwarden-track', label: 'West along Bellwarden Road', direction: 'west', roadId: 'bellwarden-road' },
-        { id: 'bell-tower-west-to-tower-ridge', fromLocationId: 'bell-tower-west', toLocationId: 'tower-ridge', label: 'North along Tower Ridge Road', direction: 'north', roadId: 'tower-ridge-road' },
         { id: 'bell-tower-west-to-tower', fromLocationId: 'bell-tower-west', toLocationId: 'bell-tower', label: 'East into the Old Bell Tower', direction: 'east' },
       ],
     },
@@ -316,7 +315,7 @@ const draft = {
         },
       ],
       description:
-        'A low stone bridge crosses clear water. Reeds stir below it. The road leads south toward Mossgate Clearing, east to Tower Ridge, and north toward Reedbank Stalls.',
+        'A low stone bridge crosses clear water. Reeds stir below it. Glasswater Road leads south toward Mossgate Clearing, and Reedbank Road continues north toward the stalls.',
       takeables: [
         {
           id: 'glasswater-reed',
@@ -340,7 +339,7 @@ const draft = {
                 status: 'active',
                 requiresCompletedObjectiveIds: [],
                 requiresIncompleteObjectiveIds: ['read-bell-inscription'],
-                response: 'Take the east road from Glasswater Bridge to Tower Ridge, then travel south to the tower’s western approach. Enter the tower and climb its inner stair to the bell and inscription.',
+                response: 'Take Glasswater Road south from the bridge to Mossgate Clearing, then follow Bellwarden Road east to the tower’s western approach. Enter the tower and climb its inner stair to the bell and inscription.',
               },
               {
                 questId: 'eddas-bell-echo',
@@ -466,7 +465,6 @@ const draft = {
       ],
       exits: [
         { id: 'bridge-to-glasswater-road', fromLocationId: 'glasswater-bridge', toLocationId: 'glasswater-approach', label: 'South along Glasswater Road', direction: 'south', fromStateId: 'on', roadId: 'glasswater-road' },
-        { id: 'bridge-to-tower-ridge', fromLocationId: 'glasswater-bridge', toLocationId: 'tower-ridge', label: 'East along Tower Ridge Road', direction: 'east', fromStateId: 'on', roadId: 'tower-ridge-road' },
         { id: 'bridge-to-reedbank-road', fromLocationId: 'glasswater-bridge', toLocationId: 'reedbank-road', label: 'North along Reedbank Road', direction: 'north', fromStateId: 'on', roadId: 'reedbank-road' },
         { id: 'bridge-under-to-west-reach', fromLocationId: 'glasswater-bridge', toLocationId: 'glasswater-west-reach', label: 'West along Glasswater River', direction: 'west', fromStateId: 'under' },
         { id: 'bridge-under-to-east-reach', fromLocationId: 'glasswater-bridge', toLocationId: 'glasswater-east-reach', label: 'East along Glasswater River', direction: 'east', fromStateId: 'under' },
@@ -742,16 +740,6 @@ const draft = {
       ],
     },
     {
-      id: 'tower-ridge',
-      name: 'Tower Ridge',
-      mapPosition: { x: 2, y: 2 },
-      description: 'A low ridge opens a view of the river. The track leads west to Glasswater Bridge and south to the tower’s outer approach.',
-      exits: [
-        { id: 'tower-ridge-to-bridge', fromLocationId: 'tower-ridge', toLocationId: 'glasswater-bridge', label: 'West to Glasswater Bridge', direction: 'west', roadId: 'tower-ridge-road' },
-        { id: 'tower-ridge-to-west', fromLocationId: 'tower-ridge', toLocationId: 'bell-tower-west', label: 'South to West of Old Bell Tower', direction: 'south', roadId: 'tower-ridge-road' },
-      ],
-    },
-    {
       id: 'reedbank-road',
       name: 'Reedbank Road',
       mapPosition: { x: 0, y: 3 },
@@ -847,19 +835,6 @@ const draft = {
           id: 'bellwarden-road-hound',
           name: 'Track Hound',
           combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' },
-        },
-      ],
-    },
-    {
-      id: 'tower-ridge-road',
-      name: 'Tower Ridge Road',
-      locationIds: ['bell-tower-west', 'tower-ridge', 'glasswater-bridge'],
-      encounterChancePercent: 12,
-      encounters: [
-        {
-          id: 'tower-ridge-road-ambusher',
-          name: 'Ridgeway Ambusher',
-          combatProfile: { maxHealth: 5, attackDamage: 1, style: 'heavy' },
         },
       ],
     },

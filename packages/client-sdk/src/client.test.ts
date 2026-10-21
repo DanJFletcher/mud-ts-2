@@ -61,7 +61,6 @@ describe('demo world navigation', () => {
       'willowshade-track',
       'glasswater-road',
       'bellwarden-road',
-      'tower-ridge-road',
       'reedbank-road',
       'willowrest-lane',
     ];
@@ -79,6 +78,27 @@ describe('demo world navigation', () => {
         expect(from.exits.some((exit) => exit.toLocationId === toLocationId && exit.roadId === roadId), roadId).toBe(true);
         expect(to.exits.some((exit) => exit.toLocationId === fromLocationId && exit.roadId === roadId), roadId).toBe(true);
       }
+    }
+  });
+
+  it('removes Tower Ridge and preserves the longer road route to the tower', () => {
+    const locations = new Map(demoWorld.locations.map((location) => [location.id, location]));
+    const route = [
+      'glasswater-bridge',
+      'glasswater-approach',
+      'mossgate-clearing',
+      'bellwarden-track',
+      'bell-tower-west',
+    ];
+
+    expect(locations.has('tower-ridge')).toBe(false);
+    expect(demoWorld.roads?.some((road) => road.id === 'tower-ridge-road')).toBe(false);
+    expect(demoWorld.locations.flatMap((location) => location.exits)
+      .some((exit) => exit.toLocationId === 'tower-ridge')).toBe(false);
+
+    for (let index = 0; index < route.length - 1; index += 1) {
+      const current = locations.get(route[index]!)!;
+      expect(current.exits.some((exit) => exit.toLocationId === route[index + 1])).toBe(true);
     }
   });
 });
@@ -119,8 +139,18 @@ const demoRoadRoutes = {
   'fountain-to-clearing': ['fountain-to-stillwater-path', 'stillwater-path-to-clearing'],
   'clearing-to-bridge': ['clearing-to-glasswater-road', 'glasswater-approach-to-bridge'],
   'bridge-to-clearing': ['bridge-to-glasswater-road', 'glasswater-approach-to-clearing'],
-  'bridge-to-tower-west': ['bridge-to-tower-ridge', 'tower-ridge-to-west'],
-  'bell-tower-west-to-bridge': ['bell-tower-west-to-tower-ridge', 'tower-ridge-to-bridge'],
+  'bridge-to-tower-west': [
+    'bridge-to-glasswater-road',
+    'glasswater-approach-to-clearing',
+    'clearing-to-bellwarden-track',
+    'bellwarden-track-to-tower-west',
+  ],
+  'bell-tower-west-to-bridge': [
+    'bell-tower-west-to-bellwarden-track',
+    'bellwarden-track-to-clearing',
+    'clearing-to-glasswater-road',
+    'glasswater-approach-to-bridge',
+  ],
   'clearing-to-tower-west': ['clearing-to-bellwarden-track', 'bellwarden-track-to-tower-west'],
   'bell-tower-west-to-clearing': ['bell-tower-west-to-bellwarden-track', 'bellwarden-track-to-clearing'],
   'bridge-to-reedbank': ['bridge-to-reedbank-road', 'reedbank-road-to-stalls'],
