@@ -7,5 +7,5 @@
 - [Consent-based PvP](consent-based-pvp.md) — Player combat requires an explicit challenge acceptance; shared encounter state must not own durable character health or inventory.
 - [Quest-bound items](quest-item-binding.md) — Quest-critical items must remain undroppable and unavailable to any future trade or transfer.
 - [Map visibility](map-visibility.md) — Show only the current area's floor; preserve exploration when switching between overworld and dungeon maps.
-- [Water travel](water-travel.md) — River nodes are boat-accessible only when a land location has an exit connecting to the river.
+- [Water travel](water-travel.md) — Link river nodes by exits; bridge context is per character and does not change map Z; land entry requires a boat.
 - [Party aggregate ownership](party-aggregate-ownership.md) — Keep group membership, encounter teams, party quest state, and durable character state in separate aggregates; see ADR 0014.

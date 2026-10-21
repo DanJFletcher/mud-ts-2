@@ -197,7 +197,9 @@ describe('visited world map projection', () => {
     expect(addedRiverNodes.every(({ exits }) => exits.length > 0)).toBe(true);
     expect(demoWorld.locations
       .filter((location) => location.mapPosition?.terrain !== 'river')
-      .some((location) => location.exits.some((exit) => addedRiverNodeIds.has(exit.toLocationId))))
+      .some((location) => location.exits.some((exit) =>
+        exit.fromStateId !== 'under' && addedRiverNodeIds.has(exit.toLocationId),
+      )))
       .toBe(false);
 
     const towerMap = projectWorldMap({

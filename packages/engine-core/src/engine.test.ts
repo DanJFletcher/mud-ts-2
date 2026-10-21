@@ -19,7 +19,7 @@ import {
 } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import type { CapabilityToken } from '@mudd/contracts';
-import { TeamCombatInfoProjectionSchema } from '@mudd/contracts';
+import { TeamCombatInfoProjectionSchema, WorldPackDraftSchema } from '@mudd/contracts';
 
 const session = {
   sessionId: 'session-1',
@@ -1082,6 +1082,11 @@ describe('MUDD engine host', () => {
     }));
     expect(legacyProjection).toMatchObject({ locationId: 'glasswater-bridge' });
     expect(legacyProjection?.locationStateId).toBeUndefined();
+
+    const invalidStateWorld = structuredClone(demoWorld);
+    invalidStateWorld.locations.find((location) => location.id === 'glasswater-bridge')!
+      .exits[0]!.fromStateId = 'missing-state';
+    expect(WorldPackDraftSchema.safeParse(invalidStateWorld).success).toBe(false);
 
     await engine.stop();
   });

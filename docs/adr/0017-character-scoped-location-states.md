@@ -31,6 +31,8 @@ Character movement is event-sourced. The character stream currently owns one
   Y, area, or Z and does not create a second map tile.
 - Room presence and chat remain scoped to the underlying location node for this
   slice. State-specific visibility can be added separately if required.
+- NPCs, objects, and interactions remain node-scoped in this slice; this model
+  does not yet hide or disable them by location state.
 - River nodes may connect to a bridge's `under` state, but this does not add a
   land-to-river entrance. Boat-gated entry remains deferred until the game has a
   boat capability.
@@ -74,6 +76,6 @@ Character movement is event-sourced. The character stream currently owns one
 
 ## Follow-up / revisit trigger
 
-Add state-specific occupant/chat visibility only if gameplay requires
-characters in different contexts of one node to be isolated. Add boat-gated
+Add state-specific NPC, object, interaction, occupant, or chat visibility if
+gameplay requires different contexts of one node to be isolated. Add boat-gated
 land-to-river exits when boat access is implemented.

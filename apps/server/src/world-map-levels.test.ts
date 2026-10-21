@@ -94,6 +94,7 @@ describe('current-area and Z-level maps', () => {
       'bell-tower-west',
       'bell-tower',
       'glasswater-west-reach',
+      'glasswater-east-reach',
       'glasswater-willow-reach',
       'glasswater-far-reach',
     ]);
@@ -140,6 +141,7 @@ describe('current-area and Z-level maps', () => {
         'mossgate-clearing',
         'bell-tower',
         'glasswater-west-reach',
+        'glasswater-east-reach',
         'glasswater-willow-reach',
         'glasswater-far-reach',
       ]);
@@ -223,6 +225,7 @@ describe('current-area and Z-level maps', () => {
       'glasswater-approach',
       'tower-ridge',
       'glasswater-west-reach',
+      'glasswater-east-reach',
       'glasswater-willow-reach',
       'glasswater-far-reach',
     ]);
