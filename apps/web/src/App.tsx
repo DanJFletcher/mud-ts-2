@@ -20,7 +20,7 @@ import {
   TextInput,
   type ActivityEntry,
 } from "@mudd/ui";
-import { Compass, Info as InfoIcon, Keyboard, Menu, Moon, Sun, Users, X } from "lucide-react";
+import { ChevronDown, Compass, Info as InfoIcon, Keyboard, Menu, Moon, Sun, Users, X } from "lucide-react";
 import { RoomChatPanel } from "./RoomChatPanel.js";
 import { TerminalPanel } from "./TerminalPanel.js";
 import { WorldMapPanel } from "./WorldMapPanel.js";
@@ -242,6 +242,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileCommandInputOpen, setMobileCommandInputOpen] = useState(false);
   const [terminalExpandRequest, setTerminalExpandRequest] = useState(0);
+  const [terminalCanScrollDown, setTerminalCanScrollDown] = useState(false);
   const [chatFullscreen, setChatFullscreen] = useState(false);
   const [mapFullscreen, setMapFullscreen] = useState(false);
   const contentRef = useRef<HTMLElement>(null);
@@ -290,8 +291,12 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     if (fullscreen) setChatFullscreen(false);
   }, []);
 
-  const addEntry = useCallback((kind: ActivityEntry["kind"], text: string) => {
-    terminalFollowsLatestRef.current = true;
+  const addEntry = useCallback((
+    kind: ActivityEntry["kind"],
+    text: string,
+    preserveScroll = false,
+  ) => {
+    terminalFollowsLatestRef.current = !preserveScroll;
     setEntries((current) => [...current, makeEntry(kind, text)]);
   }, []);
 
@@ -328,10 +333,21 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
 
   useEffect(() => {
     const history = terminalHistoryRef.current;
-    if (screen === "play" && history && terminalFollowsLatestRef.current) {
-      history.scrollTop = history.scrollHeight;
+    if (screen !== "play" || !history) {
+      setTerminalCanScrollDown(false);
+      return;
     }
+    if (terminalFollowsLatestRef.current) history.scrollTop = history.scrollHeight;
+    setTerminalCanScrollDown(history.scrollHeight - history.scrollTop - history.clientHeight > 32);
   }, [entries, screen]);
+
+  const scrollTerminalToLatest = useCallback(() => {
+    const history = terminalHistoryRef.current;
+    if (!history) return;
+    terminalFollowsLatestRef.current = true;
+    history.scrollTop = history.scrollHeight;
+    setTerminalCanScrollDown(false);
+  }, []);
 
   useEffect(() => {
     const navigate = () => {
@@ -440,7 +456,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
           const previous = knownInteractionStatusesRef.current.get(request.requestId);
           if (previous === undefined) {
             if (request.status === "pending" && request.recipientCharacterId === presenceCharacterId) {
-              addEntry("system", `${request.initiatorName} challenges you. Use “accept ${request.requestId}” or “decline ${request.requestId}”.`);
+              addEntry("system", `${request.initiatorName} challenges you. Use “accept ${request.requestId}” or “decline ${request.requestId}”.`, true);
             }
           } else if (previous !== request.status) {
             const message = request.status === "accepted"
@@ -452,14 +468,14 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                   : request.status === "cancelled"
                     ? `The challenge with ${request.recipientName} was cancelled.`
                     : "";
-            if (message && request.initiatorCharacterId === presenceCharacterId) addEntry("system", message);
+            if (message && request.initiatorCharacterId === presenceCharacterId) addEntry("system", message, true);
           }
           knownInteractionStatusesRef.current.set(request.requestId, request.status);
         }
         const encounter = inbox.encounter;
         const pvpUpdateKey = encounter ? `${encounter.encounterId}:${encounter.updatedAt}` : null;
         if (encounter && pvpUpdateKey !== knownPvpUpdateRef.current) {
-          addEntry("narration", encounter.lastNarration);
+          addEntry("narration", encounter.lastNarration, true);
         }
         knownPvpUpdateRef.current = pvpUpdateKey;
         setInteractionInbox(inbox);
@@ -482,7 +498,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     };
   }, [addEntry, presenceCharacterId]);
 
-  const refreshPartyState = useCallback(async () => {
+  const refreshPartyState = useCallback(async (preserveTerminalScroll = false) => {
     if (!presenceCharacterId) return null;
     const previousRevision = knownPartyRevisionRef.current;
     const next = await client.getPartyInfo(presenceCharacterId, previousRevision ?? undefined);
@@ -497,7 +513,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
             : activity.type === "closed"
               ? `${who} closed the party.`
               : `${who} formed a party.`;
-        addEntry("system", message);
+        addEntry("system", message, preserveTerminalScroll);
       }
     }
     knownPartyRevisionRef.current = next.revision;
@@ -552,7 +568,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
       if (!active || document.visibilityState === "hidden" || requestRunning) return;
       requestRunning = true;
       try {
-        await refreshPartyState();
+        await refreshPartyState(true);
       } catch {
         // Party notifications are optional; keep the last known terminal state.
       } finally {
@@ -1955,18 +1971,33 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                         Health {snapshot.character.health.current}/{snapshot.character.health.maximum}
                       </div>
                     )}
-                    <div
-                      className="focused-terminal-history"
-                      ref={terminalHistoryRef}
-                      role="region"
-                      aria-label="Terminal output"
-                      tabIndex={0}
-                      onScroll={(event) => {
-                        const history = event.currentTarget;
-                        terminalFollowsLatestRef.current = history.scrollHeight - history.scrollTop - history.clientHeight < 32;
-                      }}
-                    >
-                      {entries.length > 0 && <ActivityLog entries={entries} label="Terminal transcript" />}
+                    <div className="focused-terminal-history-shell">
+                      <div
+                        className="focused-terminal-history"
+                        ref={terminalHistoryRef}
+                        role="region"
+                        aria-label="Terminal output"
+                        tabIndex={0}
+                        onScroll={(event) => {
+                          const history = event.currentTarget;
+                          const distanceFromLatest = history.scrollHeight - history.scrollTop - history.clientHeight;
+                          terminalFollowsLatestRef.current = distanceFromLatest < 32;
+                          setTerminalCanScrollDown(distanceFromLatest > 32);
+                        }}
+                      >
+                        {entries.length > 0 && <ActivityLog entries={entries} label="Terminal transcript" />}
+                      </div>
+                      {terminalCanScrollDown && (
+                        <button
+                          type="button"
+                          className="focused-terminal-scroll-latest"
+                          onClick={scrollTerminalToLatest}
+                          aria-label="Scroll to latest"
+                        >
+                          <ChevronDown size={14} aria-hidden="true" />
+                          <span>Scroll to latest</span>
+                        </button>
+                      )}
                     </div>
                   {!isAnyCombatActive && !visiblePvp && activeMerchantCatalog ? (
                     <section className="focused-merchant-catalog" aria-label={`${activeMerchantCatalog.merchantName} shop catalog`}>

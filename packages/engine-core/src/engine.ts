@@ -319,7 +319,7 @@ export class EngineHost {
         }
         const delayMs = Math.min(300_000, 1_000 * 2 ** Math.min(effect.attempts - 1, 8));
         await this.store.retryEffect(effect.id, effect.leaseToken, delayMs, message);
-        console.error(`[effect:${effect.id}] Delivery failed; retry scheduled (${errorName}).`);
+        console.error(`[effect:${effect.id}] Delivery failed; retry scheduled (${errorName}).`, error);
       }
     }
     return processed;

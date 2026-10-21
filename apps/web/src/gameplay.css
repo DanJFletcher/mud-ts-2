@@ -324,6 +324,14 @@
   letter-spacing: .05em;
 }
 
+.focused-terminal-history-shell {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  border-bottom: 1px solid var(--terminal-border);
+}
+
 .focused-terminal-history {
   min-height: 0;
   flex: 1 1 auto;
@@ -331,8 +339,35 @@
   overscroll-behavior: contain;
   scrollbar-color: var(--terminal-border) transparent;
   padding: 9px 16px;
-  border-bottom: 1px solid var(--terminal-border);
   outline-offset: -3px;
+}
+
+.focused-terminal-scroll-latest {
+  position: absolute;
+  z-index: 2;
+  right: 14px;
+  bottom: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid var(--terminal-border);
+  border-radius: 999px;
+  color: var(--terminal-text);
+  background: color-mix(in srgb, var(--terminal-surface) 94%, transparent);
+  box-shadow: 0 3px 12px rgb(0 0 0 / 22%);
+  font: 500 .68rem/1 "DM Mono", monospace;
+  cursor: pointer;
+}
+
+.focused-terminal-scroll-latest:hover {
+  border-color: var(--terminal-warm);
+}
+
+.focused-terminal-scroll-latest:focus-visible {
+  outline: 2px solid var(--terminal-warm);
+  outline-offset: 2px;
 }
 
 .focused-terminal-history .mudd-log {
