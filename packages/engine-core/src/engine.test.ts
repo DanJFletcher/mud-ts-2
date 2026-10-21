@@ -953,6 +953,139 @@ describe('MUDD engine host', () => {
     await engine.stop();
   });
 
+  it('keeps bridge states per character and resolves state-specific room exits', async () => {
+    const testWorld = structuredClone(demoWorld);
+    testWorld.locations.unshift({
+      id: 'bridge-state-entry',
+      name: 'Bridge State Test Entry',
+      description: 'A test entrance with two paths to the bridge.',
+      exits: [
+        {
+          id: 'test-entry-to-bridge-on',
+          fromLocationId: 'bridge-state-entry',
+          toLocationId: 'glasswater-bridge',
+          label: 'Onto the bridge',
+          direction: 'north',
+        },
+        {
+          id: 'test-entry-to-bridge-under',
+          fromLocationId: 'bridge-state-entry',
+          toLocationId: 'glasswater-bridge',
+          label: 'Into the river beneath the bridge',
+          direction: 'south',
+          toStateId: 'under',
+        },
+      ],
+    });
+    const { engine, store } = makeEngine(testWorld);
+    await engine.start();
+
+    const onCharacter = await engine.dispatch({
+      type: 'character.create',
+      version: 1,
+      commandId: 'bridge-state-on-create',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      payload: { name: 'On the Bridge' },
+    }, session);
+    const underCharacter = await engine.dispatch({
+      type: 'character.create',
+      version: 1,
+      commandId: 'bridge-state-under-create',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      payload: { name: 'Under the Bridge' },
+    }, session);
+    const onCharacterId = onCharacter.streamId!;
+    const underCharacterId = underCharacter.streamId!;
+
+    const movedOn = await engine.dispatch({
+      type: 'character.move',
+      version: 1,
+      commandId: 'bridge-state-enter-on',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: onCharacterId,
+      expectedVersion: 1,
+      payload: { exitId: 'test-entry-to-bridge-on' },
+    }, session);
+    const movedUnder = await engine.dispatch({
+      type: 'character.move',
+      version: 1,
+      commandId: 'bridge-state-enter-under',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: underCharacterId,
+      expectedVersion: 1,
+      payload: { exitId: 'test-entry-to-bridge-under' },
+    }, session);
+    expect(movedOn.receipt).toMatchObject({ ok: true });
+    expect(movedUnder.receipt).toMatchObject({ ok: true });
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, onCharacterId)))
+      .toMatchObject({ locationId: 'glasswater-bridge', locationStateId: 'on' });
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, underCharacterId)))
+      .toMatchObject({ locationId: 'glasswater-bridge', locationStateId: 'under' });
+
+    const onRoom = await engine.query({
+      type: 'location.describe',
+      version: 1,
+      queryId: 'bridge-state-on-room',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: onCharacterId,
+      payload: {},
+    }, session);
+    const underRoom = await engine.query({
+      type: 'location.describe',
+      version: 1,
+      queryId: 'bridge-state-under-room',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: underCharacterId,
+      payload: {},
+    }, session);
+    expect(onRoom).toMatchObject({
+      ok: true,
+      value: {
+        locationStateId: 'on',
+        title: 'Glasswater Bridge',
+        exits: expect.arrayContaining([
+          expect.objectContaining({ id: 'bridge-to-tower-ridge' }),
+        ]),
+      },
+    });
+    expect(underRoom).toMatchObject({
+      ok: true,
+      value: {
+        locationStateId: 'under',
+        title: 'Under Glasswater Bridge',
+        description: expect.stringContaining('current passes beneath the stone arches'),
+        exits: expect.arrayContaining([
+          expect.objectContaining({ id: 'bridge-under-to-west-reach' }),
+          expect.objectContaining({ id: 'bridge-under-to-east-reach' }),
+        ]),
+      },
+    });
+
+    const invalidUnderExit = await engine.dispatch({
+      type: 'character.move',
+      version: 1,
+      commandId: 'bridge-state-reject-on-exit',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: underCharacterId,
+      expectedVersion: 2,
+      payload: { exitId: 'bridge-to-tower-ridge' },
+    }, session);
+    expect(invalidUnderExit.receipt).toMatchObject({ ok: false, code: 'RULE_VIOLATION' });
+
+    const legacyHistory = await store.readStream(DEMO_WORLD_INSTANCE_ID, underCharacterId);
+    const legacyProjection = replayCharacter(legacyHistory.map((event) => {
+      if (event.type !== 'character.moved') return event;
+      const payload = { ...event.payload };
+      delete payload.fromStateId;
+      delete payload.toStateId;
+      return { ...event, payload };
+    }));
+    expect(legacyProjection).toMatchObject({ locationId: 'glasswater-bridge' });
+    expect(legacyProjection?.locationStateId).toBeUndefined();
+
+    await engine.stop();
+  });
+
   it('requires the western approach, tower floor, and upward travel before striking the bell', async () => {
     const testWorld = structuredClone(demoWorld);
     testWorld.locations.find((location) => location.id === 'glasswater-bridge')!.exits.push({

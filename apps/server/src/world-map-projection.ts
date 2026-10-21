@@ -16,6 +16,7 @@ export function projectWorldMap(character: CharacterProjection, world: WorldPack
   );
   const locations = visibleLocations.map((location, index) => {
     const verticalExits = [...new Set(location.exits
+      .filter((exit) => exit.toLocationId !== location.id)
       .map((exit) => exit.direction)
       .filter((direction): direction is 'up' | 'down' => direction === 'up' || direction === 'down'))];
     return {
@@ -30,6 +31,7 @@ export function projectWorldMap(character: CharacterProjection, world: WorldPack
   const visibleLocationIds = new Set(locations.map((location) => location.id));
   const seenPaths = new Set<string>();
   const connections = visibleLocations.flatMap((location) => location.exits.flatMap((exit) => {
+    if (exit.toLocationId === location.id) return [];
     if (!visibleLocationIds.has(exit.toLocationId)) return [];
     const pathKey = [exit.fromLocationId, exit.toLocationId].sort().join(':');
     if (seenPaths.has(pathKey)) return [];

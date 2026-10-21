@@ -108,6 +108,7 @@ export const CharacterCreatedEventSchema = DomainEventBaseSchema.extend({
     playerId: IdSchema,
     name: NonEmptyNameSchema,
     startingLocationId: IdSchema,
+    startingStateId: IdSchema.optional(),
     wallet: CharacterWalletSchema.optional(),
   }).strict(),
 }).strict();
@@ -272,6 +273,7 @@ export const CharacterProjectionSchema = z.object({
   characterId: IdSchema,
   name: NonEmptyNameSchema,
   locationId: IdSchema,
+  locationStateId: IdSchema.optional(),
   visitedLocationIds: z.array(IdSchema).default([]),
   revision: NonNegativeIntSchema,
   inventory: z.array(InventoryItemProjectionSchema).default([]),

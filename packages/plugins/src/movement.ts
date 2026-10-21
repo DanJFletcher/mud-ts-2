@@ -8,6 +8,7 @@ import type { CharacterProjection } from '@mudd/contracts';
 import type { EngineCommandContext, ProposedEventEffect } from '@mudd/engine-core';
 import { RuleViolationError } from '@mudd/engine-core';
 import { assertCharacterAlive, characterStateCapability } from './character.js';
+import { exitsForLocationState, resolveLocationState } from './location-state.js';
 
 interface CharacterStateCapability {
   load(context: EngineCommandContext, characterId: string): Promise<CharacterProjection | undefined>;
@@ -44,14 +45,19 @@ export function createMovementPlan(
     throw new RuleViolationError('You cannot leave while combat is active. Flee first.');
   }
   const location = world.locations.find((candidate) => candidate.id === character.locationId);
-  const exit = location?.exits.find((candidate) => candidate.id === exitId);
+  if (!location) throw new RuleViolationError('Your current location is not available.');
+  const currentState = resolveLocationState(location, character.locationStateId);
+  const exit = exitsForLocationState(location, currentState?.id)
+    .find((candidate) => candidate.id === exitId);
   if (!exit) throw new RuleViolationError('That exit is not available from your current location.');
   if (exit.roadId && !allowRoad) {
     throw new RuleViolationError('That exit is part of a road. Travel one road segment at a time.');
   }
   const destination = world.locations.find((candidate) => candidate.id === exit.toLocationId);
+  if (!destination) throw new RuleViolationError('That destination is not available.');
+  const destinationState = resolveLocationState(destination, exit.toStateId);
   if (
-    destination?.requiredVisitedLocationId &&
+    destination.requiredVisitedLocationId &&
     !character.visitedLocationIds.includes(destination.requiredVisitedLocationId)
   ) {
     const requiredLocation = world.locations.find((candidate) =>
@@ -73,13 +79,15 @@ export function createMovementPlan(
     characterId: character.characterId,
     fromLocationId: character.locationId,
     toLocationId: exit.toLocationId,
+    fromStateId: currentState?.id ?? null,
+    toStateId: destinationState?.id ?? null,
     exitId: exit.id,
   };
   CharacterMovedEventSchema.shape.payload.parse(payload);
   return {
     exit,
     events: [{ type: 'character.moved', version: 1, payload }],
-    effects: [{
+    effects: exit.toLocationId === character.locationId ? [] : [{
       type: 'world.location.entered',
       version: 1,
       payload: {

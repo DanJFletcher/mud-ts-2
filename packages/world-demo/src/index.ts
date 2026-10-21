@@ -306,6 +306,15 @@ const draft = {
       id: 'glasswater-bridge',
       name: 'Glasswater Bridge',
       mapPosition: { x: 0, y: 2 },
+      defaultStateId: 'on',
+      states: [
+        { id: 'on' },
+        {
+          id: 'under',
+          name: 'Under Glasswater Bridge',
+          description: 'The Glasswater current passes beneath the stone arches. The bridge deck rumbles overhead as the river runs east and west.',
+        },
+      ],
       description:
         'A low stone bridge crosses clear water. Reeds stir below it. The road leads south toward Mossgate Clearing, east to Tower Ridge, and north toward Reedbank Stalls.',
       takeables: [
@@ -456,9 +465,11 @@ const draft = {
         },
       ],
       exits: [
-        { id: 'bridge-to-glasswater-road', fromLocationId: 'glasswater-bridge', toLocationId: 'glasswater-approach', label: 'South along Glasswater Road', direction: 'south', roadId: 'glasswater-road' },
-        { id: 'bridge-to-tower-ridge', fromLocationId: 'glasswater-bridge', toLocationId: 'tower-ridge', label: 'East along Tower Ridge Road', direction: 'east', roadId: 'tower-ridge-road' },
-        { id: 'bridge-to-reedbank-road', fromLocationId: 'glasswater-bridge', toLocationId: 'reedbank-road', label: 'North along Reedbank Road', direction: 'north', roadId: 'reedbank-road' },
+        { id: 'bridge-to-glasswater-road', fromLocationId: 'glasswater-bridge', toLocationId: 'glasswater-approach', label: 'South along Glasswater Road', direction: 'south', fromStateId: 'on', roadId: 'glasswater-road' },
+        { id: 'bridge-to-tower-ridge', fromLocationId: 'glasswater-bridge', toLocationId: 'tower-ridge', label: 'East along Tower Ridge Road', direction: 'east', fromStateId: 'on', roadId: 'tower-ridge-road' },
+        { id: 'bridge-to-reedbank-road', fromLocationId: 'glasswater-bridge', toLocationId: 'reedbank-road', label: 'North along Reedbank Road', direction: 'north', fromStateId: 'on', roadId: 'reedbank-road' },
+        { id: 'bridge-under-to-west-reach', fromLocationId: 'glasswater-bridge', toLocationId: 'glasswater-west-reach', label: 'West along Glasswater River', direction: 'west', fromStateId: 'under' },
+        { id: 'bridge-under-to-east-reach', fromLocationId: 'glasswater-bridge', toLocationId: 'glasswater-east-reach', label: 'East along Glasswater River', direction: 'east', fromStateId: 'under' },
       ],
     },
     {
@@ -766,7 +777,17 @@ const draft = {
       mapPosition: { x: -1, y: 2, terrain: 'river', visibleWhenUnvisited: true },
       description: 'The river current runs west from beneath Glasswater Bridge.',
       exits: [
+        { id: 'glasswater-west-reach-to-bridge-under', fromLocationId: 'glasswater-west-reach', toLocationId: 'glasswater-bridge', label: 'East beneath Glasswater Bridge', direction: 'east', toStateId: 'under' },
         { id: 'glasswater-west-reach-to-willow-reach', fromLocationId: 'glasswater-west-reach', toLocationId: 'glasswater-willow-reach', label: 'West along Glasswater River', direction: 'west' },
+      ],
+    },
+    {
+      id: 'glasswater-east-reach',
+      name: 'Glasswater East Reach',
+      mapPosition: { x: 1, y: 2, terrain: 'river', visibleWhenUnvisited: true },
+      description: 'The Glasswater current emerges from beneath the bridge and continues east.',
+      exits: [
+        { id: 'glasswater-east-reach-to-bridge-under', fromLocationId: 'glasswater-east-reach', toLocationId: 'glasswater-bridge', label: 'West beneath Glasswater Bridge', direction: 'west', toStateId: 'under' },
       ],
     },
     {

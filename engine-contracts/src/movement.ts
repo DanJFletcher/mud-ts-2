@@ -25,6 +25,9 @@ export const CharacterMovedEventSchema = DomainEventBaseSchema.extend({
     characterId: IdSchema,
     fromLocationId: IdSchema,
     toLocationId: IdSchema,
+    /** Missing on legacy events; null explicitly means no active state. */
+    fromStateId: IdSchema.nullable().optional(),
+    toStateId: IdSchema.nullable().optional(),
     exitId: IdSchema,
     movementCost: z.number().nonnegative().optional(),
     roadTravel: z.object({

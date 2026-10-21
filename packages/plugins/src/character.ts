@@ -38,6 +38,7 @@ import {
   worldItemsStreamId,
   type WorldItemsStateCapability,
 } from './world-items.js';
+import { exitsForLocationState, resolveLocationState } from './location-state.js';
 
 export interface CharacterStateCapability {
   load(context: EngineCommandContext | QueryContext, characterId: string): Promise<CharacterProjection | undefined>;
@@ -84,14 +85,15 @@ export const characterPlugin: EnginePlugin = {
     registerCommand('character.create', CreateCharacterCommandSchema, async (command, context) => {
       const name = command.payload.name.trim();
       if (!name || name.length > 48) throw new RuleViolationError('Choose a character name between 1 and 48 characters.');
-      const startingLocationId = context.world.locations[0]?.id;
-      if (!startingLocationId) throw new Error('This world has no starting location.');
+      const startingLocation = context.world.locations[0];
+      if (!startingLocation) throw new Error('This world has no starting location.');
       const characterId = context.makeId();
       const payload = {
         characterId,
         playerId: context.session.playerId,
         name,
-        startingLocationId,
+        startingLocationId: startingLocation.id,
+        ...(startingLocation.defaultStateId ? { startingStateId: startingLocation.defaultStateId } : {}),
         ...(context.world.currency
           ? {
             wallet: {
@@ -390,6 +392,8 @@ export const characterPlugin: EnginePlugin = {
       }
       const location = context.world.locations.find((item) => item.id === character.locationId);
       if (!location) throw new Error('The character location is not present in this world version.');
+      const locationState = resolveLocationState(location, character.locationStateId);
+      const availableExits = exitsForLocationState(location, locationState?.id);
       const sharedItems = (await worldItems.load(context)).items
         .filter((item) => item.locationId === character.locationId);
       const trackedItemIds = new Set(character.itemLocations.map((entry) => entry.item.id));
@@ -422,16 +426,17 @@ export const characterPlugin: EnginePlugin = {
       return LocationProjectionSchema.parse({
         worldInstanceId: context.worldInstanceId,
         locationId: location.id,
+        ...(locationState ? { locationStateId: locationState.id } : {}),
         revision: character.revision,
-        title: location.name,
+        title: locationState?.name ?? location.name,
         description: [
-          location.description,
+          locationState?.description ?? location.description,
           ...roomItemDescriptions,
           ...sharedItemDescriptions,
           ...interactableRoomDescriptions,
           ...roomNpcDescriptions,
         ].join('\n\n'),
-        exits: location.exits.map((exit) => ({
+        exits: availableExits.map((exit) => ({
           id: exit.id,
           label: exit.label,
           direction: exit.direction,

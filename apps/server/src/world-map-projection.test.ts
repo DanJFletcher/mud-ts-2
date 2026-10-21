@@ -18,6 +18,7 @@ import {
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import { MuddHttpClient } from '@mudd/client-sdk';
 import { projectWorldMap } from './world-map-projection.js';
+import { CharacterProjectionSchema } from '@mudd/contracts';
 
 const session = {
   sessionId: 'world-map-session',
@@ -64,6 +65,41 @@ async function moveAlongRoad(
 }
 
 describe('visited world map projection', () => {
+  it('keeps on and under states on one map node and the same Z level', () => {
+    const character = {
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: 'bridge-map-state-character',
+      name: 'Map State',
+      locationId: 'glasswater-bridge',
+      visitedLocationIds: ['glasswater-bridge'],
+      revision: 1,
+    };
+    const onMap = projectWorldMap(CharacterProjectionSchema.parse({
+      ...character,
+      locationStateId: 'on',
+    }));
+    const underMap = projectWorldMap(CharacterProjectionSchema.parse({
+      ...character,
+      locationStateId: 'under',
+    }));
+
+    expect(underMap).toEqual(onMap);
+    expect(onMap.currentLocationId).toBe('glasswater-bridge');
+    expect(onMap.locations.filter((location) => location.id === 'glasswater-bridge')).toHaveLength(1);
+    expect(onMap.locations.find((location) => location.id === 'glasswater-bridge'))
+      .toMatchObject({ x: 0, y: 2 });
+    expect(onMap.connections.some((connection) =>
+      new Set([connection.fromLocationId, connection.toLocationId]).has('glasswater-west-reach') &&
+      new Set([connection.fromLocationId, connection.toLocationId]).has('glasswater-bridge') &&
+      connection.oneWay === false,
+    )).toBe(true);
+    expect(onMap.connections.some((connection) =>
+      new Set([connection.fromLocationId, connection.toLocationId]).has('glasswater-bridge') &&
+      new Set([connection.fromLocationId, connection.toLocationId]).has('glasswater-east-reach') &&
+      connection.oneWay === false,
+    )).toBe(true);
+  });
+
   it('uses only the game’s four compass and two vertical travel directions', () => {
     const supportedDirections = new Set(['north', 'east', 'south', 'west', 'up', 'down']);
     const unsupportedExits = demoWorld.locations.flatMap((location) =>
@@ -132,7 +168,7 @@ describe('visited world map projection', () => {
       location.id.endsWith('-reach') && location.mapPosition?.terrain === 'river',
     );
     const addedRiverNodeIds = new Set(addedRiverNodes.map(({ id }) => id));
-    expect(addedRiverNodes).toHaveLength(3);
+    expect(addedRiverNodes).toHaveLength(4);
     expect(initialSnapshot.map?.locations.map(({ id }) => id))
       .toEqual(expect.arrayContaining([...addedRiverNodeIds]));
     expect(initialSnapshot.map?.locations.filter(({ id }) => addedRiverNodeIds.has(id)))

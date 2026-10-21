@@ -17,8 +17,18 @@ export const ExitDefinitionSchema = z.object({
   toLocationId: IdSchema,
   label: z.string().min(1).max(120),
   direction: z.string().max(40).optional(),
+  /** Restrict this exit to one authored state of its source location. */
+  fromStateId: IdSchema.optional(),
+  /** Select a state at the destination; omitted means its default state. */
+  toStateId: IdSchema.optional(),
   requiredInteractionId: IdSchema.optional(),
   roadId: IdSchema.optional(),
+}).strict();
+
+export const LocationStateDefinitionSchema = z.object({
+  id: IdSchema,
+  name: z.string().min(1).max(160).optional(),
+  description: z.string().min(1).max(1000).optional(),
 }).strict();
 
 export const RoadEncounterDefinitionSchema = z.object({
@@ -197,6 +207,9 @@ export const LocationDefinitionSchema = z.object({
   /** Independent dungeon/overworld map namespace; omitted means overworld. */
   mapAreaId: IdSchema.optional(),
   mapPosition: MapPositionSchema.optional(),
+  /** Per-character context within this map node; it never changes map coordinates. */
+  defaultStateId: IdSchema.optional(),
+  states: z.array(LocationStateDefinitionSchema).min(1).max(16).optional(),
   /** This location cannot be entered until the character has visited the named location. */
   requiredVisitedLocationId: IdSchema.optional(),
   exits: z.array(ExitDefinitionSchema),
@@ -295,7 +308,58 @@ export const WorldPackDraftSchema = z.object({
     }
   }
   for (const [locationIndex, location] of world.locations.entries()) {
+    const stateIds = new Set((location.states ?? []).map((state) => state.id));
+    if (stateIds.size !== (location.states ?? []).length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['locations', locationIndex, 'states'],
+        message: `Location ${location.id} has duplicate state IDs.`,
+      });
+    }
+    if ((location.states?.length ?? 0) > 0 && !location.defaultStateId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['locations', locationIndex, 'defaultStateId'],
+        message: `Location ${location.id} must choose a default state.`,
+      });
+    }
+    if (location.defaultStateId && !stateIds.has(location.defaultStateId)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['locations', locationIndex, 'defaultStateId'],
+        message: `Location ${location.id} defaults to an unknown state.`,
+      });
+    }
     for (const [exitIndex, exit] of location.exits.entries()) {
+      if (exit.fromLocationId !== location.id) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['locations', locationIndex, 'exits', exitIndex, 'fromLocationId'],
+          message: `Exit ${exit.id} must start at its containing location.`,
+        });
+      }
+      const destination = world.locations.find((candidate) => candidate.id === exit.toLocationId);
+      if (!destination) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['locations', locationIndex, 'exits', exitIndex, 'toLocationId'],
+          message: `Exit ${exit.id} references missing location ${exit.toLocationId}.`,
+        });
+      }
+      if (exit.fromStateId && !stateIds.has(exit.fromStateId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['locations', locationIndex, 'exits', exitIndex, 'fromStateId'],
+          message: `Exit ${exit.id} references missing source state ${exit.fromStateId}.`,
+        });
+      }
+      if (exit.toStateId && !destination?.states?.some((state) => state.id === exit.toStateId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['locations', locationIndex, 'exits', exitIndex, 'toStateId'],
+          message: `Exit ${exit.id} references missing destination state ${exit.toStateId}.`,
+        });
+      }
       if (!exit.roadId) continue;
       const road = world.roads.find(({ id }) => id === exit.roadId);
       const fromIndex = road?.locationIds.indexOf(exit.fromLocationId) ?? -1;
@@ -394,6 +458,7 @@ export const RoomPresenceProjectionSchema = z.object({
 export const LocationProjectionSchema = z.object({
   worldInstanceId: IdSchema,
   locationId: IdSchema,
+  locationStateId: IdSchema.optional(),
   revision: NonNegativeIntSchema,
   cursor: z.string().optional(),
   title: z.string(),

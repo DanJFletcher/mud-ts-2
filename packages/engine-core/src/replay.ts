@@ -46,6 +46,7 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         characterId: created.payload.characterId,
         name: created.payload.name,
         locationId: created.payload.startingLocationId,
+        ...(created.payload.startingStateId ? { locationStateId: created.payload.startingStateId } : {}),
         visitedLocationIds: [created.payload.startingLocationId],
         revision: event.aggregateVersion,
         ...(created.payload.wallet ? { wallet: created.payload.wallet } : {}),
@@ -374,6 +375,7 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
       state = CharacterProjectionSchema.parse({
         ...state,
         locationId: respawnLocationId,
+        locationStateId: undefined,
         visitedLocationIds: state.visitedLocationIds.includes(respawnLocationId)
           ? state.visitedLocationIds
           : [...state.visitedLocationIds, respawnLocationId],
@@ -429,12 +431,23 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
     } else if (event.type === 'character.moved') {
       if (!state) throw new Error('Movement event encountered before character creation.');
       const moved = CharacterMovedEventSchema.parse(publicEvent);
-      if (moved.payload.characterId !== state.characterId || moved.payload.fromLocationId !== state.locationId) {
+      if (
+        moved.payload.characterId !== state.characterId ||
+        moved.payload.fromLocationId !== state.locationId ||
+        (
+          moved.payload.fromStateId !== undefined &&
+          state.locationStateId !== undefined &&
+          moved.payload.fromStateId !== state.locationStateId
+        )
+      ) {
         throw new Error(`Invalid movement event at revision ${event.aggregateVersion}.`);
       }
       state = CharacterProjectionSchema.parse({
         ...state,
         locationId: moved.payload.toLocationId,
+        ...(moved.payload.toStateId !== undefined
+          ? { locationStateId: moved.payload.toStateId ?? undefined }
+          : {}),
         visitedLocationIds: state.visitedLocationIds.includes(moved.payload.toLocationId)
           ? state.visitedLocationIds
           : [...state.visitedLocationIds, moved.payload.toLocationId],
