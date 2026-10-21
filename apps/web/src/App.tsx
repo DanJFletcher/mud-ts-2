@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -18,7 +19,7 @@ import {
   TextInput,
   type ActivityEntry,
 } from "@mudd/ui";
-import { Compass, Menu, Moon, NotebookText, Sun, UserRound, Users, X } from "lucide-react";
+import { Compass, Keyboard, Menu, Moon, NotebookText, Sun, UserRound, Users, X } from "lucide-react";
 import { RoomChatPanel } from "./RoomChatPanel.js";
 import { TerminalPanel } from "./TerminalPanel.js";
 import { WorldMapPanel } from "./WorldMapPanel.js";
@@ -229,6 +230,8 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   );
   const [screen, setScreen] = useState<Screen>(currentScreen);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [mobileCommandInputOpen, setMobileCommandInputOpen] = useState(false);
+  const [terminalExpandRequest, setTerminalExpandRequest] = useState(0);
   const [chatFullscreen, setChatFullscreen] = useState(false);
   const [mapFullscreen, setMapFullscreen] = useState(false);
   const contentRef = useRef<HTMLElement>(null);
@@ -245,6 +248,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
 
   useEffect(() => {
     setMenuOpen(false);
+    setMobileCommandInputOpen(false);
   }, [screen]);
 
   useEffect(() => {
@@ -1648,7 +1652,15 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
       participant.characterId === snapshot?.character?.characterId)
     ? interactionInbox.encounter
     : undefined;
+  const hasVisiblePvp = Boolean(visiblePvp);
   const isPvpTurn = visiblePvp?.turnCharacterId === snapshot?.character?.characterId;
+  useLayoutEffect(() => {
+    if (!mobileCommandInputOpen) return;
+    document.getElementById("focused-world-command")?.focus({ preventScroll: true });
+  }, [mobileCommandInputOpen]);
+  useEffect(() => {
+    if (isAnyCombatActive || hasVisiblePvp) setMobileCommandInputOpen(false);
+  }, [isAnyCombatActive, hasVisiblePvp]);
   useEffect(() => {
     setCombatUseMenuOpen(false);
   }, [visibleCombat?.encounterId, visibleCombat?.status, visibleTeamCombat?.encounterId, visibleTeamCombat?.status]);
@@ -1880,7 +1892,11 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
               </Panel>
             ) : snapshot?.location ? (
               <>
-                <TerminalPanel title={snapshot.location.title} busy={pending !== null}>
+                <TerminalPanel
+                  title={snapshot.location.title}
+                  busy={pending !== null}
+                  expandRequest={terminalExpandRequest}
+                >
                     <div className="focused-room-presence" role="group" aria-label="Players in this room">
                       <Users size={14} aria-hidden="true" />
                       <span>
@@ -2569,7 +2585,10 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                       ) : null}
                     </div>
                   </section>}
-                  {!isAnyCombatActive && !visiblePvp && <section className="focused-command" aria-label="Text command">
+                  {!isAnyCombatActive && !visiblePvp && <section
+                    className={`focused-command ${mobileCommandInputOpen ? "focused-command--mobile-open" : "focused-command--mobile-hidden"}`}
+                    aria-label="Text command"
+                  >
                     <form className="focused-command-form" onSubmit={submitCommand}>
                       <TextInput
                         id="focused-world-command"
@@ -2579,6 +2598,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                         onChange={(event) => setCommand(event.target.value)}
                         disabled={pending !== null}
                         autoComplete="off"
+                        enterKeyHint="send"
                         spellCheck={false}
                       />
                       <Button type="submit" variant="secondary" disabled={!command.trim() || pending !== null}>
@@ -2805,10 +2825,32 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
       </section>
 
       {!isGameOver && (
-        <nav className="focused-bottom-nav" aria-label="Game screens">
+        <nav
+          className={`focused-bottom-nav${screen === "play" && snapshot?.location && !isAnyCombatActive && !visiblePvp ? " focused-bottom-nav--with-type" : ""}`}
+          aria-label="Game screens"
+        >
           <a href="#/play" className="focused-tab" aria-current={screen === "play" ? "page" : undefined} onClick={() => setMenuOpen(false)}><Compass aria-hidden="true" /><span>Play</span></a>
           <a href="#/traveler" className="focused-tab" aria-current={screen === "traveler" ? "page" : undefined} onClick={() => setMenuOpen(false)}><UserRound aria-hidden="true" /><span>Traveler</span></a>
           <a href="#/notes" className="focused-tab" aria-current={screen === "notes" ? "page" : undefined} onClick={() => setMenuOpen(false)}><NotebookText aria-hidden="true" /><span>Field notes</span></a>
+          {screen === "play" && snapshot?.location && !isAnyCombatActive && !visiblePvp && (
+            <button
+              className="focused-tab focused-type-tab"
+              type="button"
+              aria-pressed={mobileCommandInputOpen}
+              onClick={() => {
+                if (mobileCommandInputOpen) {
+                  document.getElementById("focused-world-command")?.blur();
+                  setMobileCommandInputOpen(false);
+                  return;
+                }
+                setTerminalExpandRequest((request) => request + 1);
+                setMenuOpen(false);
+                setMobileCommandInputOpen(true);
+              }}
+            >
+              <Keyboard aria-hidden="true" /><span>Type</span>
+            </button>
+          )}
           <div className="focused-nav-menu" ref={navMenuRef}>
             <button
               ref={navMenuTriggerRef}

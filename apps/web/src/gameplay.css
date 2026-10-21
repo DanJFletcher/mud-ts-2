@@ -373,6 +373,7 @@
   border-radius: 0;
   background: var(--terminal-inset);
 }
+.focused-command--mobile-open { display: block; }
 
 .focused-terminal .focused-quick-commands {
   display: flex;
@@ -1687,8 +1688,10 @@
   -webkit-tap-highlight-color: transparent;
 }
 .focused-tab svg { width: 19px; height: 19px; }
-.focused-tab[aria-current="page"] { color: var(--mudd-accent-strong); background: color-mix(in srgb, var(--mudd-accent) 10%, transparent); }
+.focused-tab[aria-current="page"],
+.focused-tab[aria-pressed="true"] { color: var(--mudd-accent-strong); background: color-mix(in srgb, var(--mudd-accent) 10%, transparent); }
 .focused-tab:focus-visible { outline: 3px solid var(--mudd-warm); outline-offset: -2px; }
+.focused-type-tab { display: none; }
 .focused-nav-menu { position: relative; display: grid; min-width: 0; }
 .focused-nav-menu__trigger { width: 100%; appearance: none; }
 .focused-nav-menu__trigger[aria-expanded="true"] { color: var(--mudd-accent-strong); background: color-mix(in srgb, var(--mudd-accent) 10%, transparent); }
@@ -1738,6 +1741,14 @@
 .focused-nav-menu__action svg { flex: 0 0 auto; }
 .focused-content:focus { outline: none; }
 
+@media (max-width: 699px) {
+  .focused-bottom-nav--with-type { grid-template-columns: repeat(5, 1fr); }
+  .focused-type-tab { display: grid; }
+  .focused-command--mobile-hidden { display: none; }
+  .focused-command-form { grid-template-columns: minmax(0, 1fr); }
+  .focused-command-form > .mudd-button { display: none; }
+}
+
 .focused-loading { min-height: 300px; display: grid; align-content: center; gap: 13px; padding: 20px; }
 .focused-loading .skeleton-line { background: color-mix(in srgb, var(--mudd-border) 78%, transparent); }
 .focused-loading .skeleton-title { width: 67%; height: 32px; }
@@ -1768,6 +1779,7 @@
     background: var(--mudd-surface);
   }
   .focused-tab { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 8px; min-height: 44px; font-size: .72rem; }
+  .focused-type-tab { display: none; }
 }
 
 @media (max-width: 360px) {

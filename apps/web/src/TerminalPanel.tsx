@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode, type TouchEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type TouchEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, ChevronUp, Maximize2, X } from 'lucide-react';
 import { DisclosureButton, Panel } from '@mudd/ui';
@@ -8,17 +8,25 @@ type TerminalPanelProps = Readonly<{
   title: string;
   busy: boolean;
   children: ReactNode;
+  expandRequest?: number;
 }>;
 
-export function TerminalPanel({ title, busy, children }: TerminalPanelProps) {
+export function TerminalPanel({ title, busy, children, expandRequest = 0 }: TerminalPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [fullscreenPresent, setFullscreenPresent] = useState(false);
   const [fullscreenClosing, setFullscreenClosing] = useState(false);
   const openButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const lastExpandRequestRef = useRef(expandRequest);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const wasFullscreenRef = useRef(false);
+
+  useLayoutEffect(() => {
+    if (expandRequest === lastExpandRequestRef.current) return;
+    lastExpandRequestRef.current = expandRequest;
+    setCollapsed(false);
+  }, [expandRequest]);
 
   useEffect(() => {
     if (fullscreen) {

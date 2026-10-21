@@ -964,6 +964,28 @@ describe('single-character world session client', () => {
     expect(menuTrigger).toHaveFocus();
   });
 
+  it('opens the mobile command input from Type, expands the terminal, and focuses the input', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    const commandSection = document.querySelector('.focused-command');
+    const typeButton = document.querySelector<HTMLButtonElement>('.focused-type-tab');
+    expect(commandSection).toHaveClass('focused-command--mobile-hidden');
+    expect(typeButton).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse terminal' }));
+    fireEvent.click(typeButton!);
+
+    expect(commandSection).toHaveClass('focused-command--mobile-open');
+    expect(screen.getByRole('button', { name: 'Collapse terminal' })).toBeVisible();
+    const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
+    expect(commandInput).toHaveFocus();
+
+    fireEvent.click(typeButton!);
+    expect(commandSection).toHaveClass('focused-command--mobile-hidden');
+    expect(commandInput).not.toHaveFocus();
+  });
+
   it('shows active and completed quest objectives on Field notes', async () => {
     questJournal = [
       {
