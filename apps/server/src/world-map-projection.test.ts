@@ -134,7 +134,7 @@ describe('visited world map projection', () => {
     const addedRiverNodeIds = new Set(addedRiverNodes.map(({ id }) => id));
     expect(addedRiverNodes).toHaveLength(3);
     expect(initialSnapshot.map?.locations.map(({ id }) => id))
-      .toEqual(expect.arrayContaining(['glasswater-bridge', ...addedRiverNodeIds]));
+      .toEqual(expect.arrayContaining([...addedRiverNodeIds]));
     expect(initialSnapshot.map?.locations.filter(({ id }) => addedRiverNodeIds.has(id)))
       .toEqual(expect.arrayContaining(addedRiverNodes.map(({ id, name, mapPosition }) => ({
         id,
@@ -144,13 +144,25 @@ describe('visited world map projection', () => {
         terrain: 'river',
       }))));
     expect(character.visitedLocationIds.some((id) => addedRiverNodeIds.has(id))).toBe(false);
-    expect(initialSnapshot.map?.connections.some(({ fromLocationId, toLocationId }) =>
-      addedRiverNodeIds.has(fromLocationId) || addedRiverNodeIds.has(toLocationId),
-    )).toBe(false);
-    expect(addedRiverNodes.every(({ exits }) => exits.length === 0)).toBe(true);
-    expect(demoWorld.locations.some((location) =>
-      location.exits.some((exit) => addedRiverNodeIds.has(exit.toLocationId)),
-    )).toBe(false);
+    expect(initialSnapshot.map?.connections).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        fromLocationId: 'glasswater-west-reach',
+        toLocationId: 'glasswater-willow-reach',
+        direction: 'west',
+        oneWay: false,
+      }),
+      expect.objectContaining({
+        fromLocationId: 'glasswater-willow-reach',
+        toLocationId: 'glasswater-far-reach',
+        direction: 'west',
+        oneWay: false,
+      }),
+    ]));
+    expect(addedRiverNodes.every(({ exits }) => exits.length > 0)).toBe(true);
+    expect(demoWorld.locations
+      .filter((location) => location.mapPosition?.terrain !== 'river')
+      .some((location) => location.exits.some((exit) => addedRiverNodeIds.has(exit.toLocationId))))
+      .toBe(false);
 
     const towerMap = projectWorldMap({
       ...character,

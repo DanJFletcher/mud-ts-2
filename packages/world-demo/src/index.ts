@@ -305,7 +305,7 @@ const draft = {
     {
       id: 'glasswater-bridge',
       name: 'Glasswater Bridge',
-      mapPosition: { x: 0, y: 2, terrain: 'river', visibleWhenUnvisited: true },
+      mapPosition: { x: 0, y: 2 },
       description:
         'A low stone bridge crosses clear water. Reeds stir below it. The road leads south toward Mossgate Clearing, east to Tower Ridge, and north toward Reedbank Stalls.',
       takeables: [
@@ -765,21 +765,28 @@ const draft = {
       name: 'Glasswater West Reach',
       mapPosition: { x: -1, y: 2, terrain: 'river', visibleWhenUnvisited: true },
       description: 'The river current runs west from beneath Glasswater Bridge.',
-      exits: [],
+      exits: [
+        { id: 'glasswater-west-reach-to-willow-reach', fromLocationId: 'glasswater-west-reach', toLocationId: 'glasswater-willow-reach', label: 'West along Glasswater River', direction: 'west' },
+      ],
     },
     {
       id: 'glasswater-willow-reach',
       name: 'Glasswater Willow Reach',
       mapPosition: { x: -2, y: 2, terrain: 'river', visibleWhenUnvisited: true },
       description: 'Clear water slips past the willow roots along the western bank.',
-      exits: [],
+      exits: [
+        { id: 'glasswater-willow-reach-to-west-reach', fromLocationId: 'glasswater-willow-reach', toLocationId: 'glasswater-west-reach', label: 'East along Glasswater River', direction: 'east' },
+        { id: 'glasswater-willow-reach-to-far-reach', fromLocationId: 'glasswater-willow-reach', toLocationId: 'glasswater-far-reach', label: 'West along Glasswater River', direction: 'west' },
+      ],
     },
     {
       id: 'glasswater-far-reach',
       name: 'Glasswater Far Reach',
       mapPosition: { x: -3, y: 2, terrain: 'river', visibleWhenUnvisited: true },
       description: 'The current continues west beyond the mapped stretch.',
-      exits: [],
+      exits: [
+        { id: 'glasswater-far-reach-to-willow-reach', fromLocationId: 'glasswater-far-reach', toLocationId: 'glasswater-willow-reach', label: 'East along Glasswater River', direction: 'east' },
+      ],
     },
   ],
   roads: [

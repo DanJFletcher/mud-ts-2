@@ -11,7 +11,6 @@ export function projectWorldMap(character: CharacterProjection, world: WorldPack
     (location.mapAreaId ?? 'overworld') === currentAreaId &&
     (location.mapPosition?.z ?? 0) === currentLevel,
   );
-  const visitedLocations = mapLocations.filter((location) => visitedLocationIds.has(location.id));
   const visibleLocations = mapLocations.filter((location) =>
     visitedLocationIds.has(location.id) || location.mapPosition?.visibleWhenUnvisited === true,
   );
@@ -30,7 +29,7 @@ export function projectWorldMap(character: CharacterProjection, world: WorldPack
   });
   const visibleLocationIds = new Set(locations.map((location) => location.id));
   const seenPaths = new Set<string>();
-  const connections = visitedLocations.flatMap((location) => location.exits.flatMap((exit) => {
+  const connections = visibleLocations.flatMap((location) => location.exits.flatMap((exit) => {
     if (!visibleLocationIds.has(exit.toLocationId)) return [];
     const pathKey = [exit.fromLocationId, exit.toLocationId].sort().join(':');
     if (seenPaths.has(pathKey)) return [];

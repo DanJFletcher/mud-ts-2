@@ -92,7 +92,6 @@ describe('current-area and Z-level maps', () => {
     expect(map.locations.map(({ id }) => id)).toEqual([
       'mossgate-clearing',
       'bell-tower-west',
-      'glasswater-bridge',
       'bell-tower',
       'glasswater-west-reach',
       'glasswater-willow-reach',
@@ -139,7 +138,6 @@ describe('current-area and Z-level maps', () => {
     expect(projectWorldMap(travelerAt('bell-tower', visited), world).locations.map(({ id }) => id))
       .toEqual([
         'mossgate-clearing',
-        'glasswater-bridge',
         'bell-tower',
         'glasswater-west-reach',
         'glasswater-willow-reach',
