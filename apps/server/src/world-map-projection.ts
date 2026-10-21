@@ -7,12 +7,15 @@ export function projectWorldMap(character: CharacterProjection, world: WorldPack
   const currentAreaId = currentLocation.mapAreaId ?? 'overworld';
   const currentLevel = currentLocation.mapPosition?.z ?? 0;
   const visitedLocationIds = new Set(character.visitedLocationIds);
-  const visitedLocations = world.locations.filter((location) =>
-    visitedLocationIds.has(location.id) &&
+  const mapLocations = world.locations.filter((location) =>
     (location.mapAreaId ?? 'overworld') === currentAreaId &&
     (location.mapPosition?.z ?? 0) === currentLevel,
   );
-  const locations = visitedLocations.map((location, index) => {
+  const visitedLocations = mapLocations.filter((location) => visitedLocationIds.has(location.id));
+  const visibleLocations = mapLocations.filter((location) =>
+    visitedLocationIds.has(location.id) || location.mapPosition?.visibleWhenUnvisited === true,
+  );
+  const locations = visibleLocations.map((location, index) => {
     const verticalExits = [...new Set(location.exits
       .map((exit) => exit.direction)
       .filter((direction): direction is 'up' | 'down' => direction === 'up' || direction === 'down'))];

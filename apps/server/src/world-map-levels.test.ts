@@ -92,7 +92,11 @@ describe('current-area and Z-level maps', () => {
     expect(map.locations.map(({ id }) => id)).toEqual([
       'mossgate-clearing',
       'bell-tower-west',
+      'glasswater-bridge',
       'bell-tower',
+      'glasswater-west-reach',
+      'glasswater-willow-reach',
+      'glasswater-far-reach',
     ]);
     expect(map.connections).not.toContainEqual(expect.objectContaining({ toLocationId: 'bell-underhollow' }));
     expect(character.visitedLocationIds).toContain('bell-underhollow');
@@ -133,7 +137,14 @@ describe('current-area and Z-level maps', () => {
     };
     const visited = ['mossgate-clearing', 'bell-tower', 'bell-underhollow'];
     expect(projectWorldMap(travelerAt('bell-tower', visited), world).locations.map(({ id }) => id))
-      .toEqual(['mossgate-clearing', 'bell-tower']);
+      .toEqual([
+        'mossgate-clearing',
+        'glasswater-bridge',
+        'bell-tower',
+        'glasswater-west-reach',
+        'glasswater-willow-reach',
+        'glasswater-far-reach',
+      ]);
     expect(projectWorldMap(travelerAt('bell-underhollow', visited), world).locations.map(({ id }) => id))
       .toEqual(['bell-underhollow']);
   });
@@ -213,6 +224,9 @@ describe('current-area and Z-level maps', () => {
       'bell-tower',
       'glasswater-approach',
       'tower-ridge',
+      'glasswater-west-reach',
+      'glasswater-willow-reach',
+      'glasswater-far-reach',
     ]);
     expect(surface.locations.map(({ id }) => id)).not.toContain('bell-tower-belfry');
 

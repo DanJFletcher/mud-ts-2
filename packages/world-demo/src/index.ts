@@ -305,7 +305,7 @@ const draft = {
     {
       id: 'glasswater-bridge',
       name: 'Glasswater Bridge',
-      mapPosition: { x: 0, y: 2, terrain: 'river' },
+      mapPosition: { x: 0, y: 2, terrain: 'river', visibleWhenUnvisited: true },
       description:
         'A low stone bridge crosses clear water. Reeds stir below it. The road leads south toward Mossgate Clearing, east to Tower Ridge, and north toward Reedbank Stalls.',
       takeables: [
@@ -759,6 +759,27 @@ const draft = {
         { id: 'willowrest-lane-to-reedbank', fromLocationId: 'willowrest-lane', toLocationId: 'reedbank-stalls', label: 'West to Reedbank Stalls', direction: 'west', roadId: 'willowrest-lane' },
         { id: 'willowrest-lane-to-inn', fromLocationId: 'willowrest-lane', toLocationId: 'willowrest-inn', label: 'East to Willowrest Inn', direction: 'east', roadId: 'willowrest-lane' },
       ],
+    },
+    {
+      id: 'glasswater-west-reach',
+      name: 'Glasswater West Reach',
+      mapPosition: { x: -1, y: 2, terrain: 'river', visibleWhenUnvisited: true },
+      description: 'The river current runs west from beneath Glasswater Bridge.',
+      exits: [],
+    },
+    {
+      id: 'glasswater-willow-reach',
+      name: 'Glasswater Willow Reach',
+      mapPosition: { x: -2, y: 2, terrain: 'river', visibleWhenUnvisited: true },
+      description: 'Clear water slips past the willow roots along the western bank.',
+      exits: [],
+    },
+    {
+      id: 'glasswater-far-reach',
+      name: 'Glasswater Far Reach',
+      mapPosition: { x: -3, y: 2, terrain: 'river', visibleWhenUnvisited: true },
+      description: 'The current continues west beyond the mapped stretch.',
+      exits: [],
     },
   ],
   roads: [

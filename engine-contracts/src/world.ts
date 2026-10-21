@@ -43,6 +43,8 @@ export const MapPositionSchema = z.object({
   z: z.number().int().min(-10000).max(10000).optional(),
   /** Presentation-only map tile category; movement and rules do not depend on it. */
   terrain: z.enum(['land', 'river', 'building']).optional(),
+  /** Show this map tile even before a character has visited its location. */
+  visibleWhenUnvisited: z.boolean().optional(),
 }).strict();
 
 export const ReadableObjectDefinitionSchema = z.object({

@@ -128,6 +128,30 @@ describe('visited world map projection', () => {
     expect(initialSnapshot.map?.locations.map(({ id }) => id)).not.toContain('willowrest-inn');
 
     let character = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, activeCharacter.id))!;
+    const addedRiverNodes = demoWorld.locations.filter((location) =>
+      location.id.endsWith('-reach') && location.mapPosition?.terrain === 'river',
+    );
+    const addedRiverNodeIds = new Set(addedRiverNodes.map(({ id }) => id));
+    expect(addedRiverNodes).toHaveLength(3);
+    expect(initialSnapshot.map?.locations.map(({ id }) => id))
+      .toEqual(expect.arrayContaining(['glasswater-bridge', ...addedRiverNodeIds]));
+    expect(initialSnapshot.map?.locations.filter(({ id }) => addedRiverNodeIds.has(id)))
+      .toEqual(expect.arrayContaining(addedRiverNodes.map(({ id, name, mapPosition }) => ({
+        id,
+        name,
+        x: mapPosition!.x,
+        y: mapPosition!.y,
+        terrain: 'river',
+      }))));
+    expect(character.visitedLocationIds.some((id) => addedRiverNodeIds.has(id))).toBe(false);
+    expect(initialSnapshot.map?.connections.some(({ fromLocationId, toLocationId }) =>
+      addedRiverNodeIds.has(fromLocationId) || addedRiverNodeIds.has(toLocationId),
+    )).toBe(false);
+    expect(addedRiverNodes.every(({ exits }) => exits.length === 0)).toBe(true);
+    expect(demoWorld.locations.some((location) =>
+      location.exits.some((exit) => addedRiverNodeIds.has(exit.toLocationId)),
+    )).toBe(false);
+
     const towerMap = projectWorldMap({
       ...character,
       locationId: 'bell-tower',
