@@ -637,11 +637,33 @@ describe('MuddHttpClient', () => {
     const towerForReed = await client.look(characterId, 'puzzle-look-for-reed');
     await client.move(characterId, 'tower-to-belfry', towerForReed.revision, 'puzzle-climb-for-reed');
     const belfryForReed = await client.look(characterId, 'puzzle-look-for-reed-in-belfry');
+    expect(belfryForReed.objects).toContainEqual(expect.objectContaining({
+      id: 'bellwright-underhollow-key',
+      takeable: true,
+    }));
+    await client.take(
+      characterId,
+      'bellwright-underhollow-key',
+      belfryForReed.revision,
+      'puzzle-take-underhollow-key',
+    );
+    const belfryAfterKey = await client.look(characterId, 'puzzle-look-after-taking-key');
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))?.inventory)
+      .toContainEqual(expect.objectContaining({
+        id: 'bellwright-underhollow-key',
+        questBound: true,
+      }));
+    await expect(client.drop(
+      characterId,
+      'bellwright-underhollow-key',
+      belfryAfterKey.revision,
+      'puzzle-try-dropping-key',
+    )).rejects.toThrow('Quest items cannot be dropped.');
     await expect(client.use(
       characterId,
       'glasswater-reed',
       'tower-cracked-bell',
-      belfryForReed.revision,
+      belfryAfterKey.revision,
       'puzzle-answer-with-reed',
     )).resolves.toMatchObject({
       interactionId: 'answer-tower-bell-with-reed',
@@ -668,7 +690,66 @@ describe('MuddHttpClient', () => {
     await client.move(characterId, 'tower-to-underhollow', afterSecondNote.revision, 'puzzle-descend');
     const underhollow = await client.look(characterId, 'puzzle-look-underhollow');
     expect(underhollow.title).toBe('The Underhollow');
-    await client.move(characterId, 'underhollow-to-belfry', underhollow.revision, 'puzzle-return-to-belfry');
+    expect(underhollow.objects).toContainEqual(expect.objectContaining({
+      id: 'underhollow-iron-door',
+      takeable: false,
+    }));
+    expect(underhollow.exits).toContainEqual(expect.objectContaining({
+      id: 'underhollow-to-service-hall',
+      available: false,
+    }));
+    await expect(client.move(
+      characterId,
+      'underhollow-to-service-hall',
+      underhollow.revision,
+      'puzzle-try-locked-underhollow-door',
+    )).rejects.toThrow('That passage is still sealed.');
+    await expect(client.use(
+      characterId,
+      'bellwright-underhollow-key',
+      'underhollow-iron-door',
+      underhollow.revision,
+      'puzzle-unlock-underhollow-door',
+    )).resolves.toMatchObject({
+      interactionId: 'unlock-underhollow-door-with-key',
+      response: expect.stringContaining('open onto a narrow stone hallway'),
+    });
+    const openedUnderhollow = await client.look(characterId, 'puzzle-look-after-unlocking-door');
+    expect(openedUnderhollow.exits).toContainEqual(expect.objectContaining({
+      id: 'underhollow-to-service-hall',
+      available: true,
+    }));
+    await client.move(
+      characterId,
+      'underhollow-to-service-hall',
+      openedUnderhollow.revision,
+      'puzzle-enter-service-hall',
+    );
+    const serviceHall = await client.look(characterId, 'puzzle-look-service-hall');
+    expect(serviceHall.title).toBe('Bell Tower Service Hall');
+    expect(serviceHall.objects).toContainEqual(expect.objectContaining({
+      id: 'service-hall-sealed-arch',
+    }));
+    expect(serviceHall.exits).toContainEqual(expect.objectContaining({
+      id: 'service-hall-to-underhollow',
+      available: true,
+    }));
+    const underhollowDefinition = demoWorld.locations.find((location) => location.id === 'bell-underhollow');
+    const hallwayDefinition = demoWorld.locations.find((location) => location.id === 'bell-tower-service-hall');
+    expect(hallwayDefinition).toMatchObject({
+      mapAreaId: underhollowDefinition?.mapAreaId,
+      mapPosition: { x: 2, y: 0, z: -1 },
+    });
+    expect(underhollowDefinition?.mapPosition?.z).toBe(hallwayDefinition?.mapPosition?.z);
+
+    await client.move(
+      characterId,
+      'service-hall-to-underhollow',
+      serviceHall.revision,
+      'puzzle-return-from-service-hall',
+    );
+    const returnedUnderhollow = await client.look(characterId, 'puzzle-look-after-service-hall');
+    await client.move(characterId, 'underhollow-to-belfry', returnedUnderhollow.revision, 'puzzle-return-to-belfry');
     const belfryAgain = await client.look(characterId, 'puzzle-look-belfry-again');
     await client.move(characterId, 'belfry-to-tower', belfryAgain.revision, 'puzzle-descend-to-tower-floor-after-underhollow');
     const towerAgain = await client.look(characterId, 'puzzle-look-tower-again');

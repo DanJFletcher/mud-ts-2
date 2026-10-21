@@ -490,6 +490,15 @@ const draft = {
       requiredVisitedLocationId: 'bell-tower',
       description:
         'The stair opens into the belfry. A cracked bronze bell hangs from its weathered frame, its long fracture visible beneath a brass inscription plate.',
+      takeables: [
+        {
+          id: 'bellwright-underhollow-key',
+          label: 'Bellwright’s iron key',
+          description: 'A narrow black iron key worn smooth at the bow. Its teeth are cut for an old lock below the tower.',
+          roomDescription: 'A black iron key rests in a notch behind the bell’s frame.',
+          questBound: true,
+        },
+      ],
       readables: [
         {
           id: 'tower-bell-inscription',
@@ -541,13 +550,29 @@ const draft = {
       name: 'The Underhollow',
       mapAreaId: 'bell-tower',
       mapPosition: { x: 1, y: 0, z: -1, terrain: 'building' },
-      description: 'A low stone chamber rests beneath the tower. The bell’s second note hums in the walls; a dry stair leads back up to the belfry.',
+      description: 'A low stone chamber rests beneath the tower. The bell’s second note hums in the walls. A dry stair leads back up to the belfry, and a locked iron door is set into the eastern wall.',
       readables: [
         {
           id: 'underhollow-bellwright-ledger',
           label: 'Bellwright’s ledger',
           description: 'A narrow slate ledger is tucked into a niche beside the stair.',
           text: 'The lower chamber was our tuning room. We steadied the cracked bell with the pale stone, then laid a hollow reed across its fracture. When the tower answered with a second note, the stair was safe to open.',
+        },
+      ],
+      interactables: [
+        {
+          id: 'underhollow-iron-door',
+          label: 'Iron door',
+          description: 'A heavy iron door is set into the eastern wall. A narrow keyhole is worn smooth around its edge; the lock has not turned in years.',
+        },
+      ],
+      itemUses: [
+        {
+          id: 'unlock-underhollow-door-with-key',
+          itemId: 'bellwright-underhollow-key',
+          targetId: 'underhollow-iron-door',
+          response: 'The bellwright’s key turns with a dry click. The iron door groans open onto a narrow stone hallway.',
+          repeatResponse: 'The iron door stands open. The key turns freely in its lock.',
         },
       ],
       exits: [
@@ -557,6 +582,37 @@ const draft = {
           toLocationId: 'bell-tower-belfry',
           label: 'Up to the belfry',
           direction: 'up',
+        },
+        {
+          id: 'underhollow-to-service-hall',
+          fromLocationId: 'bell-underhollow',
+          toLocationId: 'bell-tower-service-hall',
+          label: 'East through the iron door',
+          direction: 'east',
+          requiredInteractionId: 'unlock-underhollow-door-with-key',
+        },
+      ],
+    },
+    {
+      id: 'bell-tower-service-hall',
+      name: 'Bell Tower Service Hall',
+      mapAreaId: 'bell-tower',
+      mapPosition: { x: 2, y: 0, z: -1, terrain: 'building' },
+      description: 'The opened door reveals a narrow hallway cut through the bedrock beneath the tower. At its far end, an old stone arch is sealed shut; a cold draft slips through a hairline crack, hinting at passages beyond.',
+      interactables: [
+        {
+          id: 'service-hall-sealed-arch',
+          label: 'Sealed stone arch',
+          description: 'The arch is blocked by a fitted stone slab with no handle or visible keyhole. It cannot be opened from this side.',
+        },
+      ],
+      exits: [
+        {
+          id: 'service-hall-to-underhollow',
+          fromLocationId: 'bell-tower-service-hall',
+          toLocationId: 'bell-underhollow',
+          label: 'West back to the Underhollow',
+          direction: 'west',
         },
       ],
     },
