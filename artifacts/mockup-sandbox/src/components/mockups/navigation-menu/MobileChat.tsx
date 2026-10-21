@@ -55,7 +55,6 @@ export function MobileChat() {
               <span className="mobile-chat__eyebrow">RIVERLANDS · 14:32</span>
               <h1>Glasswater Bridge</h1>
             </div>
-            <button type="button" aria-label="Collapse terminal" className="mobile-chat__collapse"><ChevronUp size={18} /></button>
           </header>
           <div className="mobile-chat__presence"><Users size={13} aria-hidden="true" /><span>Here now: Mara, Bram</span><i aria-label="Connected" /></div>
           <div className="mudd-nav-preview__history mobile-chat__history" aria-label="Terminal output" role="region" tabIndex={0}>

@@ -1860,7 +1860,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
   return (
     <main className="focused-client" data-theme={theme}>
       <section
-        className="focused-content"
+        className={`focused-content${screen === "play" && snapshot?.location && !isGameOver ? " focused-content--play" : ""}`}
         key={screen}
         ref={contentRef}
         tabIndex={-1}
@@ -1909,6 +1909,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                   title={snapshot.location.title}
                   busy={pending !== null}
                   expandRequest={terminalExpandRequest}
+                  mobileViewport={isMobileViewport}
                 >
                     <div className="focused-room-presence" role="group" aria-label="Players in this room">
                       <Users size={14} aria-hidden="true" />

@@ -965,26 +965,52 @@ describe('single-character world session client', () => {
     expect(menuTrigger).toHaveFocus();
   });
 
-  it('opens the mobile command input from Type, expands the terminal, and focuses the input', async () => {
-    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
-    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+  it('keeps the mobile terminal full screen above the bottom nav without header controls', async () => {
+    const originalDescriptor = Object.getOwnPropertyDescriptor(window, 'matchMedia');
+    const mobileMediaQuery = {
+      matches: false,
+      media: '(min-width: 700px)',
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(() => true),
+    } as unknown as MediaQueryList;
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn(() => mobileMediaQuery),
+    });
+    const view = render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
 
-    const commandSection = document.querySelector('.focused-command');
-    const typeButton = document.querySelector<HTMLButtonElement>('.focused-type-tab');
-    expect(commandSection).toHaveClass('focused-command--mobile-hidden');
-    expect(typeButton).not.toBeNull();
+    try {
+      const roomHeading = await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+      const commandSection = document.querySelector('.focused-command');
+      const typeButton = document.querySelector<HTMLButtonElement>('.focused-type-tab');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Collapse terminal' }));
-    fireEvent.click(typeButton!);
+      expect(document.querySelector('.focused-content--play')).not.toBeNull();
+      expect(screen.getByRole('navigation', { name: 'Game screens' })).toBeVisible();
+      expect(screen.queryByRole('button', { name: 'Collapse terminal' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Open terminal full screen' })).not.toBeInTheDocument();
+      expect(commandSection).toHaveClass('focused-command--mobile-hidden');
+      expect(typeButton).not.toBeNull();
 
-    expect(commandSection).toHaveClass('focused-command--mobile-open');
-    expect(screen.getByRole('button', { name: 'Collapse terminal' })).toBeVisible();
-    const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
-    expect(commandInput).toHaveFocus();
+      fireEvent.click(typeButton!);
+      expect(commandSection).toHaveClass('focused-command--mobile-open');
+      const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
+      expect(commandInput).toHaveFocus();
 
-    fireEvent.click(typeButton!);
-    expect(commandSection).toHaveClass('focused-command--mobile-hidden');
-    expect(commandInput).not.toHaveFocus();
+      fireEvent.click(typeButton!);
+      expect(commandSection).toHaveClass('focused-command--mobile-hidden');
+      expect(commandInput).not.toHaveFocus();
+
+      fireTouchSwipe(roomHeading, { x: 150, y: 40 }, { x: 152, y: 150 });
+      expect(screen.queryByRole('dialog', { name: 'Terminal' })).not.toBeInTheDocument();
+    } finally {
+      view.unmount();
+      if (originalDescriptor) Object.defineProperty(window, 'matchMedia', originalDescriptor);
+      else Reflect.deleteProperty(window, 'matchMedia');
+    }
   });
 
   it('shows active and completed quest objectives on Field notes', async () => {

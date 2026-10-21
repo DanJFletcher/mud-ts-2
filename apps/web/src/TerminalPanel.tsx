@@ -9,9 +9,10 @@ type TerminalPanelProps = Readonly<{
   busy: boolean;
   children: ReactNode;
   expandRequest?: number;
+  mobileViewport: boolean;
 }>;
 
-export function TerminalPanel({ title, busy, children, expandRequest = 0 }: TerminalPanelProps) {
+export function TerminalPanel({ title, busy, children, expandRequest = 0, mobileViewport }: TerminalPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [fullscreenPresent, setFullscreenPresent] = useState(false);
@@ -71,7 +72,18 @@ export function TerminalPanel({ title, busy, children, expandRequest = 0 }: Term
     };
   }, [fullscreenPresent]);
 
+  useEffect(() => {
+    if (!mobileViewport) return;
+    setFullscreen(false);
+    setFullscreenPresent(false);
+    setFullscreenClosing(false);
+  }, [mobileViewport]);
+
   const handleTouchStart = (event: TouchEvent<HTMLElement>) => {
+    if (mobileViewport) {
+      touchStartRef.current = null;
+      return;
+    }
     const target = event.target;
     const touch = event.touches[0];
     if (
@@ -87,6 +99,10 @@ export function TerminalPanel({ title, busy, children, expandRequest = 0 }: Term
   };
 
   const handleTouchEnd = (event: TouchEvent<HTMLElement>) => {
+    if (mobileViewport) {
+      touchStartRef.current = null;
+      return;
+    }
     const start = touchStartRef.current;
     const touch = event.changedTouches[0];
     touchStartRef.current = null;
@@ -118,7 +134,7 @@ export function TerminalPanel({ title, busy, children, expandRequest = 0 }: Term
     >
       <div className="focused-terminal-room">
         <h1 className="focused-terminal-location">{title}</h1>
-        {!fullscreenPresent && (
+        {!mobileViewport && !fullscreenPresent && (
           <DisclosureButton
             className="focused-terminal-toggle"
             onClick={() => setCollapsed((current) => !current)}
@@ -133,16 +149,18 @@ export function TerminalPanel({ title, busy, children, expandRequest = 0 }: Term
             </span>
           </DisclosureButton>
         )}
-        <button
-          ref={fullscreenPresent ? closeButtonRef : openButtonRef}
-          className="focused-terminal-fullscreen-button"
-          type="button"
-          onClick={() => setFullscreen((current) => !current)}
-          aria-label={fullscreenPresent ? 'Close full-screen terminal' : 'Open terminal full screen'}
-          title={fullscreenPresent ? 'Close full-screen terminal' : 'Open terminal full screen'}
-        >
-          {fullscreenPresent ? <X size={17} aria-hidden="true" /> : <Maximize2 size={17} aria-hidden="true" />}
-        </button>
+        {!mobileViewport && (
+          <button
+            ref={fullscreenPresent ? closeButtonRef : openButtonRef}
+            className="focused-terminal-fullscreen-button"
+            type="button"
+            onClick={() => setFullscreen((current) => !current)}
+            aria-label={fullscreenPresent ? 'Close full-screen terminal' : 'Open terminal full screen'}
+            title={fullscreenPresent ? 'Close full-screen terminal' : 'Open terminal full screen'}
+          >
+            {fullscreenPresent ? <X size={17} aria-hidden="true" /> : <Maximize2 size={17} aria-hidden="true" />}
+          </button>
+        )}
       </div>
       <div className="focused-terminal-body" id="focused-terminal-body">
         {children}
