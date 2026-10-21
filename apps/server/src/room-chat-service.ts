@@ -22,6 +22,8 @@ export type RoomChatMessage = Readonly<{
   createdAt: string;
 }>;
 
+export type TerminalRoomEvent = RoomChatMessage;
+
 type NewRoomChatMessage = Readonly<{
   worldInstanceId: string;
   playerId?: string | null;
@@ -294,7 +296,11 @@ export async function listRoomChatMessages(input: Readonly<{
   characterId: string;
   roomId: string;
   afterId?: number;
-}>): Promise<{ messages: readonly RoomChatMessage[]; cursor: number } | undefined> {
+}>): Promise<{
+  messages: readonly RoomChatMessage[];
+  terminalEvents: readonly TerminalRoomEvent[];
+  cursor: number;
+} | undefined> {
   return db.transaction(async (tx) => {
     await lockCharacterStream(tx, input.worldInstanceId, input.characterId);
     const character = await readAuthorizedRoomCharacter(tx, input);
@@ -310,8 +316,13 @@ export async function listRoomChatMessages(input: Readonly<{
         .where(and(...conditions, gt(roomChatMessages.id, input.afterId)))
         .orderBy(asc(roomChatMessages.id))
         .limit(ROOM_CHAT_POLL_LIMIT);
+      const movementRows = rows.filter((row) =>
+        row.sourceEffectId?.startsWith(NPC_MOVEMENT_MESSAGE_SOURCE_PREFIX));
       return {
-        messages: rows.map(toRoomChatMessage),
+        messages: rows
+          .filter((row) => !row.sourceEffectId?.startsWith(NPC_MOVEMENT_MESSAGE_SOURCE_PREFIX))
+          .map(toRoomChatMessage),
+        terminalEvents: movementRows.map(toRoomChatMessage),
         cursor: rows.at(-1)?.id ?? input.afterId,
       };
     }
@@ -331,6 +342,7 @@ export async function listRoomChatMessages(input: Readonly<{
       .limit(INITIAL_ROOM_CHAT_LIMIT);
     return {
       messages: rows.reverse().map(toRoomChatMessage),
+      terminalEvents: [],
       cursor: Number(latest?.id ?? 0),
     };
   });

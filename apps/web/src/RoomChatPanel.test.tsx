@@ -8,12 +8,14 @@ describe('RoomChatPanel message polling', () => {
   let fetchMock: ReturnType<typeof vi.fn>;
   let failedPostRequests: number;
   let postedSubmissionIds: string[];
+  let pendingTerminalEvents: RoomChatMessage[];
 
   beforeEach(() => {
     storedMessages = [];
     intervals = [];
     failedPostRequests = 0;
     postedSubmissionIds = [];
+    pendingTerminalEvents = [];
     fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input), 'http://mudd.test');
       if (init?.method === 'POST') {
@@ -45,7 +47,13 @@ describe('RoomChatPanel message polling', () => {
       return new Response(JSON.stringify({
         roomId: 'test-room',
         messages: storedMessages.filter((message) => message.id > afterId),
-        cursor: Math.max(afterId, ...storedMessages.map((message) => message.id), 0),
+        terminalEvents: pendingTerminalEvents.filter((message) => message.id > afterId),
+        cursor: Math.max(
+          afterId,
+          ...storedMessages.map((message) => message.id),
+          ...pendingTerminalEvents.map((message) => message.id),
+          0,
+        ),
       }), { headers: { 'content-type': 'application/json' } });
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -95,6 +103,36 @@ describe('RoomChatPanel message polling', () => {
     expect(String(pollRequest?.[0])).toContain('afterId=10');
     expect(await screen.findByText('The north bridge is open.')).toBeVisible();
     expect(screen.getAllByText('Hello')).toHaveLength(1);
+  });
+
+  it('forwards NPC movement notices to the terminal instead of rendering them in room chat', async () => {
+    const onTerminalEvent = vi.fn();
+    render(
+      <RoomChatPanel
+        roomId="test-room"
+        fullscreen={false}
+        onFullscreenChange={vi.fn()}
+        onTerminalEvent={onTerminalEvent}
+      />,
+    );
+    expect(await screen.findByText('No room messages yet.')).toBeVisible();
+    const event: RoomChatMessage = {
+      id: 13,
+      roomId: 'test-room',
+      speakerType: 'npc',
+      speakerName: 'Wandering Villager',
+      text: 'A villager heads south, hands clasped behind their back.',
+      createdAt: '2026-10-21T12:00:00.000Z',
+    };
+    pendingTerminalEvents = [event];
+
+    await act(async () => {
+      intervals[0]?.();
+    });
+
+    await waitFor(() => expect(onTerminalEvent).toHaveBeenCalledWith(event));
+    expect(screen.queryByText(event.text)).not.toBeInTheDocument();
+    expect(screen.queryByText(event.speakerName)).not.toBeInTheDocument();
   });
 
   it('reuses the same submission ID when the player retries a failed send', async () => {

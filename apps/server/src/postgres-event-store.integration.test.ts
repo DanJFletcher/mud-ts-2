@@ -478,7 +478,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
       playerId,
       characterId: chatCharacterId,
       roomId: 'glasswater-bridge',
-    })).toEqual({ messages: [], cursor: 0 });
+    })).toEqual({ messages: [], terminalEvents: [], cursor: 0 });
 
     const persisted = await db.select().from(roomChatMessages).where(
       (await import('drizzle-orm')).eq(roomChatMessages.submissionId, submissionId),
@@ -528,7 +528,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
       roomId: 'glasswater-bridge',
       afterId: movementNotice.id - 1,
     });
-    expect(liveMessages?.messages.some((message) => message.id === movementNotice.id)).toBe(true);
+    expect(liveMessages?.terminalEvents.some((message) => message.id === movementNotice.id)).toBe(true);
     await db.delete(characters).where((await import('drizzle-orm')).eq(characters.id, chatCharacterId));
   });
 });

@@ -21,7 +21,7 @@ import {
   type ActivityEntry,
 } from "@mudd/ui";
 import { ChevronDown, Compass, Info as InfoIcon, Keyboard, Menu, Moon, Sun, Users, X } from "lucide-react";
-import { RoomChatPanel } from "./RoomChatPanel.js";
+import { RoomChatPanel, type RoomChatMessage } from "./RoomChatPanel.js";
 import { TerminalPanel } from "./TerminalPanel.js";
 import { WorldMapPanel } from "./WorldMapPanel.js";
 
@@ -299,6 +299,9 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     terminalFollowsLatestRef.current = !preserveScroll;
     setEntries((current) => [...current, makeEntry(kind, text)]);
   }, []);
+  const addNpcTerminalEvent = useCallback((message: RoomChatMessage) => {
+    addEntry("narration", `${message.speakerName}: ${message.text}`, true);
+  }, [addEntry]);
 
   const rememberCompletedQuestObjectives = useCallback((nextSnapshot: GameSnapshot) => {
     for (const key of completedQuestObjectiveKeys(nextSnapshot)) {
@@ -2672,6 +2675,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                       roomId={snapshot.location.locationId}
                       fullscreen={chatFullscreen}
                       onFullscreenChange={handleChatFullscreenChange}
+                      onTerminalEvent={addNpcTerminalEvent}
                       embedded
                     />
                   )}
@@ -2702,6 +2706,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                     roomId={snapshot.location.locationId}
                     fullscreen={chatFullscreen}
                     onFullscreenChange={handleChatFullscreenChange}
+                    onTerminalEvent={addNpcTerminalEvent}
                   />
                 )}
                 <WorldMapPanel

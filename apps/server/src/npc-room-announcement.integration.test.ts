@@ -514,6 +514,7 @@ vi.mock('./room-chat-service.js', () => ({
       messages: roomMessages
         .filter((message) =>
           (input.afterId !== undefined || !message.sourceEffectId?.startsWith('world-npc-movement:')) &&
+          !message.sourceEffectId?.startsWith('world-npc-movement:') &&
           (input.afterId === undefined || message.id > input.afterId))
         .map((message) => ({
         id: message.id,
@@ -523,6 +524,20 @@ vi.mock('./room-chat-service.js', () => ({
         text: message.message,
         createdAt: message.createdAt.toISOString(),
         })),
+      terminalEvents: input.afterId === undefined
+        ? []
+        : roomMessages
+          .filter((message) =>
+            message.id > input.afterId! &&
+            message.sourceEffectId?.startsWith('world-npc-movement:'))
+          .map((message) => ({
+            id: message.id,
+            roomId: message.roomId,
+            speakerType: message.speakerType,
+            speakerName: message.speakerName,
+            text: message.message,
+            createdAt: message.createdAt.toISOString(),
+          })),
       cursor,
     };
   },
@@ -739,13 +754,17 @@ describe('NPC room announcements through the server', () => {
     });
   }
 
-  async function readRoom(userId: string, roomId: string) {
-    const response = await fetch(`${baseUrl}/api/chat?roomId=${roomId}`, {
+  async function readRoom(userId: string, roomId: string, afterId?: number) {
+    const query = new URLSearchParams({ roomId });
+    if (afterId !== undefined) query.set('afterId', String(afterId));
+    const response = await fetch(`${baseUrl}/api/chat?${query.toString()}`, {
       headers: { 'x-test-user': userId },
     });
     return { response, body: await response.json() as {
       roomId?: string;
       messages?: Array<{ speakerType: string; speakerName: string; text: string }>;
+      terminalEvents?: Array<{ id: number; speakerType: string; speakerName: string; text: string }>;
+      cursor?: number;
     } };
   }
 
@@ -791,6 +810,31 @@ describe('NPC room announcements through the server', () => {
 
     const inaccessibleRoomChat = await readRoom('elsewhere', 'npc-room');
     expect(inaccessibleRoomChat.response.status).toBe(409);
+  });
+
+  it('routes NPC movement announcements to terminal updates instead of room chat', async () => {
+    await enterWorld('alice', 'character-alice');
+    const initial = await readRoom('alice', 'npc-room');
+    expect(initial.response.status).toBe(200);
+    expect(initial.body.messages?.some((message) => message.text.includes('heads south'))).toBe(false);
+
+    const { publishNpcRoomMessage } = await import('./room-chat-service.js');
+    const movementNotice = await publishNpcRoomMessage({
+      worldInstanceId: instanceId,
+      roomId: 'npc-room',
+      npcId: 'mossgate-wandering-villager',
+      npcName: 'Wandering Villager',
+      text: 'A villager heads south, hands clasped behind their back.',
+      sourceEffectId: 'world-npc-movement:test-effect:departure',
+    });
+    const update = await readRoom('alice', 'npc-room', initial.body.cursor);
+    expect(update.response.status).toBe(200);
+    expect(update.body.messages).toEqual([]);
+    expect(update.body.terminalEvents).toEqual([expect.objectContaining({
+      id: movementNotice.id,
+      speakerName: 'Wandering Villager',
+      text: 'A villager heads south, hands clasped behind their back.',
+    })]);
   });
 
   it('lets an NPC answer a matching public room message and shares the reply with room occupants', async () => {

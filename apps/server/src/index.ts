@@ -526,7 +526,12 @@ app.get('/api/chat', async (req, res, next) => {
       afterId: parsedAfterId?.success ? parsedAfterId.data : undefined,
     });
     if (!messages) return res.status(409).json({ message: 'You have moved to a different room.' });
-    return res.json({ roomId: roomId.data, messages: messages.messages, cursor: messages.cursor });
+    return res.json({
+      roomId: roomId.data,
+      messages: messages.messages,
+      terminalEvents: messages.terminalEvents,
+      cursor: messages.cursor,
+    });
   } catch (error) {
     next(error);
   }

@@ -18,8 +18,14 @@ type RoomChatPanelProps = Readonly<{
   fullscreen: boolean;
   onFullscreenChange: (fullscreen: boolean) => void;
   embedded?: boolean;
+  onTerminalEvent?: (message: RoomChatMessage) => void;
 }>;
-type RoomChatResponse = Readonly<{ roomId: string; messages: readonly RoomChatMessage[]; cursor?: number }>;
+type RoomChatResponse = Readonly<{
+  roomId: string;
+  messages: readonly RoomChatMessage[];
+  terminalEvents?: readonly RoomChatMessage[];
+  cursor?: number;
+}>;
 type MessageResponse = Readonly<{ message: RoomChatMessage; npcMessage?: RoomChatMessage }>;
 
 function errorMessage(body: unknown, fallback: string) {
@@ -35,7 +41,13 @@ function mergeMessages(current: readonly RoomChatMessage[], incoming: readonly R
   return [...messages.values()].sort((left, right) => left.id - right.id).slice(-100);
 }
 
-export function RoomChatPanel({ roomId, fullscreen, onFullscreenChange, embedded = false }: RoomChatPanelProps) {
+export function RoomChatPanel({
+  roomId,
+  fullscreen,
+  onFullscreenChange,
+  embedded = false,
+  onTerminalEvent,
+}: RoomChatPanelProps) {
   const [messages, setMessages] = useState<readonly RoomChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(true);
@@ -141,6 +153,7 @@ export function RoomChatPanel({ roomId, fullscreen, onFullscreenChange, embedded
           );
           setMessages((current) => mergeMessages(current, body.messages));
         }
+        body.terminalEvents?.forEach((message) => onTerminalEvent?.(message));
         setLoading(false);
         setLoadError('');
       } catch (error) {
@@ -158,7 +171,7 @@ export function RoomChatPanel({ roomId, fullscreen, onFullscreenChange, embedded
       active = false;
       window.clearInterval(interval);
     };
-  }, [roomId]);
+  }, [onTerminalEvent, roomId]);
 
   useEffect(() => {
     const messagesElement = messagesRef.current;
