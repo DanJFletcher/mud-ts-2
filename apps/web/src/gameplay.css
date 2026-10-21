@@ -1545,8 +1545,17 @@
 .focused-detail--wide { grid-column: 1 / -1; }
 .focused-detail span { color: var(--mudd-muted); font: 500 .65rem "DM Mono", monospace; letter-spacing: .1em; text-transform: uppercase; }
 .focused-detail strong { font-size: .9rem; font-weight: 600; }
+.focused-vitals { display: grid; gap: 14px; padding-top: 18px; }
+.focused-vital { display: grid; gap: 7px; }
+.focused-vital-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.focused-vital-heading span { color: var(--mudd-accent); font: 500 .8rem "DM Mono", monospace; letter-spacing: .06em; }
+.focused-vital-heading strong { color: var(--mudd-muted); font: 500 .76rem "DM Mono", monospace; }
+.focused-vital-meter { height: 8px; overflow: hidden; border-radius: 999px; background: var(--mudd-border); }
+.focused-vital-meter > span { display: block; height: 100%; border-radius: inherit; background: var(--mudd-accent); transition: width 180ms ease; }
 .focused-inventory { display: flex; flex-wrap: wrap; gap: 8px; }
 .focused-inventory-entry { display: flex; flex-wrap: wrap; gap: 6px; }
+.focused-inventory-label { align-self: center; }
+.focused-item-tag { align-self: center; color: var(--mudd-muted); font: 500 .68rem "DM Mono", monospace; text-transform: uppercase; }
 .focused-equipment { display: grid; gap: 8px; }
 .focused-equipment-slot { display: flex; align-items: center; gap: 10px; }
 .focused-equipment-slot > span { min-width: 52px; }
@@ -1689,19 +1698,23 @@
 }
 
 .focused-info-tabs {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
   margin-bottom: 4px;
   border-bottom: 1px solid var(--mudd-border);
 }
+.focused-info-tabs::-webkit-scrollbar { display: none; }
 .focused-info-tab {
   display: flex;
-  min-width: 0;
+  min-width: max-content;
+  flex: 1 0 auto;
   min-height: 46px;
   align-items: center;
   justify-content: center;
-  padding: 8px 12px;
+  padding: 8px 14px;
   border-bottom: 2px solid transparent;
   color: var(--mudd-muted);
   font: 600 .76rem/1.2 "DM Sans", system-ui, sans-serif;

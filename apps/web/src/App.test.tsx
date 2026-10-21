@@ -10,12 +10,10 @@ const { apiFetch } = vi.hoisted(() => {
 
 import { WorldClient } from './App.js';
 
-async function openInfoSection(section: 'Traveler' | 'Field notes') {
+async function openInfoSection(section: 'Vitals' | 'Items' | 'Equipment' | 'Stats' | 'Field notes') {
   fireEvent.click(screen.getByRole('link', { name: 'Info' }));
   const tabs = await screen.findByRole('navigation', { name: 'Info sections' });
-  if (section === 'Field notes') {
-    fireEvent.click(within(tabs).getByRole('link', { name: section }));
-  }
+  fireEvent.click(within(tabs).getByRole('link', { name: section }));
   await screen.findByRole('heading', { name: section });
   return tabs;
 }
@@ -927,8 +925,9 @@ describe('single-character world session client', () => {
     })).toBe(false);
   });
 
-  it('opens focused gameplay and groups Traveler and Field notes under Info', async () => {
+  it('opens focused gameplay and groups character tabs and Field notes under Info', async () => {
     const onLeaveWorld = vi.fn().mockResolvedValue(undefined);
+    characterHealth = { current: 5, maximum: 6 };
     render(<WorldClient onLeaveWorld={onLeaveWorld} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     const history = screen.getByRole('region', { name: 'Terminal output' });
@@ -945,10 +944,25 @@ describe('single-character world session client', () => {
 
     fireEvent.click(screen.getByRole('link', { name: 'Info' }));
     const infoTabs = await screen.findByRole('navigation', { name: 'Info sections' });
-    expect(within(infoTabs).getByRole('link', { name: 'Traveler' })).toHaveAttribute('aria-current', 'page');
+    expect(within(infoTabs).getByRole('link', { name: 'Vitals' })).toHaveAttribute('aria-current', 'page');
+    expect(within(infoTabs).getByRole('link', { name: 'Items' })).toBeVisible();
+    expect(within(infoTabs).getByRole('link', { name: 'Equipment' })).toBeVisible();
+    expect(within(infoTabs).getByRole('link', { name: 'Stats' })).toBeVisible();
+    expect(within(infoTabs).getByRole('link', { name: 'Field notes' })).toBeVisible();
     expect(screen.getByRole('link', { name: 'Info' })).toHaveAttribute('aria-current', 'page');
-    await screen.findByRole('heading', { name: 'Traveler' });
+    await screen.findByRole('heading', { name: 'Vitals' });
     expect(screen.getByRole('heading', { name: 'Rowan' })).toBeVisible();
+    expect(screen.getByLabelText('Character health')).toHaveAttribute('aria-valuenow', '5');
+    expect(screen.getByText('5/6')).toBeVisible();
+    fireEvent.click(within(infoTabs).getByRole('link', { name: 'Items' }));
+    await screen.findByRole('heading', { name: 'Items' });
+    expect(screen.getByText('None')).toBeVisible();
+    fireEvent.click(within(infoTabs).getByRole('link', { name: 'Equipment' }));
+    await screen.findByRole('heading', { name: 'Equipment' });
+    expect(screen.getByText('Available gear')).toBeVisible();
+    fireEvent.click(within(infoTabs).getByRole('link', { name: 'Stats' }));
+    await screen.findByRole('heading', { name: 'Stats' });
+    expect(screen.getByText('Character attributes such as Strength and Dexterity are not tracked yet.')).toBeVisible();
     fireEvent.click(within(infoTabs).getByRole('link', { name: 'Field notes' }));
     await screen.findByRole('heading', { name: 'Field notes' });
     expect(screen.getByText('No current quests.')).toBeVisible();
@@ -1853,7 +1867,7 @@ describe('single-character world session client', () => {
       payload: { itemId: 'mossgate-loose-stone' },
     });
 
-    await openInfoSection('Traveler');
+    await openInfoSection('Items');
     expect(screen.getByText('Loose stone')).toBeVisible();
     fireEvent.click(screen.getByRole('link', { name: 'Play' }));
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
@@ -1868,7 +1882,7 @@ describe('single-character world session client', () => {
     )).toBe(false);
   });
 
-  it('inspects carried items from Traveler and by command, including after leaving their room', async () => {
+  it('inspects carried items from the Items tab and by command, including after leaving their room', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
@@ -1877,7 +1891,7 @@ describe('single-character world session client', () => {
     fireEvent.submit(commandInput.closest('form')!);
     await screen.findByText('You pick up the loose stone.');
 
-    await openInfoSection('Traveler');
+    await openInfoSection('Items');
     fireEvent.click(screen.getByRole('button', { name: 'Inspect Loose stone' }));
     await screen.findByText('A smooth, palm-sized stone with a pale stripe running through it.');
 
@@ -2095,7 +2109,7 @@ describe('single-character world session client', () => {
   it('responds to browser back/forward when changing gameplay screens', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
-    await openInfoSection('Traveler');
+    await openInfoSection('Vitals');
     act(() => {
       window.location.hash = '#/play';
       window.dispatchEvent(new HashChangeEvent('hashchange'));

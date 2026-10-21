@@ -28,7 +28,7 @@ import { WorldMapPanel } from "./WorldMapPanel.js";
 const client = new MuddHttpClient({ worldInstanceId: "mudd-demo-instance" });
 type DialogueProjection = Awaited<ReturnType<MuddHttpClient["talk"]>>;
 type MerchantCatalog = Awaited<ReturnType<MuddHttpClient["getMerchantCatalog"]>>;
-type Screen = "play" | "traveler" | "notes";
+type Screen = "play" | "vitals" | "items" | "equipment" | "stats" | "notes";
 type WorldClientProps = { onLeaveWorld: () => Promise<void> };
 type VisibleNpc = NonNullable<NonNullable<GameSnapshot["location"]>["npcs"]>[number];
 
@@ -187,7 +187,10 @@ function getCommandHelp(topic: string): readonly string[] {
 function currentScreen(): Screen {
   const route = window.location.hash.slice(2);
   if (route === "notes" || route === "info/notes" || route === "info/field-notes") return "notes";
-  if (route === "traveler" || route === "info" || route === "info/traveler") return "traveler";
+  if (route === "info/items") return "items";
+  if (route === "info/equipment") return "equipment";
+  if (route === "info/stats") return "stats";
+  if (route === "traveler" || route === "info" || route === "info/traveler" || route === "info/vitals") return "vitals";
   return "play";
 }
 
@@ -1860,22 +1863,23 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
 
   const infoTabs = (
     <nav className="focused-info-tabs" aria-label="Info sections">
-      <a
-        href="#/info"
-        className="focused-info-tab"
-        aria-current={screen === "traveler" ? "page" : undefined}
-        onClick={() => setMenuOpen(false)}
-      >
-        Traveler
-      </a>
-      <a
-        href="#/info/notes"
-        className="focused-info-tab"
-        aria-current={screen === "notes" ? "page" : undefined}
-        onClick={() => setMenuOpen(false)}
-      >
-        Field notes
-      </a>
+      {([
+        { id: "vitals", label: "Vitals", href: "#/info" },
+        { id: "items", label: "Items", href: "#/info/items" },
+        { id: "equipment", label: "Equipment", href: "#/info/equipment" },
+        { id: "stats", label: "Stats", href: "#/info/stats" },
+        { id: "notes", label: "Field notes", href: "#/info/notes" },
+      ] as const).map((tab) => (
+        <a
+          key={tab.id}
+          href={tab.href}
+          className="focused-info-tab"
+          aria-current={screen === tab.id ? "page" : undefined}
+          onClick={() => setMenuOpen(false)}
+        >
+          {tab.label}
+        </a>
+      ))}
     </nav>
   );
 
@@ -2693,11 +2697,11 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
           </div>
         )}
 
-        {!isGameOver && screen === "traveler" && (
-          <div className="focused-screen" aria-label="Traveler">
+        {!isGameOver && screen === "vitals" && (
+          <div className="focused-screen" aria-label="Vitals">
             {infoTabs}
             <div className="focused-screen-heading">
-              <div><div className="focused-kicker">Character</div><h1 className="focused-screen-title">Traveler</h1></div>
+              <div><div className="focused-kicker">Character</div><h1 className="focused-screen-title">Vitals</h1></div>
             </div>
             {snapshot ? (
               <Panel className="focused-card">
@@ -2708,20 +2712,62 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                     <p className="focused-identity-label">{snapshot.player.displayName} · Account</p>
                   </div>
                 </div>
-                <div className="focused-details">
-                  <div className="focused-detail"><span>Journey</span><strong>{snapshot.character ? "Underway" : "Not started"}</strong></div>
-                   <div className="focused-detail"><span>World</span><strong>The Waystone Path</strong></div>
-                   <div className="focused-detail focused-detail--wide"><span>Current location</span><strong>{snapshot.location?.title || "—"}</strong></div>
-                    <div className="focused-detail focused-detail--wide">
-                      <span>Advancement</span>
-                      <strong>
-                        {snapshot.character?.advancement
-                          ? `Level ${snapshot.character.advancement.level} · ${snapshot.character.advancement.experience} XP`
-                          : "No combat victories yet"}
-                      </strong>
+                <div className="focused-vitals">
+                  <div className="focused-vital">
+                    <div className="focused-vital-heading">
+                      <span>Health</span>
+                      <strong>{snapshot.character?.health ? `${snapshot.character.health.current}/${snapshot.character.health.maximum}` : "Unavailable"}</strong>
                     </div>
+                    {snapshot.character?.health && (
+                      <div
+                        className="focused-vital-meter"
+                        role="meter"
+                        aria-label="Character health"
+                        aria-valuemin={0}
+                        aria-valuemax={snapshot.character.health.maximum}
+                        aria-valuenow={snapshot.character.health.current}
+                      >
+                        <span style={{
+                          width: `${Math.max(0, Math.min(100, (snapshot.character.health.current / snapshot.character.health.maximum) * 100))}%`,
+                        }} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="focused-details">
+                  <div className="focused-detail"><span>Standing</span><strong>{snapshot.character?.health?.current === 0 ? "Down" : snapshot.character ? "Alive" : "Not started"}</strong></div>
+                  <div className="focused-detail"><span>Wallet</span><strong>{snapshot.character?.wallet ? `${snapshot.character.wallet.balance} moss marks` : "—"}</strong></div>
+                  <div className="focused-detail focused-detail--wide"><span>Current location</span><strong>{snapshot.location?.title || "—"}</strong></div>
+                  <div className="focused-detail focused-detail--wide">
+                    <span>Advancement</span>
+                    <strong>
+                      {snapshot.character?.advancement
+                        ? `Level ${snapshot.character.advancement.level} · ${snapshot.character.advancement.experience} XP`
+                        : "No combat victories yet"}
+                    </strong>
+                  </div>
+                </div>
+                {snapshot.character && !snapshot.character.health && <p className="focused-note">Health has not been initialized for this character yet.</p>}
+                {!snapshot.character && <p className="focused-note">Begin from Play to enter the world.</p>}
+              </Panel>
+            ) : (
+               <Panel className="focused-card"><Text variant="muted">{loading ? "Traveler details are loading." : "Traveler details are unavailable."}</Text></Panel>
+            )}
+          </div>
+        )}
+
+        {!isGameOver && (screen === "items" || screen === "equipment") && (
+          <div className="focused-screen" aria-label={screen === "items" ? "Items" : "Equipment"}>
+            {infoTabs}
+            <div className="focused-screen-heading">
+              <div><div className="focused-kicker">Character inventory</div><h1 className="focused-screen-title">{screen === "items" ? "Items" : "Equipment"}</h1></div>
+            </div>
+            {snapshot ? (
+              <Panel className="focused-card">
+                {screen === "equipment" ? (
+                  <div className="focused-details">
                     <div className="focused-detail focused-detail--wide">
-                      <span>Equipment</span>
+                      <span>Equipped</span>
                       <div className="focused-equipment">
                         {(["weapon", "armor"] as const).map((slot) => {
                           const itemId = slot === "weapon"
@@ -2743,13 +2789,38 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                       </div>
                     </div>
                     <div className="focused-detail focused-detail--wide">
-                      <span>Carried items</span>
-                      {snapshot.character?.inventory.length ? (
+                      <span>Available gear</span>
+                      {snapshot.character?.inventory.some((item) => item.equipment) ? (
                         <div className="focused-inventory">
-                          {snapshot.character.inventory.map((item) => {
+                          {snapshot.character.inventory.filter((item) => item.equipment).map((item) => {
                             const slotKey = item.equipment?.slot === "weapon" ? "weaponItemId" : "armorItemId";
                             const isEquipped = snapshot.character?.equipment[slotKey] === item.id;
                             return (
+                              <div className="focused-inventory-entry" key={item.id}>
+                                <span className="focused-inventory-label">{item.label}</span>
+                                <button
+                                  type="button"
+                                  className="focused-inventory-item"
+                                  aria-label={`${isEquipped ? "Equipped" : "Equip"} ${item.label}`}
+                                  disabled={pending !== null || isAnyCombatActive || isEquipped}
+                                  onClick={() => void changeEquipment("equip", item.id)}
+                                >
+                                  {isEquipped ? "Equipped" : `Equip ${item.equipment?.slot}`}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : <strong>None</strong>}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="focused-detail focused-detail--wide">
+                      <span>Carried items</span>
+                      {snapshot.character?.inventory.length ? (
+                        <div className="focused-inventory">
+                          {snapshot.character.inventory.map((item) => (
                             <div className="focused-inventory-entry" key={item.id}>
                               <button
                                 type="button"
@@ -2761,18 +2832,12 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                                 {item.label}
                               </button>
                               {item.equipment && (
-                                <button
-                                  type="button"
-                                  className="focused-inventory-item"
-                                  aria-label={`${isEquipped ? "Equipped" : "Equip"} ${item.label}`}
-                                  disabled={pending !== null || isAnyCombatActive || isEquipped}
-                                  onClick={() => void changeEquipment("equip", item.id)}
-                                >
-                                  {isEquipped ? "Equipped" : `Equip ${item.equipment.slot}`}
-                                </button>
+                                <span className="focused-item-tag">
+                                  {snapshot.character?.equipment[item.equipment.slot === "weapon" ? "weaponItemId" : "armorItemId"] === item.id ? "Equipped" : item.equipment.slot}
+                                </span>
                               )}
                             </div>
-                          );})}
+                          ))}
                         </div>
                       ) : <strong>None</strong>}
                       {inspectedCarriedItem && snapshot.character?.inventory.some((item) => item.id === inspectedCarriedItem.id) && (
@@ -2783,11 +2848,47 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                       )}
                       {inventoryInspectError && <p className="focused-inventory-error" role="status">{inventoryInspectError}</p>}
                     </div>
+                    {!snapshot.character && <p className="focused-note">Begin from Play to enter the world.</p>}
+                  </>
+                )}
+              </Panel>
+            ) : (
+              <Panel className="focused-card"><Text variant="muted">{loading ? "Character details are loading." : "Character details are unavailable."}</Text></Panel>
+            )}
+          </div>
+        )}
+
+        {!isGameOver && screen === "stats" && (
+          <div className="focused-screen" aria-label="Stats">
+            {infoTabs}
+            <div className="focused-screen-heading">
+              <div><div className="focused-kicker">Character progression</div><h1 className="focused-screen-title">Stats</h1></div>
+            </div>
+            {snapshot ? (
+              <Panel className="focused-card">
+                <div className="focused-identity focused-stats-identity">
+                  <span className="focused-avatar" aria-hidden="true">{(snapshot.character?.name || snapshot.player.displayName).trim().charAt(0).toUpperCase() || "G"}</span>
+                  <div>
+                    <h2 className="focused-identity-name">{snapshot.character?.name || "Guest"}</h2>
+                    <p className="focused-identity-label">
+                      {snapshot.character?.advancement
+                        ? `Level ${snapshot.character.advancement.level}`
+                        : "No combat victories yet"}
+                    </p>
+                  </div>
                 </div>
+                <div className="focused-details">
+                  <div className="focused-detail"><span>Level</span><strong>{snapshot.character?.advancement?.level ?? "—"}</strong></div>
+                  <div className="focused-detail"><span>Experience</span><strong>{snapshot.character?.advancement?.experience ?? "—"}</strong></div>
+                  <div className="focused-detail"><span>Health capacity</span><strong>{snapshot.character?.health?.maximum ?? "—"}</strong></div>
+                  <div className="focused-detail"><span>Weapon bonus</span><strong>+{snapshot.character?.inventory.find((item) => item.id === snapshot.character?.equipment.weaponItemId)?.equipment?.attackBonus ?? 0}</strong></div>
+                  <div className="focused-detail"><span>Armor bonus</span><strong>+{snapshot.character?.inventory.find((item) => item.id === snapshot.character?.equipment.armorItemId)?.equipment?.defenseBonus ?? 0}</strong></div>
+                </div>
+                <p className="focused-note">Character attributes such as Strength and Dexterity are not tracked yet.</p>
                 {!snapshot.character && <p className="focused-note">Begin from Play to enter the world.</p>}
               </Panel>
             ) : (
-               <Panel className="focused-card"><Text variant="muted">{loading ? "Traveler details are loading." : "Traveler details are unavailable."}</Text></Panel>
+              <Panel className="focused-card"><Text variant="muted">{loading ? "Character details are loading." : "Character details are unavailable."}</Text></Panel>
             )}
           </div>
         )}
@@ -2889,7 +2990,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
           aria-label="Game screens"
         >
           <a href="#/play" className="focused-tab" aria-current={screen === "play" ? "page" : undefined} onClick={() => setMenuOpen(false)}><Compass aria-hidden="true" /><span>Play</span></a>
-          <a href="#/info" className="focused-tab" aria-current={screen === "traveler" || screen === "notes" ? "page" : undefined} onClick={() => setMenuOpen(false)}><InfoIcon aria-hidden="true" /><span>Info</span></a>
+          <a href="#/info" className="focused-tab" aria-current={screen !== "play" ? "page" : undefined} onClick={() => setMenuOpen(false)}><InfoIcon aria-hidden="true" /><span>Info</span></a>
           {screen === "play" && snapshot?.location && !isAnyCombatActive && !visiblePvp && (
             <button
               className="focused-tab focused-type-tab"
