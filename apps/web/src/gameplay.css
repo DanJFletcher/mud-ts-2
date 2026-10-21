@@ -1239,7 +1239,7 @@
   .focused-world-map__minimap {
     position: fixed;
     z-index: 30;
-    top: calc(env(safe-area-inset-top) + 60px);
+    top: calc(env(safe-area-inset-top) + 8px);
     right: 10px;
     display: grid;
     width: clamp(88px, 28vw, 112px);
@@ -1252,6 +1252,13 @@
     background: rgb(23 25 27 / 58%);
     box-shadow: 0 5px 16px rgb(0 0 0 / 22%);
     cursor: pointer;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .focused-world-map__minimap:active {
+    cursor: grabbing;
   }
 
   .focused-world-map__minimap:focus-visible {

@@ -106,10 +106,49 @@ describe('map switching between floors', () => {
     );
     const minimap = container.querySelector<HTMLButtonElement>('.focused-world-map__minimap');
 
-    expect(minimap).toHaveAttribute('aria-label', 'Open map from minimap in full screen');
+    expect(minimap).toHaveAttribute('aria-label', 'Open map full screen; drag to move the minimap');
     expect(minimap?.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
 
     fireEvent.click(minimap!);
     expect(onFullscreenChange).toHaveBeenCalledWith(true);
+  });
+
+  it('lets the minimap be dragged without opening the map and remembers its position', () => {
+    window.localStorage.removeItem('mudd.mobile-map-minimap-offset.v1');
+    const onFullscreenChange = vi.fn();
+    const { container, unmount } = render(
+      <WorldMapPanel map={overworld} fullscreen={false} onFullscreenChange={onFullscreenChange} />,
+    );
+    const minimap = container.querySelector<HTMLButtonElement>('.focused-world-map__minimap')!;
+
+    expect(minimap).toHaveStyle({ transform: 'translate3d(0px, 0px, 0)' });
+
+    fireEvent.pointerDown(minimap, {
+      pointerId: 1,
+      pointerType: 'touch',
+      button: 0,
+      clientX: 100,
+      clientY: 100,
+    });
+    fireEvent.pointerMove(minimap, {
+      pointerId: 1,
+      pointerType: 'touch',
+      clientX: 140,
+      clientY: 150,
+    });
+    fireEvent.pointerUp(minimap, { pointerId: 1, pointerType: 'touch' });
+    fireEvent.click(minimap);
+
+    expect(minimap).toHaveStyle({ transform: 'translate3d(40px, 50px, 0)' });
+    expect(onFullscreenChange).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem('mudd.mobile-map-minimap-offset.v1')).toBe('{"x":40,"y":50}');
+
+    unmount();
+    const restored = render(
+      <WorldMapPanel map={overworld} fullscreen={false} onFullscreenChange={onFullscreenChange} />,
+    );
+    expect(restored.container.querySelector('.focused-world-map__minimap')).toHaveStyle({
+      transform: 'translate3d(40px, 50px, 0)',
+    });
   });
 });

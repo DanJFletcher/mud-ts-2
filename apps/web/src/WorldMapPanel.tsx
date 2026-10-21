@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type TouchEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type TouchEvent,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, ChevronUp, Maximize2, X } from 'lucide-react';
 import type { WorldMapProjection } from '@mudd/contracts';
@@ -13,10 +20,67 @@ type WorldMapPanelProps = Readonly<{
 
 type MapPoint = WorldMapProjection['locations'][number] & { screenX: number; screenY: number };
 type MapLayout = Readonly<{ points: MapPoint[]; width: number; height: number }>;
+type MinimapOffset = Readonly<{ x: number; y: number }>;
+type MinimapRect = Readonly<{ left: number; top: number; width: number; height: number }>;
+type MinimapDrag = {
+  pointerId: number;
+  pointerX: number;
+  pointerY: number;
+  rect: DOMRect;
+  offset: MinimapOffset;
+  moved: boolean;
+};
 
 const MAP_TILE_SIZE = 18;
 const MAP_GRID_STEP = 30;
 const MAP_PADDING = 18;
+const MINIMAP_OFFSET_STORAGE_KEY = 'mudd.mobile-map-minimap-offset.v1';
+const MINIMAP_EDGE_GAP = 8;
+
+function readMinimapOffset(): MinimapOffset {
+  if (typeof window === 'undefined') return { x: 0, y: 0 };
+  try {
+    const stored = window.localStorage.getItem(MINIMAP_OFFSET_STORAGE_KEY);
+    if (!stored) return { x: 0, y: 0 };
+    const parsed = JSON.parse(stored) as Partial<MinimapOffset>;
+    if (Number.isFinite(parsed.x) && Number.isFinite(parsed.y)) {
+      return { x: parsed.x!, y: parsed.y! };
+    }
+  } catch {
+    // Storage may be unavailable; the minimap still works at its default position.
+  }
+  return { x: 0, y: 0 };
+}
+
+function clampMinimapPosition(rect: MinimapRect): Readonly<{ left: number; top: number }> {
+  const roomNavigationTop = document
+    .querySelector<HTMLElement>('.focused-bottom-nav')
+    ?.getBoundingClientRect().top ?? window.innerHeight;
+  const maxLeft = Math.max(
+    MINIMAP_EDGE_GAP,
+    window.innerWidth - rect.width - MINIMAP_EDGE_GAP,
+  );
+  const maxTop = Math.max(
+    MINIMAP_EDGE_GAP,
+    Math.min(
+      window.innerHeight - rect.height - MINIMAP_EDGE_GAP,
+      roomNavigationTop - rect.height - MINIMAP_EDGE_GAP,
+    ),
+  );
+  return {
+    left: Math.max(MINIMAP_EDGE_GAP, Math.min(maxLeft, rect.left)),
+    top: Math.max(MINIMAP_EDGE_GAP, Math.min(maxTop, rect.top)),
+  };
+}
+
+function persistMinimapOffset(offset: MinimapOffset): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(MINIMAP_OFFSET_STORAGE_KEY, JSON.stringify(offset));
+  } catch {
+    // Keep the live drag usable if browser storage is unavailable.
+  }
+}
 
 function projectMapPoints(map: WorldMapProjection | undefined): MapLayout {
   if (!map?.locations.length) return { points: [], width: 100, height: 100 };
@@ -83,8 +147,12 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
   const [fullscreenPresent, setFullscreenPresent] = useState(fullscreen);
   const [fullscreenClosing, setFullscreenClosing] = useState(false);
   const [selectedLocationId, setSelectedLocationId] = useState<string>();
+  const [minimapOffset, setMinimapOffset] = useState(readMinimapOffset);
   const expandButtonRef = useRef<HTMLButtonElement>(null);
   const minimapButtonRef = useRef<HTMLButtonElement>(null);
+  const minimapOffsetRef = useRef(minimapOffset);
+  const minimapDragRef = useRef<MinimapDrag | null>(null);
+  const ignoreMinimapClickRef = useRef(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const wasFullscreenRef = useRef(false);
@@ -96,6 +164,84 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
     ? selectedLocationId
     : map?.currentLocationId;
   const focusedLocation = points.find((point) => point.id === focusedLocationId);
+
+  const updateMinimapOffset = useCallback((offset: MinimapOffset) => {
+    minimapOffsetRef.current = offset;
+    setMinimapOffset(offset);
+  }, []);
+
+  const handleMinimapPointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    minimapDragRef.current = {
+      pointerId: event.pointerId,
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+      rect,
+      offset: minimapOffsetRef.current,
+      moved: false,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const handleMinimapPointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const drag = minimapDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    const deltaX = event.clientX - drag.pointerX;
+    const deltaY = event.clientY - drag.pointerY;
+    if (!drag.moved && Math.hypot(deltaX, deltaY) < 4) return;
+    drag.moved = true;
+    event.preventDefault();
+
+    const desiredPosition = {
+      left: drag.rect.left + deltaX,
+      top: drag.rect.top + deltaY,
+    };
+    const clamped = clampMinimapPosition({
+      width: drag.rect.width,
+      height: drag.rect.height,
+      left: desiredPosition.left,
+      top: desiredPosition.top,
+    });
+    updateMinimapOffset({
+      x: drag.offset.x + clamped.left - drag.rect.left,
+      y: drag.offset.y + clamped.top - drag.rect.top,
+    });
+  };
+
+  const finishMinimapDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const drag = minimapDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    minimapDragRef.current = null;
+    if (drag.moved) {
+      ignoreMinimapClickRef.current = true;
+      persistMinimapOffset(minimapOffsetRef.current);
+      window.setTimeout(() => {
+        ignoreMinimapClickRef.current = false;
+      }, 0);
+    }
+  };
+
+  useEffect(() => {
+    const clampRestoredPosition = () => {
+      const button = minimapButtonRef.current;
+      if (!button) return;
+      const rect = button.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+      const clamped = clampMinimapPosition(rect);
+      if (clamped.left === rect.left && clamped.top === rect.top) return;
+      const offset = {
+        x: minimapOffsetRef.current.x + clamped.left - rect.left,
+        y: minimapOffsetRef.current.y + clamped.top - rect.top,
+      };
+      updateMinimapOffset(offset);
+      persistMinimapOffset(offset);
+    };
+    clampRestoredPosition();
+    window.addEventListener('resize', clampRestoredPosition);
+    return () => window.removeEventListener('resize', clampRestoredPosition);
+  }, [fullscreenPresent, updateMinimapOffset]);
 
   useEffect(() => {
     if (fullscreen) {
@@ -331,9 +477,21 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
       ref={minimapButtonRef}
       className="focused-world-map__minimap"
       type="button"
-      onClick={() => onFullscreenChange(true)}
-      aria-label="Open map from minimap in full screen"
-      title="Open map full screen"
+      style={{ transform: `translate3d(${minimapOffset.x}px, ${minimapOffset.y}px, 0)` }}
+      onPointerDown={handleMinimapPointerDown}
+      onPointerMove={handleMinimapPointerMove}
+      onPointerUp={finishMinimapDrag}
+      onPointerCancel={finishMinimapDrag}
+      onClick={(event) => {
+        if (ignoreMinimapClickRef.current) {
+          event.preventDefault();
+          ignoreMinimapClickRef.current = false;
+          return;
+        }
+        onFullscreenChange(true);
+      }}
+      aria-label="Open map full screen; drag to move the minimap"
+      title="Drag to move · Tap to open map"
     >
       {points.length > 0 ? (
         <svg
