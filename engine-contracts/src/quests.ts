@@ -37,6 +37,11 @@ export const QuestObjectiveDefinitionSchema = z.discriminatedUnion('type', [
   }).strict(),
 ]);
 
+export const QuestCurrencyRewardSchema = z.object({
+  currencyId: IdSchema,
+  amount: z.number().int().min(1).max(2_147_483_647),
+}).strict();
+
 export const QuestDefinitionSchema = z.object({
   id: IdSchema,
   version: z.string().trim().min(1).max(40),
@@ -45,8 +50,16 @@ export const QuestDefinitionSchema = z.object({
   scope: z.enum(['character', 'party']).optional(),
   giverNpcId: IdSchema,
   turnInNpcId: IdSchema,
+  reward: QuestCurrencyRewardSchema.optional(),
   objectives: z.array(QuestObjectiveDefinitionSchema).min(1).max(12),
 }).strict().superRefine((quest, context) => {
+  if (quest.reward && quest.scope === 'party') {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['reward'],
+      message: 'Currency rewards currently require character quest scope.',
+    });
+  }
   const objectiveIds = new Set<string>();
   quest.objectives.forEach((objective, index) => {
     if (objectiveIds.has(objective.id)) {
@@ -82,6 +95,18 @@ export const QuestCompletedEventSchema = DomainEventBaseSchema.extend({
     characterId: IdSchema,
     questId: IdSchema,
     definitionVersion: z.string().min(1).max(40),
+  }).strict(),
+}).strict();
+
+export const CharacterQuestRewardedEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('character.quest_rewarded'),
+  version: z.literal(1),
+  payload: z.object({
+    characterId: IdSchema,
+    questId: IdSchema,
+    definitionVersion: z.string().min(1).max(40),
+    currencyId: IdSchema,
+    amount: z.number().int().min(1).max(2_147_483_647),
   }).strict(),
 }).strict();
 
@@ -198,6 +223,7 @@ export type QuestObjectiveDefinition = z.infer<typeof QuestObjectiveDefinitionSc
 export type QuestDefinition = z.infer<typeof QuestDefinitionSchema>;
 export type QuestAcceptedEvent = z.infer<typeof QuestAcceptedEventSchema>;
 export type QuestCompletedEvent = z.infer<typeof QuestCompletedEventSchema>;
+export type CharacterQuestRewardedEvent = z.infer<typeof CharacterQuestRewardedEventSchema>;
 export type QuestProgress = z.infer<typeof QuestProgressSchema>;
 export type QuestJournalEntry = z.infer<typeof QuestJournalEntrySchema>;
 export type PartyQuestJournal = z.infer<typeof PartyQuestJournalSchema>;

@@ -18,7 +18,7 @@ import {
   worldItemsPlugin,
 } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
-import { InitializeCharacterWalletCommandSchema } from '@mudd/contracts';
+import { InitializeCharacterWalletCommandSchema, validateDraftWorldGraph } from '@mudd/contracts';
 
 describe('demo world navigation', () => {
   const compassVectors: Record<string, readonly [number, number]> = {
@@ -100,6 +100,17 @@ describe('demo world navigation', () => {
       const current = locations.get(route[index]!)!;
       expect(current.exits.some((exit) => exit.toLocationId === route[index + 1])).toBe(true);
     }
+  });
+
+  it('requires character quest rewards to use the configured world currency', () => {
+    const invalidWorld = structuredClone(demoWorld);
+    invalidWorld.quests = invalidWorld.quests?.map((quest) => quest.id === 'sedgewatch-waterline'
+      ? { ...quest, reward: { currencyId: 'other-currency', amount: 5 } }
+      : quest);
+
+    expect(validateDraftWorldGraph(invalidWorld)).toContain(
+      'Quest sedgewatch-waterline reward currency other-currency does not match the world currency',
+    );
   });
 });
 
@@ -1309,19 +1320,36 @@ describe('MuddHttpClient', () => {
       id: 'report-sedgewatch-waterline',
       label: 'Report the waterline',
     });
+    const turnInCommandId = 'cottage-quest-turn-in';
     await client.chooseNpcDialogue(
       characterId,
       'talla-sedgewatch',
       'report-sedgewatch-waterline',
       readyToReport.revision,
-      'cottage-quest-turn-in',
+      turnInCommandId,
+    );
+    await client.chooseNpcDialogue(
+      characterId,
+      'talla-sedgewatch',
+      'report-sedgewatch-waterline',
+      readyToReport.revision,
+      turnInCommandId,
     );
     const completedState = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(completedState.wallet).toEqual({ currencyId: 'moss-mark', balance: 17 });
+    expect(completedState.questRewardedIds).toContain('sedgewatch-waterline');
     expect(projectQuestJournal(completedState, demoWorld)).toMatchObject([{
       questId: 'sedgewatch-waterline',
       status: 'completed',
       objectives: [{ id: 'read-waterline', completed: true }],
     }]);
+    await expect(client.chooseNpcDialogue(
+      characterId,
+      'talla-sedgewatch',
+      'report-sedgewatch-waterline',
+      completedState.revision,
+      'cottage-quest-extra-turn-in',
+    )).rejects.toThrow('That choice is not available here.');
 
     const afterTurnIn = await client.look(characterId, 'cottage-quest-after-turn-in');
     await client.move(
@@ -1366,6 +1394,12 @@ describe('MuddHttpClient', () => {
       atNim.revision,
       'cottage-quest-talk-baskets',
     );
+    const anotherCharacter = await client.createCharacter('Ash', 'cottage-quest-create-second-character');
+    const anotherCharacterState = replayCharacter(
+      await store.readStream(DEMO_WORLD_INSTANCE_ID, anotherCharacter.streamId!),
+    )!;
+    expect(anotherCharacterState.wallet).toEqual({ currencyId: 'moss-mark', balance: 12 });
+    expect(anotherCharacterState.questRewardedIds).toEqual([]);
     await engine.stop();
   });
 

@@ -8,6 +8,7 @@ import {
   CharacterNpcDialogueChoiceMadeEventSchema,
   QuestAcceptedEventSchema,
   QuestCompletedEventSchema,
+  CharacterQuestRewardedEventSchema,
   CharacterProjectionSchema,
   CharacterCreatedEventSchema,
   CharacterMovedEventSchema,
@@ -635,6 +636,30 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         questProgress: state.questProgress.map((entry) => entry.questId === completed.payload.questId
           ? { ...entry, status: 'completed' }
           : entry),
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.quest_rewarded') {
+      if (!state) throw new Error('Quest reward event encountered before character creation.');
+      const rewarded = CharacterQuestRewardedEventSchema.parse(publicEvent);
+      const progress = state.questProgress.find((entry) => entry.questId === rewarded.payload.questId);
+      const nextBalance = state.wallet ? state.wallet.balance + rewarded.payload.amount : Number.MAX_SAFE_INTEGER;
+      if (
+        rewarded.payload.characterId !== state.characterId ||
+        !progress ||
+        progress.status !== 'completed' ||
+        progress.definitionVersion !== rewarded.payload.definitionVersion ||
+        state.questRewardedIds.includes(rewarded.payload.questId) ||
+        !state.wallet ||
+        state.wallet.currencyId !== rewarded.payload.currencyId ||
+        !Number.isSafeInteger(nextBalance) ||
+        nextBalance > 2_147_483_647
+      ) {
+        throw new Error(`Invalid quest reward event at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        wallet: { ...state.wallet, balance: nextBalance },
+        questRewardedIds: [...state.questRewardedIds, rewarded.payload.questId],
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'character.renamed') {

@@ -5,8 +5,25 @@ import {
   RoadStepCommandSchema,
   PluginManifestSchema, LocationDescribeQuerySchema, ObjectReadQuerySchema, ObjectInspectQuerySchema, TakeCharacterItemCommandSchema,
   DropCharacterItemCommandSchema, InventoryItemProjectionSchema, WorldPackDraftSchema,
-  validateDraftWorldGraph,
+  QuestDefinitionSchema, validateDraftWorldGraph,
 } from '../dist/src/index.js';
+
+test('quest currency rewards are positive and limited to character-scoped quests', () => {
+  const quest = {
+    id: 'waterline',
+    version: '1.0.0',
+    title: 'The Waterline Mark',
+    summary: 'Read the gauge and report back.',
+    giverNpcId: 'talla',
+    turnInNpcId: 'talla',
+    reward: { currencyId: 'moss-mark', amount: 5 },
+    objectives: [{ id: 'read-gauge', label: 'Read the gauge', type: 'visit-location', locationId: 'bridge' }],
+  };
+
+  assert.equal(QuestDefinitionSchema.safeParse(quest).success, true);
+  assert.equal(QuestDefinitionSchema.safeParse({ ...quest, reward: { currencyId: 'moss-mark', amount: 0 } }).success, false);
+  assert.equal(QuestDefinitionSchema.safeParse({ ...quest, scope: 'party' }).success, false);
+});
 
 const move = { type: 'character.move', version: 1, commandId: 'cmd1', worldInstanceId: 'world1', characterId: 'char1', expectedVersion: 2, payload: { exitId: 'north' } };
 

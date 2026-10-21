@@ -2,6 +2,7 @@ import {
   CharacterNpcDialogueChoiceMadeEventSchema,
   NpcDialogueChoiceCommandSchema,
   NpcDialogueProjectionSchema,
+  CharacterQuestRewardedEventSchema,
   QuestAcceptedEventSchema,
   QuestCompletedEventSchema,
   NpcTalkQuerySchema,
@@ -132,6 +133,12 @@ export const npcDialoguePlugin: EnginePlugin = {
     category: 'core',
     requiredPlugins: { 'mudd.character': '^1.0.0' },
     requires: ['mudd.character.state.v1'],
+    eventSchemaVersions: {
+      'character.npc_dialogue_choice_made': 1,
+      'quest.accepted': 1,
+      'quest.completed': 1,
+      'character.quest_rewarded': 1,
+    },
   },
   register({ registerQuery, registerCommand, requireCapability, optionalCapability }) {
     const characterState = requireCapability<CharacterStateCapability>(characterStateCapability);
@@ -215,6 +222,27 @@ export const npcDialoguePlugin: EnginePlugin = {
           };
           QuestCompletedEventSchema.shape.payload.parse(questPayload);
           events.push({ type: 'quest.completed', version: 1, payload: questPayload });
+          if (quest.reward) {
+            const currency = context.world.currency;
+            if (!currency || currency.id !== quest.reward.currencyId) {
+              throw new RuleViolationError('That quest reward is not configured for this world.');
+            }
+            if (!character.wallet || character.wallet.currencyId !== currency.id) {
+              throw new RuleViolationError('This character’s wallet is not ready yet. Refresh the world and try again.');
+            }
+            if (character.wallet.balance > 2_147_483_647 - quest.reward.amount) {
+              throw new RuleViolationError('Your wallet cannot hold that quest reward.');
+            }
+            const rewardPayload = {
+              characterId: character.characterId,
+              questId: quest.id,
+              definitionVersion: quest.version,
+              currencyId: currency.id,
+              amount: quest.reward.amount,
+            };
+            CharacterQuestRewardedEventSchema.shape.payload.parse(rewardPayload);
+            events.push({ type: 'character.quest_rewarded', version: 1, payload: rewardPayload });
+          }
         }
       }
       return {

@@ -36,6 +36,7 @@ const firstCharacter = {
   readableObservations: [],
   itemUseObservations: [],
   questProgress: [],
+  questRewardedIds: [],
   archived: false,
 };
 const secondCharacter = {

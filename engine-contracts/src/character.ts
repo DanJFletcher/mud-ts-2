@@ -308,6 +308,7 @@ export const CharacterProjectionSchema = z.object({
     definitionVersion: z.string().min(1).max(40),
     status: z.enum(['active', 'completed']),
   }).strict()).default([]),
+  questRewardedIds: z.array(IdSchema).default([]),
   archived: z.boolean().default(false),
 }).strict();
 

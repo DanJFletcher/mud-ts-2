@@ -684,6 +684,9 @@ export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
   for (const quest of quests) {
     if (questIds.has(quest.id)) errors.push(`Duplicate quest ID ${quest.id}`);
     questIds.add(quest.id);
+    if (quest.reward && quest.reward.currencyId !== pack.currency?.id) {
+      errors.push(`Quest ${quest.id} reward currency ${quest.reward.currencyId} does not match the world currency`);
+    }
     if (!npcs.some(({ npc }) => npc.id === quest.giverNpcId)) {
       errors.push(`Quest ${quest.id} has a missing giver NPC ${quest.giverNpcId}`);
     }

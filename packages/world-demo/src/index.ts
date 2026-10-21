@@ -104,6 +104,7 @@ const draft = {
       summary: 'Read the gauge beneath Glasswater Bridge and report whether the high mark is wet.',
       giverNpcId: 'talla-sedgewatch',
       turnInNpcId: 'talla-sedgewatch',
+      reward: { currencyId: 'moss-mark', amount: 5 },
       objectives: [
         {
           id: 'read-waterline',
@@ -1123,7 +1124,7 @@ const draft = {
               {
                 id: 'report-sedgewatch-waterline',
                 label: 'Report the waterline',
-                response: 'Only the lowest notch is wet. The middle and high marks are dry.',
+                response: 'Only the lowest notch is wet. The middle and high marks are dry. Take five moss marks for the trouble.',
                 progressFlagId: 'talla-reported-waterline',
                 questCondition: {
                   questId: 'sedgewatch-waterline',
