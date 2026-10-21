@@ -741,11 +741,209 @@ describe('MuddHttpClient', () => {
       mapPosition: { x: 2, y: 0, z: -1 },
     });
     expect(underhollowDefinition?.mapPosition?.z).toBe(hallwayDefinition?.mapPosition?.z);
+    const echoGalleryDefinition = demoWorld.locations.find((location) => location.id === 'undercrypt-echo-gallery');
+    expect(echoGalleryDefinition).toMatchObject({
+      mapAreaId: 'bell-tower-undercrypt',
+      mapPosition: { x: 3, y: 0, z: 0 },
+    });
+    expect(echoGalleryDefinition?.mapAreaId).not.toBe(hallwayDefinition?.mapAreaId);
+
+    expect(serviceHall.exits).toContainEqual(expect.objectContaining({
+      id: 'service-hall-to-echo-gallery',
+      available: false,
+    }));
+    await expect(client.move(
+      characterId,
+      'service-hall-to-echo-gallery',
+      serviceHall.revision,
+      'puzzle-try-locked-undercrypt-arch',
+    )).rejects.toThrow('That passage is still sealed.');
+    await client.use(
+      characterId,
+      'bellwright-underhollow-key',
+      'service-hall-sealed-arch',
+      serviceHall.revision,
+      'puzzle-open-undercrypt-arch',
+    );
+    const openedServiceHall = await client.look(characterId, 'puzzle-look-open-undercrypt-arch');
+    expect(openedServiceHall.exits).toContainEqual(expect.objectContaining({
+      id: 'service-hall-to-echo-gallery',
+      available: true,
+    }));
+    await client.move(
+      characterId,
+      'service-hall-to-echo-gallery',
+      openedServiceHall.revision,
+      'puzzle-enter-echo-gallery',
+    );
+    let echoGallery = await client.look(characterId, 'puzzle-look-echo-gallery');
+    expect(echoGallery.title).toBe('Echo Gallery');
+    expect(echoGallery.objects).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'undercrypt-pale-stone', takeable: true }),
+      expect.objectContaining({ id: 'undercrypt-hollow-reed', takeable: true }),
+    ]));
+    const echoInscription = await client.read(
+      characterId,
+      'echo-gallery-rubbing',
+      echoGallery.revision,
+      'puzzle-read-echo-gallery-rubbing',
+    );
+    expect(echoInscription.text).toContain('Set the pale stone in its bowl first');
+    echoGallery = await client.look(characterId, 'puzzle-look-after-echo-clue');
+    await client.take(characterId, 'undercrypt-pale-stone', echoGallery.revision, 'puzzle-take-pale-stone');
+    echoGallery = await client.look(characterId, 'puzzle-look-after-taking-pale-stone');
+    await client.take(characterId, 'undercrypt-hollow-reed', echoGallery.revision, 'puzzle-take-undercrypt-reed');
+    echoGallery = await client.look(characterId, 'puzzle-look-before-first-echo');
+    await expect(client.use(
+      characterId,
+      'undercrypt-hollow-reed',
+      'echo-gallery-split-pipe',
+      echoGallery.revision,
+      'puzzle-try-reed-before-stone',
+    )).rejects.toThrow('the low note must rest first.');
+    await client.use(
+      characterId,
+      'undercrypt-pale-stone',
+      'echo-gallery-stone-bowl',
+      echoGallery.revision,
+      'puzzle-set-echo-stone',
+    );
+    echoGallery = await client.look(characterId, 'puzzle-look-after-echo-stone');
+    await client.use(
+      characterId,
+      'undercrypt-hollow-reed',
+      'echo-gallery-split-pipe',
+      echoGallery.revision,
+      'puzzle-send-echo-reed',
+    );
+    echoGallery = await client.look(characterId, 'puzzle-look-after-echo-solution');
+    expect(echoGallery.exits).toContainEqual(expect.objectContaining({
+      id: 'echo-gallery-to-flooded-archive',
+      available: true,
+    }));
+    await client.move(
+      characterId,
+      'echo-gallery-to-flooded-archive',
+      echoGallery.revision,
+      'puzzle-enter-flooded-archive',
+    );
+    let archive = await client.look(characterId, 'puzzle-look-flooded-archive');
+    expect(archive.title).toBe('Flooded Archive');
+    expect(archive.exits).toContainEqual(expect.objectContaining({
+      id: 'flooded-archive-to-reliquary',
+      available: false,
+    }));
+    const archiveLedger = await client.read(
+      characterId,
+      'archive-ledger-clue',
+      archive.revision,
+      'puzzle-read-archive-ledger',
+    );
+    expect(archiveLedger.text).toContain('Balance before reflection');
+    archive = await client.look(characterId, 'puzzle-look-after-archive-clue');
+    await client.take(characterId, 'undercrypt-silver-weight', archive.revision, 'puzzle-take-silver-weight');
+    archive = await client.look(characterId, 'puzzle-look-after-taking-weight');
+    await client.take(characterId, 'undercrypt-mirror-shard', archive.revision, 'puzzle-take-mirror-shard');
+    archive = await client.look(characterId, 'puzzle-look-before-archive-puzzle');
+    await client.take(characterId, 'undercrypt-bellwright-seal', archive.revision, 'puzzle-take-silver-seal');
+    archive = await client.look(characterId, 'puzzle-look-after-taking-seal');
+    await client.take(characterId, 'undercrypt-bellwright-vest', archive.revision, 'puzzle-take-scale-vest');
+    archive = await client.look(characterId, 'puzzle-look-before-archive-solution');
+    await expect(client.use(
+      characterId,
+      'undercrypt-mirror-shard',
+      'archive-water-plinth',
+      archive.revision,
+      'puzzle-try-reflection-before-weight',
+    )).rejects.toThrow('ledger says the dry scale must be balanced first');
+    await client.use(
+      characterId,
+      'undercrypt-silver-weight',
+      'archive-dry-scale',
+      archive.revision,
+      'puzzle-set-archive-weight',
+    );
+    archive = await client.look(characterId, 'puzzle-look-after-archive-weight');
+    await client.use(
+      characterId,
+      'undercrypt-mirror-shard',
+      'archive-water-plinth',
+      archive.revision,
+      'puzzle-set-archive-reflection',
+    );
+    archive = await client.look(characterId, 'puzzle-look-after-archive-solution');
+    expect(archive.exits).toContainEqual(expect.objectContaining({
+      id: 'flooded-archive-to-reliquary',
+      available: true,
+    }));
+    const archiveState = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(archiveState.inventory).toContainEqual(expect.objectContaining({
+      id: 'undercrypt-bellwright-vest',
+      equipment: { slot: 'armor', attackBonus: 0, defenseBonus: 1 },
+    }));
+    await client.equip(
+      characterId,
+      'undercrypt-bellwright-vest',
+      archive.revision,
+      'puzzle-equip-bellwright-vest',
+    );
+    archive = await client.look(characterId, 'puzzle-look-after-equipping-vest');
+    const gearedArchiveState = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(gearedArchiveState.equipment.armorItemId).toBe('undercrypt-bellwright-vest');
+    await client.move(
+      characterId,
+      'flooded-archive-to-reliquary',
+      archive.revision,
+      'puzzle-enter-bellwright-reliquary',
+    );
+    let reliquary = await client.look(characterId, 'puzzle-look-bellwright-reliquary');
+    expect(reliquary.title).toBe('Bellwright Reliquary');
+    expect(reliquary.objects).toContainEqual(expect.objectContaining({
+      id: 'undercrypt-echoedge',
+      takeable: true,
+    }));
+    await client.take(characterId, 'undercrypt-echoedge', reliquary.revision, 'puzzle-take-echoedge');
+    reliquary = await client.look(characterId, 'puzzle-look-after-taking-echoedge');
+    const swordInventory = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!.inventory;
+    expect(swordInventory).toContainEqual(expect.objectContaining({
+      id: 'undercrypt-echoedge',
+      equipment: { slot: 'weapon', attackBonus: 2, defenseBonus: 0 },
+    }));
+    await client.equip(characterId, 'undercrypt-echoedge', reliquary.revision, 'puzzle-equip-echoedge');
+    reliquary = await client.look(characterId, 'puzzle-look-after-equipping-echoedge');
+    const armedCharacter = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(armedCharacter.equipment.weaponItemId).toBe('undercrypt-echoedge');
+    expect(armedCharacter.equipment.armorItemId).toBe('undercrypt-bellwright-vest');
+    await client.move(
+      characterId,
+      'reliquary-to-flooded-archive',
+      reliquary.revision,
+      'puzzle-return-to-archive',
+    );
+    archive = await client.look(characterId, 'puzzle-look-after-reliquary');
+    await client.move(
+      characterId,
+      'flooded-archive-to-echo-gallery',
+      archive.revision,
+      'puzzle-return-to-echo-gallery',
+    );
+    echoGallery = await client.look(characterId, 'puzzle-look-after-archive');
+    await client.move(
+      characterId,
+      'echo-gallery-to-service-hall',
+      echoGallery.revision,
+      'puzzle-return-to-service-hall-from-dungeon',
+    );
+    const hallAfterDungeon = await client.look(characterId, 'puzzle-look-service-hall-after-dungeon');
+    expect(hallAfterDungeon.exits).toContainEqual(expect.objectContaining({
+      id: 'service-hall-to-echo-gallery',
+      available: true,
+    }));
 
     await client.move(
       characterId,
       'service-hall-to-underhollow',
-      serviceHall.revision,
+      hallAfterDungeon.revision,
       'puzzle-return-from-service-hall',
     );
     const returnedUnderhollow = await client.look(characterId, 'puzzle-look-after-service-hall');

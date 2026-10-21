@@ -2,6 +2,7 @@
 import { z } from 'zod';
 import { ClientCommandBaseSchema, ClientQueryBaseSchema } from './protocol.js';
 import { ContractVersionSchema, IdSchema, NonNegativeIntSchema } from './ids.js';
+import { InventoryEquipmentSchema } from './character.js';
 import { QuestDefinitionSchema, QuestDialogueActionSchema } from './quests.js';
 import {
   InnDefinitionSchema,
@@ -70,6 +71,7 @@ export const TakeableObjectDefinitionSchema = z.object({
   description: z.string().min(1).max(1000),
   roomDescription: z.string().min(1).max(1000).optional(),
   questBound: z.boolean().optional(),
+  equipment: InventoryEquipmentSchema.optional(),
 }).strict();
 
 export const InteractableObjectDefinitionSchema = z.object({

@@ -161,6 +161,7 @@ export const characterPlugin: EnginePlugin = {
           label: inventoryItem.label,
           description: inventoryItem.description,
           ...(inventoryItem.questBound ? { questBound: true } : {}),
+          ...(inventoryItem.equipment ? { equipment: inventoryItem.equipment } : {}),
         },
       };
       CharacterItemTakenEventSchema.shape.payload.parse(payload);

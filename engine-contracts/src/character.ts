@@ -10,6 +10,19 @@ export const ConsumableItemSchema = z.object({
   amount: PositiveIntSchema.max(1000),
 }).strict();
 
+export const InventoryEquipmentSchema = z.object({
+  slot: z.enum(['weapon', 'armor']),
+  attackBonus: NonNegativeIntSchema.max(10).default(0),
+  defenseBonus: NonNegativeIntSchema.max(10).default(0),
+}).strict().superRefine((equipment, context) => {
+  if (equipment.slot === 'weapon' && equipment.defenseBonus > 0) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['defenseBonus'], message: 'Weapons cannot provide armor.' });
+  }
+  if (equipment.slot === 'armor' && equipment.attackBonus > 0) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['attackBonus'], message: 'Armor cannot provide weapon damage.' });
+  }
+});
+
 export const InventoryItemProjectionSchema = z.object({
   id: IdSchema,
   /** Present only while this physical item is owned by the shared world-item aggregate. */
@@ -18,19 +31,7 @@ export const InventoryItemProjectionSchema = z.object({
   description: z.string().min(1).max(1000),
   questBound: z.boolean().optional(),
   consumable: ConsumableItemSchema.optional(),
-  equipment: z.object({
-    slot: z.enum(['weapon', 'armor']),
-    attackBonus: NonNegativeIntSchema.max(10).default(0),
-    defenseBonus: NonNegativeIntSchema.max(10).default(0),
-  }).strict().optional().superRefine((equipment, context) => {
-    if (!equipment) return;
-    if (equipment.slot === 'weapon' && equipment.defenseBonus > 0) {
-      context.addIssue({ code: z.ZodIssueCode.custom, path: ['defenseBonus'], message: 'Weapons cannot provide armor.' });
-    }
-    if (equipment.slot === 'armor' && equipment.attackBonus > 0) {
-      context.addIssue({ code: z.ZodIssueCode.custom, path: ['attackBonus'], message: 'Armor cannot provide weapon damage.' });
-    }
-  }),
+  equipment: InventoryEquipmentSchema.optional(),
 }).strict().superRefine((item, context) => {
   if (item.sharedItemId && item.sharedItemId !== item.id) {
     context.addIssue({

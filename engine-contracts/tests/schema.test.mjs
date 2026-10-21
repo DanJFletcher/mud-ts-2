@@ -130,11 +130,70 @@ test('dropping a carried item is a versioned character command', () => {
   }).success, false);
 });
 
-test('inventory items accept an optional quest-bound marker', () => {
+test('inventory items accept quest and equipment metadata', () => {
   const item = { id: 'quest-stone', label: 'Quest stone', description: 'A marked stone.' };
   assert.equal(InventoryItemProjectionSchema.safeParse(item).success, true);
   assert.equal(InventoryItemProjectionSchema.safeParse({ ...item, questBound: true }).success, true);
   assert.equal(InventoryItemProjectionSchema.safeParse({ ...item, questBound: 'yes' }).success, false);
+  assert.equal(InventoryItemProjectionSchema.safeParse({
+    ...item,
+    equipment: { slot: 'weapon', attackBonus: 2, defenseBonus: 0 },
+  }).success, true);
+  assert.equal(InventoryItemProjectionSchema.safeParse({
+    ...item,
+    equipment: { slot: 'weapon', attackBonus: 0, defenseBonus: 1 },
+  }).success, false);
+});
+
+test('world takeables retain authored equipment metadata', () => {
+  const world = WorldPackDraftSchema.parse({
+    formatVersion: 1,
+    packId: 'authored-equipment',
+    packVersion: '1.0.0',
+    displayName: 'Authored Equipment',
+    locations: [{
+      id: 'equipment-room',
+      name: 'Equipment Room',
+      description: 'A test room.',
+      takeables: [
+        {
+          id: 'room-sword',
+          label: 'Room sword',
+          description: 'A test weapon.',
+          equipment: { slot: 'weapon', attackBonus: 2, defenseBonus: 0 },
+        },
+        {
+          id: 'room-armor',
+          label: 'Room armor',
+          description: 'A test armor piece.',
+          equipment: { slot: 'armor', attackBonus: 0, defenseBonus: 1 },
+        },
+      ],
+      exits: [],
+    }],
+  });
+  assert.deepEqual(world.locations[0].takeables[0].equipment, {
+    slot: 'weapon',
+    attackBonus: 2,
+    defenseBonus: 0,
+  });
+  assert.deepEqual(world.locations[0].takeables[1].equipment, {
+    slot: 'armor',
+    attackBonus: 0,
+    defenseBonus: 1,
+  });
+  assert.equal(WorldPackDraftSchema.safeParse({
+    ...world,
+    locations: [{
+      ...world.locations[0],
+      takeables: [{
+        id: 'invalid-equipment',
+        label: 'Invalid equipment',
+        description: 'Weapons cannot provide armor.',
+        equipment: { slot: 'weapon', attackBonus: 0, defenseBonus: 1 },
+      }],
+    }],
+  }).success, false);
 });
 
 test('draft content checks graph references', () => {
