@@ -97,7 +97,60 @@
 .mudd-room__description { max-width: 62ch; font-size: 1.02rem; }
 .mudd-room__exits { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .mudd-room__exit { border: 1px solid var(--mudd-border); border-radius: 999px; padding: 0.35rem 0.65rem; color: var(--mudd-muted); font-size: 0.78rem; }
-.mudd-navigation { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); gap: 0.65rem; }
+.mudd-navigation {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: minmax(0, 2.8fr) minmax(3.5rem, 1fr);
+  gap: 0.45rem;
+  padding: 0.45rem 0.8rem;
+  border-bottom: 1px solid var(--terminal-border, var(--mudd-border));
+  background: var(--terminal-inset, var(--mudd-surface));
+}
+.mudd-navigation__cardinal {
+  display: grid;
+  grid-template-areas: "west north east" "west south east";
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(2rem, 1fr));
+  gap: 0.25rem;
+}
+.mudd-navigation__vertical {
+  display: grid;
+  grid-template-rows: repeat(2, minmax(2rem, 1fr));
+  gap: 0.25rem;
+}
+.mudd-navigation__direction.mudd-button {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.15rem;
+  padding: 0.25rem 0.3rem;
+  border-radius: 0.45rem;
+  font: 500 0.66rem/1.1 "DM Mono", monospace;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.mudd-navigation__direction--west { grid-area: west; }
+.mudd-navigation__direction--north { grid-area: north; }
+.mudd-navigation__direction--south { grid-area: south; }
+.mudd-navigation__direction--east { grid-area: east; }
+.mudd-navigation__direction--up { min-height: 0; }
+.mudd-navigation__direction--down { min-height: 0; }
+.mudd-navigation__direction--available.mudd-button {
+  border-color: var(--terminal-accent, var(--mudd-accent));
+  color: var(--terminal-accent, var(--mudd-accent-strong));
+  background: color-mix(
+    in srgb,
+    var(--terminal-accent, var(--mudd-accent)) 16%,
+    var(--terminal-surface, var(--mudd-surface))
+  );
+}
+.mudd-navigation__direction:not(.mudd-navigation__direction--available) {
+  opacity: 0.52;
+}
+.mudd-navigation__direction:focus-visible {
+  outline: 3px solid var(--terminal-warm, var(--mudd-warm));
+  outline-offset: 2px;
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }

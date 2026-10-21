@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ActivityLog } from './ActivityLog.js';
 import { Button } from './Button.js';
@@ -68,5 +68,39 @@ describe('@mudd/ui components', () => {
     render(<NavigationControls exits={[{ id: 'bridge-exit', label: 'North', available: true }]} onMove={onMove} />);
     fireEvent.click(screen.getByRole('button', { name: 'North' }));
     expect(onMove).toHaveBeenCalledWith('bridge-exit');
+  });
+
+  it('shows all six directions and highlights only available exits', () => {
+    const { container } = render(<NavigationControls exits={[
+      { id: 'north-exit', direction: 'north', label: 'North to the bridge', available: true },
+      { id: 'west-exit', direction: 'west', label: 'West to the clearing', available: false },
+      { id: 'down-exit', direction: 'down', label: 'Down to the river', available: true },
+    ]} onMove={vi.fn()} />);
+
+    const navigation = container.querySelector<HTMLElement>('[aria-label="Quick navigation"]')!;
+    expect(within(navigation).getAllByRole('button')).toHaveLength(6);
+    expect(within(navigation).getByRole('button', { name: 'North' })).toBeEnabled();
+    expect(within(navigation).getByRole('button', { name: 'North' })).toHaveClass('mudd-navigation__direction--available');
+    expect(within(navigation).getByRole('button', { name: 'Down' })).toBeEnabled();
+    expect(within(navigation).getByRole('button', { name: 'West' })).toBeDisabled();
+    expect(within(navigation).getByRole('button', { name: 'West' })).not.toHaveClass('mudd-navigation__direction--available');
+    expect(within(navigation).getByRole('button', { name: 'Up' })).toBeDisabled();
+  });
+
+  it('opens the Go chooser when a direction has multiple available exits', () => {
+    const onMove = vi.fn();
+    const onAmbiguousDirection = vi.fn();
+    render(<NavigationControls
+      exits={[
+        { id: 'bridge-exit', direction: 'north', label: 'North to the bridge', available: true },
+        { id: 'road-exit', direction: 'north', label: 'North along the road', available: true },
+      ]}
+      onMove={onMove}
+      onAmbiguousDirection={onAmbiguousDirection}
+    />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'North, choose a destination' }));
+    expect(onAmbiguousDirection).toHaveBeenCalledWith('north');
+    expect(onMove).not.toHaveBeenCalled();
   });
 });

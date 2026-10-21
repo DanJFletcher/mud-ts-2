@@ -1393,14 +1393,20 @@ describe('single-character world session client', () => {
   });
 
   it('uses real character-bound commands and retains the action history on Field notes', async () => {
-    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    const { container } = render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     const history = screen.getByRole('region', { name: 'Terminal output' });
     expect(history).toHaveClass('focused-terminal-history');
     expect(screen.getByRole('region', { name: 'Text command' })).toBeInTheDocument();
     expect(screen.queryByText('Available paths')).not.toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Room chat' })).toBeVisible();
-    quickGo('north');
+    const quickNavigation = container.querySelector<HTMLElement>('[aria-label="Quick navigation"]')!;
+    expect(within(quickNavigation).getAllByRole('button')).toHaveLength(6);
+    expect(within(quickNavigation).getByRole('button', { name: 'North' })).toBeEnabled();
+    expect(within(quickNavigation).getByRole('button', { name: 'South' })).toBeDisabled();
+    expect(within(quickNavigation).getByRole('button', { name: 'Up' })).toBeDisabled();
+    expect(quickNavigation.nextElementSibling).toHaveClass('focused-quick-commands');
+    fireEvent.click(within(quickNavigation).getByRole('button', { name: 'North' }));
     await screen.findByRole('heading', { name: 'Glasswater Bridge' });
     expect(history).toHaveTextContent('You travel north.');
     expect(history).toHaveTextContent('A stone bridge crosses clear water.');

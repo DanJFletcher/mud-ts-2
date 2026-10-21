@@ -13,4 +13,4 @@ export type { ActivityEntry, ActivityLogProps } from './components/ActivityLog.j
 export { RoomDescription } from './components/RoomDescription.js';
 export type { RoomDescriptionProps, RoomExit } from './components/RoomDescription.js';
 export { NavigationControls } from './components/NavigationControls.js';
-export type { NavigationControlsProps } from './components/NavigationControls.js';
+export type { NavigationControlsProps, NavigationDirection } from './components/NavigationControls.js';

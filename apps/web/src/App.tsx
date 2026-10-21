@@ -14,6 +14,7 @@ import {
   ActivityLog,
   Button,
   DisclosureButton,
+  NavigationControls,
   Panel,
   Text,
   TextInput,
@@ -2193,6 +2194,17 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                       </div>
                     </section>
                   ) : null}
+                  {!isAnyCombatActive && !visiblePvp && (
+                    <NavigationControls
+                      exits={exits}
+                      onMove={(exitId) => void move(exitId)}
+                      onAmbiguousDirection={() => {
+                        setQuickCommandPage(1);
+                        setQuickCommandMode("go");
+                      }}
+                      disabled={!snapshot.character || pending !== null}
+                    />
+                  )}
                   {!isAnyCombatActive && !visiblePvp && <section className="focused-quick-commands" aria-label="Quick commands">
                     {quickCommandMode !== "quick" && (
                       <span className="focused-quick-commands__label" aria-hidden="true">
