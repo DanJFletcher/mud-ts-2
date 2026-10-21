@@ -10,6 +10,16 @@ const { apiFetch } = vi.hoisted(() => {
 
 import { WorldClient } from './App.js';
 
+async function openInfoSection(section: 'Traveler' | 'Field notes') {
+  fireEvent.click(screen.getByRole('link', { name: 'Info' }));
+  const tabs = await screen.findByRole('navigation', { name: 'Info sections' });
+  if (section === 'Field notes') {
+    fireEvent.click(within(tabs).getByRole('link', { name: section }));
+  }
+  await screen.findByRole('heading', { name: section });
+  return tabs;
+}
+
 const characterId = '11111111-1111-4111-8111-111111111111';
 let room: 'clearing' | 'bridge' | 'market' | 'inn' | 'belfry';
 let visitedLocationIds: string[];
@@ -921,7 +931,7 @@ describe('single-character world session client', () => {
     })).toBe(false);
   });
 
-  it('opens directly into focused gameplay with separate Traveler and Field notes screens', async () => {
+  it('opens focused gameplay and groups Traveler and Field notes under Info', async () => {
     const onLeaveWorld = vi.fn().mockResolvedValue(undefined);
     render(<WorldClient onLeaveWorld={onLeaveWorld} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
@@ -932,15 +942,18 @@ describe('single-character world session client', () => {
     expect(screen.queryByText(/World activity|\b\d+\s+events?\b/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Look around' })).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Enter a command' })).toBeVisible();
-    expect(screen.getByRole('link', { name: 'Traveler' })).toBeVisible();
-    expect(screen.getByRole('link', { name: 'Field notes' })).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Info' })).toBeVisible();
+    expect(screen.queryByRole('navigation', { name: 'Info sections' })).not.toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Room chat' }).closest('.focused-terminal')).toBeNull();
     expect(screen.queryByText(/No rush|Guest identity|room:mosgate/)).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('link', { name: 'Traveler' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Info' }));
+    const infoTabs = await screen.findByRole('navigation', { name: 'Info sections' });
+    expect(within(infoTabs).getByRole('link', { name: 'Traveler' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Info' })).toHaveAttribute('aria-current', 'page');
     await screen.findByRole('heading', { name: 'Traveler' });
     expect(screen.getByRole('heading', { name: 'Rowan' })).toBeVisible();
-    fireEvent.click(screen.getByRole('link', { name: 'Field notes' }));
+    fireEvent.click(within(infoTabs).getByRole('link', { name: 'Field notes' }));
     await screen.findByRole('heading', { name: 'Field notes' });
     expect(screen.getByText('No current quests.')).toBeVisible();
     expect(screen.getByText('No completed quests yet.')).toBeVisible();
@@ -1035,7 +1048,7 @@ describe('single-character world session client', () => {
     ];
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
-    fireEvent.click(screen.getByRole('link', { name: 'Field notes' }));
+    await openInfoSection('Field notes');
 
     expect(await screen.findByRole('heading', { name: 'Quest journal' })).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Current quests' })).toBeVisible();
@@ -1399,8 +1412,7 @@ describe('single-character world session client', () => {
       payload: { exitId: 'clearing-to-bridge' },
     });
 
-    fireEvent.click(screen.getByRole('link', { name: 'Field notes' }));
-    await screen.findByRole('heading', { name: 'Field notes' });
+    await openInfoSection('Field notes');
     expect(screen.getByText('You travel north.')).toBeVisible();
   });
 
@@ -1840,8 +1852,7 @@ describe('single-character world session client', () => {
       payload: { itemId: 'mossgate-loose-stone' },
     });
 
-    fireEvent.click(screen.getByRole('link', { name: 'Traveler' }));
-    await screen.findByRole('heading', { name: 'Traveler' });
+    await openInfoSection('Traveler');
     expect(screen.getByText('Loose stone')).toBeVisible();
     fireEvent.click(screen.getByRole('link', { name: 'Play' }));
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
@@ -1865,8 +1876,7 @@ describe('single-character world session client', () => {
     fireEvent.submit(commandInput.closest('form')!);
     await screen.findByText('You pick up the loose stone.');
 
-    fireEvent.click(screen.getByRole('link', { name: 'Traveler' }));
-    await screen.findByRole('heading', { name: 'Traveler' });
+    await openInfoSection('Traveler');
     fireEvent.click(screen.getByRole('button', { name: 'Inspect Loose stone' }));
     await screen.findByText('A smooth, palm-sized stone with a pale stripe running through it.');
 
@@ -2094,8 +2104,7 @@ describe('single-character world session client', () => {
   it('responds to browser back/forward when changing gameplay screens', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
-    fireEvent.click(screen.getByRole('link', { name: 'Traveler' }));
-    await screen.findByRole('heading', { name: 'Traveler' });
+    await openInfoSection('Traveler');
     act(() => {
       window.location.hash = '#/play';
       window.dispatchEvent(new HashChangeEvent('hashchange'));

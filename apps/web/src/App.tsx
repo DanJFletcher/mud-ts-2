@@ -19,7 +19,7 @@ import {
   TextInput,
   type ActivityEntry,
 } from "@mudd/ui";
-import { Compass, Keyboard, Menu, Moon, NotebookText, Sun, UserRound, Users, X } from "lucide-react";
+import { Compass, Info as InfoIcon, Keyboard, Menu, Moon, Sun, Users, X } from "lucide-react";
 import { RoomChatPanel } from "./RoomChatPanel.js";
 import { TerminalPanel } from "./TerminalPanel.js";
 import { WorldMapPanel } from "./WorldMapPanel.js";
@@ -185,7 +185,9 @@ function getCommandHelp(topic: string): readonly string[] {
 
 function currentScreen(): Screen {
   const route = window.location.hash.slice(2);
-  return route === "traveler" || route === "notes" ? route : "play";
+  if (route === "notes" || route === "info/notes" || route === "info/field-notes") return "notes";
+  if (route === "traveler" || route === "info" || route === "info/traveler") return "traveler";
+  return "play";
 }
 
 function makeEntry(kind: ActivityEntry["kind"], text: string): ActivityEntry {
@@ -1857,6 +1859,27 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     }
   };
 
+  const infoTabs = (
+    <nav className="focused-info-tabs" aria-label="Info sections">
+      <a
+        href="#/info"
+        className="focused-info-tab"
+        aria-current={screen === "traveler" ? "page" : undefined}
+        onClick={() => setMenuOpen(false)}
+      >
+        Traveler
+      </a>
+      <a
+        href="#/info/notes"
+        className="focused-info-tab"
+        aria-current={screen === "notes" ? "page" : undefined}
+        onClick={() => setMenuOpen(false)}
+      >
+        Field notes
+      </a>
+    </nav>
+  );
+
   return (
     <main className="focused-client" data-theme={theme}>
       <section
@@ -1864,7 +1887,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
         key={screen}
         ref={contentRef}
         tabIndex={-1}
-        aria-label={isGameOver ? "Game over screen" : screen === "notes" ? "Field notes screen" : `${screen === "play" ? "Play" : "Traveler"} screen`}
+        aria-label={isGameOver ? "Game over screen" : screen === "play" ? "Play screen" : "Info screen"}
         onTouchStart={handleContentTouchStart}
         onTouchEnd={handleContentTouchEnd}
         onTouchCancel={() => { swipeStartRef.current = null; }}
@@ -2662,6 +2685,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
 
         {!isGameOver && screen === "traveler" && (
           <div className="focused-screen" aria-label="Traveler">
+            {infoTabs}
             <div className="focused-screen-heading">
               <div><div className="focused-kicker">Character</div><h1 className="focused-screen-title">Traveler</h1></div>
             </div>
@@ -2760,6 +2784,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
 
         {!isGameOver && screen === "notes" && (
           <div className="focused-screen" aria-label="Field notes">
+            {infoTabs}
             <div className="focused-screen-heading">
               <div><div className="focused-kicker">Progress and session history</div><h1 className="focused-screen-title">Field notes</h1></div>
               <span className="focused-coordinate">{entries.length} {entries.length === 1 ? "entry" : "entries"}</span>
@@ -2854,8 +2879,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
           aria-label="Game screens"
         >
           <a href="#/play" className="focused-tab" aria-current={screen === "play" ? "page" : undefined} onClick={() => setMenuOpen(false)}><Compass aria-hidden="true" /><span>Play</span></a>
-          <a href="#/traveler" className="focused-tab" aria-current={screen === "traveler" ? "page" : undefined} onClick={() => setMenuOpen(false)}><UserRound aria-hidden="true" /><span>Traveler</span></a>
-          <a href="#/notes" className="focused-tab" aria-current={screen === "notes" ? "page" : undefined} onClick={() => setMenuOpen(false)}><NotebookText aria-hidden="true" /><span>Field notes</span></a>
+          <a href="#/info" className="focused-tab" aria-current={screen === "traveler" || screen === "notes" ? "page" : undefined} onClick={() => setMenuOpen(false)}><InfoIcon aria-hidden="true" /><span>Info</span></a>
           {screen === "play" && snapshot?.location && !isAnyCombatActive && !visiblePvp && (
             <button
               className="focused-tab focused-type-tab"

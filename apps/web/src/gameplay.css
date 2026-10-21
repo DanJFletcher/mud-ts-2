@@ -1688,6 +1688,36 @@
   text-align: center;
 }
 
+.focused-info-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--mudd-border);
+}
+.focused-info-tab {
+  display: flex;
+  min-width: 0;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border-bottom: 2px solid transparent;
+  color: var(--mudd-muted);
+  font: 600 .76rem/1.2 "DM Sans", system-ui, sans-serif;
+  text-align: center;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.focused-info-tab[aria-current="page"] {
+  border-bottom-color: var(--mudd-accent-strong);
+  color: var(--mudd-accent-strong);
+}
+.focused-info-tab:focus-visible {
+  outline: 3px solid var(--mudd-warm);
+  outline-offset: -3px;
+}
+
 .focused-bottom-nav {
   position: fixed;
   z-index: 10;
@@ -1695,7 +1725,7 @@
   bottom: 0;
   left: 0;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   min-height: calc(64px + env(safe-area-inset-bottom));
   padding: 6px 10px calc(6px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--mudd-border);
@@ -1774,7 +1804,7 @@
 .focused-content:focus { outline: none; }
 
 @media (max-width: 699px) {
-  .focused-bottom-nav--with-type { grid-template-columns: repeat(5, 1fr); }
+  .focused-bottom-nav--with-type { grid-template-columns: repeat(4, 1fr); }
   .focused-type-tab { display: grid; }
   .focused-command--mobile-hidden { display: none; }
   .focused-command-form { grid-template-columns: minmax(0, 1fr); }
