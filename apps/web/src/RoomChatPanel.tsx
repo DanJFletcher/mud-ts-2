@@ -252,7 +252,7 @@ export function RoomChatPanel({
             title={collapsed ? 'Expand room chat' : 'Collapse room chat'}
             controls="room-chat-content"
             expanded={!collapsed}
-            indicator={collapsed ? <ChevronDown size={17} aria-hidden="true" /> : <ChevronUp size={17} aria-hidden="true" />}
+            indicator={collapsed ? <ChevronUp size={17} aria-hidden="true" /> : <ChevronDown size={17} aria-hidden="true" />}
           >
             <span className="focused-panel-disclosure-label">
               {collapsed ? 'Expand room chat' : 'Collapse room chat'}

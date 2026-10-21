@@ -1400,6 +1400,8 @@ describe('single-character world session client', () => {
     const composer = panel.querySelector('.focused-room-chat__composer');
     expect(messages).not.toBeNull();
     expect(composer).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Collapse room chat' }).querySelector('svg'))
+      .toHaveClass('lucide-chevron-down');
 
     fireEvent.click(screen.getByRole('button', { name: 'Collapse room chat' }));
     expect(panel).toHaveClass('focused-room-chat--collapsed');
@@ -1407,6 +1409,7 @@ describe('single-character world session client', () => {
     expect(expandChat).toHaveClass('mudd-disclosure-button');
     expect(expandChat).toHaveAttribute('aria-expanded', 'false');
     expect(expandChat).toHaveAttribute('aria-controls', 'room-chat-content');
+    expect(expandChat.querySelector('svg')).toHaveClass('lucide-chevron-up');
 
     fireEvent.click(screen.getByRole('button', { name: 'Open chat full screen' }));
     const dialog = await screen.findByRole('dialog', { name: 'Room chat' });
@@ -1424,7 +1427,9 @@ describe('single-character world session client', () => {
     expect(expandedPanel).not.toHaveClass('focused-room-chat--collapsed');
     expect(expandedPanel.querySelector('.focused-room-chat__messages')).not.toBeNull();
     expect(expandedPanel.querySelector('.focused-room-chat__composer')).not.toBeNull();
-    expect(screen.getByRole('button', { name: 'Collapse room chat' })).toHaveAttribute('aria-expanded', 'true');
+    const collapseChat = screen.getByRole('button', { name: 'Collapse room chat' });
+    expect(collapseChat).toHaveAttribute('aria-expanded', 'true');
+    expect(collapseChat.querySelector('svg')).toHaveClass('lucide-chevron-down');
   });
 
   it('opens room chat full screen with a right swipe and closes with a left swipe or Escape', async () => {
