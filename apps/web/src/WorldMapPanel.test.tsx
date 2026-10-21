@@ -113,6 +113,21 @@ describe('map switching between floors', () => {
     expect(onFullscreenChange).toHaveBeenCalledWith(true);
   });
 
+  it('zooms the minimap to twice the previous scale around the current location', () => {
+    const { container } = render(
+      <WorldMapPanel map={overworld} fullscreen={false} onFullscreenChange={vi.fn()} />,
+    );
+    const svg = container.querySelector<SVGSVGElement>('.focused-world-map__minimap-svg')!;
+    const [viewX, viewY, viewWidth, viewHeight] = svg.getAttribute('viewBox')!.split(/\s+/).map(Number);
+    const fullMap = screen.getByRole('group', { name: 'Directional map of visited locations' });
+    const [, , fullMapWidth, fullMapHeight] = fullMap.getAttribute('viewBox')!.split(/\s+/).map(Number);
+
+    expect(viewWidth).toBeCloseTo(fullMapWidth! / 2);
+    expect(viewHeight).toBeCloseTo(fullMapHeight! / 2);
+    expect(viewX).toBeGreaterThan(0);
+    expect(viewY).toBeGreaterThan(0);
+  });
+
   it('lets the minimap be dragged without opening the map and remembers its position', () => {
     window.localStorage.removeItem('mudd.mobile-map-minimap-offset.v1');
     const onFullscreenChange = vi.fn();

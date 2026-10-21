@@ -34,6 +34,7 @@ type MinimapDrag = {
 const MAP_TILE_SIZE = 18;
 const MAP_GRID_STEP = 30;
 const MAP_PADDING = 18;
+const MINIMAP_ZOOM = 2;
 const MINIMAP_OFFSET_STORAGE_KEY = 'mudd.mobile-map-minimap-offset.v1';
 const MINIMAP_EDGE_GAP = 8;
 
@@ -106,6 +107,17 @@ function projectMapPoints(map: WorldMapProjection | undefined): MapLayout {
       (maxY - minY) * MAP_GRID_STEP + MAP_TILE_SIZE + MAP_PADDING * 2,
     ),
   };
+}
+
+function minimapViewBox(layout: MapLayout, points: readonly MapPoint[], currentLocationId?: string): string {
+  const current = points.find((point) => point.id === currentLocationId) ?? points[0];
+  const width = layout.width / MINIMAP_ZOOM;
+  const height = layout.height / MINIMAP_ZOOM;
+  if (!current) return `0 0 ${width} ${height}`;
+
+  const centerX = Math.max(width / 2, Math.min(layout.width - width / 2, current.screenX));
+  const centerY = Math.max(height / 2, Math.min(layout.height - height / 2, current.screenY));
+  return `${centerX - width / 2} ${centerY - height / 2} ${width} ${height}`;
 }
 
 function connectionPath(from: MapPoint, to: MapPoint, direction?: string): string {
@@ -496,7 +508,7 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
       {points.length > 0 ? (
         <svg
           className="focused-world-map__minimap-svg"
-          viewBox={`0 0 ${layout.width} ${layout.height}`}
+          viewBox={minimapViewBox(layout, points, map?.currentLocationId)}
           preserveAspectRatio="xMidYMid meet"
           aria-hidden="true"
           focusable="false"
