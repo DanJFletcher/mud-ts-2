@@ -79,6 +79,8 @@ describe('map switching between floors', () => {
     expect(svg.querySelectorAll('.focused-world-map__tile')).toHaveLength(denseMap.locations.length);
     expect(svg.querySelector('.focused-world-map__label')).not.toBeInTheDocument();
     expect(svg.querySelector('.focused-world-map__tile--river')).toBeInTheDocument();
+    expect(screen.getByText('Water')).toBeInTheDocument();
+    expect(screen.queryByText('River')).not.toBeInTheDocument();
     expect(svg.querySelector('.focused-world-map__tile--building')).toBeInTheDocument();
     expect(svg.querySelector('.focused-world-map__vertical-arrow')).toBeInTheDocument();
     expect(svg.querySelector('.focused-world-map__path--one-way')).toHaveAttribute(

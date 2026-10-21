@@ -217,7 +217,7 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
             >
               <title>Directional map of visited locations</title>
               <desc>
-                North is up. Blue squares are river locations; beige squares are inside buildings.
+                North is up. Blue squares are water; beige squares are inside buildings.
                 White lines connect exits, arrows mark one-way exits, and black triangles mark up or down passages.
                 {focusedLocation ? ` ${focusedLocation.name} is selected.` : ''}
               </desc>
@@ -309,7 +309,7 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
             <p className="focused-world-map__current-name">{focusedLocation?.name ?? 'Map'}</p>
             <div className="focused-world-map__legend" aria-label="Map legend">
               <span><i className="focused-world-map__legend-tile focused-world-map__legend-tile--land" /> Land</span>
-              <span><i className="focused-world-map__legend-tile focused-world-map__legend-tile--river" /> River</span>
+              <span><i className="focused-world-map__legend-tile focused-world-map__legend-tile--river" /> Water</span>
               <span><i className="focused-world-map__legend-tile focused-world-map__legend-tile--building" /> Building</span>
               <span><i className="focused-world-map__legend-line" /> Exit</span>
               <span><i className="focused-world-map__legend-arrow" /> One-way</span>
