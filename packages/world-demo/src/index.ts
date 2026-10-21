@@ -959,9 +959,19 @@ const draft = {
       id: 'fernshade-fork',
       name: 'Fernshade Fork',
       mapPosition: { x: -2, y: 1 },
-      description: 'The track opens into a small fern-ringed clearing. Fernshade Road runs east toward Willowshade Track.',
+      description: 'The track opens into a small fern-ringed clearing. A low cottage stands to the west; Fernshade Road runs east toward Willowshade Track.',
       exits: [
         { id: 'fernshade-fork-to-road', fromLocationId: 'fernshade-fork', toLocationId: 'fernshade-road', label: 'East along Fernshade Road', direction: 'east', roadId: 'fernshade-road' },
+        { id: 'fernshade-fork-to-cottage', fromLocationId: 'fernshade-fork', toLocationId: 'fernshade-cottage', label: 'West to Fernshade Cottage', direction: 'west' },
+      ],
+    },
+    {
+      id: 'fernshade-cottage',
+      name: 'Fernshade Cottage',
+      mapPosition: { x: -3, y: 1, terrain: 'building' },
+      description: 'A low cottage of pale timber and woven fern panels sits in the quiet clearing. Its worn front door faces east toward Fernshade Fork.',
+      exits: [
+        { id: 'fernshade-cottage-to-fork', fromLocationId: 'fernshade-cottage', toLocationId: 'fernshade-fork', label: 'East to Fernshade Fork', direction: 'east' },
       ],
     },
     {
@@ -996,9 +1006,19 @@ const draft = {
       id: 'sedgewatch',
       name: 'Sedgewatch',
       mapPosition: { x: -2, y: -1 },
-      description: 'A raised patch of ground overlooks a broad bed of reeds. Bracken Road runs east through Bracken Mile toward Mossgate.',
+      description: 'A raised patch of ground overlooks a broad bed of reeds. A reed-thatched cottage stands to the west; Bracken Road runs east through Bracken Mile toward Mossgate.',
       exits: [
         { id: 'sedgewatch-to-mile', fromLocationId: 'sedgewatch', toLocationId: 'bracken-mile', label: 'East along Bracken Road', direction: 'east', roadId: 'bracken-road' },
+        { id: 'sedgewatch-to-cottage', fromLocationId: 'sedgewatch', toLocationId: 'sedgewatch-cottage', label: 'West to Sedgewatch Cottage', direction: 'west' },
+      ],
+    },
+    {
+      id: 'sedgewatch-cottage',
+      name: 'Sedgewatch Cottage',
+      mapPosition: { x: -3, y: -1, terrain: 'building' },
+      description: 'A modest reed-thatch home stands on firmer ground beside the wetland. Its east-facing door opens toward Sedgewatch.',
+      exits: [
+        { id: 'sedgewatch-cottage-to-sedgewatch', fromLocationId: 'sedgewatch-cottage', toLocationId: 'sedgewatch', label: 'East to Sedgewatch', direction: 'east' },
       ],
     },
     {

@@ -110,6 +110,67 @@ describe('visited world map projection', () => {
     expect(unsupportedExits).toEqual([]);
   });
 
+  it('places villager cottages at the marked western map positions and reveals them when visited', () => {
+    const homes = [
+      {
+        homeId: 'fernshade-cottage',
+        adjacentId: 'fernshade-fork',
+        x: -3,
+        y: 1,
+      },
+      {
+        homeId: 'sedgewatch-cottage',
+        adjacentId: 'sedgewatch',
+        x: -3,
+        y: -1,
+      },
+    ] as const;
+
+    for (const { homeId, adjacentId, x, y } of homes) {
+      const home = demoWorld.locations.find((location) => location.id === homeId)!;
+      const adjacent = demoWorld.locations.find((location) => location.id === adjacentId)!;
+      expect(home.mapPosition).toMatchObject({ x, y, terrain: 'building' });
+      expect(home.exits).toContainEqual(expect.objectContaining({
+        toLocationId: adjacentId,
+        direction: 'east',
+      }));
+      expect(adjacent.exits).toContainEqual(expect.objectContaining({
+        toLocationId: homeId,
+        direction: 'west',
+      }));
+
+      const character = {
+        worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+        characterId: `map-visitor-${homeId}`,
+        name: 'Map Visitor',
+        locationId: adjacentId,
+        visitedLocationIds: [adjacentId],
+        revision: 1,
+      };
+      const beforeVisit = projectWorldMap(CharacterProjectionSchema.parse(character));
+      expect(beforeVisit.locations.some((location) => location.id === homeId)).toBe(false);
+
+      const afterVisit = projectWorldMap(CharacterProjectionSchema.parse({
+        ...character,
+        locationId: homeId,
+        visitedLocationIds: [...character.visitedLocationIds, homeId],
+      }));
+      expect(afterVisit.locations).toContainEqual(expect.objectContaining({
+        id: homeId,
+        name: home.name,
+        x,
+        y,
+        terrain: 'building',
+      }));
+      expect(afterVisit.connections).toContainEqual(expect.objectContaining({
+        fromLocationId: adjacentId,
+        toLocationId: homeId,
+        direction: 'west',
+        oneWay: false,
+      }));
+    }
+  });
+
   it('reveals Willowrest Inn and its connecting road segments only after the traveler arrives', async () => {
     const store = new InMemoryEventStore();
     const testWorld = structuredClone(demoWorld);
