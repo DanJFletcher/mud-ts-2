@@ -105,7 +105,7 @@ const draft = {
       mapPosition: { x: -1, y: 0, terrain: 'building' },
       exits: [
         { id: 'inn-to-square', fromLocationId: 'kindly-roof-inn', toLocationId: 'bellwold-market-square', label: 'east', direction: 'east' },
-        { id: 'inn-to-west-gate', fromLocationId: 'kindly-roof-inn', toLocationId: 'bellwold-west-gate', label: 'west', direction: 'west', roadId: 'bellwold-west-road' },
+        { id: 'inn-to-west-gate', fromLocationId: 'kindly-roof-inn', toLocationId: 'bellwold-west-gate', label: 'west', direction: 'west' },
       ],
       npcs: [
         {
@@ -129,7 +129,7 @@ const draft = {
       description: 'The western lane passes the last village fences and a simple timber gate. The Kindly Roof is east; the westbound road runs past the hedgerows.',
       mapPosition: { x: -2, y: 0, terrain: 'land' },
       exits: [
-        { id: 'west-gate-to-inn', fromLocationId: 'bellwold-west-gate', toLocationId: 'kindly-roof-inn', label: 'east', direction: 'east', roadId: 'bellwold-west-road' },
+        { id: 'west-gate-to-inn', fromLocationId: 'bellwold-west-gate', toLocationId: 'kindly-roof-inn', label: 'east', direction: 'east' },
         { id: 'west-gate-to-track', fromLocationId: 'bellwold-west-gate', toLocationId: 'bellwold-westbound-track', label: 'west', direction: 'west', roadId: 'bellwold-west-road' },
       ],
     },
@@ -372,7 +372,7 @@ const draft = {
       exits: [
         { id: 'common-house-to-well-court', fromLocationId: 'bellwold-common-house', toLocationId: 'bellwold-well-court', label: 'north', direction: 'north' },
         { id: 'common-house-to-tallow-cottage', fromLocationId: 'bellwold-common-house', toLocationId: 'tallow-end-cottage', label: 'west', direction: 'west' },
-        { id: 'common-house-to-south-gate', fromLocationId: 'bellwold-common-house', toLocationId: 'bellwold-south-gate', label: 'south', direction: 'south', roadId: 'bellwold-south-road' },
+        { id: 'common-house-to-south-gate', fromLocationId: 'bellwold-common-house', toLocationId: 'bellwold-south-gate', label: 'south', direction: 'south' },
       ],
       npcs: [
         {
@@ -396,7 +396,7 @@ const draft = {
       description: 'The last cluster of village yards gives way to a low gate and a packed-earth road. The Common House is north; the southbound track continues south.',
       mapPosition: { x: 0, y: -4, terrain: 'land' },
       exits: [
-        { id: 'south-gate-to-common-house', fromLocationId: 'bellwold-south-gate', toLocationId: 'bellwold-common-house', label: 'north', direction: 'north', roadId: 'bellwold-south-road' },
+        { id: 'south-gate-to-common-house', fromLocationId: 'bellwold-south-gate', toLocationId: 'bellwold-common-house', label: 'north', direction: 'north' },
         { id: 'south-gate-to-track', fromLocationId: 'bellwold-south-gate', toLocationId: 'bellwold-southbound-track', label: 'south', direction: 'south', roadId: 'bellwold-south-road' },
       ],
     },
@@ -609,7 +609,6 @@ const draft = {
       id: 'bellwold-south-road',
       name: 'Bellwold South Road',
       locationIds: [
-        'bellwold-common-house',
         'bellwold-south-gate',
         'bellwold-southbound-track',
         'bellwold-reedbed-approach',
@@ -618,7 +617,7 @@ const draft = {
         'bellwold-south-mile-marker',
         'bellwold-unfinished-road-end',
       ],
-      encounterChancePercent: 0,
+      encounterChancePercent: 10,
       encounters: [
         {
           id: 'bellwold-south-road-stray-hound',
@@ -636,7 +635,7 @@ const draft = {
         'bellwold-east-road-bend',
         'bellwold-east-road-verge',
       ],
-      encounterChancePercent: 0,
+      encounterChancePercent: 10,
       encounters: [
         {
           id: 'bellwold-east-road-stray-hound',
@@ -649,12 +648,11 @@ const draft = {
       id: 'bellwold-west-road',
       name: 'Bellwold West Road',
       locationIds: [
-        'kindly-roof-inn',
         'bellwold-west-gate',
         'bellwold-westbound-track',
         'bellwold-west-road-end',
       ],
-      encounterChancePercent: 0,
+      encounterChancePercent: 10,
       encounters: [
         {
           id: 'bellwold-west-road-stray-hound',

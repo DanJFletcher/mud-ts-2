@@ -135,7 +135,6 @@ describe('Orraveth Bellwold settlement', () => {
     expect(road).toMatchObject({
       name: 'Bellwold South Road',
       locationIds: [
-        'bellwold-common-house',
         'bellwold-south-gate',
         'bellwold-southbound-track',
         'bellwold-reedbed-approach',
@@ -144,7 +143,7 @@ describe('Orraveth Bellwold settlement', () => {
         'bellwold-south-mile-marker',
         'bellwold-unfinished-road-end',
       ],
-      encounterChancePercent: 0,
+      encounterChancePercent: 10,
     });
 
     const routeLocations = road!.locationIds.map((id) =>
@@ -198,7 +197,6 @@ describe('Orraveth Bellwold settlement', () => {
         id: 'bellwold-west-road',
         name: 'Bellwold West Road',
         locationIds: [
-          'kindly-roof-inn',
           'bellwold-west-gate',
           'bellwold-westbound-track',
           'bellwold-west-road-end',
@@ -211,8 +209,14 @@ describe('Orraveth Bellwold settlement', () => {
       expect(road).toMatchObject({
         name: expected.name,
         locationIds: expected.locationIds,
-        encounterChancePercent: 0,
+        encounterChancePercent: 10,
       });
+      expect(road?.encounters).toEqual([
+        expect.objectContaining({
+          name: 'Stray Hound',
+          combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' },
+        }),
+      ]);
       const routeLocations = expected.locationIds.map((id) =>
         orravethWorld.locations.find(({ id: locationId }) => locationId === id)!,
       );

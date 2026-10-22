@@ -433,6 +433,7 @@ describe('Orraveth Bellwold road travel', () => {
   it('supports room-by-room travel on the east, west, and south roads without starting combat', async () => {
     const store = new InMemoryEventStore();
     const testWorld = structuredClone(orravethWorld);
+    for (const road of testWorld.roads ?? []) road.encounterChancePercent = 0;
     const session = {
       sessionId: 'orraveth-south-road-session',
       playerId: 'orraveth-south-road-player',
@@ -537,11 +538,13 @@ describe('Orraveth Bellwold road travel', () => {
       await move('square-to-south-common', 'orraveth-road-to-south-common');
       await move('south-common-to-well-court', 'orraveth-road-to-well-court');
       await move('well-court-to-common-house', 'orraveth-road-to-common-house');
+      await move('common-house-to-south-gate', 'orraveth-road-to-south-gate');
       let character = await travelRoad('bellwold-south-road');
       expect(character.locationId).toBe('bellwold-unfinished-road-end');
       character = await returnAlongRoad('bellwold-south-road');
-      expect(character.locationId).toBe('bellwold-common-house');
+      expect(character.locationId).toBe('bellwold-south-gate');
 
+      await move('south-gate-to-common-house', 'orraveth-road-back-to-common-house');
       await move('common-house-to-well-court', 'orraveth-road-back-to-well-court');
       await move('well-court-to-south-common', 'orraveth-road-back-to-south-common');
       await move('south-common-to-square', 'orraveth-road-back-to-square');
@@ -555,6 +558,7 @@ describe('Orraveth Bellwold road travel', () => {
       await move('mill-to-tower-road', 'orraveth-road-back-to-tower-road');
       await move('tower-road-to-square', 'orraveth-road-back-to-square-from-tower-road');
       await move('square-to-inn', 'orraveth-road-to-inn');
+      await move('inn-to-west-gate', 'orraveth-road-to-west-gate');
       character = await travelRoad('bellwold-west-road');
       expect(character.locationId).toBe('bellwold-west-road-end');
     } finally {
