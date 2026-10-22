@@ -5,12 +5,28 @@ import { ChevronDown, ChevronUp, Maximize2, X } from "lucide-react";
 type WorldMapProjection = Readonly<{
   worldInstanceId: string;
   currentLocationId: string;
-  locations: ReadonlyArray<Readonly<{ id: string; name: string; x: number; y: number }>>;
-  connections: ReadonlyArray<Readonly<{ fromLocationId: string; toLocationId: string }>>;
+  locations: ReadonlyArray<Readonly<{
+    id: string;
+    name: string;
+    x: number;
+    y: number;
+    terrain?: string;
+    mapColor?: string;
+    verticalExits?: ReadonlyArray<"up" | "down">;
+  }>>;
+  connections: ReadonlyArray<Readonly<{
+    fromLocationId: string;
+    toLocationId: string;
+    direction?: string;
+    oneWay?: boolean;
+    mapLineGapAtLocationId?: string;
+  }>>;
 }>;
 
 type MapPoint = WorldMapProjection["locations"][number] & { screenX: number; screenY: number };
 type MapLayout = "labels" | "directory";
+const MAP_TILE_SIZE = 8;
+const MAP_UNDERPASS_GAP = 2;
 
 function projectMapPoints(map: WorldMapProjection | undefined): MapPoint[] {
   if (!map?.locations.length) return [];
@@ -29,6 +45,35 @@ function projectMapPoints(map: WorldMapProjection | undefined): MapPoint[] {
     screenX: project(location.x, minX, maxX),
     screenY: 84 - project(location.y, minY, maxY),
   }));
+}
+
+function connectionPath(
+  from: MapPoint,
+  to: MapPoint,
+  direction?: string,
+  mapLineGapAtLocationId?: string,
+): string {
+  const halfTile = MAP_TILE_SIZE / 2;
+  const startGap = mapLineGapAtLocationId === from.id ? MAP_UNDERPASS_GAP : 0;
+  const endGap = mapLineGapAtLocationId === to.id ? MAP_UNDERPASS_GAP : 0;
+  const dx = to.screenX - from.screenX;
+  const dy = to.screenY - from.screenY;
+  const horizontal = direction === "east" || direction === "west" ||
+    (!["north", "south"].includes(direction ?? "") && Math.abs(dx) >= Math.abs(dy));
+
+  if (horizontal) {
+    const sign = direction === "west" || (!direction && dx < 0) ? -1 : 1;
+    const startX = from.screenX + sign * (halfTile + startGap);
+    const endX = to.screenX - sign * (halfTile + endGap);
+    const bendX = (startX + endX) / 2;
+    return `M ${startX} ${from.screenY} H ${bendX} V ${to.screenY} H ${endX}`;
+  }
+
+  const sign = direction === "north" || (!direction && dy < 0) ? -1 : 1;
+  const startY = from.screenY + sign * (halfTile + startGap);
+  const endY = to.screenY - sign * (halfTile + endGap);
+  const bendY = (startY + endY) / 2;
+  return `M ${from.screenX} ${startY} V ${bendY} H ${to.screenX} V ${endY}`;
 }
 
 function trapDialogTab(event: KeyboardEvent, dialog: HTMLElement | null): void {
@@ -227,58 +272,80 @@ export function WorldMapPanel({
             <svg
               className="focused-world-map__svg"
               viewBox="0 0 100 100"
-              role="img"
-              aria-label="Map of visited locations"
+              role="group"
+              aria-label="Directional map of visited locations"
               preserveAspectRatio="xMidYMid meet"
             >
               <title>Map of visited locations</title>
               <desc>
                 {layout === "directory"
-                  ? `North is up. Numbered markers correspond to the visited location list. ${currentLocation?.name ?? ""} is your current location.`
-                  : `North is up. ${points.map((point) => `${point.name}${point.id === map?.currentLocationId ? ", current location" : ", visited"}`).join(". ")}`}
+                  ? `North is up. Square tiles show visited locations and their terrain. ${currentLocation?.name ?? ""} is your current location.`
+                  : "North is up. Water and building tiles have labeled colors; world developers choose other terrain colors. White lines connect exits, and arrows mark one-way exits."}
               </desc>
+              <defs>
+                <marker id="world-map-preview-one-way-arrow" markerWidth="4" markerHeight="4" refX="3" refY="2" orient="auto">
+                  <path d="M0 0 4 2 0 4Z" />
+                </marker>
+              </defs>
               {map?.connections.map((connection) => {
                 const from = pointById.get(connection.fromLocationId);
                 const to = pointById.get(connection.toLocationId);
                 if (!from || !to) return null;
                 return (
-                  <line
+                  <path
                     key={`${connection.fromLocationId}-${connection.toLocationId}`}
-                    className="focused-world-map__path"
-                    x1={from.screenX}
-                    y1={from.screenY}
-                    x2={to.screenX}
-                    y2={to.screenY}
+                    className={[
+                      "focused-world-map__path",
+                      connection.oneWay ? "focused-world-map__path--one-way" : "",
+                    ].filter(Boolean).join(" ")}
+                    d={connectionPath(from, to, connection.direction, connection.mapLineGapAtLocationId)}
+                    markerEnd={connection.oneWay ? "url(#world-map-preview-one-way-arrow)" : undefined}
                   />
                 );
               })}
-              <g className="focused-world-map__compass" aria-hidden="true" transform="translate(92 12)">
-                <circle className="focused-world-map__compass-face" r="4.8" />
-                <path className="focused-world-map__compass-needle--north" d="M0 -3.7 1.4 1 0 0 -1.4 1Z" />
-                <path className="focused-world-map__compass-needle--south" d="M0 3.7 1.4 -1 0 0 -1.4 -1Z" />
-                <text className="focused-world-map__compass-direction" x="0" y="-6.5" textAnchor="middle">N</text>
-                <text className="focused-world-map__compass-direction" x="7.1" y="1" textAnchor="middle">E</text>
-                <text className="focused-world-map__compass-direction" x="0" y="8.3" textAnchor="middle">S</text>
-                <text className="focused-world-map__compass-direction" x="-7.1" y="1" textAnchor="middle">W</text>
-              </g>
-              {points.map((point, index) => {
+              {points.map((point) => {
                 const isCurrent = point.id === map?.currentLocationId;
                 const isSelected = point.id === focusedLocationId;
                 return (
                   <g
                     key={point.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Focus ${point.name} on map${isCurrent ? ", current location" : ""}`}
+                    aria-current={isCurrent ? "location" : undefined}
+                    aria-pressed={isSelected}
                     className={[
                       "focused-world-map__location",
                       isCurrent ? "focused-world-map__location--current" : "",
                       isSelected ? "focused-world-map__location--selected" : "",
                     ].filter(Boolean).join(" ")}
+                    onClick={() => setSelectedLocationId(point.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setSelectedLocationId(point.id);
+                      }
+                    }}
                   >
-                    {isCurrent && <circle className="focused-world-map__current-ring" cx={point.screenX} cy={point.screenY} r="7" />}
-                    {isSelected && !isCurrent && <circle className="focused-world-map__selected-ring" cx={point.screenX} cy={point.screenY} r="8" />}
-                    <circle className="focused-world-map__marker" cx={point.screenX} cy={point.screenY} r="4" />
-                    {layout === "directory"
-                      ? <text className="focused-world-map__marker-number" x={point.screenX} y={point.screenY + 1.2} textAnchor="middle">{index + 1}</text>
-                      : <text className="focused-world-map__label" x={point.screenX} y={point.screenY + 11} textAnchor="middle">{point.name}</text>}
+                    <title>{point.name}</title>
+                    <rect
+                      className={`focused-world-map__tile focused-world-map__tile--${point.terrain ?? "land"}`}
+                      x={point.screenX - MAP_TILE_SIZE / 2}
+                      y={point.screenY - MAP_TILE_SIZE / 2}
+                      width={MAP_TILE_SIZE}
+                      height={MAP_TILE_SIZE}
+                      style={point.mapColor ? { fill: point.mapColor } : undefined}
+                    />
+                    {(point.verticalExits ?? []).map((verticalExit, exitIndex) => (
+                      <path
+                        key={`${point.id}-${verticalExit}`}
+                        className="focused-world-map__vertical-arrow"
+                        d={verticalExit === "up"
+                          ? `M ${point.screenX - 1.4 + exitIndex * 2.8} ${point.screenY + .7} l 1.4 -1.4 1.4 1.4 Z`
+                          : `M ${point.screenX - 1.4 + exitIndex * 2.8} ${point.screenY - .7} l 1.4 1.4 1.4 -1.4 Z`}
+                        aria-hidden="true"
+                      />
+                    ))}
                   </g>
                 );
               })}
@@ -308,8 +375,10 @@ export function WorldMapPanel({
               </ol>
             )}
             <div className="focused-world-map__legend" aria-label="Map legend">
-              <span><i className="focused-world-map__legend-marker focused-world-map__legend-marker--current" /> You are here</span>
-              <span><i className="focused-world-map__legend-marker" /> Visited</span>
+              <span><i className="focused-world-map__legend-tile focused-world-map__legend-tile--river" /> Water</span>
+              <span><i className="focused-world-map__legend-tile focused-world-map__legend-tile--building" /> Building</span>
+              <span><i className="focused-world-map__legend-line" /> Exit</span>
+              <span><i className="focused-world-map__legend-arrow" /> One-way</span>
             </div>
             {layout === "labels" && (
               <ul className="focused-world-map__screen-reader-only" aria-label="Visited locations">

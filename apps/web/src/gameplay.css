@@ -1413,7 +1413,7 @@
 .focused-world-map__path {
   fill: none;
   stroke: #f2f2ee;
-  stroke-width: 1.4;
+  stroke-width: 1.6;
   stroke-dasharray: none;
   stroke-linecap: square;
   stroke-linejoin: bevel;
@@ -1456,6 +1456,42 @@
   background-color: #b9a083;
 }
 
+.focused-world-map__tile--forest,
+.focused-world-map__legend-tile--forest {
+  fill: #267b4c;
+  background-color: #267b4c;
+}
+
+.focused-world-map__tile--pasture,
+.focused-world-map__legend-tile--pasture {
+  fill: #5c9a69;
+  background-color: #5c9a69;
+}
+
+.focused-world-map__tile--vegetable-garden,
+.focused-world-map__legend-tile--vegetable-garden {
+  fill: #9a9b42;
+  background-color: #9a9b42;
+}
+
+.focused-world-map__tile--cobblestone,
+.focused-world-map__legend-tile--cobblestone {
+  fill: #b0b5bb;
+  background-color: #b0b5bb;
+}
+
+.focused-world-map__tile--gravel,
+.focused-world-map__legend-tile--gravel {
+  fill: #888d93;
+  background-color: #888d93;
+}
+
+.focused-world-map__tile--dirt,
+.focused-world-map__legend-tile--dirt {
+  fill: #685b4e;
+  background-color: #685b4e;
+}
+
 .focused-world-map__location--current .focused-world-map__tile {
   stroke: var(--mudd-warm);
   stroke-width: 2.2;
@@ -1491,14 +1527,15 @@
 
 .focused-world-map__legend {
   display: flex;
+  flex-wrap: wrap;
   min-width: 0;
   justify-content: center;
-  gap: 8px;
-  overflow-x: auto;
+  gap: 5px 10px;
+  overflow: hidden;
   color: var(--mudd-muted);
   font: 500 .52rem/1.25 "DM Mono", monospace;
   scrollbar-width: none;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .focused-world-map__legend::-webkit-scrollbar {
@@ -1545,7 +1582,7 @@
 }
 
 .focused-world-map--fullscreen .focused-world-map__legend {
-  gap: 18px;
+  gap: 8px 16px;
   font-size: .72rem;
 }
 

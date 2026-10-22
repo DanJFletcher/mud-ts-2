@@ -347,7 +347,7 @@ const draft = {
     {
       id: 'stillwater-fountain',
       name: 'Stillwater Fountain',
-      mapPosition: { x: -2, y: 0 },
+      mapPosition: { x: -2, y: 0, terrain: 'cobblestone' },
       description: 'A low stone court opens beneath willow branches. In its middle, a clear fountain spills into a shallow round basin, its steady water carrying the quiet of the grove. A track leads east toward Mossgate Clearing.',
       interactables: [
         {
@@ -534,8 +534,8 @@ const draft = {
       exits: [
         { id: 'bridge-to-glasswater-road', fromLocationId: 'glasswater-bridge', toLocationId: 'glasswater-approach', label: 'South along Glasswater Road', direction: 'south', fromStateId: 'on', roadId: 'glasswater-road' },
         { id: 'bridge-to-reedbank-road', fromLocationId: 'glasswater-bridge', toLocationId: 'reedbank-road', label: 'North along Reedbank Road', direction: 'north', fromStateId: 'on', roadId: 'reedbank-road' },
-        { id: 'bridge-under-to-west-reach', fromLocationId: 'glasswater-bridge', toLocationId: 'glasswater-west-reach', label: 'West along Glasswater River', direction: 'west', fromStateId: 'under' },
-        { id: 'bridge-under-to-east-reach', fromLocationId: 'glasswater-bridge', toLocationId: 'glasswater-east-reach', label: 'East along Glasswater River', direction: 'east', fromStateId: 'under' },
+        { id: 'bridge-under-to-west-reach', fromLocationId: 'glasswater-bridge', toLocationId: 'glasswater-west-reach', label: 'West along Glasswater River', direction: 'west', fromStateId: 'under', mapLineGapAtLocationId: 'glasswater-bridge' },
+        { id: 'bridge-under-to-east-reach', fromLocationId: 'glasswater-bridge', toLocationId: 'glasswater-east-reach', label: 'East along Glasswater River', direction: 'east', fromStateId: 'under', mapLineGapAtLocationId: 'glasswater-bridge' },
       ],
     },
     {
@@ -1307,7 +1307,7 @@ const draft = {
     {
       id: 'fernshade-road',
       name: 'Fernshade Road',
-      mapPosition: { x: -1, y: 1 },
+      mapPosition: { x: -1, y: 1, terrain: 'dirt' },
       description: 'A narrow dirt track passes beneath arching ferns. Fresh boot prints cross the damp earth.',
       exits: [
         { id: 'fernshade-road-to-stillwater-path', fromLocationId: 'fernshade-road', toLocationId: 'stillwater-path', label: 'South toward Willowshade Track', direction: 'south', roadId: 'fernshade-road' },
@@ -1317,7 +1317,7 @@ const draft = {
     {
       id: 'fernshade-fork',
       name: 'Fernshade Fork',
-      mapPosition: { x: -2, y: 1 },
+      mapPosition: { x: -2, y: 1, terrain: 'forest' },
       description: 'The track opens into a small fern-ringed clearing. A low cottage stands to the west; Fernshade Road runs east toward Willowshade Track.',
       exits: [
         { id: 'fernshade-fork-to-road', fromLocationId: 'fernshade-fork', toLocationId: 'fernshade-road', label: 'East along Fernshade Road', direction: 'east', roadId: 'fernshade-road' },
@@ -1508,7 +1508,7 @@ const draft = {
     {
       id: 'stillwater-path',
       name: 'Willowshade Track',
-      mapPosition: { x: -1, y: 0 },
+      mapPosition: { x: -1, y: 0, terrain: 'forest' },
       description: 'Willow branches arch over a narrow track between the fountain court and Mossgate Clearing.',
       exits: [
         { id: 'stillwater-path-to-clearing', fromLocationId: 'stillwater-path', toLocationId: 'mossgate-clearing', label: 'East to Mossgate Clearing', direction: 'east', roadId: 'willowshade-track' },
@@ -1519,7 +1519,7 @@ const draft = {
     {
       id: 'glasswater-approach',
       name: 'Glasswater Approach',
-      mapPosition: { x: 0, y: 1 },
+      mapPosition: { x: 0, y: 1, terrain: 'gravel' },
       description: 'The northbound road narrows along a low stone embankment. Mossgate Clearing lies south; Glasswater Bridge lies north.',
       exits: [
         { id: 'glasswater-approach-to-clearing', fromLocationId: 'glasswater-approach', toLocationId: 'mossgate-clearing', label: 'South to Mossgate Clearing', direction: 'south', roadId: 'glasswater-road' },
@@ -1529,7 +1529,7 @@ const draft = {
     {
       id: 'bellwarden-track',
       name: 'Bellwarden Track',
-      mapPosition: { x: 1, y: 0 },
+      mapPosition: { x: 1, y: 0, terrain: 'pasture' },
       description: 'A grassy track skirts the old clearing stones. It runs east to the tower’s western approach and west to Mossgate.',
       exits: [
         { id: 'bellwarden-track-to-clearing', fromLocationId: 'bellwarden-track', toLocationId: 'mossgate-clearing', label: 'West to Mossgate Clearing', direction: 'west', roadId: 'bellwarden-road' },
@@ -1539,7 +1539,7 @@ const draft = {
     {
       id: 'reedbank-road',
       name: 'Reedbank Road',
-      mapPosition: { x: 0, y: 3 },
+      mapPosition: { x: 0, y: 3, terrain: 'dirt' },
       description: 'The packed earth road follows a broad bed of reeds. It runs north toward Reedbank Stalls and south toward Glasswater Bridge.',
       exits: [
         { id: 'reedbank-road-to-bridge', fromLocationId: 'reedbank-road', toLocationId: 'glasswater-bridge', label: 'South to Glasswater Bridge', direction: 'south', roadId: 'reedbank-road' },
@@ -1562,7 +1562,7 @@ const draft = {
       mapPosition: { x: -1, y: 2, terrain: 'river', visibleWhenUnvisited: true },
       description: 'The river current runs west from beneath Glasswater Bridge.',
       exits: [
-        { id: 'glasswater-west-reach-to-bridge-under', fromLocationId: 'glasswater-west-reach', toLocationId: 'glasswater-bridge', label: 'East beneath Glasswater Bridge', direction: 'east', toStateId: 'under' },
+        { id: 'glasswater-west-reach-to-bridge-under', fromLocationId: 'glasswater-west-reach', toLocationId: 'glasswater-bridge', label: 'East beneath Glasswater Bridge', direction: 'east', toStateId: 'under', mapLineGapAtLocationId: 'glasswater-bridge' },
         { id: 'glasswater-west-reach-to-willow-reach', fromLocationId: 'glasswater-west-reach', toLocationId: 'glasswater-willow-reach', label: 'West along Glasswater River', direction: 'west' },
       ],
     },
@@ -1572,7 +1572,7 @@ const draft = {
       mapPosition: { x: 1, y: 2, terrain: 'river', visibleWhenUnvisited: true },
       description: 'The Glasswater current emerges from beneath the bridge and continues east.',
       exits: [
-        { id: 'glasswater-east-reach-to-bridge-under', fromLocationId: 'glasswater-east-reach', toLocationId: 'glasswater-bridge', label: 'West beneath Glasswater Bridge', direction: 'west', toStateId: 'under' },
+        { id: 'glasswater-east-reach-to-bridge-under', fromLocationId: 'glasswater-east-reach', toLocationId: 'glasswater-bridge', label: 'West beneath Glasswater Bridge', direction: 'west', toStateId: 'under', mapLineGapAtLocationId: 'glasswater-bridge' },
       ],
     },
     {

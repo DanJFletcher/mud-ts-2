@@ -5,8 +5,43 @@ import {
   RoadStepCommandSchema,
   PluginManifestSchema, LocationDescribeQuerySchema, ObjectReadQuerySchema, ObjectInspectQuerySchema, TakeCharacterItemCommandSchema,
   DropCharacterItemCommandSchema, InventoryItemProjectionSchema, WorldPackDraftSchema,
-  QuestDefinitionSchema, validateDraftWorldGraph,
+  QuestDefinitionSchema, validateDraftWorldGraph, MapPositionSchema, WorldMapProjectionSchema,
 } from '../dist/src/index.js';
+
+test('map terrain is open-ended and developer colors are validated', () => {
+  assert.equal(MapPositionSchema.safeParse({
+    x: 4, y: 2, terrain: 'wheat-field', mapColor: '#C89B45',
+  }).success, true);
+  assert.equal(MapPositionSchema.safeParse({
+    x: 4, y: 2, terrain: 'wheat field',
+  }).success, false);
+  assert.equal(MapPositionSchema.safeParse({
+    x: 4, y: 2, terrain: 'wheat-field', mapColor: 'gold',
+  }).success, false);
+  assert.equal(MapPositionSchema.safeParse({
+    x: 4, y: 2, terrain: 'river', mapColor: '#C89B45',
+  }).success, false);
+
+  assert.equal(WorldMapProjectionSchema.safeParse({
+    worldInstanceId: 'world',
+    packId: 'pack',
+    packVersion: '1.0.0',
+    currentLocationId: 'field',
+    locations: [{
+      id: 'field',
+      name: 'Wheat Field',
+      shortName: 'Wheat Field',
+      qualifiedName: 'Wheat Field',
+      locationGroupIds: [],
+      x: 4,
+      y: 2,
+      terrain: 'wheat-field',
+      mapColor: '#C89B45',
+    }],
+    locationGroups: [],
+    connections: [],
+  }).success, true);
+});
 
 test('quest currency rewards are positive and limited to character-scoped quests', () => {
   const quest = {

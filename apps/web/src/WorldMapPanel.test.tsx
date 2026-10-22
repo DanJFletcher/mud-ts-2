@@ -131,6 +131,75 @@ describe('map switching between floors', () => {
     expect(container.querySelector('.focused-world-map__location--selected')).toBeInTheDocument();
   });
 
+  it('draws ordinary exits flush to room tiles and leaves a gap only at underpass endpoints', () => {
+    const { container, rerender } = render(
+      <WorldMapPanel map={overworld} fullscreen={false} onFullscreenChange={vi.fn()} />,
+    );
+    const path = () => container.querySelector('.focused-world-map__svg .focused-world-map__path');
+
+    expect(path()).toHaveAttribute('d', 'M 36 27 H 42 V 27 H 48');
+
+    rerender(
+      <WorldMapPanel
+        map={{
+          ...overworld,
+          connections: [{
+            ...overworld.connections[0]!,
+            mapLineGapAtLocationId: 'tower',
+          }],
+        }}
+        fullscreen={false}
+        onFullscreenChange={vi.fn()}
+      />,
+    );
+    expect(path()).toHaveAttribute('d', 'M 36 27 H 40 V 27 H 44');
+  });
+
+  it('keeps the legend focused on shared symbols and supports developer-colored terrain', () => {
+    const terrains = [
+      'forest',
+      'pasture',
+      'vegetable-garden',
+      'cobblestone',
+      'gravel',
+      'dirt',
+      'wheat-field',
+      'river',
+      'building',
+    ] as const;
+    const map: WorldMapProjection = {
+      ...overworld,
+      currentLocationId: 'tile-0',
+      locations: terrains.map((terrain, index) => ({
+        id: `tile-${index}`,
+        name: `Terrain ${index}`,
+        shortName: `Terrain ${index}`,
+        qualifiedName: `Terrain ${index}`,
+        locationGroupIds: [],
+        x: index,
+        y: 0,
+        terrain,
+        ...(terrain === 'wheat-field' ? { mapColor: '#c89b45' } : {}),
+      })),
+      connections: [],
+    };
+    const { container } = render(
+      <WorldMapPanel map={map} fullscreen={false} onFullscreenChange={vi.fn()} />,
+    );
+    const svg = container.querySelector('.focused-world-map__svg')!;
+
+    for (const terrain of terrains) {
+      expect(svg.querySelector(`.focused-world-map__tile--${terrain}`)).toBeInTheDocument();
+    }
+    expect(svg.querySelector('.focused-world-map__tile--wheat-field')).toHaveStyle({ fill: '#c89b45' });
+    for (const label of ['Water', 'Building', 'Exit', 'One-way']) {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    }
+    for (const label of ['Land', 'Forest', 'Pasture', 'Vegetable garden', 'Cobblestone', 'Gravel', 'Dirt']) {
+      expect(screen.queryByText(label)).not.toBeInTheDocument();
+    }
+  });
+
   it('opens the full-screen map when the mobile minimap is tapped', () => {
     const onFullscreenChange = vi.fn();
     const { container } = render(

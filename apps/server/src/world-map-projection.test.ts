@@ -67,6 +67,38 @@ async function moveAlongRoad(
 }
 
 describe('visited world map projection', () => {
+  it('projects developer-authored terrain colors', () => {
+    const firstLocation = demoWorld.locations[0]!;
+    const customWorld = {
+      ...demoWorld,
+      locations: demoWorld.locations.map((location) =>
+        location.id === firstLocation.id
+          ? {
+            ...location,
+            mapPosition: {
+              ...(location.mapPosition ?? { x: 0, y: 0 }),
+              terrain: 'wheat-field',
+              mapColor: '#C89B45',
+            },
+          }
+          : location,
+      ),
+    };
+    const map = projectWorldMap(CharacterProjectionSchema.parse({
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: 'map-color-character',
+      name: 'Map Color',
+      locationId: firstLocation.id,
+      visitedLocationIds: [firstLocation.id],
+      revision: 1,
+    }), customWorld);
+
+    expect(map.locations.find(({ id }) => id === firstLocation.id)).toMatchObject({
+      terrain: 'wheat-field',
+      mapColor: '#C89B45',
+    });
+  });
+
   it('places the Bellwold tower road north of the market on the map', () => {
     const map = projectWorldMap(CharacterProjectionSchema.parse({
       worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
@@ -344,6 +376,23 @@ describe('visited world map projection', () => {
         toLocationId: 'glasswater-far-reach',
         direction: 'west',
         oneWay: false,
+      }),
+    ]));
+    const bridgeMap = projectWorldMap({
+      ...character,
+      locationId: 'glasswater-bridge',
+      visitedLocationIds: [...character.visitedLocationIds, 'glasswater-bridge'],
+    });
+    expect(bridgeMap.connections).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        fromLocationId: 'glasswater-bridge',
+        toLocationId: 'glasswater-west-reach',
+        mapLineGapAtLocationId: 'glasswater-bridge',
+      }),
+      expect.objectContaining({
+        fromLocationId: 'glasswater-bridge',
+        toLocationId: 'glasswater-east-reach',
+        mapLineGapAtLocationId: 'glasswater-bridge',
       }),
     ]));
     expect(addedRiverNodes.every(({ exits }) => exits.length > 0)).toBe(true);

@@ -22,7 +22,7 @@ const draft = {
       id: 'bellwold-market-square',
       name: 'Bellwold Market Square',
       description: 'Bellwold’s market square anchors a larger frontier settlement. Stalls and handcarts crowd the open ground on busy mornings, while the inn and general shop serve travelers and residents through the day.\n\nThe Kindly Roof lies west, Marr’s General Goods east, the old tower road north, and South Common south. The western road begins beyond the inn; the east road passes through the old mill.',
-      mapPosition: { x: 0, y: 0, terrain: 'land' },
+      mapPosition: { x: 0, y: 0, terrain: 'cobblestone' },
       npcs: [
         {
           id: 'linnet-reed',
@@ -137,7 +137,7 @@ const draft = {
       id: 'bellwold-westbound-track',
       name: 'Westbound Track',
       description: 'The packed-earth road follows low hedgerows beyond Bellwold’s western fields. The West Gate is east; the rough road end is west.',
-      mapPosition: { x: -3, y: 0, terrain: 'land' },
+      mapPosition: { x: -3, y: 0, terrain: 'dirt' },
       exits: [
         { id: 'westbound-track-to-gate', fromLocationId: 'bellwold-westbound-track', toLocationId: 'bellwold-west-gate', label: 'east', direction: 'east', roadId: 'bellwold-west-road' },
         { id: 'westbound-track-to-end', fromLocationId: 'bellwold-westbound-track', toLocationId: 'bellwold-west-road-end', label: 'west', direction: 'west', roadId: 'bellwold-west-road' },
@@ -236,7 +236,7 @@ const draft = {
       id: 'bellwold-south-common',
       name: 'Bellwold South Common',
       description: 'The street widens into a practical green where neighbors pause beside benches, drying lines, and a public notice board. Work carries on around it without the market-square bustle.\n\nThe market square is north, the Green Mortar west, Blackwater Forge east, and Well Court south.',
-      mapPosition: { x: 0, y: -1, terrain: 'land' },
+      mapPosition: { x: 0, y: -1, terrain: 'pasture' },
       exits: [
         { id: 'south-common-to-square', fromLocationId: 'bellwold-south-common', toLocationId: 'bellwold-market-square', label: 'north', direction: 'north' },
         { id: 'south-common-to-green-mortar', fromLocationId: 'bellwold-south-common', toLocationId: 'green-mortar', label: 'west', direction: 'west' },
@@ -297,7 +297,7 @@ const draft = {
       id: 'bellwold-well-court',
       name: 'Bellwold Well Court',
       description: 'A stone-rimmed well and a broad trough give this quiet court a steady rhythm of buckets, footsteps, and short conversations. A covered storehouse stands to the east; Wattle Row branches west.\n\nSouth Common is north, and the Common House is south.',
-      mapPosition: { x: 0, y: -2, terrain: 'land' },
+      mapPosition: { x: 0, y: -2, terrain: 'cobblestone' },
       exits: [
         { id: 'well-court-to-south-common', fromLocationId: 'bellwold-well-court', toLocationId: 'bellwold-south-common', label: 'north', direction: 'north' },
         { id: 'well-court-to-wattle-row', fromLocationId: 'bellwold-well-court', toLocationId: 'bellwold-wattle-row', label: 'west', direction: 'west' },
@@ -436,7 +436,7 @@ const draft = {
       id: 'bellwold-southbound-track',
       name: 'Southbound Track',
       description: 'The packed road runs between open fields and low fence lines, with Bellwold’s roofs receding behind you. The South Gate is north; the reedbed approach lies south.',
-      mapPosition: { x: 0, y: -5, terrain: 'land' },
+      mapPosition: { x: 0, y: -5, terrain: 'pasture' },
       exits: [
         { id: 'southbound-track-to-gate', fromLocationId: 'bellwold-southbound-track', toLocationId: 'bellwold-south-gate', label: 'north', direction: 'north', roadId: 'bellwold-south-road' },
         { id: 'southbound-track-to-reedbed', fromLocationId: 'bellwold-southbound-track', toLocationId: 'bellwold-reedbed-approach', label: 'south', direction: 'south', roadId: 'bellwold-south-road' },
@@ -469,8 +469,8 @@ const draft = {
       exits: [
         { id: 'river-bridge-to-reedbed', fromLocationId: 'bellwold-river-bridge', toLocationId: 'bellwold-reedbed-approach', label: 'north', direction: 'north', fromStateId: 'on', roadId: 'bellwold-south-road' },
         { id: 'river-bridge-to-far-bank', fromLocationId: 'bellwold-river-bridge', toLocationId: 'bellwold-far-bank-track', label: 'south', direction: 'south', fromStateId: 'on', roadId: 'bellwold-south-road' },
-        { id: 'bridge-under-to-west-reach', fromLocationId: 'bellwold-river-bridge', toLocationId: 'bellwold-river-west-reach', label: 'west', direction: 'west', fromStateId: 'under' },
-        { id: 'bridge-under-to-east-reach', fromLocationId: 'bellwold-river-bridge', toLocationId: 'bellwold-river-east-reach', label: 'east', direction: 'east', fromStateId: 'under' },
+        { id: 'bridge-under-to-west-reach', fromLocationId: 'bellwold-river-bridge', toLocationId: 'bellwold-river-west-reach', label: 'west', direction: 'west', fromStateId: 'under', mapLineGapAtLocationId: 'bellwold-river-bridge' },
+        { id: 'bridge-under-to-east-reach', fromLocationId: 'bellwold-river-bridge', toLocationId: 'bellwold-river-east-reach', label: 'east', direction: 'east', fromStateId: 'under', mapLineGapAtLocationId: 'bellwold-river-bridge' },
       ],
     },
     {
@@ -479,7 +479,7 @@ const draft = {
       description: 'The current passes the bridge piers and slides west beneath the reeds. The bridge lies east; Willow Reach is west.',
       mapPosition: { x: -1, y: -7, terrain: 'river', visibleWhenUnvisited: true },
       exits: [
-        { id: 'west-reach-to-bridge-under', fromLocationId: 'bellwold-river-west-reach', toLocationId: 'bellwold-river-bridge', label: 'east beneath Bellwold River Bridge', direction: 'east', toStateId: 'under' },
+        { id: 'west-reach-to-bridge-under', fromLocationId: 'bellwold-river-west-reach', toLocationId: 'bellwold-river-bridge', label: 'east beneath Bellwold River Bridge', direction: 'east', toStateId: 'under', mapLineGapAtLocationId: 'bellwold-river-bridge' },
         { id: 'west-reach-to-willow-reach', fromLocationId: 'bellwold-river-west-reach', toLocationId: 'bellwold-river-willow-reach', label: 'west along the river', direction: 'west' },
       ],
     },
@@ -508,7 +508,7 @@ const draft = {
       description: 'The current emerges from beneath the bridge and runs east through reeds and shallow stones. The bridge lies west; Alder Reach is east.',
       mapPosition: { x: 1, y: -7, terrain: 'river', visibleWhenUnvisited: true },
       exits: [
-        { id: 'east-reach-to-bridge-under', fromLocationId: 'bellwold-river-east-reach', toLocationId: 'bellwold-river-bridge', label: 'west beneath Bellwold River Bridge', direction: 'west', toStateId: 'under' },
+        { id: 'east-reach-to-bridge-under', fromLocationId: 'bellwold-river-east-reach', toLocationId: 'bellwold-river-bridge', label: 'west beneath Bellwold River Bridge', direction: 'west', toStateId: 'under', mapLineGapAtLocationId: 'bellwold-river-bridge' },
         { id: 'east-reach-to-alder-reach', fromLocationId: 'bellwold-river-east-reach', toLocationId: 'bellwold-river-alder-reach', label: 'east along the river', direction: 'east' },
       ],
     },
@@ -610,7 +610,7 @@ const draft = {
       id: 'bellwold-east-mill-track',
       name: 'East Mill Track',
       description: 'The road leaves the mill and runs east between shallow drainage channels. The abandoned watermill is west; a bend in the track lies east.',
-      mapPosition: { x: 2, y: 1, terrain: 'land' },
+      mapPosition: { x: 2, y: 1, terrain: 'gravel' },
       exits: [
         { id: 'east-mill-track-to-mill', fromLocationId: 'bellwold-east-mill-track', toLocationId: 'abandoned-watermill', label: 'west', direction: 'west', roadId: 'bellwold-east-mill-road' },
         { id: 'east-mill-track-to-bend', fromLocationId: 'bellwold-east-mill-track', toLocationId: 'bellwold-east-road-bend', label: 'east', direction: 'east', roadId: 'bellwold-east-mill-road' },
@@ -620,7 +620,7 @@ const draft = {
       id: 'bellwold-east-road-bend',
       name: 'East Road Bend',
       description: 'The track bends around a low rise, with the mill channel now out of sight. East Mill Track is west; the road verge lies east, and a narrower road turns north toward an abandoned church.',
-      mapPosition: { x: 3, y: 1, terrain: 'land' },
+      mapPosition: { x: 3, y: 1, terrain: 'gravel' },
       exits: [
         { id: 'east-road-bend-to-track', fromLocationId: 'bellwold-east-road-bend', toLocationId: 'bellwold-east-mill-track', label: 'west', direction: 'west', roadId: 'bellwold-east-mill-road' },
         { id: 'east-road-bend-to-verge', fromLocationId: 'bellwold-east-road-bend', toLocationId: 'bellwold-east-road-verge', label: 'east', direction: 'east', roadId: 'bellwold-east-mill-road' },
@@ -631,7 +631,7 @@ const draft = {
       id: 'bellwold-north-church-track',
       name: 'North Church Track',
       description: 'A narrow track climbs north from East Road Bend between low banks of grass. The bend is south; an open approach before the abandoned church lies north.',
-      mapPosition: { x: 3, y: 2, terrain: 'land' },
+      mapPosition: { x: 3, y: 2, terrain: 'dirt' },
       exits: [
         { id: 'church-track-to-east-bend', fromLocationId: 'bellwold-north-church-track', toLocationId: 'bellwold-east-road-bend', label: 'south to East Road Bend', direction: 'south', roadId: 'bellwold-north-church-road' },
         { id: 'church-track-to-approach', fromLocationId: 'bellwold-north-church-track', toLocationId: 'bellwold-church-approach', label: 'north to the church approach', direction: 'north', roadId: 'bellwold-north-church-road' },

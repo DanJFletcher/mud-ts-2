@@ -28,6 +28,8 @@ export const ExitDefinitionSchema = z.object({
   toStateId: IdSchema.optional(),
   requiredInteractionId: IdSchema.optional(),
   roadId: IdSchema.optional(),
+  /** Presentation-only: leave a visible gap at this endpoint tile to depict an underpass. */
+  mapLineGapAtLocationId: IdSchema.optional(),
 }).strict();
 
 export const LocationStateDefinitionSchema = z.object({
@@ -51,16 +53,33 @@ export const RoadDefinitionSchema = z.object({
   encounters: z.array(RoadEncounterDefinitionSchema).min(1).max(24),
 }).strict();
 
+export const MapTerrainSchema = z.string()
+  .trim()
+  .min(1)
+  .max(48)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+export const MapColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+
 export const MapPositionSchema = z.object({
   x: z.number().int().min(-10000).max(10000),
   y: z.number().int().min(-10000).max(10000),
   /** Omitted for legacy surface content (level zero). */
   z: z.number().int().min(-10000).max(10000).optional(),
   /** Presentation-only map tile category; movement and rules do not depend on it. */
-  terrain: z.enum(['land', 'river', 'building']).optional(),
+  terrain: MapTerrainSchema.optional(),
+  /** Optional developer-authored hex color for non-water, non-building map tiles. */
+  mapColor: MapColorSchema.optional(),
   /** Show this map tile even before a character has visited its location. */
   visibleWhenUnvisited: z.boolean().optional(),
-}).strict();
+}).strict().superRefine((position, context) => {
+  if (position.mapColor && (position.terrain === 'river' || position.terrain === 'building')) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['mapColor'],
+      message: 'Water and building map tiles use their fixed labeled colors.',
+    });
+  }
+});
 
 export const ReadableObjectDefinitionSchema = z.object({
   id: IdSchema,
@@ -488,6 +507,17 @@ export const WorldPackDraftSchema = z.object({
           message: `Exit ${exit.id} references missing destination state ${exit.toStateId}.`,
         });
       }
+      if (
+        exit.mapLineGapAtLocationId &&
+        exit.mapLineGapAtLocationId !== exit.fromLocationId &&
+        exit.mapLineGapAtLocationId !== exit.toLocationId
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['locations', locationIndex, 'exits', exitIndex, 'mapLineGapAtLocationId'],
+          message: `Exit ${exit.id} can only place a map line gap at one of its endpoint locations.`,
+        });
+      }
       if (!exit.roadId) continue;
       const road = world.roads.find(({ id }) => id === exit.roadId);
       const fromIndex = road?.locationIds.indexOf(exit.fromLocationId) ?? -1;
@@ -621,9 +651,18 @@ export const WorldMapProjectionSchema = z.object({
     primaryLocationGroupId: IdSchema.optional(),
     x: z.number().int().min(-10000).max(10000),
     y: z.number().int().min(-10000).max(10000),
-    terrain: z.enum(['land', 'river', 'building']).optional(),
+    terrain: MapTerrainSchema.optional(),
     verticalExits: z.array(z.enum(['up', 'down'])).max(2).optional(),
-  }).strict()).min(1).max(500),
+    mapColor: MapColorSchema.optional(),
+  }).strict().superRefine((location, context) => {
+    if (location.mapColor && (location.terrain === 'river' || location.terrain === 'building')) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['mapColor'],
+        message: 'Water and building map tiles use their fixed labeled colors.',
+      });
+    }
+  })).min(1).max(500),
   locationGroups: z.array(z.object({
     id: IdSchema,
     name: z.string().min(1).max(160),
@@ -638,6 +677,7 @@ export const WorldMapProjectionSchema = z.object({
     toLocationId: IdSchema,
     direction: z.string().max(40).optional(),
     oneWay: z.boolean().optional(),
+    mapLineGapAtLocationId: IdSchema.optional(),
   }).strict()).max(2000),
 }).strict();
 

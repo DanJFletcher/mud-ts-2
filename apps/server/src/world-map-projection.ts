@@ -45,6 +45,7 @@ export function projectWorldMap(
       x: location.mapPosition?.x ?? index,
       y: location.mapPosition?.y ?? 0,
       ...(location.mapPosition?.terrain ? { terrain: location.mapPosition.terrain } : {}),
+      ...(location.mapPosition?.mapColor ? { mapColor: location.mapPosition.mapColor } : {}),
       ...(verticalExits.length ? { verticalExits } : {}),
     };
   });
@@ -56,14 +57,18 @@ export function projectWorldMap(
     const pathKey = [exit.fromLocationId, exit.toLocationId].sort().join(':');
     if (seenPaths.has(pathKey)) return [];
     seenPaths.add(pathKey);
-    const reverseExitExists = world.locations
+    const reverseExits = world.locations
       .find((candidate) => candidate.id === exit.toLocationId)
-      ?.exits.some((candidate) => candidate.toLocationId === exit.fromLocationId) ?? false;
+      ?.exits.filter((candidate) => candidate.toLocationId === exit.fromLocationId) ?? [];
+    const reverseExitExists = reverseExits.length > 0;
+    const mapLineGapAtLocationId = exit.mapLineGapAtLocationId ??
+      reverseExits.find((candidate) => candidate.mapLineGapAtLocationId)?.mapLineGapAtLocationId;
     return [{
       fromLocationId: exit.fromLocationId,
       toLocationId: exit.toLocationId,
       direction: exit.direction,
       oneWay: !reverseExitExists,
+      ...(mapLineGapAtLocationId ? { mapLineGapAtLocationId } : {}),
     }];
   }));
 

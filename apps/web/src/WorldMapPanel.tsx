@@ -44,6 +44,7 @@ type MinimapDrag = {
 const MAP_TILE_SIZE = 18;
 const MAP_GRID_STEP = 30;
 const MAP_PADDING = 18;
+const MAP_UNDERPASS_GAP = 4;
 const MINIMAP_VIEW_WIDTH = MAP_GRID_STEP * 4;
 const MINIMAP_VIEW_HEIGHT = MAP_GRID_STEP * 5;
 const MIN_MAP_ZOOM = 0.5;
@@ -168,20 +169,26 @@ function fullMapViewBox(
   };
 }
 
-function connectionPath(from: MapPoint, to: MapPoint, direction?: string): string {
+function connectionPath(
+  from: MapPoint,
+  to: MapPoint,
+  direction?: string,
+  mapLineGapAtLocationId?: string,
+): string {
   const halfTile = MAP_TILE_SIZE / 2;
-  const gap = 4;
+  const startGap = mapLineGapAtLocationId === from.id ? MAP_UNDERPASS_GAP : 0;
+  const endGap = mapLineGapAtLocationId === to.id ? MAP_UNDERPASS_GAP : 0;
   if (direction === 'north' || direction === 'south') {
     const sign = direction === 'north' ? -1 : 1;
-    const startY = from.screenY + sign * (halfTile + gap);
-    const endY = to.screenY - sign * (halfTile + gap);
+    const startY = from.screenY + sign * (halfTile + startGap);
+    const endY = to.screenY - sign * (halfTile + endGap);
     const bendY = (startY + endY) / 2;
     return `M ${from.screenX} ${startY} V ${bendY} H ${to.screenX} V ${endY}`;
   }
   if (direction === 'east' || direction === 'west') {
     const sign = direction === 'east' ? 1 : -1;
-    const startX = from.screenX + sign * (halfTile + gap);
-    const endX = to.screenX - sign * (halfTile + gap);
+    const startX = from.screenX + sign * (halfTile + startGap);
+    const endX = to.screenX - sign * (halfTile + endGap);
     const bendX = (startX + endX) / 2;
     return `M ${startX} ${from.screenY} H ${bendX} V ${to.screenY} H ${endX}`;
   }
@@ -190,14 +197,14 @@ function connectionPath(from: MapPoint, to: MapPoint, direction?: string): strin
   const dy = to.screenY - from.screenY;
   if (Math.abs(dx) >= Math.abs(dy)) {
     const sign = Math.sign(dx) || 1;
-    const startX = from.screenX + sign * (halfTile + gap);
-    const endX = to.screenX - sign * (halfTile + gap);
+    const startX = from.screenX + sign * (halfTile + startGap);
+    const endX = to.screenX - sign * (halfTile + endGap);
     const bendX = (startX + endX) / 2;
     return `M ${startX} ${from.screenY} H ${bendX} V ${to.screenY} H ${endX}`;
   }
   const sign = Math.sign(dy) || 1;
-  const startY = from.screenY + sign * (halfTile + gap);
-  const endY = to.screenY - sign * (halfTile + gap);
+  const startY = from.screenY + sign * (halfTile + startGap);
+  const endY = to.screenY - sign * (halfTile + endGap);
   const bendY = (startY + endY) / 2;
   return `M ${from.screenX} ${startY} V ${bendY} H ${to.screenX} V ${endY}`;
 }
@@ -541,7 +548,7 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
             >
               <title>Directional map of visited locations</title>
               <desc>
-                North is up. Blue squares are water; beige squares are inside buildings.
+                North is up. Water and building tiles have labeled colors; other terrain colors are authored by the world developer.
                 White lines connect exits, arrows mark one-way exits, and black triangles mark up or down passages.
                 {focusedLocation ? ` ${focusedLocation.name} is selected.` : ''}
               </desc>
@@ -570,7 +577,12 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
                       'focused-world-map__path',
                       connection.oneWay ? 'focused-world-map__path--one-way' : '',
                     ].filter(Boolean).join(' ')}
-                    d={connectionPath(from, to, connection.direction)}
+                    d={connectionPath(
+                      from,
+                      to,
+                      connection.direction,
+                      connection.mapLineGapAtLocationId,
+                    )}
                     markerEnd={connection.oneWay ? 'url(#world-map-one-way-arrow)' : undefined}
                   >
                     <title>
@@ -624,6 +636,7 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
                       y={point.screenY - MAP_TILE_SIZE / 2}
                       width={MAP_TILE_SIZE}
                       height={MAP_TILE_SIZE}
+                      style={point.mapColor ? { fill: point.mapColor } : undefined}
                     />
                     {(point.verticalExits ?? []).map((direction, index) => (
                       <path
@@ -641,7 +654,6 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
             </svg>
             <p className="focused-world-map__current-name">{focusedLocation?.name ?? 'Map'}</p>
             <div className="focused-world-map__legend" aria-label="Map legend">
-              <span><i className="focused-world-map__legend-tile focused-world-map__legend-tile--land" /> Land</span>
               <span><i className="focused-world-map__legend-tile focused-world-map__legend-tile--river" /> Water</span>
               <span><i className="focused-world-map__legend-tile focused-world-map__legend-tile--building" /> Building</span>
               <span><i className="focused-world-map__legend-line" /> Exit</span>
@@ -692,7 +704,12 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
               <path
                 key={`${connection.fromLocationId}-${connection.toLocationId}`}
                 className="focused-world-map__path"
-                d={connectionPath(from, to, connection.direction)}
+                  d={connectionPath(
+                    from,
+                    to,
+                    connection.direction,
+                    connection.mapLineGapAtLocationId,
+                  )}
               />
             );
           })}
