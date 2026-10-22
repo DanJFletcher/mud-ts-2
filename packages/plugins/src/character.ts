@@ -25,6 +25,8 @@ import {
   LocationProjectionSchema,
   ReadableObjectProjectionSchema,
   ObjectInspectionProjectionSchema,
+  locationGroupMembershipsForLocation,
+  resolveLocationDisplayName,
   type CapabilityToken,
   WorldItemClaimedEventSchema,
 } from '@mudd/contracts';
@@ -432,12 +434,21 @@ export const characterPlugin: EnginePlugin = {
       if (location.inn && !innCurrency) {
         throw new Error('An authored inn requires configured world currency.');
       }
+      const shortName = locationState?.name ?? location.name;
+      const locationGroups = locationGroupMembershipsForLocation(
+        context.world.locationGroups,
+        location.id,
+      );
+      const displayName = resolveLocationDisplayName(shortName, locationGroups);
       return LocationProjectionSchema.parse({
         worldInstanceId: context.worldInstanceId,
         locationId: location.id,
         ...(locationState ? { locationStateId: locationState.id } : {}),
         revision: character.revision,
-        title: locationState?.name ?? location.name,
+        title: displayName.qualifiedName,
+        shortName: displayName.shortName,
+        qualifiedName: displayName.qualifiedName,
+        locationGroups,
         description: [
           locationState?.description ?? location.description,
           ...roomItemDescriptions,

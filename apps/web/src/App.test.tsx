@@ -87,10 +87,20 @@ let partyActivity: Array<{
 let teamCombatEncounter: TeamCombatEncounter | null;
 
 function currentLocation() {
+  const title = room === 'clearing'
+    ? 'Mossgate Clearing'
+    : room === 'market'
+      ? 'Reedbank Stalls'
+      : room === 'inn'
+        ? 'Willowrest Inn'
+        : 'Glasswater Bridge';
   return {
     worldInstanceId: 'mudd-demo-instance',
     locationId: room === 'clearing' ? 'mossgate-clearing' : room === 'market' ? 'reedbank-stalls' : room === 'inn' ? 'willowrest-inn' : 'glasswater-bridge',
-    title: room === 'clearing' ? 'Mossgate Clearing' : room === 'market' ? 'Reedbank Stalls' : room === 'inn' ? 'Willowrest Inn' : 'Glasswater Bridge',
+    title,
+    shortName: title,
+    qualifiedName: title,
+    locationGroups: [],
     description: room === 'clearing'
       ? itemTaken
         ? 'A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east.'
@@ -210,7 +220,14 @@ function currentWorldMap() {
     { id: 'reedbank-stalls', name: 'Reedbank Stalls', x: 1, y: 2 },
     { id: 'willowrest-inn', name: 'Willowrest Inn', x: 2, y: 2 },
   ];
-  const locations = allLocations.filter((location) => visitedLocationIds.includes(location.id));
+  const locations = allLocations
+    .filter((location) => visitedLocationIds.includes(location.id))
+    .map((location) => ({
+      ...location,
+      shortName: location.name,
+      qualifiedName: location.name,
+      locationGroupIds: [],
+    }));
   const hasClearing = visitedLocationIds.includes('mossgate-clearing');
   const hasBridge = visitedLocationIds.includes('glasswater-bridge');
   const hasReedbank = visitedLocationIds.includes('reedbank-stalls');
@@ -222,8 +239,11 @@ function currentWorldMap() {
   ] as const;
   return {
     worldInstanceId: 'mudd-demo-instance',
+    packId: 'mudd.first-steps',
+    packVersion: '1.1.0',
     currentLocationId: currentLocation().locationId,
     locations,
+    locationGroups: [],
     connections: pathPairs.flatMap(([fromLocationId, toLocationId]) =>
       (fromLocationId === 'mossgate-clearing' ? hasClearing
         : fromLocationId === 'glasswater-bridge' ? hasBridge

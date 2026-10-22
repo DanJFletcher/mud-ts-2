@@ -4,29 +4,32 @@ import type { WorldMapProjection } from '@mudd/contracts';
 import { WorldMapPanel } from './WorldMapPanel.js';
 
 const overworld: WorldMapProjection = {
-  worldInstanceId: 'world', currentLocationId: 'tower',
+  worldInstanceId: 'world', packId: 'pack', packVersion: '1.0.0', currentLocationId: 'tower', locationGroups: [],
   locations: [
-    { id: 'clearing', name: 'Clearing', x: 0, y: 0, terrain: 'land' },
-    { id: 'tower', name: 'Bell Tower', x: 1, y: 0, terrain: 'building', verticalExits: ['up'] },
+    { id: 'clearing', name: 'Clearing', shortName: 'Clearing', qualifiedName: 'Clearing', locationGroupIds: [], x: 0, y: 0, terrain: 'land' },
+    { id: 'tower', name: 'Bell Tower', shortName: 'Bell Tower', qualifiedName: 'Bell Tower', locationGroupIds: [], x: 1, y: 0, terrain: 'building', verticalExits: ['up'] },
   ],
   connections: [{ fromLocationId: 'clearing', toLocationId: 'tower', direction: 'east' }],
 };
 const basement: WorldMapProjection = {
-  worldInstanceId: 'world', currentLocationId: 'basement',
+  worldInstanceId: 'world', packId: 'pack', packVersion: '1.0.0', currentLocationId: 'basement', locationGroups: [],
   locations: [
-    { id: 'basement', name: 'Basement', x: 1, y: 0, terrain: 'building', verticalExits: ['up'] },
-    { id: 'corridor', name: 'Lower Corridor', x: 2, y: 0 },
+    { id: 'basement', name: 'Basement', shortName: 'Basement', qualifiedName: 'Basement', locationGroupIds: [], x: 1, y: 0, terrain: 'building', verticalExits: ['up'] },
+    { id: 'corridor', name: 'Lower Corridor', shortName: 'Lower Corridor', qualifiedName: 'Lower Corridor', locationGroupIds: [], x: 2, y: 0 },
   ],
   connections: [{ fromLocationId: 'basement', toLocationId: 'corridor' }],
 };
 const denseMap: WorldMapProjection = {
   worldInstanceId: 'world',
+  packId: 'pack',
+  packVersion: '1.0.0',
   currentLocationId: 'overlook',
+  locationGroups: [],
   locations: [
-    { id: 'overlook', name: 'High Lantern Overlook', x: 1, y: 1, terrain: 'land' },
-    { id: 'bell-west', name: 'West of Old Bell Tower', x: 1, y: 2, terrain: 'building' },
-    { id: 'bridge-approach', name: 'Glasswater Bridge Approach', x: 2, y: 1, terrain: 'river', verticalExits: ['down'] },
-    { id: 'reedbank-road', name: 'Reedbank Market Road', x: 3, y: 2, terrain: 'land' },
+    { id: 'overlook', name: 'High Lantern Overlook', shortName: 'High Lantern Overlook', qualifiedName: 'High Lantern Overlook', locationGroupIds: [], x: 1, y: 1, terrain: 'land' },
+    { id: 'bell-west', name: 'West of Old Bell Tower', shortName: 'West of Old Bell Tower', qualifiedName: 'West of Old Bell Tower', locationGroupIds: [], x: 1, y: 2, terrain: 'building' },
+    { id: 'bridge-approach', name: 'Glasswater Bridge Approach', shortName: 'Glasswater Bridge Approach', qualifiedName: 'Glasswater Bridge Approach', locationGroupIds: [], x: 2, y: 1, terrain: 'river', verticalExits: ['down'] },
+    { id: 'reedbank-road', name: 'Reedbank Market Road', shortName: 'Reedbank Market Road', qualifiedName: 'Reedbank Market Road', locationGroupIds: [], x: 3, y: 2, terrain: 'land' },
   ],
   connections: [
     { fromLocationId: 'overlook', toLocationId: 'bell-west', direction: 'south', oneWay: true },
@@ -138,10 +141,16 @@ describe('map switching between floors', () => {
 
     const largerMap: WorldMapProjection = {
       worldInstanceId: 'world',
+      packId: 'pack',
+      packVersion: '1.0.0',
       currentLocationId: 'line-4',
+      locationGroups: [],
       locations: Array.from({ length: 9 }, (_, x) => ({
         id: `line-${x}`,
         name: `Line ${x}`,
+        shortName: `Line ${x}`,
+        qualifiedName: `Line ${x}`,
+        locationGroupIds: [],
         x,
         y: 0,
         terrain: 'land' as const,

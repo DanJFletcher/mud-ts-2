@@ -1,7 +1,19 @@
-import { WorldMapProjectionSchema, type CharacterProjection, type WorldPackDraft } from '@mudd/contracts';
+import {
+  WorldMapProjectionSchema,
+  locationGroupMembershipsForLocation,
+  projectVisibleLocationGroups,
+  resolveLocationDisplayName,
+  type CharacterProjection,
+  type LocationGroupDefinition,
+  type WorldPackDraft,
+} from '@mudd/contracts';
 import { demoWorld } from '@mudd/world-demo';
 
-export function projectWorldMap(character: CharacterProjection, world: WorldPackDraft = demoWorld) {
+export function projectWorldMap(
+  character: CharacterProjection,
+  world: WorldPackDraft = demoWorld,
+  locationGroups: readonly LocationGroupDefinition[] = world.locationGroups,
+) {
   const currentLocation = world.locations.find((location) => location.id === character.locationId);
   if (!currentLocation) throw new Error('Cannot project a map for a location absent from the world.');
   const currentAreaId = currentLocation.mapAreaId ?? 'overworld';
@@ -15,6 +27,8 @@ export function projectWorldMap(character: CharacterProjection, world: WorldPack
     visitedLocationIds.has(location.id) || location.mapPosition?.visibleWhenUnvisited === true,
   );
   const locations = visibleLocations.map((location, index) => {
+    const groupMemberships = locationGroupMembershipsForLocation(locationGroups, location.id);
+    const displayName = resolveLocationDisplayName(location.name, groupMemberships);
     const verticalExits = [...new Set(location.exits
       .filter((exit) => exit.toLocationId !== location.id)
       .map((exit) => exit.direction)
@@ -22,6 +36,12 @@ export function projectWorldMap(character: CharacterProjection, world: WorldPack
     return {
       id: location.id,
       name: location.name,
+      shortName: displayName.shortName,
+      qualifiedName: displayName.qualifiedName,
+      locationGroupIds: groupMemberships.map((group) => group.id),
+      ...(displayName.primaryLocationGroupId
+        ? { primaryLocationGroupId: displayName.primaryLocationGroupId }
+        : {}),
       x: location.mapPosition?.x ?? index,
       y: location.mapPosition?.y ?? 0,
       ...(location.mapPosition?.terrain ? { terrain: location.mapPosition.terrain } : {}),
@@ -49,8 +69,11 @@ export function projectWorldMap(character: CharacterProjection, world: WorldPack
 
   return WorldMapProjectionSchema.parse({
     worldInstanceId: character.worldInstanceId,
+    packId: world.packId,
+    packVersion: world.packVersion,
     currentLocationId: character.locationId,
     locations,
+    locationGroups: projectVisibleLocationGroups(locationGroups, visibleLocationIds),
     connections,
   });
 }

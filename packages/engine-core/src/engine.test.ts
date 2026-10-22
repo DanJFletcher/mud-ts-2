@@ -1055,7 +1055,7 @@ describe('MUDD engine host', () => {
       ok: true,
       value: {
         locationStateId: 'on',
-        title: 'Glasswater Bridge',
+        title: 'Clearwater: Glasswater Bridge',
         exits: expect.arrayContaining([
           expect.objectContaining({ id: 'bridge-to-reedbank-road' }),
         ]),
@@ -1065,7 +1065,7 @@ describe('MUDD engine host', () => {
       ok: true,
       value: {
         locationStateId: 'under',
-        title: 'Under Glasswater Bridge',
+        title: 'Clearwater: Under Glasswater Bridge',
         description: expect.stringContaining('current passes beneath the stone arches'),
         exits: expect.arrayContaining([
           expect.objectContaining({ id: 'bridge-under-to-west-reach' }),

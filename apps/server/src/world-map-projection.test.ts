@@ -100,6 +100,31 @@ describe('visited world map projection', () => {
     )).toBe(true);
   });
 
+  it('projects structured group names without revealing undiscovered group members', () => {
+    const map = projectWorldMap(CharacterProjectionSchema.parse({
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: 'group-map-character',
+      name: 'Group Map',
+      locationId: 'glasswater-bridge',
+      visitedLocationIds: ['glasswater-bridge'],
+      revision: 1,
+    }));
+    const bridge = map.locations.find((location) => location.id === 'glasswater-bridge');
+    expect(bridge).toMatchObject({
+      name: 'Glasswater Bridge',
+      shortName: 'Glasswater Bridge',
+      qualifiedName: 'Clearwater: Glasswater Bridge',
+      locationGroupIds: ['clearwater', 'glasswater-river', 'kings-road'],
+      primaryLocationGroupId: 'clearwater',
+    });
+    expect(map.locationGroups.find((group) => group.id === 'clearwater')?.locationIds)
+      .toEqual(['glasswater-bridge']);
+    expect(map.locationGroups.find((group) => group.id === 'clearwater')?.locationIds)
+      .not.toContain('willowrest-inn');
+    expect(map.locationGroups.find((group) => group.id === 'glasswater-river')?.locationIds)
+      .toContain('glasswater-west-reach');
+  });
+
   it('uses only the game’s four compass and two vertical travel directions', () => {
     const supportedDirections = new Set(['north', 'east', 'south', 'west', 'up', 'down']);
     const unsupportedExits = demoWorld.locations.flatMap((location) =>
@@ -233,7 +258,7 @@ describe('visited world map projection', () => {
     expect(initialSnapshot.map?.locations.map(({ id }) => id))
       .toEqual(expect.arrayContaining([...addedRiverNodeIds]));
     expect(initialSnapshot.map?.locations.filter(({ id }) => addedRiverNodeIds.has(id)))
-      .toEqual(expect.arrayContaining(addedRiverNodes.map(({ id, name, mapPosition }) => ({
+      .toEqual(expect.arrayContaining(addedRiverNodes.map(({ id, name, mapPosition }) => expect.objectContaining({
         id,
         name,
         x: mapPosition!.x,
@@ -314,13 +339,13 @@ describe('visited world map projection', () => {
     );
     const innSnapshot = await client.getGame();
     expect(innSnapshot.map?.currentLocationId).toBe('willowrest-inn');
-    expect(innSnapshot.map?.locations).toContainEqual({
+    expect(innSnapshot.map?.locations).toContainEqual(expect.objectContaining({
       id: 'willowrest-inn',
       name: 'Willowrest Inn',
       x: 2,
       y: 4,
       terrain: 'building',
-    });
+    }));
     expect(innSnapshot.map?.connections).toContainEqual(expect.objectContaining({
       fromLocationId: 'reedbank-stalls',
       toLocationId: 'willowrest-lane',

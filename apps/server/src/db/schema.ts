@@ -1,7 +1,9 @@
 import { sql } from 'drizzle-orm';
 import {
   check,
+  boolean,
   integer,
+  foreignKey,
   index,
   jsonb,
   pgTable,
@@ -83,6 +85,62 @@ export const commandReceipts = pgTable('command_receipts', {
     name: 'command_receipts_pk',
     columns: [table.worldInstanceId, table.actorId, table.commandId],
   }),
+]);
+
+export const worldLocationGroupCatalogs = pgTable('world_location_group_catalogs', {
+  packId: text('pack_id').notNull(),
+  packVersion: text('pack_version').notNull(),
+  revision: integer('revision').notNull().default(0),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({
+    name: 'world_location_group_catalogs_pk',
+    columns: [table.packId, table.packVersion],
+  }),
+  check('world_location_group_catalogs_revision_nonnegative', sql`${table.revision} >= 0`),
+]);
+
+export const worldLocationGroups = pgTable('world_location_groups', {
+  packId: text('pack_id').notNull(),
+  packVersion: text('pack_version').notNull(),
+  id: text('id').notNull(),
+  name: text('name').notNull(),
+  type: text('type').notNull(),
+  description: text('description'),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>(),
+}, (table) => [
+  primaryKey({
+    name: 'world_location_groups_pk',
+    columns: [table.packId, table.packVersion, table.id],
+  }),
+  foreignKey({
+    name: 'world_location_groups_catalog_fk',
+    columns: [table.packId, table.packVersion],
+    foreignColumns: [worldLocationGroupCatalogs.packId, worldLocationGroupCatalogs.packVersion],
+  }).onDelete('cascade'),
+]);
+
+export const worldLocationGroupMemberships = pgTable('world_location_group_memberships', {
+  packId: text('pack_id').notNull(),
+  packVersion: text('pack_version').notNull(),
+  groupId: text('group_id').notNull(),
+  locationId: text('location_id').notNull(),
+  isPrimary: boolean('is_primary').notNull().default(false),
+}, (table) => [
+  primaryKey({
+    name: 'world_location_group_memberships_pk',
+    columns: [table.packId, table.packVersion, table.groupId, table.locationId],
+  }),
+  foreignKey({
+    name: 'world_location_group_memberships_group_fk',
+    columns: [table.packId, table.packVersion, table.groupId],
+    foreignColumns: [worldLocationGroups.packId, worldLocationGroups.packVersion, worldLocationGroups.id],
+  }).onDelete('cascade'),
+  index('world_location_group_memberships_location_idx')
+    .on(table.packId, table.packVersion, table.locationId),
+  uniqueIndex('world_location_group_one_primary_per_location_idx')
+    .on(table.packId, table.packVersion, table.locationId)
+    .where(sql`${table.isPrimary}`),
 ]);
 
 export const roomChatMessages = pgTable('room_chat_messages', {

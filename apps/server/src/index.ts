@@ -25,10 +25,15 @@ import {
   PartyQuestJournalQuerySchema,
   TeamCombatInfoQuerySchema,
   TeamCombatInfoProjectionSchema,
+  LocationGroupsListQuerySchema,
+  locationGroupMembershipsForLocation,
+  resolveLocationDisplayName,
+  type LocationGroupDefinition,
 } from '@mudd/contracts';
 import { EngineHost, projectQuestJournal, replayCharacter } from '@mudd/engine-core';
 import {
   characterPlugin,
+  createLocationGroupsPlugin,
   autonomousNpcsPlugin,
   combatPlugin,
   groupsPlugin,
@@ -50,6 +55,8 @@ import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import { db, pool } from './db/client.js';
 import { characters, durableEffects, worldSessions } from './db/schema.js';
 import { PostgresEventStore } from './persistence/postgres-event-store.js';
+import { PostgresLocationGroupCatalogStore } from './location-group-store.js';
+import { projectLocationWithGroups } from './location-group-projection.js';
 import { listRoomOccupants, touchWorldSessionPresence } from './room-presence-service.js';
 import { combatPresencePlugin } from './combat-presence-plugin.js';
 import { demoEventEffectsPlugin } from './demo-event-effects-plugin.js';
@@ -94,6 +101,10 @@ if (process.env.NODE_ENV === 'production' && trustedHosts.size === 0) {
 }
 
 const store = new PostgresEventStore();
+const locationGroupsFeature = createLocationGroupsPlugin(
+  demoWorld,
+  new PostgresLocationGroupCatalogStore(),
+);
 const authorization = {
   async canAccessInstance(session: { worldInstanceId: string }, id: string) {
     return session.worldInstanceId === id && id === DEMO_WORLD_INSTANCE_ID;
@@ -108,6 +119,7 @@ const authorization = {
 const engine = new EngineHost(
   [
     worldItemsPlugin,
+    locationGroupsFeature.plugin,
     autonomousNpcsPlugin,
     characterPlugin,
     groupsPlugin,
@@ -290,8 +302,9 @@ async function locationWithRoomPresence(
   location: unknown,
   worldInstanceId: string,
   viewerCharacterId: string,
+  locationGroups: readonly LocationGroupDefinition[],
 ) {
-  const projection = LocationProjectionSchema.parse(location);
+  const projection = projectLocationWithGroups(LocationProjectionSchema.parse(location), locationGroups);
   const occupants = await listRoomOccupants(
     store,
     worldInstanceId,
@@ -312,12 +325,22 @@ app.get('/api/characters', async (req, res, next) => {
       eq(characters.playerId, identity.playerId),
       eq(characters.worldInstanceId, DEMO_WORLD_INSTANCE_ID),
     )).orderBy(desc(characters.createdAt));
+    const locationGroupCatalog = await locationGroupsFeature.catalog.read();
     const characterList = await Promise.all(rows.map(async (row) => {
       const projection = replayCharacter(await store.readStream(row.worldInstanceId, row.id));
       if (!projection) throw new Error('A character record exists without its creation event.');
+      const location = demoWorld.locations.find((item) => item.id === projection.locationId);
+      const locationGroups = locationGroupMembershipsForLocation(
+        locationGroupCatalog.groups,
+        projection.locationId,
+      );
+      const locationName = resolveLocationDisplayName(
+        location?.name ?? projection.locationId,
+        locationGroups,
+      );
       return {
         ...projection,
-        locationTitle: demoWorld.locations.find((item) => item.id === projection.locationId)?.name ?? projection.locationId,
+        locationTitle: locationName.qualifiedName,
       };
     }));
     const current = await activeSession(identity);
@@ -483,16 +506,18 @@ app.get('/api/game', async (req, res, next) => {
         ...(result.code === 'INTERNAL_ERROR' ? { requestId: result.correlationId ?? res.locals.requestId } : {}),
       });
     }
+    const locationGroupCatalog = await locationGroupsFeature.catalog.read();
     const location = await locationWithRoomPresence(
       result.value,
       current.worldInstanceId,
       current.characterId,
+      locationGroupCatalog.groups,
     );
     return res.json({
       player: { id: identity.playerId, displayName: identity.displayName },
       character,
       location,
-      map: projectWorldMap(character),
+      map: projectWorldMap(character, demoWorld, locationGroupCatalog.groups),
       questJournal: projectQuestJournal(character, demoWorld),
     });
   } catch (error) {
@@ -765,6 +790,7 @@ app.post('/api/queries', async (req, res, next) => {
     const partyInfoQuery = PartyInfoQuerySchema.safeParse(req.body);
     const partyQuestsQuery = PartyQuestJournalQuerySchema.safeParse(req.body);
     const teamCombatInfoQuery = TeamCombatInfoQuerySchema.safeParse(req.body);
+    const locationGroupsQuery = LocationGroupsListQuerySchema.safeParse(req.body);
     let query:
       | z.infer<typeof LocationDescribeQuerySchema>
       | z.infer<typeof ObjectReadQuerySchema>
@@ -774,7 +800,8 @@ app.post('/api/queries', async (req, res, next) => {
       | z.infer<typeof PartyListQuerySchema>
       | z.infer<typeof PartyInfoQuerySchema>
       | z.infer<typeof PartyQuestJournalQuerySchema>
-      | z.infer<typeof TeamCombatInfoQuerySchema>;
+      | z.infer<typeof TeamCombatInfoQuerySchema>
+      | z.infer<typeof LocationGroupsListQuerySchema>;
     if (locationQuery.success) query = locationQuery.data;
     else if (objectReadQuery.success) query = objectReadQuery.data;
     else if (objectInspectQuery.success) query = objectInspectQuery.data;
@@ -784,6 +811,7 @@ app.post('/api/queries', async (req, res, next) => {
     else if (partyInfoQuery.success) query = partyInfoQuery.data;
     else if (partyQuestsQuery.success) query = partyQuestsQuery.data;
     else if (teamCombatInfoQuery.success) query = teamCombatInfoQuery.data;
+    else if (locationGroupsQuery.success) query = locationGroupsQuery.data;
     else return res.status(400).json({ message: 'Invalid world query.' });
     const current = await activeSession(identity);
     if (!current) return res.status(409).json({ message: 'Enter the world with a character before making a query.' });
@@ -802,10 +830,12 @@ app.post('/api/queries', async (req, res, next) => {
       correlationId: res.locals.requestId,
     });
     if (result.ok && query.type === 'location.describe') {
+      const locationGroupCatalog = await locationGroupsFeature.catalog.read();
       const value = await locationWithRoomPresence(
         result.value,
         current.worldInstanceId,
         current.characterId,
+        locationGroupCatalog.groups,
       );
       return res.json({ ...result, value });
     }

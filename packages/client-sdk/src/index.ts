@@ -6,6 +6,8 @@ import {
   ArchiveCharacterCommandSchema,
   RestoreCharacterCommandSchema,
   LocationDescribeQuerySchema,
+  LocationGroupsListQuerySchema,
+  LocationGroupsListProjectionSchema,
   NpcDialogueChoiceCommandSchema,
   NpcTalkQuerySchema,
   ObjectInspectQuerySchema,
@@ -232,6 +234,26 @@ export class MuddHttpClient {
       body: JSON.stringify(query),
     }, queryResultSchema(LocationProjectionSchema));
     if (!result.ok || !result.value) throw new Error(result.message ?? 'Unable to inspect the current location.');
+    return result.value;
+  }
+
+  async getLocationGroups(
+    characterId: string,
+    queryId = crypto.randomUUID(),
+  ): Promise<z.infer<typeof LocationGroupsListProjectionSchema>> {
+    const query = LocationGroupsListQuerySchema.parse({
+      type: 'location.groups.list',
+      version: 1,
+      queryId,
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      payload: {},
+    });
+    const result = await this.request('/api/queries', {
+      method: 'POST',
+      body: JSON.stringify(query),
+    }, queryResultSchema(LocationGroupsListProjectionSchema));
+    if (!result.ok || !result.value) throw new Error(result.message ?? 'Unable to list location groups.');
     return result.value;
   }
 

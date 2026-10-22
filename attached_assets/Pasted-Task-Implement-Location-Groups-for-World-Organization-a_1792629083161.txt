@@ -1,0 +1,440 @@
+Task: Implement Location Groups for World Organization and Map Landmarks
+
+Objective
+
+Extend the MUD engine to support Location Groups, a reusable system for organizing individual rooms or world nodes into larger named geographical locations.
+
+Location Groups represent recognizable world features such as:
+
+- Towns and cities
+- Villages and settlements
+- Rivers and lakes
+- Roads and trade routes
+- Forests and mountain ranges
+- Districts and neighborhoods
+- Other named geographical landmarks
+
+The goal is to allow groups of rooms to share a common geographical identity while retaining their individual room names and unique identifiers.
+
+This must follow the project's modular, plugin-first architecture, maintaining a clear separation between world data, game-specific geography, and client presentation.
+
+1. Location Groups
+
+Introduce a first-class "LocationGroup" concept in the engine's world model.
+
+Each Location Group should have:
+
+- A unique, stable identifier.
+- A human-readable name.
+- A configurable type or category.
+- An optional description.
+- A collection of associated room/node identifiers.
+- Optional metadata for game plugins and clients.
+
+Illustrative example:
+
+{
+  "id": "clearwater",
+  "name": "Clearwater",
+  "type": "settlement",
+  "description": "A small riverside trading town"
+}
+
+Rooms can then be associated with the group.
+
+For example:
+
+Clearwater
+├── Town Square
+├── North Gate
+├── Market Street
+├── Blacksmith
+└── Riverside Docks
+
+Every room remains an independent world location with its own identity, exits, occupants, and gameplay functionality.
+
+The group provides additional geographical organization without replacing the existing room system.
+
+2. Shared Location Names
+
+Rooms should be able to derive a fully qualified display name from their associated Location Group.
+
+For example:
+
+Group: "Clearwater"
+
+Room: "North Gate"
+
+Qualified display name:
+
+"Clearwater: North Gate"
+
+Additional examples:
+
+Location Group| Room| Display Name
+Clearwater| Town Square| Clearwater: Town Square
+Clearwater| North Gate| Clearwater: North Gate
+Glasswater River| Eastern Bank| Glasswater River: Eastern Bank
+King's Road| Old Stone Bridge| King's Road: Old Stone Bridge
+Whispering Forest| Ancient Grove| Whispering Forest: Ancient Grove
+
+Naming Requirements
+
+- Store individual room names independently of their groups.
+- Do not permanently prepend the group name to the room's stored name.
+- Generate qualified display names using a reusable formatting mechanism.
+- Allow the separator to be configurable, defaulting to ": ".
+- Rooms without a Location Group retain their existing names.
+- Renaming a Location Group should automatically change derived display names.
+- Changing a room's group membership should update its qualified display name.
+- Clients should be able to retrieve both the short name and qualified name.
+
+The engine should provide the structured data required to build these names rather than requiring clients to parse formatted text.
+
+3. Multiple Group Membership
+
+A room must be able to belong to more than one Location Group.
+
+For example:
+
+"Old Stone Bridge"
+
+Could belong to:
+
+- Clearwater (settlement)
+- Glasswater River (river)
+- King's Road (road)
+
+These memberships describe different geographical relationships.
+
+This is particularly important for roads and rivers that pass through settlements or intersect with other geographical features.
+
+Primary Location Group
+
+Support an optional primary Location Group for each room.
+
+The primary group determines the room's default qualified display name.
+
+For example:
+
+Primary Group: Clearwater
+Other Groups:
+- Glasswater River
+- King's Road
+
+Room: Old Stone Bridge
+
+Display Name:
+Clearwater: Old Stone Bridge
+
+All memberships must remain discoverable through the world API.
+
+Only one primary group may be assigned per room, and that group must be one of the room's memberships.
+
+If no primary group is assigned, use the room's short name as the default display name.
+
+Do not require every room to belong to a group.
+
+4. Location Group Types
+
+Support configurable group categories.
+
+Suggested initial types:
+
+settlement
+district
+road
+river
+lake
+forest
+mountain
+region
+landmark
+custom
+
+These types should function primarily as descriptive metadata.
+
+For example:
+
+- A settlement groups rooms belonging to a town.
+- A river groups nodes representing stretches of a river.
+- A road groups nodes representing a connected route.
+- A forest groups nodes belonging to a woodland area.
+
+The engine must not hard-code gameplay rules based on these categories.
+
+Game plugins may use these types to implement specialized features in the future.
+
+Avoid making the category enumeration unnecessarily restrictive. Custom game-defined types should be possible.
+
+5. World Map Integration
+
+One of the primary purposes of Location Groups is to support client-side world map rendering.
+
+Rather than requiring a map client to label every individual room, clients should be able to recognize and label larger geographical features.
+
+For example, a graphical world map might display:
+
+            Whispering Forest
+
+                  |
+                  |
+    Clearwater ---+--- King's Road
+         |
+         |
+   Glasswater River
+
+The client should receive enough structured information to identify:
+
+- Which groups exist.
+- What each group is called.
+- What type of landmark it represents.
+- Which rooms belong to each group.
+- Which groups a particular room belongs to.
+- Which group is primary for display-name purposes.
+
+If the existing world model provides coordinates or spatial information, clients should be able to use those coordinates alongside group membership to determine landmark placement and extent.
+
+Do not invent geographical coordinates or infer geographical boundaries where the data does not support them.
+
+Client Independence
+
+The engine must not be responsible for rendering maps.
+
+TTY, web, mobile PWA, and future 2D/3D clients should all be able to interpret the same Location Group data differently.
+
+For example:
+
+- A TTY client displays "Clearwater: North Gate".
+- A GUI client displays "Clearwater" as a map label.
+- A 3D client displays the settlement name when the player enters the area.
+
+All clients use the same authoritative world data.
+
+6. Engine Architecture
+
+Engine Responsibilities
+
+The engine should provide generic capabilities for:
+
+- Creating, reading, updating, and deleting Location Groups.
+- Associating rooms with one or more Location Groups.
+- Managing primary group assignments.
+- Querying all rooms belonging to a group.
+- Querying all groups associated with a room.
+- Resolving qualified room names.
+- Exposing Location Group information through existing world APIs.
+- Persisting groups and their memberships.
+- Publishing lifecycle events when group data or memberships change, where supported by the existing event infrastructure.
+
+Location Groups should be part of the world's organizational structure, not a replacement for the room graph.
+
+Game Plugin Responsibilities
+
+Game plugins should define:
+
+- Actual geographical locations.
+- Location names and descriptions.
+- Group types and any game-specific metadata.
+- Which rooms belong to which geographical landmarks.
+- Any gameplay rules associated with particular group types.
+
+For example, a future game plugin might use membership in a particular forest to trigger special encounters.
+
+That behavior must not be embedded in the core Location Group implementation.
+
+Separation From Movement
+
+Location Group membership must not change how rooms connect or how entities move between them.
+
+A road Location Group does not automatically create navigation connections between its rooms.
+
+A river Location Group does not automatically imply that the river can be traversed.
+
+Navigation remains the responsibility of the existing movement and world graph systems.
+
+Location Groups provide geographical meaning and organization, not movement rules.
+
+7. Data Model and Persistence
+
+Inspect the existing room schemas and persistence architecture.
+
+Implement Location Groups using the project's established Drizzle ORM, PostgreSQL, and TypeScript conventions where applicable.
+
+The data model should accommodate:
+
+- Location Group records.
+- A many-to-many relationship between rooms and groups.
+- An optional primary membership per room.
+- Extensible metadata.
+- Stable references between rooms and groups.
+
+Preserve referential integrity when deleting rooms or groups.
+
+If a group is deleted, its rooms must remain intact. Associated memberships should be removed and any affected primary group references cleared.
+
+Do not introduce duplicate room records or require changing existing room identifiers.
+
+Support database migrations consistent with the repository's conventions.
+
+8. APIs and Plugin Integration
+
+Expose Location Group functionality through the existing world service and plugin interfaces.
+
+The precise API design should follow the repository's conventions.
+
+Conceptually, plugins should be able to perform operations equivalent to:
+
+createLocationGroup(...)
+updateLocationGroup(...)
+deleteLocationGroup(...)
+
+addRoomToGroup(...)
+removeRoomFromGroup(...)
+setPrimaryLocationGroup(...)
+
+getLocationGroup(...)
+getRoomLocationGroups(...)
+getRoomsInGroup(...)
+getQualifiedRoomName(...)
+
+These are illustrative operations, not mandatory method signatures.
+
+Use the existing type definitions, validation conventions, and API design patterns wherever possible.
+
+Avoid creating a parallel world-management API if existing abstractions can be extended.
+
+9. Demonstration World Content
+
+Create or update a small demonstration area to showcase the functionality.
+
+Clearwater Settlement
+
+Create a Location Group:
+
+"Clearwater"
+
+Type: "settlement"
+
+Associate several existing or demonstration rooms:
+
+- Town Square
+- North Gate
+- Market Street
+- Riverside Docks
+
+The terminal should display qualified names such as:
+
+"Clearwater: North Gate"
+
+Glasswater River
+
+Create a Location Group:
+
+"Glasswater River"
+
+Type: "river"
+
+Associate several river-related rooms.
+
+Ensure the group can span multiple rooms and potentially overlap with another geographical group.
+
+King's Road
+
+Create a Location Group:
+
+"King's Road"
+
+Type: "road"
+
+Associate multiple road segments, including a segment that overlaps with Clearwater or Glasswater River.
+
+Demonstrate that overlapping memberships do not cause naming or world-state conflicts.
+
+Prefer reusing existing demonstration rooms where appropriate rather than duplicating world content.
+
+10. Testing and Acceptance Criteria
+
+Location Group Management
+
+- [ ] Location Groups can be created, updated, queried, and deleted.
+- [ ] Each group has a unique identifier.
+- [ ] Rooms can belong to a Location Group.
+- [ ] Rooms can belong to multiple groups.
+- [ ] Rooms can exist without any group.
+- [ ] A room can have one optional primary group.
+- [ ] Invalid or inconsistent memberships are rejected.
+- [ ] Deleting a group does not delete its rooms.
+
+Naming
+
+- [ ] Qualified room names are generated correctly.
+- [ ] Rooms without a primary group retain their normal names.
+- [ ] Renaming a group updates derived qualified names.
+- [ ] Changing primary membership updates derived names.
+- [ ] Original room names remain unchanged.
+- [ ] Clients can access both short and qualified names.
+
+World API
+
+- [ ] Clients can query Location Groups.
+- [ ] Clients can retrieve the rooms belonging to a group.
+- [ ] Clients can retrieve all groups associated with a room.
+- [ ] Map clients receive structured group metadata.
+- [ ] Existing room and navigation APIs continue working.
+
+Persistence and Integration
+
+- [ ] Group memberships persist across server restarts.
+- [ ] Existing world navigation remains unaffected.
+- [ ] Existing combat, party, quest, and NPC movement systems continue functioning.
+- [ ] No client-specific rendering logic is introduced into the engine.
+
+11. Out of Scope
+
+Do not implement the following in this task:
+
+- A graphical world map
+- A map editor or visual world-building interface
+- Automatic geographical boundary detection
+- Procedural terrain generation
+- Automatically generated roads or rivers
+- New movement mechanics
+- Territory ownership
+- Settlement economies
+- New NPC behavior rules
+- Complex hierarchical geographical inheritance
+
+However, ensure the basic data model does not prevent future support for nested locations, such as a district within a city within a larger region.
+
+12. Implementation Instructions
+
+Before writing code:
+
+1. Inspect the existing world model, room schemas, navigation APIs, and persistence infrastructure.
+2. Identify existing geographical grouping concepts that could be reused or extended.
+3. Prefer extending existing systems instead of introducing redundant architecture.
+4. Implement the smallest reusable Location Group abstraction that satisfies the requirements.
+5. Add appropriate data validation and persistence.
+6. Expose group information through the existing plugin and client APIs.
+7. Add demonstration content for Clearwater, Glasswater River, and King's Road.
+8. Add automated unit and integration tests.
+9. Verify that existing navigation and gameplay functionality remains unchanged.
+
+Avoid unrelated refactoring.
+
+13. Final Deliverables
+
+Implement the feature in the existing repository.
+
+Provide a summary explaining:
+
+1. The Location Group data model.
+2. How rooms are associated with groups.
+3. How primary membership and qualified naming work.
+4. How game plugins create and configure geographical landmarks.
+5. How map clients can consume Location Group metadata.
+6. Any schema or API changes.
+7. Instructions for testing the demonstration world.
+
+Primary architectural principle: The engine understands that rooms can belong to named geographical groups. Game plugins determine what those groups represent. Clients determine how those groups are displayed.

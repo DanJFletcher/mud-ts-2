@@ -31,6 +31,12 @@ export type {
 export { partyCombatPolicyPlugin } from './party-combat-policy.js';
 export { teamCombatPlugin } from './team-combat.js';
 export {
+  createLocationGroupsPlugin,
+  locationGroupCatalogCapability,
+  LocationGroupCatalogError,
+  LocationGroupCatalogService,
+} from './location-groups.js';
+export {
   projectWorldItems,
   worldItemsPlugin,
   worldItemsStateCapability,

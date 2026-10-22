@@ -499,7 +499,7 @@ describe('MuddHttpClient', () => {
     const moved = await moveAlongDemoRoad(client, characterId, 'clearing-to-bridge', afterDrop.revision + 1, 'sdk-move');
     expect(moved.receipt.ok).toBe(true);
     const nextRoom = await client.look(characterId, 'sdk-look-2');
-    expect(nextRoom.title).toBe('Glasswater Bridge');
+    expect(nextRoom.title).toBe('Clearwater: Glasswater Bridge');
     await expect(client.inspect(characterId, 'mossgate-loose-stone', 'sdk-inspect-carried-away'))
       .resolves.toMatchObject({ id: 'mossgate-loose-stone', label: 'Loose stone' });
     await expect(client.inspect(characterId, 'mossgate-marker', 'sdk-inspect-unavailable'))

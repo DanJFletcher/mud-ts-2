@@ -11,6 +11,10 @@ import {
   WorldCurrencyDefinitionSchema,
 } from './commerce.js';
 import { NpcCombatProfileSchema } from './combat.js';
+import {
+  LocationGroupDefinitionSchema,
+  LocationGroupMembershipProjectionSchema,
+} from './location-groups.js';
 
 export const ExitDefinitionSchema = z.object({
   id: IdSchema,
@@ -254,6 +258,7 @@ export const WorldPackDraftSchema = z.object({
   currency: WorldCurrencyDefinitionSchema.optional(),
   respawn: z.object({ locationId: IdSchema }).strict().optional(),
   locations: z.array(LocationDefinitionSchema),
+  locationGroups: z.array(LocationGroupDefinitionSchema).max(500).default([]),
   roads: z.array(RoadDefinitionSchema).default([]),
   quests: z.array(QuestDefinitionSchema).default([]),
 }).strict().superRefine((world, context) => {
@@ -268,6 +273,48 @@ export const WorldPackDraftSchema = z.object({
     });
   }
   const locationIds = new Set(world.locations.map(({ id }) => id));
+  const locationGroupIds = new Set<string>();
+  const primaryLocationGroups = new Map<string, string>();
+  for (const [groupIndex, group] of world.locationGroups.entries()) {
+    if (locationGroupIds.has(group.id)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['locationGroups', groupIndex, 'id'],
+        message: `Duplicate location group ID ${group.id}.`,
+      });
+    }
+    locationGroupIds.add(group.id);
+    const memberLocationIds = new Set<string>();
+    for (const [membershipIndex, membership] of group.memberships.entries()) {
+      if (!locationIds.has(membership.locationId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['locationGroups', groupIndex, 'memberships', membershipIndex, 'locationId'],
+          message: `Location group ${group.id} references a location not present in the world pack.`,
+        });
+      }
+      if (memberLocationIds.has(membership.locationId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['locationGroups', groupIndex, 'memberships', membershipIndex, 'locationId'],
+          message: `Location ${membership.locationId} is listed more than once in location group ${group.id}.`,
+        });
+      }
+      memberLocationIds.add(membership.locationId);
+      if (membership.isPrimary) {
+        const previousPrimary = primaryLocationGroups.get(membership.locationId);
+        if (previousPrimary) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['locationGroups', groupIndex, 'memberships', membershipIndex, 'isPrimary'],
+            message: `Location ${membership.locationId} already has primary group ${previousPrimary}.`,
+          });
+        } else {
+          primaryLocationGroups.set(membership.locationId, group.id);
+        }
+      }
+    }
+  }
   const roadIds = new Set<string>();
   const encounterIds = new Set<string>();
   const npcIds = new Set(world.locations.flatMap((location) =>
@@ -543,6 +590,9 @@ export const LocationProjectionSchema = z.object({
   revision: NonNegativeIntSchema,
   cursor: z.string().optional(),
   title: z.string(),
+  shortName: z.string().min(1).max(160),
+  qualifiedName: z.string().min(1).max(400),
+  locationGroups: z.array(LocationGroupMembershipProjectionSchema).max(500),
   description: z.string(),
   exits: z.array(ExitProjectionSchema),
   objects: z.array(z.object({
@@ -559,15 +609,30 @@ export const LocationProjectionSchema = z.object({
 
 export const WorldMapProjectionSchema = z.object({
   worldInstanceId: IdSchema,
+  packId: IdSchema,
+  packVersion: z.string().min(1).max(80),
   currentLocationId: IdSchema,
   locations: z.array(z.object({
     id: IdSchema,
     name: z.string().min(1).max(160),
+    shortName: z.string().min(1).max(160),
+    qualifiedName: z.string().min(1).max(400),
+    locationGroupIds: z.array(IdSchema).max(500),
+    primaryLocationGroupId: IdSchema.optional(),
     x: z.number().int().min(-10000).max(10000),
     y: z.number().int().min(-10000).max(10000),
     terrain: z.enum(['land', 'river', 'building']).optional(),
     verticalExits: z.array(z.enum(['up', 'down'])).max(2).optional(),
   }).strict()).min(1).max(500),
+  locationGroups: z.array(z.object({
+    id: IdSchema,
+    name: z.string().min(1).max(160),
+    type: z.string().trim().min(1).max(80),
+    description: z.string().min(1).max(1000).optional(),
+    metadata: z.record(z.unknown()).optional(),
+    locationIds: z.array(IdSchema).max(5000),
+    primaryLocationIds: z.array(IdSchema).max(5000),
+  }).strict()).max(500),
   connections: z.array(z.object({
     fromLocationId: IdSchema,
     toLocationId: IdSchema,
@@ -580,6 +645,7 @@ export type ExitDefinition = z.infer<typeof ExitDefinitionSchema>;
 export type MapPosition = z.infer<typeof MapPositionSchema>;
 export type LocationDefinition = z.infer<typeof LocationDefinitionSchema>;
 export type WorldPackDraft = z.infer<typeof WorldPackDraftSchema>;
+export type WorldPackDraftInput = z.input<typeof WorldPackDraftSchema>;
 export type RoadDefinition = z.infer<typeof RoadDefinitionSchema>;
 export type RoadEncounterDefinition = z.infer<typeof RoadEncounterDefinitionSchema>;
 export type LocationDescribeQuery = z.infer<typeof LocationDescribeQuerySchema>;

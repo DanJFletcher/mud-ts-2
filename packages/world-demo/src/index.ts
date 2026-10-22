@@ -3,12 +3,13 @@ import {
   validateDraftWorldGraph,
   type LocationDefinition,
   type WorldPackDraft,
+  type WorldPackDraftInput,
 } from '@mudd/contracts';
 
 const draft = {
   formatVersion: 1,
   packId: 'mudd.first-steps',
-  packVersion: '1.0.0',
+  packVersion: '1.1.0',
   displayName: 'The Waystone Path',
   respawn: { locationId: 'stillwater-fountain' },
   currency: {
@@ -1594,6 +1595,47 @@ const draft = {
       ],
     },
   ],
+  locationGroups: [
+    {
+      id: 'clearwater',
+      name: 'Clearwater',
+      type: 'settlement',
+      description: 'A small riverside settlement of market awnings, a timber inn, and a low stone bridge.',
+      memberships: [
+        { locationId: 'glasswater-bridge', isPrimary: true },
+        { locationId: 'reedbank-stalls', isPrimary: true },
+        { locationId: 'willowrest-inn', isPrimary: true },
+      ],
+      metadata: { settlementKind: 'riverside-trading-town' },
+    },
+    {
+      id: 'glasswater-river',
+      name: 'Glasswater River',
+      type: 'river',
+      description: 'The navigable watercourse running beneath the bridge and along its banks.',
+      memberships: [
+        { locationId: 'glasswater-bridge' },
+        { locationId: 'glasswater-west-reach' },
+        { locationId: 'glasswater-east-reach' },
+        { locationId: 'glasswater-willow-reach' },
+        { locationId: 'glasswater-far-reach' },
+      ],
+    },
+    {
+      id: 'kings-road',
+      name: "King's Road",
+      type: 'road',
+      description: 'The established route from Glasswater Approach across the bridge to Reedbank.',
+      memberships: [
+        { locationId: 'glasswater-approach', isPrimary: true },
+        { locationId: 'glasswater-bridge' },
+        { locationId: 'reedbank-road', isPrimary: true },
+        { locationId: 'reedbank-stalls' },
+        { locationId: 'willowrest-lane', isPrimary: true },
+      ],
+      metadata: { routeClass: 'main-road' },
+    },
+  ],
   roads: [
     {
       id: 'willowshade-track',
@@ -1726,7 +1768,7 @@ const draft = {
       ],
     },
   ],
-} satisfies WorldPackDraft;
+} satisfies WorldPackDraftInput;
 
 export const demoWorld: WorldPackDraft = WorldPackDraftSchema.parse(draft);
 const graphErrors = validateDraftWorldGraph(demoWorld);

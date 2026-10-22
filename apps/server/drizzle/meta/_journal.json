@@ -43,6 +43,13 @@
       "when": 1792421516853,
       "tag": "0005_wild_lady_bullseye",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792630980160,
+      "tag": "0006_bizarre_sumo",
+      "breakpoints": true
     }
   ]
 }

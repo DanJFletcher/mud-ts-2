@@ -109,6 +109,14 @@ vi.mock('@mudd/contracts', async () => {
     TeamCombatInfoProjectionSchema: { safeParse: (value: unknown) => ({ success: true, data: value }) },
     InitializeCharacterWalletCommandSchema: { parse: (value: unknown) => value },
     LocationDescribeQuerySchema: unusedSchema,
+    LocationGroupsListQuerySchema: unusedSchema,
+    LocationProjectionSchema: { parse: (value: unknown) => value },
+    WorldMapProjectionSchema: { parse: (value: unknown) => value },
+    locationGroupMembershipsForLocation: () => [],
+    resolveLocationDisplayName: (shortName: string) => ({
+      shortName,
+      qualifiedName: shortName,
+    }),
     MerchantCatalogQuerySchema: unusedSchema,
     NpcTalkQuerySchema: unusedSchema,
     WorldNpcMovedEventSchema: { shape: { payload: unusedSchema } },
@@ -120,6 +128,12 @@ vi.mock('@mudd/contracts', async () => {
 });
 
 vi.mock('@mudd/core-plugins', () => ({
+  createLocationGroupsPlugin: () => ({
+    plugin: {},
+    catalog: {
+      read: async () => ({ packId: 'test-pack', packVersion: '1.0.0', revision: 0, groups: [] }),
+    },
+  }),
   autonomousNpcsPlugin: {},
   characterPlugin: {},
   combatPlugin: {},

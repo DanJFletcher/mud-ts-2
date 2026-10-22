@@ -20,5 +20,6 @@ export * from './network.js';
 export * from './authoring.js';
 export * from './interactions.js';
 export * from './groups.js';
+export * from './location-groups.js';
 export * from './team-combat.js';
 export * from './world-npcs.js';
