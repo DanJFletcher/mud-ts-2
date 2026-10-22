@@ -21,7 +21,7 @@ const draft = {
     {
       id: 'bellwold-market-square',
       name: 'Bellwold Market Square',
-      description: 'Bellwold’s market square anchors a larger frontier settlement. Stalls and handcarts crowd the open ground on busy mornings, while the inn and general shop serve travelers and residents through the day.\n\nThe Kindly Roof lies west, Marr’s General Goods east, the old tower road north, and South Common south.',
+      description: 'Bellwold’s market square anchors a larger frontier settlement. Stalls and handcarts crowd the open ground on busy mornings, while the inn and general shop serve travelers and residents through the day.\n\nThe Kindly Roof lies west, Marr’s General Goods east, the old tower road north, and South Common south. The western road begins beyond the inn; the east road passes through the old mill.',
       mapPosition: { x: 0, y: 0, terrain: 'land' },
       npcs: [
         {
@@ -101,10 +101,11 @@ const draft = {
     {
       id: 'kindly-roof-inn',
       name: 'The Kindly Roof',
-      description: 'The Kindly Roof is Bellwold’s working inn, kept by Tomas. The common room holds the warmth of a banked fire and the low murmur of travelers comparing what they have heard on the road.\n\nA place to sleep is also a place to exchange news; Tomas listens without pretending every rumor is true.',
+      description: 'The Kindly Roof is Bellwold’s working inn, kept by Tomas. The common room holds the warmth of a banked fire and the low murmur of travelers comparing what they have heard on the road.\n\nA place to sleep is also a place to exchange news; Tomas listens without pretending every rumor is true. The west road begins outside the inn.',
       mapPosition: { x: -1, y: 0, terrain: 'building' },
       exits: [
         { id: 'inn-to-square', fromLocationId: 'kindly-roof-inn', toLocationId: 'bellwold-market-square', label: 'east', direction: 'east' },
+        { id: 'inn-to-west-gate', fromLocationId: 'kindly-roof-inn', toLocationId: 'bellwold-west-gate', label: 'west', direction: 'west', roadId: 'bellwold-west-road' },
       ],
       npcs: [
         {
@@ -120,6 +121,35 @@ const draft = {
           ],
           unknownTopicResponse: '“I keep rooms and hear travelers. I don’t claim to know every answer.”',
         },
+      ],
+    },
+    {
+      id: 'bellwold-west-gate',
+      name: 'Bellwold West Gate',
+      description: 'The western lane passes the last village fences and a simple timber gate. The Kindly Roof is east; the westbound road runs past the hedgerows.',
+      mapPosition: { x: -2, y: 0, terrain: 'land' },
+      exits: [
+        { id: 'west-gate-to-inn', fromLocationId: 'bellwold-west-gate', toLocationId: 'kindly-roof-inn', label: 'east', direction: 'east', roadId: 'bellwold-west-road' },
+        { id: 'west-gate-to-track', fromLocationId: 'bellwold-west-gate', toLocationId: 'bellwold-westbound-track', label: 'west', direction: 'west', roadId: 'bellwold-west-road' },
+      ],
+    },
+    {
+      id: 'bellwold-westbound-track',
+      name: 'Westbound Track',
+      description: 'The packed-earth road follows low hedgerows beyond Bellwold’s western fields. The West Gate is east; the rough road end is west.',
+      mapPosition: { x: -3, y: 0, terrain: 'land' },
+      exits: [
+        { id: 'westbound-track-to-gate', fromLocationId: 'bellwold-westbound-track', toLocationId: 'bellwold-west-gate', label: 'east', direction: 'east', roadId: 'bellwold-west-road' },
+        { id: 'westbound-track-to-end', fromLocationId: 'bellwold-westbound-track', toLocationId: 'bellwold-west-road-end', label: 'west', direction: 'west', roadId: 'bellwold-west-road' },
+      ],
+    },
+    {
+      id: 'bellwold-west-road-end',
+      name: 'Western Road Verge',
+      description: 'The maintained track thins beside a stretch of scrub and open ground. No marked destination lies farther west yet; the road leads back east toward Bellwold.',
+      mapPosition: { x: -4, y: 0, terrain: 'land' },
+      exits: [
+        { id: 'west-road-end-to-track', fromLocationId: 'bellwold-west-road-end', toLocationId: 'bellwold-westbound-track', label: 'east', direction: 'east', roadId: 'bellwold-west-road' },
       ],
     },
     {
@@ -501,7 +531,7 @@ const draft = {
     {
       id: 'old-bell-tower-approach',
       name: 'Old Bell Tower Road',
-      description: 'The road climbs north from the market toward Bellwold’s old tower. From here, the village roofs fall behind the rise, and the tower’s outline stands against the open sky.\n\nA track east follows the water toward the abandoned mill.',
+      description: 'The road climbs north from the market toward Bellwold’s old tower. From here, the village roofs fall behind the rise, and the tower’s outline stands against the open sky.\n\nThe eastbound mill road follows the water through the abandoned mill and continues beyond it.',
       mapPosition: { x: 0, y: 1, terrain: 'land' },
       exits: [
         { id: 'tower-road-to-square', fromLocationId: 'old-bell-tower-approach', toLocationId: 'bellwold-market-square', label: 'south', direction: 'south' },
@@ -529,10 +559,11 @@ const draft = {
     {
       id: 'abandoned-watermill',
       name: 'Abandoned Watermill',
-      description: 'The abandoned watermill stands beside its channel outside Bellwold. The air near the wheel is damp and cool; a slow wooden creak can be heard even when the water runs low.\n\nThe mill’s continued movement is an observation, not an explanation. A work ledger remains on the desk.',
+      description: 'The abandoned watermill stands beside its channel outside Bellwold. The air near the wheel is damp and cool; a slow wooden creak can be heard even when the water runs low.\n\nThe mill’s continued movement is an observation, not an explanation. A work ledger remains on the desk. The road returns west toward the tower and continues east beyond the mill.',
       mapPosition: { x: 1, y: 1, terrain: 'land' },
       exits: [
         { id: 'mill-to-tower-road', fromLocationId: 'abandoned-watermill', toLocationId: 'old-bell-tower-approach', label: 'west', direction: 'west' },
+        { id: 'mill-to-east-track', fromLocationId: 'abandoned-watermill', toLocationId: 'bellwold-east-mill-track', label: 'east', direction: 'east', roadId: 'bellwold-east-mill-road' },
       ],
       readables: [
         {
@@ -541,6 +572,35 @@ const draft = {
           description: 'A damp ledger left on the mill desk.',
           text: 'The last entries record the mill wheel moving on nights when the channel ran low. The writer notes the dates, water level, and movement, but gives no explanation.',
         },
+      ],
+    },
+    {
+      id: 'bellwold-east-mill-track',
+      name: 'East Mill Track',
+      description: 'The road leaves the mill and runs east between shallow drainage channels. The abandoned watermill is west; a bend in the track lies east.',
+      mapPosition: { x: 2, y: 1, terrain: 'land' },
+      exits: [
+        { id: 'east-mill-track-to-mill', fromLocationId: 'bellwold-east-mill-track', toLocationId: 'abandoned-watermill', label: 'west', direction: 'west', roadId: 'bellwold-east-mill-road' },
+        { id: 'east-mill-track-to-bend', fromLocationId: 'bellwold-east-mill-track', toLocationId: 'bellwold-east-road-bend', label: 'east', direction: 'east', roadId: 'bellwold-east-mill-road' },
+      ],
+    },
+    {
+      id: 'bellwold-east-road-bend',
+      name: 'East Road Bend',
+      description: 'The track bends around a low rise, with the mill channel now out of sight. East Mill Track is west; the road verge lies east.',
+      mapPosition: { x: 3, y: 1, terrain: 'land' },
+      exits: [
+        { id: 'east-road-bend-to-track', fromLocationId: 'bellwold-east-road-bend', toLocationId: 'bellwold-east-mill-track', label: 'west', direction: 'west', roadId: 'bellwold-east-mill-road' },
+        { id: 'east-road-bend-to-verge', fromLocationId: 'bellwold-east-road-bend', toLocationId: 'bellwold-east-road-verge', label: 'east', direction: 'east', roadId: 'bellwold-east-mill-road' },
+      ],
+    },
+    {
+      id: 'bellwold-east-road-verge',
+      name: 'Eastern Road Verge',
+      description: 'The marked road ends at open ground beyond the bend. No destination is charted farther east yet; the route returns west through the old mill to Bellwold.',
+      mapPosition: { x: 4, y: 1, terrain: 'land' },
+      exits: [
+        { id: 'east-road-verge-to-bend', fromLocationId: 'bellwold-east-road-verge', toLocationId: 'bellwold-east-road-bend', label: 'west', direction: 'west', roadId: 'bellwold-east-mill-road' },
       ],
     },
   ],
@@ -562,6 +622,42 @@ const draft = {
       encounters: [
         {
           id: 'bellwold-south-road-stray-hound',
+          name: 'Stray Hound',
+          combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' },
+        },
+      ],
+    },
+    {
+      id: 'bellwold-east-mill-road',
+      name: 'Bellwold East Mill Road',
+      locationIds: [
+        'abandoned-watermill',
+        'bellwold-east-mill-track',
+        'bellwold-east-road-bend',
+        'bellwold-east-road-verge',
+      ],
+      encounterChancePercent: 0,
+      encounters: [
+        {
+          id: 'bellwold-east-road-stray-hound',
+          name: 'Stray Hound',
+          combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' },
+        },
+      ],
+    },
+    {
+      id: 'bellwold-west-road',
+      name: 'Bellwold West Road',
+      locationIds: [
+        'kindly-roof-inn',
+        'bellwold-west-gate',
+        'bellwold-westbound-track',
+        'bellwold-west-road-end',
+      ],
+      encounterChancePercent: 0,
+      encounters: [
+        {
+          id: 'bellwold-west-road-stray-hound',
           name: 'Stray Hound',
           combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' },
         },

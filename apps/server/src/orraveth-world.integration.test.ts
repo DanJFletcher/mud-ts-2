@@ -84,9 +84,9 @@ function makeHarness(options: Readonly<{
 }
 
 describe('Orraveth Bellwold settlement', () => {
-  it('has a valid, fully reachable twenty-eight-location region with map directions matching its exits', () => {
+  it('has a valid, fully reachable thirty-four-location region with map directions matching its exits', () => {
     expect(validateDraftWorldGraph(orravethWorld)).toEqual([]);
-    expect(orravethWorld.locations).toHaveLength(28);
+    expect(orravethWorld.locations).toHaveLength(34);
 
     const locationIds = new Set(orravethWorld.locations.map(({ id }) => id));
     const reached = new Set<string>(['bellwold-market-square']);
@@ -180,6 +180,54 @@ describe('Orraveth Bellwold settlement', () => {
         expect.objectContaining({ id: 'on' }),
         expect.objectContaining({ id: 'under' }),
       ]));
+  });
+
+  it('adds a west road and an east road that passes through the abandoned mill', () => {
+    const expectedRoads = [
+      {
+        id: 'bellwold-east-mill-road',
+        name: 'Bellwold East Mill Road',
+        locationIds: [
+          'abandoned-watermill',
+          'bellwold-east-mill-track',
+          'bellwold-east-road-bend',
+          'bellwold-east-road-verge',
+        ],
+      },
+      {
+        id: 'bellwold-west-road',
+        name: 'Bellwold West Road',
+        locationIds: [
+          'kindly-roof-inn',
+          'bellwold-west-gate',
+          'bellwold-westbound-track',
+          'bellwold-west-road-end',
+        ],
+      },
+    ];
+
+    for (const expected of expectedRoads) {
+      const road = orravethWorld.roads.find(({ id }) => id === expected.id);
+      expect(road).toMatchObject({
+        name: expected.name,
+        locationIds: expected.locationIds,
+        encounterChancePercent: 0,
+      });
+      const routeLocations = expected.locationIds.map((id) =>
+        orravethWorld.locations.find(({ id: locationId }) => locationId === id)!,
+      );
+      for (const [index, current] of routeLocations.slice(0, -1).entries()) {
+        const next = routeLocations[index + 1]!;
+        expect(current.exits).toContainEqual(expect.objectContaining({
+          toLocationId: next.id,
+          roadId: expected.id,
+        }));
+        expect(next.exits).toContainEqual(expect.objectContaining({
+          toLocationId: current.id,
+          roadId: expected.id,
+        }));
+      }
+    }
   });
 
   it('moves the villager through town and advances the guard along its patrol', async () => {

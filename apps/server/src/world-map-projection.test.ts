@@ -429,8 +429,8 @@ describe('visited world map projection', () => {
   });
 });
 
-describe('Orraveth south road travel', () => {
-  it('allows room-by-room road travel from Bellwold to the temporary end without starting combat', async () => {
+describe('Orraveth Bellwold road travel', () => {
+  it('supports room-by-room travel on the east, west, and south roads without starting combat', async () => {
     const store = new InMemoryEventStore();
     const testWorld = structuredClone(orravethWorld);
     const session = {
@@ -486,30 +486,77 @@ describe('Orraveth south road travel', () => {
         if (!result.receipt.ok) throw new Error(result.receipt.message);
         return loadCharacter();
       };
+      const travelRoad = async (roadId: string) => {
+        const road = testWorld.roads.find(({ id }) => id === roadId);
+        if (!road) throw new Error(`Missing road ${roadId}.`);
+        let character = await loadCharacter();
+        expect(character.locationId).toBe(road.locationIds[0]);
+        for (const [index, nextLocationId] of road.locationIds.slice(1).entries()) {
+          const currentLocation = testWorld.locations.find(({ id }) => id === character.locationId)!;
+          const exit = currentLocation.exits.find(({ toLocationId, roadId: exitRoadId }) =>
+            toLocationId === nextLocationId && exitRoadId === road.id,
+          );
+          if (!exit) throw new Error(`Missing ${road.id} exit from ${currentLocation.id} to ${nextLocationId}.`);
+          const result = await client.roadStep(
+            characterId,
+            exit.id,
+            character.revision,
+            `orraveth-${road.id}-forward-${index + 1}`,
+          );
+          if (!result.receipt.ok) throw new Error(result.receipt.message);
+          character = await loadCharacter();
+          expect(character.locationId).toBe(nextLocationId);
+          expect(character.combatEncounter).toBeUndefined();
+        }
+        return character;
+      };
+      const returnAlongRoad = async (roadId: string) => {
+        const road = testWorld.roads.find(({ id }) => id === roadId);
+        if (!road) throw new Error(`Missing road ${roadId}.`);
+        let character = await loadCharacter();
+        for (const previousLocationId of road.locationIds.slice(0, -1).reverse()) {
+          const currentLocation = testWorld.locations.find(({ id }) => id === character.locationId)!;
+          const exit = currentLocation.exits.find(({ toLocationId, roadId: exitRoadId }) =>
+            toLocationId === previousLocationId && exitRoadId === road.id,
+          );
+          if (!exit) throw new Error(`Missing return ${road.id} exit from ${currentLocation.id} to ${previousLocationId}.`);
+          const result = await client.roadStep(
+            characterId,
+            exit.id,
+            character.revision,
+            `orraveth-${road.id}-return-${previousLocationId}`,
+          );
+          if (!result.receipt.ok) throw new Error(result.receipt.message);
+          character = await loadCharacter();
+          expect(character.locationId).toBe(previousLocationId);
+          expect(character.combatEncounter).toBeUndefined();
+        }
+        return character;
+      };
 
       await move('square-to-south-common', 'orraveth-road-to-south-common');
       await move('south-common-to-well-court', 'orraveth-road-to-well-court');
       await move('well-court-to-common-house', 'orraveth-road-to-common-house');
-      let character = await loadCharacter();
-      const road = testWorld.roads.find(({ id }) => id === 'bellwold-south-road')!;
-      for (const [index, nextLocationId] of road.locationIds.slice(1).entries()) {
-        const currentLocation = testWorld.locations.find(({ id }) => id === character.locationId)!;
-        const exit = currentLocation.exits.find(({ toLocationId, roadId }) =>
-          toLocationId === nextLocationId && roadId === road.id,
-        );
-        if (!exit) throw new Error(`Missing south road exit from ${currentLocation.id} to ${nextLocationId}.`);
-        const result = await client.roadStep(
-          characterId,
-          exit.id,
-          character.revision,
-          `orraveth-south-road-step-${index + 1}`,
-        );
-        if (!result.receipt.ok) throw new Error(result.receipt.message);
-        character = await loadCharacter();
-        expect(character.locationId).toBe(nextLocationId);
-        expect(character.combatEncounter).toBeUndefined();
-      }
+      let character = await travelRoad('bellwold-south-road');
       expect(character.locationId).toBe('bellwold-unfinished-road-end');
+      character = await returnAlongRoad('bellwold-south-road');
+      expect(character.locationId).toBe('bellwold-common-house');
+
+      await move('common-house-to-well-court', 'orraveth-road-back-to-well-court');
+      await move('well-court-to-south-common', 'orraveth-road-back-to-south-common');
+      await move('south-common-to-square', 'orraveth-road-back-to-square');
+      await move('square-to-tower-road', 'orraveth-road-to-tower-road');
+      await move('tower-road-to-mill', 'orraveth-road-to-watermill');
+      character = await travelRoad('bellwold-east-mill-road');
+      expect(character.locationId).toBe('bellwold-east-road-verge');
+      character = await returnAlongRoad('bellwold-east-mill-road');
+      expect(character.locationId).toBe('abandoned-watermill');
+
+      await move('mill-to-tower-road', 'orraveth-road-back-to-tower-road');
+      await move('tower-road-to-square', 'orraveth-road-back-to-square-from-tower-road');
+      await move('square-to-inn', 'orraveth-road-to-inn');
+      character = await travelRoad('bellwold-west-road');
+      expect(character.locationId).toBe('bellwold-west-road-end');
     } finally {
       await engine.stop();
     }

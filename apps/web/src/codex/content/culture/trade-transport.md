@@ -22,3 +22,5 @@ The form of travel differs by region. In Heskar, rigid borders and strong proper
 No complete route map or universal schedule is established. Distance, tolls, and access should remain local facts, not be invented from a generic map of the continent. [[bellwold|Bellwold]] sits near Heskar's frontier, but neither the village's precise jurisdiction nor every route beyond it is established.
 
 A provisional south road leaves Bellwold, crosses an unnamed river by a stone bridge, and ends beyond the far bank where the roadwork stops. No settlement has been established at its end, and the route gives no basis for assuming a destination or travel time.
+
+Two other local routes are mapped provisionally: the west road runs from the Kindly Roof to an unmarked verge, while the eastbound mill road passes through the abandoned watermill before ending beyond a low rise. Their onward destinations and travel times are not established.
