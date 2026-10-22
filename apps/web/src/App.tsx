@@ -30,7 +30,7 @@ const client = new MuddHttpClient({ worldInstanceId: "mudd-demo-instance" });
 type DialogueProjection = Awaited<ReturnType<MuddHttpClient["talk"]>>;
 type MerchantCatalog = Awaited<ReturnType<MuddHttpClient["getMerchantCatalog"]>>;
 type Screen = "play" | "vitals" | "items" | "equipment" | "stats" | "notes" | "codex";
-type WorldClientProps = { onLeaveWorld: () => Promise<void> };
+type WorldClientProps = { onLeaveWorld: () => Promise<void>; worldInstanceId?: string };
 type VisibleNpc = NonNullable<NonNullable<GameSnapshot["location"]>["npcs"]>[number];
 
 function findObjectMatches<T extends { id: string; label: string }>(
@@ -208,7 +208,10 @@ function completedQuestObjectiveKeys(snapshot: GameSnapshot): string[] {
   );
 }
 
-export function WorldClient({ onLeaveWorld }: WorldClientProps) {
+export function WorldClient({
+  onLeaveWorld,
+  worldInstanceId = window.localStorage.getItem("mudd-world-instance-id") ?? "mudd-demo-instance",
+}: WorldClientProps) {
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
   const [interactionInbox, setInteractionInbox] = useState<InteractionInbox | null>(null);
   const [partyInfo, setPartyInfo] = useState<Awaited<ReturnType<MuddHttpClient["getPartyInfo"]>> | null>(null);
@@ -363,6 +366,10 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
     window.addEventListener("hashchange", navigate);
     return () => window.removeEventListener("hashchange", navigate);
   }, []);
+
+  useEffect(() => {
+    client.setWorldInstanceId(worldInstanceId);
+  }, [worldInstanceId]);
 
   const loadGame = useCallback(async () => {
     setLoading(true);

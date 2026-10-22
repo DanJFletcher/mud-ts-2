@@ -202,6 +202,10 @@ export function CharacterRoster() {
   const { signOut } = useClerk();
   const [, setLocation] = useLocation();
   const [roster, setRoster] = useState<CharacterRosterSnapshot | null>(null);
+  const [worlds, setWorlds] = useState<WorldSummary[]>([]);
+  const [selectedWorldId, setSelectedWorldId] = useState(
+    () => window.localStorage.getItem(selectedWorldStorageKey) ?? 'mudd-demo-instance',
+  );
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => window.localStorage.getItem('mudd-theme') === 'dark' ? 'dark' : 'light');
@@ -216,7 +220,9 @@ export function CharacterRoster() {
     setLoading(true);
     setError('');
     try {
-      setRoster(await client.getCharacters());
+      const [availableWorlds, playerRoster] = await Promise.all([client.getWorlds(), client.getCharacters()]);
+      setWorlds(availableWorlds);
+      setRoster(playerRoster);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not load your characters.');
     } finally {
@@ -234,6 +240,12 @@ export function CharacterRoster() {
     await loadRoster();
   };
 
+  const chooseWorld = (worldInstanceId: string) => {
+    selectWorld(worldInstanceId);
+    setSelectedWorldId(worldInstanceId);
+    void loadRoster();
+  };
+
   const createCharacter = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmed = name.trim();
@@ -241,6 +253,7 @@ export function CharacterRoster() {
     setPending(true);
     setError('');
     try {
+      selectWorld(selectedWorldId);
       await client.createCharacter(trimmed);
       setName('');
       await refresh();
@@ -252,10 +265,14 @@ export function CharacterRoster() {
   };
 
   const joinWorld = async (characterId: string) => {
+    const character = roster?.characters.find((candidate) => candidate.characterId === characterId);
+    const worldInstanceId = character?.worldInstanceId ?? selectedWorldId;
     setPending(true);
     setError('');
     try {
-      const session = await client.joinWorld(characterId);
+      selectWorld(worldInstanceId);
+      setSelectedWorldId(worldInstanceId);
+      const session = await client.joinWorld(characterId, worldInstanceId);
       setRoster((current) => current ? {
         ...current,
         activeWorldSession: { id: session.sessionId, characterId: session.characterId },
@@ -304,6 +321,8 @@ export function CharacterRoster() {
     setPending(true);
     setError('');
     try {
+      const target = roster?.characters.find((character) => character.characterId === characterId);
+      if (target) selectWorld(target.worldInstanceId);
       await client.renameCharacter(characterId, nextName, revision);
       setRenamingId(null);
       await refresh();
@@ -319,6 +338,8 @@ export function CharacterRoster() {
     setPending(true);
     setError('');
     try {
+      const target = roster?.characters.find((character) => character.characterId === characterId);
+      if (target) selectWorld(target.worldInstanceId);
       await client.archiveCharacter(characterId, revision);
       setArchiveId(null);
       await refresh();
@@ -334,6 +355,8 @@ export function CharacterRoster() {
     setPending(true);
     setError('');
     try {
+      const target = roster?.characters.find((character) => character.characterId === characterId);
+      if (target) selectWorld(target.worldInstanceId);
       await client.restoreCharacter(characterId, revision);
       await refresh();
     } catch (cause) {
@@ -344,9 +367,16 @@ export function CharacterRoster() {
   };
 
   const displayName = user?.fullName || user?.primaryEmailAddress?.emailAddress || roster?.player.displayName || 'Traveler';
-  const activeCharacter = roster?.characters.find((character) => character.characterId === roster.activeWorldSession?.characterId);
-  const activeCharacterId = roster?.activeWorldSession?.characterId;
-  const hasActiveSession = Boolean(roster?.activeWorldSession);
+  const selectedWorld = worlds.find((world) => world.worldInstanceId === selectedWorldId);
+  const activeWorldSession = roster?.activeWorldSessions?.find((session) =>
+    session.worldInstanceId === selectedWorldId,
+  ) ?? (roster?.activeWorldSession ? {
+    ...roster.activeWorldSession,
+    worldInstanceId: selectedWorldId,
+  } : undefined);
+  const activeCharacter = roster?.characters.find((character) =>
+    character.characterId === activeWorldSession?.characterId,
+  );
   const activeCharacterIsDead = activeCharacter?.combat?.status === 'defeat' || activeCharacter?.health?.current === 0;
   const visibleCharacters = roster?.characters.filter((character) => character.archived === showArchived) ?? [];
 
@@ -370,6 +400,17 @@ export function CharacterRoster() {
             </Button>
           </div>
         </div>
+        <label className="account-world-select">
+          <span>Selected world</span>
+          <select
+            value={selectedWorldId}
+            onChange={(event) => chooseWorld(event.target.value)}
+            aria-label="Select a world"
+          >
+            {worlds.map((world) => <option key={world.worldInstanceId} value={world.worldInstanceId}>{world.name}</option>)}
+          </select>
+          {selectedWorld && <span className="account-world-select__summary">{selectedWorld.summary}</span>}
+        </label>
 
         {error && <p className="account-message account-message--error" role="alert">{error}</p>}
         {loading ? (
@@ -397,8 +438,11 @@ export function CharacterRoster() {
 
             <section className="account-character-list" aria-label="Character roster">
               {visibleCharacters.length ? visibleCharacters.map((character) => {
-                const isActive = character.characterId === activeCharacterId;
-                const anotherActive = hasActiveSession && !isActive;
+                const worldSession = roster?.activeWorldSessions?.find((session) =>
+                  session.worldInstanceId === character.worldInstanceId,
+                ) ?? (character.worldInstanceId === selectedWorldId ? activeWorldSession : undefined);
+                const isActive = worldSession?.characterId === character.characterId;
+                const anotherActive = Boolean(worldSession && !isActive);
                 return (
                   <article className="account-character-card" key={character.characterId}>
                     <div className="account-character-card__identity">
@@ -413,7 +457,7 @@ export function CharacterRoster() {
                         ) : (
                           <>
                             <h2>{character.name}</h2>
-                            <p>{character.locationTitle} · {character.combat?.status === 'defeat' || character.health?.current === 0
+                            <p>{character.worldName ?? worlds.find((world) => world.worldInstanceId === character.worldInstanceId)?.name ?? 'Unknown world'} · {character.locationTitle} · {character.combat?.status === 'defeat' || character.health?.current === 0
                               ? 'Dead · Game over'
                               : character.archived ? 'Archived' : isActive ? 'In this world' : 'Ready'}</p>
                           </>
@@ -487,7 +531,7 @@ function WorldPage() {
   );
 }
 
-function GuestWorldPage() {
+export function GuestWorldPage() {
   const [worlds, setWorlds] = useState<WorldSummary[]>([]);
   const [roster, setRoster] = useState<CharacterRosterSnapshot | null>(null);
   const [selectedWorldId, setSelectedWorldId] = useState(

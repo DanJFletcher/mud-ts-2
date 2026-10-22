@@ -24,7 +24,6 @@ import {
   orravethWorld,
 } from '@mudd/world-orraveth';
 import type { EventStorePort, AuthorizationPort } from '@mudd/engine-core';
-import type { PostgresEventStore } from './persistence/postgres-event-store.js';
 import { PostgresLocationGroupCatalogStore } from './location-group-store.js';
 import { combatPresencePlugin } from './combat-presence-plugin.js';
 import { demoEventEffectsPlugin } from './demo-event-effects-plugin.js';

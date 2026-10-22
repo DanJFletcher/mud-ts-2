@@ -42,7 +42,6 @@ import { characters, durableEffects, worldSessions } from './db/schema.js';
 import { PostgresEventStore } from './persistence/postgres-event-store.js';
 import { projectLocationWithGroups } from './location-group-projection.js';
 import { listRoomOccupants, touchWorldSessionPresence } from './room-presence-service.js';
-import { combatPresencePlugin } from './combat-presence-plugin.js';
 import { createAutonomousNpcScheduler } from './autonomous-npc-scheduler.js';
 import { LOCATION_ENTERED_EFFECT } from './durable-effect-contracts.js';
 import { projectWorldMap } from './world-map-projection.js';
@@ -658,6 +657,10 @@ app.post('/api/commands', createRateLimiter({ windowMs: 60_000, maxRequests: 120
     if (!identity) return;
     const selected = selectedRuntime(res);
     const command = req.body as { type?: string; characterId?: string };
+    const commandWorldInstanceId = (req.body as { worldInstanceId?: unknown } | null)?.worldInstanceId;
+    if (typeof commandWorldInstanceId === 'string' && commandWorldInstanceId !== selected.worldInstanceId) {
+      return res.status(400).json({ message: 'Choose a command for the selected world.' });
+    }
     if (command?.type === 'character.create' && !CreateCharacterCommandSchema.safeParse(command).success) {
       return res.status(400).json({ message: 'Invalid character creation command.' });
     } else if (command?.type === 'character.rename' && !RenameCharacterCommandSchema.safeParse(command).success) {
@@ -909,7 +912,7 @@ export const server = app.listen(port, '0.0.0.0', () => {
 
 async function shutdown() {
   server.close();
-  await engine.stop();
+  await stopWorldRuntimes(worldRuntimes);
   await pool.end();
 }
 process.on('SIGTERM', () => void shutdown());

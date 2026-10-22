@@ -124,6 +124,8 @@ vi.mock('@mudd/contracts', async () => {
     ObjectInspectQuerySchema: unusedSchema,
     RestoreCharacterCommandSchema: unusedSchema,
     RenameCharacterCommandSchema: unusedSchema,
+    WorldPackDraftSchema: { parse: (value: unknown) => value },
+    validateDraftWorldGraph: () => [],
   };
 });
 

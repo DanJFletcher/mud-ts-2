@@ -18,7 +18,11 @@ vi.mock('@clerk/react/internal', () => ({ publishableKeyFromHost: () => 'pk_test
 vi.mock('@clerk/themes', () => ({ shadcn: {} }));
 vi.mock('wouter', () => ({ useLocation: () => ['/characters', navigate] }));
 
-import { CharacterRoster, GuestPlayButton } from './AccountApp.js';
+import { CharacterRoster, GuestPlayButton, GuestWorldPage } from './AccountApp.js';
+
+vi.mock('./App.js', () => ({
+  WorldClient: () => <div>World play</div>,
+}));
 
 const firstCharacter = {
   worldInstanceId: 'mudd-demo-instance',
@@ -47,9 +51,14 @@ const secondCharacter = {
   locationTitle: 'Glasswater Bridge',
   visitedLocationIds: ['mossgate-clearing', 'glasswater-bridge'],
 };
+const availableWorlds = [
+  { worldInstanceId: 'mudd-demo-instance', packId: 'mudd.first-steps', name: 'The Waystone Path', summary: 'Mossgate and the old bell tower.' },
+  { worldInstanceId: 'orraveth-bellwold-instance', packId: 'orraveth.bellwold', name: 'Orraveth: Bellwold', summary: 'A frontier village with an old bell.' },
+];
 
 let characters: CharacterRosterSnapshot['characters'];
 let active: CharacterRosterSnapshot['activeWorldSession'];
+let activeWorldId: string | null;
 const commandBodies: Array<Record<string, unknown>> = [];
 
 function json(body: unknown, status = 200) {
@@ -61,6 +70,7 @@ function commandRequest(body: Record<string, unknown>) {
   if (body.type === 'character.create') {
     characters.unshift({
       ...firstCharacter,
+      worldInstanceId: String(body.worldInstanceId ?? 'mudd-demo-instance'),
       characterId: '33333333-3333-4333-8333-333333333333',
       name: (body.payload as { name: string }).name,
       revision: 1,
@@ -100,6 +110,7 @@ beforeEach(() => {
   window.localStorage.clear();
   characters = [{ ...firstCharacter }, { ...secondCharacter }];
   active = null;
+  activeWorldId = null;
   commandBodies.length = 0;
   apiFetch.mockReset();
   clerkSignOut.mockClear();
@@ -110,17 +121,24 @@ beforeEach(() => {
         player: { id: 'account-1', displayName: 'Traveler' },
         characters: characters.map((character) => ({ ...character })),
         activeWorldSession: active,
+        activeWorldSessions: active && activeWorldId
+          ? [{ ...active, worldInstanceId: activeWorldId }]
+          : [],
       });
     }
+    if (path === '/api/worlds') return json(availableWorlds);
     if (path === '/api/commands') return commandRequest(JSON.parse(init?.body as string));
     if (path === '/api/world-session' && init?.method === 'POST') {
-      const characterId = (JSON.parse(init.body as string) as { characterId: string }).characterId;
+      const body = JSON.parse(init.body as string) as { characterId: string; worldInstanceId?: string };
+      const characterId = body.characterId;
       if (active && active.characterId !== characterId) return json({ message: 'Leave the current world session before switching characters.' }, 409);
       active = { id: 'session-1', characterId };
+      activeWorldId = body.worldInstanceId ?? 'mudd-demo-instance';
       return json({ sessionId: active.id, characterId });
     }
     if (path === '/api/world-session' && init?.method === 'DELETE') {
       active = null;
+      activeWorldId = null;
       return new Response(null, { status: 204 });
     }
     return json({ message: 'Not found.' }, 404);
@@ -128,6 +146,26 @@ beforeEach(() => {
 });
 
 describe('account character roster', () => {
+  it('creates a character in the selected world while preserving characters from the other world', async () => {
+    render(<CharacterRoster />);
+    await screen.findByRole('heading', { name: 'Rowan' });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Select a world' }), {
+      target: { value: 'orraveth-bellwold-instance' },
+    });
+    await screen.findByRole('textbox', { name: 'Character name' });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Character name' }), { target: { value: 'Anwen' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create character' }));
+    await screen.findByRole('heading', { name: 'Anwen' });
+
+    expect(commandBodies[0]).toMatchObject({
+      type: 'character.create',
+      worldInstanceId: 'orraveth-bellwold-instance',
+      payload: { name: 'Anwen' },
+    });
+    expect(screen.getByRole('heading', { name: 'Rowan' })).toBeInTheDocument();
+    expect(window.localStorage.getItem('mudd-world-instance-id')).toBe('orraveth-bellwold-instance');
+  });
+
   it('creates multiple characters on the signed-in account', async () => {
     render(<CharacterRoster />);
     await screen.findByRole('heading', { name: 'Rowan' });
@@ -228,36 +266,11 @@ describe('account character roster', () => {
 });
 
 describe('guest entry', () => {
-  it('asks first-time guests for a character name before entering the world', async () => {
-    let characterCreated = false;
-    let createdName = '';
+  it('starts a guest identity and routes to world selection without creating a character yet', async () => {
     apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
       if (path === '/api/guest-session') {
         expect(init?.method).toBe('POST');
         return json({ player: { id: 'guest-player', displayName: 'Traveler GUEST' } });
-      }
-      if (path === '/api/characters') {
-        return json({
-          player: { id: 'guest-player', displayName: 'Traveler GUEST' },
-          characters: characterCreated ? [{
-            ...firstCharacter,
-            characterId: 'guest-character',
-            name: createdName,
-          }] : [],
-          activeWorldSession: null,
-        });
-      }
-      if (path === '/api/commands') {
-        characterCreated = true;
-        createdName = (JSON.parse(String(init?.body)) as { payload: { name: string } }).payload.name;
-        return json({
-          receipt: { ok: true, commandId: 'guest-create', eventIds: [], newAggregateVersion: 1 },
-          streamId: 'guest-character',
-        });
-      }
-      if (path === '/api/world-session' && init?.method === 'POST') {
-        expect(JSON.parse(String(init.body))).toEqual({ characterId: 'guest-character' });
-        return json({ sessionId: 'guest-world-session', characterId: 'guest-character' });
       }
       return json({ message: 'Not found.' }, 404);
     });
@@ -265,35 +278,16 @@ describe('guest entry', () => {
     render(<GuestPlayButton />);
     fireEvent.click(screen.getByRole('button', { name: 'Play as guest' }));
 
-    const nameInput = await screen.findByRole('textbox', { name: 'Character name' });
-    expect(navigate).not.toHaveBeenCalled();
-    expect(apiFetch.mock.calls.map(([path]) => path)).toEqual(['/api/guest-session', '/api/characters']);
-    fireEvent.change(nameInput, { target: { value: 'Willow' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Enter world' }));
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('/guest-world'));
-    expect(JSON.parse(apiFetch.mock.calls.find(([path]) => path === '/api/commands')?.[1]?.body as string))
-      .toMatchObject({ payload: { name: 'Willow' } });
-    expect(apiFetch.mock.calls.map(([path]) => path)).toEqual([
-      '/api/guest-session',
-      '/api/characters',
-      '/api/commands',
-      '/api/world-session',
-    ]);
+    expect(apiFetch.mock.calls.map(([path]) => path)).toEqual(['/api/guest-session']);
+    expect(screen.queryByRole('textbox', { name: 'Character name' })).not.toBeInTheDocument();
   });
 
-  it('resumes a returning guest without prompting for a name again', async () => {
-    apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
+  it('routes returning guests to world selection so they can resume or choose another world', async () => {
+    apiFetch.mockImplementation(async (path: string, _init?: RequestInit) => {
       if (path === '/api/guest-session') {
         return json({ player: { id: 'guest-player', displayName: 'Traveler GUEST' } });
       }
-      if (path === '/api/characters') {
-        return json({
-          player: { id: 'guest-player', displayName: 'Traveler GUEST' },
-          characters: [{ ...firstCharacter, characterId: 'guest-character', name: 'Willow' }],
-          activeWorldSession: { id: 'guest-world-session', characterId: 'guest-character' },
-        });
-      }
-      if (path === '/api/world-session' && init?.method === 'DELETE') return new Response(null, { status: 204 });
       return json({ message: 'Not found.' }, 404);
     });
 
@@ -302,5 +296,49 @@ describe('guest entry', () => {
 
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('/guest-world'));
     expect(screen.queryByRole('textbox', { name: 'Character name' })).not.toBeInTheDocument();
+    expect(apiFetch.mock.calls.map(([path]) => path)).toEqual(['/api/guest-session']);
+  });
+
+  it('lets a guest create and enter a character in a selected world', async () => {
+    const guestCommands: Record<string, unknown>[] = [];
+    apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/api/guest-session') return json({ player: { id: 'guest-player', displayName: 'Traveler GUEST' } });
+      if (path === '/api/worlds') return json(availableWorlds);
+      if (path === '/api/characters') {
+        return json({
+          player: { id: 'guest-player', displayName: 'Traveler GUEST' },
+          characters: [],
+          activeWorldSession: null,
+          activeWorldSessions: [],
+        });
+      }
+      if (path === '/api/commands') {
+        guestCommands.push(JSON.parse(String(init?.body)));
+        return json({
+          receipt: { ok: true, commandId: 'guest-create', eventIds: [], newAggregateVersion: 1 },
+          streamId: 'guest-orraveth-character',
+        });
+      }
+      if (path === '/api/world-session' && init?.method === 'POST') {
+        return json({ sessionId: 'guest-world-session', characterId: 'guest-orraveth-character' });
+      }
+      return json({ message: 'Not found.' }, 404);
+    });
+
+    render(<GuestWorldPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /Orraveth: Bellwold/ }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'New character name' }), { target: { value: 'Willow' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create and enter' }));
+
+    expect(await screen.findByText('World play')).toBeInTheDocument();
+    expect(guestCommands[0]).toMatchObject({
+      type: 'character.create',
+      worldInstanceId: 'orraveth-bellwold-instance',
+      payload: { name: 'Willow' },
+    });
+    const sessionRequest = apiFetch.mock.calls.find(([path]) => path === '/api/world-session' && (apiFetch.mock.calls.find(([candidate]) => candidate === path)?.[1] as RequestInit | undefined)?.method === 'POST');
+    expect(JSON.parse(String(sessionRequest?.[1]?.body))).toMatchObject({
+      worldInstanceId: 'orraveth-bellwold-instance',
+    });
   });
 });
