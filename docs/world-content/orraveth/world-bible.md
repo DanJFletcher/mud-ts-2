@@ -15,7 +15,7 @@ The first session introduces Orraveth through an ordinary frontier village rathe
 - The Codex describes the square's layout and the detailed paths beyond Bellwold as not yet fixed. The six playable room connections and sensory descriptions here are a first playable interpretation, not a claim that every architectural detail is already established canon.
 - Preserve uncertainty. The Silent Bell's history, Professor Elira Venn's disappearance, Anwen's scale, the inn's hearth, and the mill's operation are unresolved or disputed. Player-facing dialogue and readable text must not present a theory as established fact.
 - Information about concealed essence extraction and its agents is not common knowledge. It is deliberately excluded from player-facing dialogue and this starter quest.
-- Do not assign currency denominations, prices, or a universal exchange rate. The Codex does not establish them.
+- Gold is the provisional currency name for the current Orraveth slice. Do not infer denominations, prices, or a universal exchange rate; these remain unspecified.
 
 ## Playable content in this slice
 

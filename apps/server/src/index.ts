@@ -527,6 +527,15 @@ app.get('/api/game', async (req, res, next) => {
     return res.json({
       player: { id: identity.playerId, displayName: identity.displayName },
       character,
+      ...(selected.world.currency
+        ? {
+          currency: {
+            id: selected.world.currency.id,
+            name: selected.world.currency.name,
+            symbol: selected.world.currency.symbol,
+          },
+        }
+        : {}),
       location,
       map: projectWorldMap(character, selected.world, locationGroupCatalog.groups),
       questJournal: projectQuestJournal(character, selected.world),

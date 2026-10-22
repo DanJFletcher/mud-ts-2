@@ -11,9 +11,18 @@ describe('world wallet initialization policy', () => {
     health: { current: 6, maximum: 6 },
   } as const;
 
-  it('does not require a wallet for a world without a configured currency', () => {
-    expect(orravethWorld.currency).toBeUndefined();
-    expect(shouldInitializeCharacterWallet(orravethWorld, livingCharacterWithoutWallet)).toBe(false);
+  it('initializes Orraveth characters with its configured gold currency', () => {
+    expect(orravethWorld.currency).toEqual({
+      id: 'gold',
+      name: 'gold piece',
+      symbol: 'g',
+      startingBalance: 0,
+    });
+    expect(shouldInitializeCharacterWallet(orravethWorld, livingCharacterWithoutWallet)).toBe(true);
+  });
+
+  it('does not require wallets in worlds without a configured currency', () => {
+    expect(shouldInitializeCharacterWallet({ currency: undefined }, livingCharacterWithoutWallet)).toBe(false);
   });
 
   it('initializes a wallet when a currency is configured', () => {

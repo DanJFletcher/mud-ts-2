@@ -61,6 +61,14 @@ describe("Orraveth Codex content", () => {
     expect(ORRAVETH_ARTICLES_BY_SLUG.get("everyday-life")?.canonStatus).toBe("Provisional Canon");
   });
 
+  it("records gold as Orraveth's provisional currency without inventing regional exchange rules", () => {
+    const currency = ORRAVETH_ARTICLES_BY_SLUG.get("currency-and-commerce");
+    expect(currency?.canonStatus).toBe("Provisional Canon");
+    expect(currency?.body).toContain("Gold is the current provisional currency name used in Orraveth.");
+    expect(ORRAVETH_ARTICLES_BY_SLUG.get("bellwold")?.relatedIds).toContain("orraveth-currency-and-commerce");
+    expect(ORRAVETH_ARTICLES_BY_SLUG.get("orraveth")?.relatedIds).toContain("orraveth-currency-and-commerce");
+  });
+
   it("supports full-text search, aliases, and safe internal article links", () => {
     expect(searchCodexArticles("Professor Elira Venn").some((article) => article.slug === "elira-venn")).toBe(true);
     expect(searchCodexArticles("Open Lanterns").some((article) => article.slug === "lantern-covenant")).toBe(true);

@@ -9,8 +9,14 @@ export const ORRAVETH_WORLD_INSTANCE_ID = 'orraveth-bellwold-instance';
 const draft = {
   formatVersion: 1,
   packId: 'orraveth.bellwold',
-  packVersion: '1.0.0',
+  packVersion: '1.1.0',
   displayName: 'Orraveth: Bellwold',
+  currency: {
+    id: 'gold',
+    name: 'gold piece',
+    symbol: 'g',
+    startingBalance: 0,
+  },
   locations: [
     {
       id: 'bellwold-market-square',

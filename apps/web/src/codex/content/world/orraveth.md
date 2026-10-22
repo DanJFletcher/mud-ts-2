@@ -8,7 +8,7 @@ category: world-overview
 entityType: world
 tags: [continent, cosmology, society]
 aliases: [the known continent]
-relatedIds: [orraveth-age-of-measures, orraveth-cosmology, orraveth-resonance, orraveth-bellwold]
+relatedIds: [orraveth-age-of-measures, orraveth-cosmology, orraveth-resonance, orraveth-bellwold, orraveth-currency-and-commerce]
 canonStatus: Established Canon
 sourceRefs: [attached_assets/Pasted-Replit-Agent-Task-Build-the-Orraveth-Codex-Project-Over_1792634102724.txt]
 lastUpdated: "2026-10-22"
@@ -21,3 +21,5 @@ Resonance works consistently enough to be studied, and sprites can demonstrate a
 The present is often called the [[age-of-measures|Age of Measures]]. Its growth of measurement and experimental practice has brought new medicines and instruments, but also pressure on institutions, labor, and belief. Orraveth is not governed by one shared faith or political order: the [[crown-of-heskar|Crown of Heskar]], [[merefall-league|Merefall League]], [[veyrun-concord|Veyrun Concord]], [[sareth-cantons|Sareth Cantons]], and [[rillward-freeholds|Rillward Freeholds]] hold distinct arrangements of authority. Beyond them, the [[uncrowned-lands|Uncrowned Lands]] contain communities with their own histories and claims.
 
 The village of [[bellwold|Bellwold]] is one frontier settlement among many, not the center of the continent. Its old bell and surrounding records remain subjects of disagreement rather than a solved account of Orraveth's past.
+
+The current provisional currency name is gold; the [[currency-and-commerce|Codex entry on currency and commerce]] leaves its denominations and interregional exchange unsettled.

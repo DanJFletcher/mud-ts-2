@@ -48,6 +48,7 @@ let nextRoomChatMessageId: number;
 let roomOccupants: Array<{ id: string; displayName: string }>;
 let heartbeatOccupants: Array<{ id: string; displayName: string }>;
 let walletBalance: number;
+let worldCurrency: { id: string; name: string; symbol: string };
 let merchantLanternPurchased: boolean;
 let healingDraughtCarried: boolean;
 let characterHealth: { current: number; maximum: number } | null;
@@ -361,6 +362,7 @@ beforeEach(() => {
   roomOccupants = [];
   heartbeatOccupants = [];
   walletBalance = 12;
+  worldCurrency = { id: 'moss-mark', name: 'moss mark', symbol: 'm' };
   merchantLanternPurchased = false;
   healingDraughtCarried = false;
   characterHealth = null;
@@ -455,6 +457,7 @@ beforeEach(() => {
             }] : []),
           ],
         },
+        currency: worldCurrency,
         location: currentLocation(),
         map: currentWorldMap(),
         questJournal,
@@ -2167,6 +2170,16 @@ describe('single-character world session client', () => {
       type: 'character.move',
       payload: { exitId: 'reedbank-to-willowrest' },
     });
+  });
+
+  it('shows the wallet using the active world currency', async () => {
+    worldCurrency = { id: 'gold', name: 'gold piece', symbol: 'g' };
+    walletBalance = 0;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    fireEvent.click(screen.getByRole('link', { name: 'Info' }));
+    await screen.findByRole('heading', { name: 'Vitals' });
+    expect(screen.getByText('0 gold pieces')).toBeVisible();
   });
 
   it('restores and persists the selected theme', async () => {

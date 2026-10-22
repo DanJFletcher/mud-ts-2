@@ -2762,7 +2762,11 @@ export function WorldClient({
                 </div>
                 <div className="focused-details">
                   <div className="focused-detail"><span>Standing</span><strong>{snapshot.character?.health?.current === 0 ? "Down" : snapshot.character ? "Alive" : "Not started"}</strong></div>
-                  <div className="focused-detail"><span>Wallet</span><strong>{snapshot.character?.wallet ? `${snapshot.character.wallet.balance} moss marks` : "—"}</strong></div>
+                  <div className="focused-detail"><span>Wallet</span><strong>
+                    {snapshot.character?.wallet && snapshot.currency
+                      ? `${snapshot.character.wallet.balance} ${snapshot.currency.name}${snapshot.character.wallet.balance === 1 ? "" : "s"}`
+                      : "—"}
+                  </strong></div>
                   <div className="focused-detail focused-detail--wide"><span>Current location</span><strong>{snapshot.location?.title || "—"}</strong></div>
                   <div className="focused-detail focused-detail--wide">
                     <span>Advancement</span>
