@@ -1,5 +1,4 @@
 import type { EnginePlugin } from '@mudd/engine-core';
-import { demoWorld } from '@mudd/world-demo';
 import {
   getRoomChatMessageById,
   getRoomChatMessageBySourceEffectId,
@@ -16,7 +15,7 @@ import {
   PlayerRoomMessageEffectSchema,
 } from './durable-effect-contracts.js';
 
-export const demoEventEffectsPlugin: EnginePlugin = {
+export const worldEventEffectsPlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.demo-event-effects',
     version: '1.0.0',
@@ -70,7 +69,7 @@ export const demoEventEffectsPlugin: EnginePlugin = {
     );
 
     registerEffect(LOCATION_ENTERED_EFFECT, 1, LocationEnteredEffectSchema, async (effect, context) => {
-      const location = demoWorld.locations.find((candidate) => candidate.id === effect.toLocationId);
+      const location = context.world.locations.find((candidate) => candidate.id === effect.toLocationId);
       for (const npc of location?.npcs ?? []) {
         if (npc.movement) continue;
         if (!npc.announcements?.length) continue;
@@ -94,7 +93,7 @@ export const demoEventEffectsPlugin: EnginePlugin = {
       if (!playerMessage || playerMessage.speakerType !== 'player') return;
       if (await getRoomChatMessageBySourceEffectId(context.effectId)) return;
 
-      const location = demoWorld.locations.find((candidate) => candidate.id === playerMessage.roomId);
+      const location = context.world.locations.find((candidate) => candidate.id === playerMessage.roomId);
       for (const npc of location?.npcs ?? []) {
         if (!npc.roomChatReactions?.length) continue;
         const response = await reactToNpcRoomChat({

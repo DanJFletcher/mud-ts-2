@@ -26,7 +26,7 @@ import {
 import type { EventStorePort, AuthorizationPort } from '@mudd/engine-core';
 import { PostgresLocationGroupCatalogStore } from './location-group-store.js';
 import { combatPresencePlugin } from './combat-presence-plugin.js';
-import { demoEventEffectsPlugin } from './demo-event-effects-plugin.js';
+import { worldEventEffectsPlugin } from './demo-event-effects-plugin.js';
 
 export interface RegisteredWorld {
   readonly worldInstanceId: string;
@@ -79,7 +79,7 @@ export function createWorldRuntimes(
       roadTravelPlugin,
       npcDialoguePlugin,
       merchantPlugin,
-      ...(definition.worldInstanceId === DEMO_WORLD_INSTANCE_ID ? [demoEventEffectsPlugin] : []),
+      worldEventEffectsPlugin,
     ];
     runtimes.set(definition.worldInstanceId, {
       ...definition,

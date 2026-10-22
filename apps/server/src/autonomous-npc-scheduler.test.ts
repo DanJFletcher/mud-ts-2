@@ -6,7 +6,7 @@ import {
   projectAutonomousNpcPosition,
 } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
-import { demoEventEffectsPlugin } from './demo-event-effects-plugin.js';
+import { worldEventEffectsPlugin } from './demo-event-effects-plugin.js';
 import {
   AUTONOMOUS_NPC_SYSTEM_ACTOR_ID,
   createAutonomousNpcScheduler,
@@ -78,7 +78,7 @@ describe('autonomous NPC scheduler and room movement messages', () => {
     const now = new Date('2026-10-21T12:00:00.000Z');
     const store = new InMemoryEventStore();
     const engine = new EngineHost(
-      [autonomousNpcsPlugin, demoEventEffectsPlugin],
+      [autonomousNpcsPlugin, worldEventEffectsPlugin],
       store,
       authorization,
       demoWorld,

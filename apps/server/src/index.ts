@@ -44,6 +44,7 @@ import { projectLocationWithGroups } from './location-group-projection.js';
 import { listRoomOccupants, touchWorldSessionPresence } from './room-presence-service.js';
 import { createAutonomousNpcScheduler } from './autonomous-npc-scheduler.js';
 import { LOCATION_ENTERED_EFFECT } from './durable-effect-contracts.js';
+import { shouldInitializeCharacterWallet } from './world-wallet-policy.js';
 import { projectWorldMap } from './world-map-projection.js';
 import {
   createGuestIdentity,
@@ -266,11 +267,8 @@ async function ensureCharacterWallet(
   session: typeof worldSessions.$inferSelect,
   character: NonNullable<ReturnType<typeof replayCharacter>>,
 ) {
-  if (
-    character.wallet ||
-    character.combat?.status === 'defeat' ||
-    character.health?.current === 0
-  ) return character;
+  const runtime = runtimeFor(session.worldInstanceId);
+  if (!shouldInitializeCharacterWallet(runtime.world, character)) return character;
   const command = InitializeCharacterWalletCommandSchema.parse({
     type: 'character.wallet.initialize',
     version: 1,
@@ -280,7 +278,7 @@ async function ensureCharacterWallet(
     expectedVersion: character.revision,
     payload: {},
   });
-  await runtimeFor(session.worldInstanceId).engine.dispatch(command, worldContext(identity, session));
+  await runtime.engine.dispatch(command, worldContext(identity, session));
   const initialized = replayCharacter(await store.readStream(session.worldInstanceId, session.characterId));
   if (!initialized?.wallet) throw new Error('Could not initialize the character wallet.');
   return initialized;

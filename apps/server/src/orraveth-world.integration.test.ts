@@ -8,13 +8,14 @@ import {
 import { EngineHost, InMemoryEventStore, replayCharacter } from '@mudd/engine-core';
 import { characterPlugin, movementPlugin, npcDialoguePlugin, worldItemsPlugin } from '@mudd/core-plugins';
 import { ORRAVETH_WORLD_INSTANCE_ID, orravethWorld } from '@mudd/world-orraveth';
+import { worldEventEffectsPlugin } from './demo-event-effects-plugin.js';
 
 function makeHarness() {
   let id = 0;
   const owners = new Map<string, string>();
   const store = new InMemoryEventStore();
   const engine = new EngineHost(
-    [worldItemsPlugin, characterPlugin, movementPlugin, npcDialoguePlugin],
+    [worldItemsPlugin, characterPlugin, movementPlugin, npcDialoguePlugin, worldEventEffectsPlugin],
     store,
     {
       canAccessInstance: async (_session, worldInstanceId) => worldInstanceId === ORRAVETH_WORLD_INSTANCE_ID,
@@ -132,6 +133,7 @@ describe('Orraveth Bellwold starter slice', () => {
           expectedVersion: character.revision,
           payload: { exitId },
         });
+        await h.engine.processPendingEffects();
       };
 
       expect((await queryLocation()).shortName).toBe('Bellwold Market Square');
