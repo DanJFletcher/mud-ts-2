@@ -30,36 +30,19 @@ import {
   resolveLocationDisplayName,
   type LocationGroupDefinition,
 } from '@mudd/contracts';
-import { EngineHost, projectQuestJournal, replayCharacter } from '@mudd/engine-core';
+import { projectQuestJournal, replayCharacter } from '@mudd/engine-core';
 import {
-  characterPlugin,
-  createLocationGroupsPlugin,
-  autonomousNpcsPlugin,
-  combatPlugin,
-  groupsPlugin,
-  interactionPlugin,
   interactionStreamId,
-  merchantPlugin,
-  movementPlugin,
-  roadTravelPlugin,
-  npcDialoguePlugin,
-  partyPlugin,
-  partyQuestPlugin,
-  partyCombatPolicyPlugin,
   projectInteractionEvents,
-  teamCombatPlugin,
   updateInteractionRequestStatus,
-  worldItemsPlugin,
 } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import { db, pool } from './db/client.js';
 import { characters, durableEffects, worldSessions } from './db/schema.js';
 import { PostgresEventStore } from './persistence/postgres-event-store.js';
-import { PostgresLocationGroupCatalogStore } from './location-group-store.js';
 import { projectLocationWithGroups } from './location-group-projection.js';
 import { listRoomOccupants, touchWorldSessionPresence } from './room-presence-service.js';
 import { combatPresencePlugin } from './combat-presence-plugin.js';
-import { demoEventEffectsPlugin } from './demo-event-effects-plugin.js';
 import { createAutonomousNpcScheduler } from './autonomous-npc-scheduler.js';
 import { LOCATION_ENTERED_EFFECT } from './durable-effect-contracts.js';
 import { projectWorldMap } from './world-map-projection.js';
@@ -84,6 +67,14 @@ import {
   parseAllowedOrigins,
   parseTrustedHosts,
 } from './request-security.js';
+import {
+  createWorldRuntimes,
+  registeredWorlds,
+  startWorldRuntimes,
+  stopWorldRuntimes,
+  toWorldSummary,
+  type WorldRuntime,
+} from './world-registry.js';
 
 const trustedProxyHops = Number(process.env.TRUSTED_PROXY_HOPS ?? (process.env.NODE_ENV === 'production' ? '1' : '0'));
 if (!Number.isInteger(trustedProxyHops) || trustedProxyHops < 0) {
@@ -101,13 +92,10 @@ if (process.env.NODE_ENV === 'production' && trustedHosts.size === 0) {
 }
 
 const store = new PostgresEventStore();
-const locationGroupsFeature = createLocationGroupsPlugin(
-  demoWorld,
-  new PostgresLocationGroupCatalogStore(),
-);
+const registeredWorldIds = new Set(registeredWorlds.map((world) => world.worldInstanceId));
 const authorization = {
   async canAccessInstance(session: { worldInstanceId: string }, id: string) {
-    return session.worldInstanceId === id && id === DEMO_WORLD_INSTANCE_ID;
+    return session.worldInstanceId === id && registeredWorldIds.has(id);
   },
   async ownsCharacter(session: { playerId: string }, id: string) {
     const [row] = await db.select({ id: characters.id }).from(characters)
@@ -116,34 +104,17 @@ const authorization = {
     return Boolean(row);
   },
 };
-const engine = new EngineHost(
-  [
-    worldItemsPlugin,
-    locationGroupsFeature.plugin,
-    autonomousNpcsPlugin,
-    characterPlugin,
-    groupsPlugin,
-    partyPlugin,
-    partyQuestPlugin,
-    interactionPlugin,
-    combatPlugin,
-    combatPresencePlugin,
-    partyCombatPolicyPlugin,
-    teamCombatPlugin,
-    movementPlugin,
-    roadTravelPlugin,
-    npcDialoguePlugin,
-    merchantPlugin,
-    demoEventEffectsPlugin,
-  ],
-  store,
-  authorization,
-  demoWorld,
-);
-await engine.start();
+const worldRuntimes = createWorldRuntimes(store, authorization);
+await startWorldRuntimes(worldRuntimes);
+function runtimeFor(worldInstanceId: string): WorldRuntime {
+  const runtime = worldRuntimes.get(worldInstanceId);
+  if (!runtime) throw new Error(`No world is registered for instance ${worldInstanceId}.`);
+  return runtime;
+}
 
+const demoRuntime = runtimeFor(DEMO_WORLD_INSTANCE_ID);
 const autonomousNpcScheduler = createAutonomousNpcScheduler({
-  engine,
+  engine: demoRuntime.engine,
   store,
   world: demoWorld,
   worldInstanceId: DEMO_WORLD_INSTANCE_ID,
@@ -158,7 +129,9 @@ async function runPendingEffectBatch() {
   if (effectBatchRunning) return;
   effectBatchRunning = true;
   try {
-    await engine.processPendingEffects();
+    for (const runtime of worldRuntimes.values()) {
+      await runtime.engine.processPendingEffects(25, runtime.worldInstanceId);
+    }
   } catch {
     console.error('Could not process durable event effects.');
   } finally {
@@ -175,26 +148,28 @@ async function runInteractionMaintenance() {
   if (interactionMaintenanceRunning) return;
   interactionMaintenanceRunning = true;
   try {
-    const streamId = interactionStreamId(DEMO_WORLD_INSTANCE_ID);
-    const events = await store.readStream(DEMO_WORLD_INSTANCE_ID, streamId);
-    const { requests } = projectInteractionEvents(events);
-    const sessions = await db.select({
-      characterId: worldSessions.characterId,
-      lastSeenAt: worldSessions.lastSeenAt,
-    }).from(worldSessions).where(eq(worldSessions.worldInstanceId, DEMO_WORLD_INSTANCE_ID));
-    const online = new Set(sessions
-      .filter((session) => Date.now() - session.lastSeenAt.getTime() <= INTERACTION_HEARTBEAT_FRESH_MS)
-      .map((session) => session.characterId));
-    const now = Date.now();
-    for (const request of requests) {
-      if (request.status !== 'pending') continue;
-      if (Date.parse(request.expiresAt) <= now) {
-        await updateInteractionRequestStatus(store, DEMO_WORLD_INSTANCE_ID, request.requestId, 'expired');
-      } else if (
-        !online.has(request.initiatorCharacterId) ||
-        !online.has(request.recipientCharacterId)
-      ) {
-        await updateInteractionRequestStatus(store, DEMO_WORLD_INSTANCE_ID, request.requestId, 'cancelled');
+    for (const runtime of worldRuntimes.values()) {
+      const worldInstanceId = runtime.worldInstanceId;
+      const events = await store.readStream(worldInstanceId, interactionStreamId(worldInstanceId));
+      const { requests } = projectInteractionEvents(events);
+      const sessions = await db.select({
+        characterId: worldSessions.characterId,
+        lastSeenAt: worldSessions.lastSeenAt,
+      }).from(worldSessions).where(eq(worldSessions.worldInstanceId, worldInstanceId));
+      const online = new Set(sessions
+        .filter((session) => Date.now() - session.lastSeenAt.getTime() <= INTERACTION_HEARTBEAT_FRESH_MS)
+        .map((session) => session.characterId));
+      const now = Date.now();
+      for (const request of requests) {
+        if (request.status !== 'pending') continue;
+        if (Date.parse(request.expiresAt) <= now) {
+          await updateInteractionRequestStatus(store, worldInstanceId, request.requestId, 'expired');
+        } else if (
+          !online.has(request.initiatorCharacterId) ||
+          !online.has(request.recipientCharacterId)
+        ) {
+          await updateInteractionRequestStatus(store, worldInstanceId, request.requestId, 'cancelled');
+        }
       }
     }
   } catch {
@@ -220,6 +195,14 @@ app.use(createOriginGuard(allowedOrigins, (diagnostic) => {
   console.warn('Rejected request by origin guard.', diagnostic);
 }));
 app.use(express.json({ limit: '16kb' }));
+app.use('/api', (req, res, next) => {
+  const requestedWorldId = req.get('x-mudd-world-instance') || DEMO_WORLD_INSTANCE_ID;
+  const runtime = worldRuntimes.get(requestedWorldId);
+  if (!runtime) return res.status(404).json({ message: 'That world is not available.' });
+  res.locals.worldRuntime = runtime;
+  res.locals.worldInstanceId = runtime.worldInstanceId;
+  return next();
+});
 app.use(clerkMiddleware((req) => ({
   publishableKey: publishableKeyFromHost(getClerkProxyHost(req) ?? '', process.env.CLERK_PUBLISHABLE_KEY),
 })));
@@ -248,16 +231,22 @@ app.post('/api/guest-session', createRateLimiter({ windowMs: 60_000, maxRequests
   }
 });
 
-async function activeSession(identity: AccountIdentity) {
+function selectedRuntime(response: Response): WorldRuntime {
+  const runtime = response.locals.worldRuntime as WorldRuntime | undefined;
+  if (!runtime) throw new Error('The selected world is not available.');
+  return runtime;
+}
+
+async function activeSession(identity: AccountIdentity, worldInstanceId: string) {
   const [session] = await db.select().from(worldSessions).where(and(
     eq(worldSessions.playerId, identity.playerId),
-    eq(worldSessions.worldInstanceId, DEMO_WORLD_INSTANCE_ID),
+    eq(worldSessions.worldInstanceId, worldInstanceId),
   )).limit(1);
   return session;
 }
 
-async function activeCharacter(identity: AccountIdentity) {
-  const session = await activeSession(identity);
+async function activeCharacter(identity: AccountIdentity, worldInstanceId: string) {
+  const session = await activeSession(identity, worldInstanceId);
   if (!session) return undefined;
   const character = replayCharacter(await store.readStream(session.worldInstanceId, session.characterId));
   if (!character || character.archived) return undefined;
@@ -292,7 +281,7 @@ async function ensureCharacterWallet(
     expectedVersion: character.revision,
     payload: {},
   });
-  await engine.dispatch(command, worldContext(identity, session));
+  await runtimeFor(session.worldInstanceId).engine.dispatch(command, worldContext(identity, session));
   const initialized = replayCharacter(await store.readStream(session.worldInstanceId, session.characterId));
   if (!initialized?.wallet) throw new Error('Could not initialize the character wallet.');
   return initialized;
@@ -314,22 +303,26 @@ async function locationWithRoomPresence(
   return LocationProjectionSchema.parse({ ...projection, occupants });
 }
 
+app.get('/api/worlds', (_req, res) => {
+  return res.json(registeredWorlds.map(toWorldSummary));
+});
+
 app.get('/api/characters', async (req, res, next) => {
   try {
     const identity = await accountFor(req, res);
     if (!identity) return;
+    const selected = selectedRuntime(res);
     const rows = await db.select({
       id: characters.id,
       worldInstanceId: characters.worldInstanceId,
-    }).from(characters).where(and(
-      eq(characters.playerId, identity.playerId),
-      eq(characters.worldInstanceId, DEMO_WORLD_INSTANCE_ID),
-    )).orderBy(desc(characters.createdAt));
-    const locationGroupCatalog = await locationGroupsFeature.catalog.read();
+    }).from(characters).where(eq(characters.playerId, identity.playerId))
+      .orderBy(desc(characters.createdAt));
     const characterList = await Promise.all(rows.map(async (row) => {
       const projection = replayCharacter(await store.readStream(row.worldInstanceId, row.id));
       if (!projection) throw new Error('A character record exists without its creation event.');
-      const location = demoWorld.locations.find((item) => item.id === projection.locationId);
+      const runtime = runtimeFor(row.worldInstanceId);
+      const locationGroupCatalog = await runtime.locationGroupsFeature.catalog.read();
+      const location = runtime.world.locations.find((item) => item.id === projection.locationId);
       const locationGroups = locationGroupMembershipsForLocation(
         locationGroupCatalog.groups,
         projection.locationId,
@@ -341,13 +334,23 @@ app.get('/api/characters', async (req, res, next) => {
       return {
         ...projection,
         locationTitle: locationName.qualifiedName,
+        worldName: runtime.world.displayName,
       };
     }));
-    const current = await activeSession(identity);
+    const activeSessions = await db.select().from(worldSessions)
+      .where(eq(worldSessions.playerId, identity.playerId));
+    const selectedSession = activeSessions.find((session) => session.worldInstanceId === selected.worldInstanceId);
     return res.json({
       player: { id: identity.playerId, displayName: identity.displayName },
       characters: characterList,
-      activeWorldSession: current ? { id: current.id, characterId: current.characterId } : null,
+      activeWorldSession: selectedSession
+        ? { id: selectedSession.id, characterId: selectedSession.characterId }
+        : null,
+      activeWorldSessions: activeSessions.map((session) => ({
+        worldInstanceId: session.worldInstanceId,
+        id: session.id,
+        characterId: session.characterId,
+      })),
     });
   } catch (error) {
     next(error);
@@ -358,10 +361,18 @@ app.post('/api/world-session', async (req, res, next) => {
   try {
     const identity = await accountFor(req, res);
     if (!identity) return;
-    const input = z.object({ characterId: IdSchema }).safeParse(req.body);
+    const selected = selectedRuntime(res);
+    const input = z.object({
+      characterId: IdSchema,
+      worldInstanceId: z.string().min(1).optional(),
+    }).strict().safeParse(req.body);
     if (!input.success) return res.status(400).json({ message: 'Choose a valid character.' });
+    const worldInstanceId = input.data.worldInstanceId ?? selected.worldInstanceId;
+    if (worldInstanceId !== selected.worldInstanceId) {
+      return res.status(400).json({ message: 'Choose a character from the selected world.' });
+    }
     const characterProjection = replayCharacter(await store.readStream(
-      DEMO_WORLD_INSTANCE_ID,
+      worldInstanceId,
       input.data.characterId,
     ));
     if (characterProjection?.combat?.status === 'defeat' || characterProjection?.health?.current === 0) {
@@ -374,14 +385,14 @@ app.post('/api/world-session', async (req, res, next) => {
       const [character] = await tx.select({ id: characters.id }).from(characters).where(and(
         eq(characters.id, input.data.characterId),
         eq(characters.playerId, identity.playerId),
-        eq(characters.worldInstanceId, DEMO_WORLD_INSTANCE_ID),
+        eq(characters.worldInstanceId, worldInstanceId),
         isNull(characters.archivedAt),
       )).limit(1);
       if (!character) return { kind: 'missing' as const };
 
       const [current] = await tx.select().from(worldSessions).where(and(
         eq(worldSessions.playerId, identity.playerId),
-        eq(worldSessions.worldInstanceId, DEMO_WORLD_INSTANCE_ID),
+        eq(worldSessions.worldInstanceId, worldInstanceId),
       )).limit(1);
       if (current) {
         return current.characterId === character.id
@@ -392,7 +403,7 @@ app.post('/api/world-session', async (req, res, next) => {
       const [created] = await tx.insert(worldSessions).values({
         id: globalThis.crypto.randomUUID(),
         playerId: identity.playerId,
-        worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+        worldInstanceId,
         characterId: character.id,
       }).returning();
       if (!created) throw new Error('Could not start the world session.');
@@ -400,7 +411,7 @@ app.post('/api/world-session', async (req, res, next) => {
         const effectId = globalThis.crypto.randomUUID();
         await tx.insert(durableEffects).values({
           id: effectId,
-          worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+          worldInstanceId,
           sourceStreamId: character.id,
           causationCommandId: created.id,
           effectType: LOCATION_ENTERED_EFFECT,
@@ -428,7 +439,8 @@ app.post('/api/world-session/heartbeat', createRateLimiter({ windowMs: 60_000, m
   try {
     const identity = await accountFor(req, res);
     if (!identity) return;
-    const current = await activeSession(identity);
+    const selected = selectedRuntime(res);
+    const current = await activeSession(identity, selected.worldInstanceId);
     if (!current) return res.status(409).json({ message: 'Enter the world with a character before sending presence.' });
 
     const character = replayCharacter(await store.readStream(current.worldInstanceId, current.characterId));
@@ -465,9 +477,10 @@ app.delete('/api/world-session', async (req, res, next) => {
   try {
     const identity = await accountFor(req, res);
     if (!identity) return;
+    const selected = selectedRuntime(res);
     await db.delete(worldSessions).where(and(
       eq(worldSessions.playerId, identity.playerId),
-      eq(worldSessions.worldInstanceId, DEMO_WORLD_INSTANCE_ID),
+      eq(worldSessions.worldInstanceId, selected.worldInstanceId),
     ));
     return res.status(204).end();
   } catch (error) {
@@ -479,7 +492,8 @@ app.get('/api/game', async (req, res, next) => {
   try {
     const identity = await accountFor(req, res);
     if (!identity) return;
-    const current = await activeSession(identity);
+    const selected = selectedRuntime(res);
+    const current = await activeSession(identity, selected.worldInstanceId);
     if (!current) return res.status(409).json({ message: 'Choose a character before entering the world.' });
     const events = await store.readStream(current.worldInstanceId, current.characterId);
     const replayedCharacter = replayCharacter(events);
@@ -495,7 +509,7 @@ app.get('/api/game', async (req, res, next) => {
       characterId: current.characterId,
       payload: {},
     });
-    const result = await engine.query(query, worldContext(identity, current), {
+    const result = await selected.engine.query(query, worldContext(identity, current), {
       characterProjection: character,
       correlationId: res.locals.requestId,
     });
@@ -506,7 +520,7 @@ app.get('/api/game', async (req, res, next) => {
         ...(result.code === 'INTERNAL_ERROR' ? { requestId: result.correlationId ?? res.locals.requestId } : {}),
       });
     }
-    const locationGroupCatalog = await locationGroupsFeature.catalog.read();
+    const locationGroupCatalog = await selected.locationGroupsFeature.catalog.read();
     const location = await locationWithRoomPresence(
       result.value,
       current.worldInstanceId,
@@ -517,8 +531,8 @@ app.get('/api/game', async (req, res, next) => {
       player: { id: identity.playerId, displayName: identity.displayName },
       character,
       location,
-      map: projectWorldMap(character, demoWorld, locationGroupCatalog.groups),
-      questJournal: projectQuestJournal(character, demoWorld),
+      map: projectWorldMap(character, selected.world, locationGroupCatalog.groups),
+      questJournal: projectQuestJournal(character, selected.world),
     });
   } catch (error) {
     next(error);
@@ -538,7 +552,7 @@ app.get('/api/chat', async (req, res, next) => {
       return res.status(400).json({ message: 'Invalid room chat request.' });
     }
 
-    const current = await activeCharacter(identity);
+    const current = await activeCharacter(identity, selectedRuntime(res).worldInstanceId);
     if (!current) return res.status(409).json({ message: 'Enter the world with a character before using room chat.' });
     if (current.character.combat?.status === 'defeat' || current.character.health?.current === 0) {
       return res.status(409).json({ message: 'Your character has died. Start a new character to begin again.' });
@@ -576,7 +590,7 @@ app.post('/api/chat', createRateLimiter({ windowMs: 60_000, maxRequests: 30 }), 
       return res.status(400).json({ message: `Enter a message up to ${MAX_ROOM_CHAT_MESSAGE_LENGTH} characters.` });
     }
 
-    const current = await activeCharacter(identity);
+    const current = await activeCharacter(identity, selectedRuntime(res).worldInstanceId);
     if (!current) return res.status(409).json({ message: 'Enter the world with a character before using room chat.' });
     if (current.character.combat?.status === 'defeat' || current.character.health?.current === 0) {
       return res.status(409).json({ message: 'Your character has died. Start a new character to begin again.' });
@@ -616,7 +630,7 @@ app.get('/api/interactions', async (req, res, next) => {
   try {
     const identity = await accountFor(req, res);
     if (!identity) return;
-    const current = await activeCharacter(identity);
+    const current = await activeCharacter(identity, selectedRuntime(res).worldInstanceId);
     if (!current) return res.status(409).json({ message: 'Enter the world with a character before checking interactions.' });
     const events = await store.readStream(current.session.worldInstanceId, interactionStreamId(current.session.worldInstanceId));
     const projected = projectInteractionEvents(events);
@@ -642,6 +656,7 @@ app.post('/api/commands', createRateLimiter({ windowMs: 60_000, maxRequests: 120
   try {
     const identity = await accountFor(req, res);
     if (!identity) return;
+    const selected = selectedRuntime(res);
     const command = req.body as { type?: string; characterId?: string };
     if (command?.type === 'character.create' && !CreateCharacterCommandSchema.safeParse(command).success) {
       return res.status(400).json({ message: 'Invalid character creation command.' });
@@ -653,16 +668,27 @@ app.post('/api/commands', createRateLimiter({ windowMs: 60_000, maxRequests: 120
       return res.status(400).json({ message: 'Invalid character restore command.' });
     }
 
-    let context = identity.session;
+    let context = { ...identity.session, worldInstanceId: selected.worldInstanceId };
     if (command?.type === 'character.archive' && typeof command.characterId === 'string') {
-      const current = await activeSession(identity);
+      const current = await activeSession(identity, selected.worldInstanceId);
       if (current?.characterId === command.characterId) {
         return res.status(409).json({ message: 'Leave the world before archiving this character.' });
       }
     }
 
-    if (!['character.create', 'character.rename', 'character.archive', 'character.restore'].includes(command?.type ?? '')) {
-      const current = await activeSession(identity);
+    const characterCommand = ['character.create', 'character.rename', 'character.archive', 'character.restore']
+      .includes(command?.type ?? '');
+    if (characterCommand && command?.type !== 'character.create' && typeof command.characterId === 'string') {
+      const [ownedCharacter] = await db.select({ id: characters.id }).from(characters).where(and(
+        eq(characters.id, command.characterId),
+        eq(characters.playerId, identity.playerId),
+        eq(characters.worldInstanceId, selected.worldInstanceId),
+      )).limit(1);
+      if (!ownedCharacter) return res.status(404).json({ message: 'That character does not belong to this world.' });
+    }
+
+    if (!characterCommand) {
+      const current = await activeSession(identity, selected.worldInstanceId);
       if (!current) return res.status(409).json({ message: 'Enter the world with a character before taking world actions.' });
       if (typeof command?.characterId === 'string' && command.characterId !== current.characterId) {
         return res.status(403).json({ message: 'This world session is bound to a different character.' });
@@ -692,7 +718,7 @@ app.post('/api/commands', createRateLimiter({ windowMs: 60_000, maxRequests: 120
         combatPayload?.action === 'attack' &&
         typeof combatPayload.targetNpcId === 'string'
       ) {
-        const partyInfo = await engine.query({
+        const partyInfo = await selected.engine.query({
           type: 'party.info',
           version: 1,
           queryId: `combat-party-guard:${res.locals.requestId}`,
@@ -710,7 +736,7 @@ app.post('/api/commands', createRateLimiter({ windowMs: 60_000, maxRequests: 120
           return res.status(409).json({ message: 'Use the cooperative encounter controls to begin combat with your party.' });
         }
       }
-      const teamCombatInfo = await engine.query({
+      const teamCombatInfo = await selected.engine.query({
         type: 'team.combat.info',
         version: 1,
         queryId: `guard:${res.locals.requestId}`,
@@ -762,7 +788,7 @@ app.post('/api/commands', createRateLimiter({ windowMs: 60_000, maxRequests: 120
       context = worldContext(identity, current);
     }
 
-    const result = await engine.dispatch(req.body, context, res.locals.requestId);
+    const result = await selected.engine.dispatch(req.body, context, res.locals.requestId);
     if (result.receipt.ok) await runPendingEffectBatch();
     if (!result.receipt.ok && result.receipt.code === 'INTERNAL_ERROR') {
       return res.status(500).json({
@@ -813,7 +839,8 @@ app.post('/api/queries', async (req, res, next) => {
     else if (teamCombatInfoQuery.success) query = teamCombatInfoQuery.data;
     else if (locationGroupsQuery.success) query = locationGroupsQuery.data;
     else return res.status(400).json({ message: 'Invalid world query.' });
-    const current = await activeSession(identity);
+    const selected = selectedRuntime(res);
+    const current = await activeSession(identity, selected.worldInstanceId);
     if (!current) return res.status(409).json({ message: 'Enter the world with a character before making a query.' });
     if (query.characterId !== current.characterId) {
       return res.status(403).json({ message: 'This world session is bound to a different character.' });
@@ -825,12 +852,12 @@ app.post('/api/queries', async (req, res, next) => {
     if (character.combat?.status === 'defeat' || character.health?.current === 0) {
       return res.status(409).json({ message: 'Your character has died. Start a new character to begin again.' });
     }
-    const result = await engine.query(query, worldContext(identity, current), {
+    const result = await selected.engine.query(query, worldContext(identity, current), {
       characterProjection: character,
       correlationId: res.locals.requestId,
     });
     if (result.ok && query.type === 'location.describe') {
-      const locationGroupCatalog = await locationGroupsFeature.catalog.read();
+      const locationGroupCatalog = await selected.locationGroupsFeature.catalog.read();
       const value = await locationWithRoomPresence(
         result.value,
         current.worldInstanceId,

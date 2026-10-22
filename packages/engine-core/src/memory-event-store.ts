@@ -115,12 +115,16 @@ export class InMemoryEventStore implements EventStorePort {
     return outcome;
   }
 
-  async claimNextEffect(leaseMs: number): Promise<StoredEventEffect | undefined> {
+  async claimNextEffect(leaseMs: number, worldInstanceId?: string): Promise<StoredEventEffect | undefined> {
     const now = Date.now();
     for (const record of this.effects.values()) {
       const isAvailable = record.status === 'pending' ||
         (record.status === 'processing' && (record.leaseExpiresAt ?? 0) <= now);
-      if (!isAvailable || record.availableAt > now) continue;
+      if (
+        !isAvailable ||
+        record.availableAt > now ||
+        (worldInstanceId !== undefined && record.effect.worldInstanceId !== worldInstanceId)
+      ) continue;
       const leaseToken = globalThis.crypto.randomUUID();
       const effect = {
         ...record.effect,

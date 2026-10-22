@@ -12,11 +12,16 @@ import { shadcn } from '@clerk/themes';
 import { Redirect, Route, Router as WouterRouter, Switch, useLocation } from 'wouter';
 import { Moon, Sun, UserRoundPlus, LogIn, Archive, Pencil, X, Check, RotateCcw } from 'lucide-react';
 import { Button, TextInput } from '@mudd/ui';
-import { MuddHttpClient, type CharacterRosterSnapshot } from '@mudd/client-sdk';
+import { MuddHttpClient, type CharacterRosterSnapshot, type WorldSummary } from '@mudd/client-sdk';
 import { WorldClient } from './App.js';
 import './account.css';
 
 const client = new MuddHttpClient({ worldInstanceId: 'mudd-demo-instance' });
+const selectedWorldStorageKey = 'mudd-world-instance-id';
+function selectWorld(worldInstanceId: string) {
+  window.localStorage.setItem(selectedWorldStorageKey, worldInstanceId);
+  client.setWorldInstanceId(worldInstanceId);
+}
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 const clerkPubKey = publishableKeyFromHost(
   window.location.hostname,
@@ -114,13 +119,6 @@ export function GuestPlayButton() {
   const [, setLocation] = useLocation();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
-  const [needsName, setNeedsName] = useState(false);
-  const [characterName, setCharacterName] = useState('');
-
-  const enterWorld = () => {
-    window.location.hash = '#/play';
-    setLocation('/guest-world');
-  };
 
   const beginGuestJourney = async () => {
     if (pending) return;
@@ -128,29 +126,7 @@ export function GuestPlayButton() {
     setError('');
     try {
       await client.createGuestSession();
-      let roster = await client.getCharacters();
-      const activeCharacter = roster.characters.find(
-        (character) => character.characterId === roster.activeWorldSession?.characterId,
-      );
-      if (activeCharacter && activeCharacter.combat?.status !== 'defeat' && activeCharacter.health?.current !== 0) {
-        enterWorld();
-        return;
-      }
-      if (roster.activeWorldSession) {
-        await client.leaveWorld();
-        roster = await client.getCharacters();
-      }
-
-      const character = roster.characters.find((candidate) =>
-        !candidate.archived && candidate.combat?.status !== 'defeat' && candidate.health?.current !== 0,
-      );
-      if (!character) {
-        setNeedsName(true);
-        return;
-      }
-
-      await client.joinWorld(character.characterId);
-      enterWorld();
+      setLocation('/guest-world');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not start a guest journey.');
     } finally {
@@ -158,47 +134,11 @@ export function GuestPlayButton() {
     }
   };
 
-  const createNamedCharacter = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const trimmedName = characterName.trim();
-    if (!trimmedName || pending) return;
-    setPending(true);
-    setError('');
-    try {
-      const created = await client.createCharacter(trimmedName);
-      if (!created.streamId) throw new Error('The guest character was created without an ID.');
-      await client.joinWorld(created.streamId);
-      enterWorld();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not create the guest character.');
-    } finally {
-      setPending(false);
-    }
-  };
-
   return (
     <div className="guest-play">
-      {needsName ? (
-        <form className="guest-play__form" onSubmit={(event) => void createNamedCharacter(event)}>
-          <TextInput
-            id="guest-character-name"
-            label="Character name"
-            placeholder="Choose a name"
-            maxLength={48}
-            value={characterName}
-            onChange={(event) => setCharacterName(event.target.value)}
-            autoComplete="off"
-            required
-          />
-          <Button type="submit" variant="secondary" disabled={!characterName.trim() || pending}>
-            {pending ? 'Entering…' : 'Enter world'}
-          </Button>
-        </form>
-      ) : (
-        <Button type="button" variant="secondary" onClick={() => void beginGuestJourney()} disabled={pending}>
-          {pending ? 'Starting…' : 'Play as guest'}
-        </Button>
-      )}
+      <Button type="button" variant="secondary" onClick={() => void beginGuestJourney()} disabled={pending}>
+        {pending ? 'Starting…' : 'Play as guest'}
+      </Button>
       <p>Your guest journey is saved in this browser. Create an account later to keep it across devices.</p>
       {error && <p className="account-message account-message--error" role="alert">{error}</p>}
     </div>
@@ -539,19 +479,208 @@ function WorldPage() {
   };
   return (
     <ProtectedPage>
-      <WorldClient onLeaveWorld={leaveWorld} />
+      <WorldClient
+        worldInstanceId={window.localStorage.getItem(selectedWorldStorageKey) ?? 'mudd-demo-instance'}
+        onLeaveWorld={leaveWorld}
+      />
     </ProtectedPage>
   );
 }
 
 function GuestWorldPage() {
+  const [worlds, setWorlds] = useState<WorldSummary[]>([]);
+  const [roster, setRoster] = useState<CharacterRosterSnapshot | null>(null);
+  const [selectedWorldId, setSelectedWorldId] = useState(
+    () => window.localStorage.getItem(selectedWorldStorageKey) ?? 'mudd-demo-instance',
+  );
+  const [name, setName] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [pending, setPending] = useState(false);
+  const [inWorld, setInWorld] = useState(false);
+  const [error, setError] = useState('');
   const [, setLocation] = useLocation();
-  const leaveWorld = async () => {
-    await client.leaveWorld();
-    window.location.hash = '';
-    setLocation('/');
+
+  const refresh = useCallback(async () => {
+    const [availableWorlds, playerRoster] = await Promise.all([client.getWorlds(), client.getCharacters()]);
+    setWorlds(availableWorlds);
+    setRoster(playerRoster);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const initialize = async () => {
+      try {
+        await client.createGuestSession();
+        const [availableWorlds, playerRoster] = await Promise.all([client.getWorlds(), client.getCharacters()]);
+        if (cancelled) return;
+        setWorlds(availableWorlds);
+        setRoster(playerRoster);
+        if (!availableWorlds.some((world) => world.worldInstanceId === selectedWorldId)) {
+          const firstWorld = availableWorlds[0];
+          if (firstWorld) {
+            setSelectedWorldId(firstWorld.worldInstanceId);
+            selectWorld(firstWorld.worldInstanceId);
+          }
+        } else {
+          selectWorld(selectedWorldId);
+          const currentCharacter = playerRoster.characters.find((character) =>
+            character.characterId === playerRoster.activeWorldSessions?.find(
+              (session) => session.worldInstanceId === selectedWorldId,
+            )?.characterId,
+          );
+          if (currentCharacter && currentCharacter.combat?.status !== 'defeat' && currentCharacter.health?.current !== 0) {
+            setInWorld(true);
+          }
+        }
+      } catch (cause) {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : 'Could not load available worlds.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void initialize();
+    return () => { cancelled = true; };
+  }, [selectedWorldId]);
+
+  const selectedWorld = worlds.find((world) => world.worldInstanceId === selectedWorldId);
+  const worldCharacters = roster?.characters.filter((character) =>
+    character.worldInstanceId === selectedWorldId && !character.archived,
+  ) ?? [];
+  const worldSession = roster?.activeWorldSessions?.find((session) =>
+    session.worldInstanceId === selectedWorldId,
+  );
+  const sessionCharacter = worldCharacters.find((character) =>
+    character.characterId === worldSession?.characterId,
+  );
+
+  const chooseWorld = (worldInstanceId: string) => {
+    setSelectedWorldId(worldInstanceId);
+    selectWorld(worldInstanceId);
+    setError('');
   };
-  return <WorldClient onLeaveWorld={leaveWorld} />;
+
+  const join = async (characterId: string) => {
+    if (pending) return;
+    setPending(true);
+    setError('');
+    selectWorld(selectedWorldId);
+    try {
+      await client.joinWorld(characterId, selectedWorldId);
+      setInWorld(true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not enter this world.');
+      await refresh().catch(() => undefined);
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const createCharacter = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmedName = name.trim();
+    if (!trimmedName || pending) return;
+    setPending(true);
+    setError('');
+    selectWorld(selectedWorldId);
+    try {
+      const created = await client.createCharacter(trimmedName);
+      if (!created.streamId) throw new Error('The new character was created without an ID.');
+      await client.joinWorld(created.streamId, selectedWorldId);
+      setName('');
+      setInWorld(true);
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not create this character.');
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const leave = async () => {
+    setPending(true);
+    try {
+      await client.leaveWorld();
+      setInWorld(false);
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not leave this world.');
+    } finally {
+      setPending(false);
+    }
+  };
+
+  if (inWorld) {
+    return (
+      <WorldClient
+        worldInstanceId={selectedWorldId}
+        onLeaveWorld={leave}
+      />
+    );
+  }
+
+  return (
+    <main className="focused-client account-client" data-theme="dark">
+      <header className="focused-topbar account-topbar">
+        <a className="focused-brand" href="/"><span className="focused-brand-mark" aria-hidden="true" /> MUDD</a>
+        <Button type="button" variant="quiet" onClick={() => setLocation('/')}>Back</Button>
+      </header>
+      <section className="account-content account-world-picker">
+        <div className="account-content__heading">
+          <div><div className="focused-kicker">GUEST JOURNEY</div><h1 className="focused-screen-title">Choose a world</h1></div>
+        </div>
+        {error && <p className="account-message account-message--error" role="alert">{error}</p>}
+        {loading ? <p>Loading worlds…</p> : (
+          <>
+            <div className="account-world-list" aria-label="Available worlds">
+              {worlds.map((world) => (
+                <button
+                  className="account-world-option"
+                  type="button"
+                  key={world.worldInstanceId}
+                  aria-pressed={selectedWorldId === world.worldInstanceId}
+                  onClick={() => chooseWorld(world.worldInstanceId)}
+                >
+                  <span className="account-world-option__title">{world.name}</span>
+                  <span className="account-world-option__summary">{world.summary}</span>
+                </button>
+              ))}
+            </div>
+            {selectedWorld && (
+              <section className="account-create">
+                <div><div className="focused-kicker">{selectedWorld.name}</div><h2>Your characters</h2></div>
+                {worldSession && sessionCharacter && (
+                  <div className="account-active-session">
+                    <p><strong>{sessionCharacter.name}</strong> is already in this world.</p>
+                    <div className="account-active-session__actions">
+                      <Button type="button" variant="secondary" onClick={() => void join(sessionCharacter.characterId)} disabled={pending}>Return to world</Button>
+                      <Button type="button" variant="quiet" onClick={() => void leave()} disabled={pending}>Leave world</Button>
+                    </div>
+                  </div>
+                )}
+                {worldCharacters.filter((character) => character.characterId !== worldSession?.characterId).map((character) => (
+                  <article className="account-character-card" key={character.characterId}>
+                    <div><h2>{character.name}</h2><p>{character.locationTitle}</p></div>
+                    <Button
+                      type="button"
+                      onClick={() => void join(character.characterId)}
+                      disabled={pending || Boolean(worldSession) || character.combat?.status === 'defeat' || character.health?.current === 0}
+                    >
+                      {worldSession ? 'Leave current character to switch' : 'Enter world'}
+                    </Button>
+                  </article>
+                ))}
+                <form className="account-create__form" onSubmit={(event) => void createCharacter(event)}>
+                  <TextInput id="guest-new-character-name" label="New character name" placeholder="Choose a name" maxLength={48} value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" />
+                  <Button type="submit" disabled={!name.trim() || pending || Boolean(worldSession)}>{pending ? 'Saving…' : 'Create and enter'}</Button>
+                </form>
+                {worldSession && <p className="account-world-note">Leave this world before entering with a different character. Characters in other worlds are unaffected.</p>}
+              </section>
+            )}
+          </>
+        )}
+      </section>
+    </main>
+  );
 }
 
 function ClerkAppRoutes() {

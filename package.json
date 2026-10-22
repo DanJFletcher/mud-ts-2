@@ -10,8 +10,8 @@
   ],
   "scripts": {
     "dev": "npm run build && concurrently -k -n server,web \"npm run dev --workspace @mudd/server\" \"npm run dev --workspace @mudd/web\"",
-    "build": "npm run build --workspace @mudd/contracts && npm run build --workspace @mudd/world-demo && npm run build --workspace @mudd/engine-core && npm run build --workspace @mudd/core-plugins && npm run build --workspace @mudd/client-sdk && npm run build --workspace @mudd/ui && npm run build --workspace @mudd/server && npm run build --workspace @mudd/web",
-    "typecheck": "npm run typecheck --workspace @mudd/contracts && npm run typecheck --workspace @mudd/world-demo && npm run typecheck --workspace @mudd/engine-core && npm run typecheck --workspace @mudd/core-plugins && npm run typecheck --workspace @mudd/client-sdk && npm run typecheck --workspace @mudd/ui && npm run typecheck --workspace @mudd/server && npm run typecheck --workspace @mudd/web",
+    "build": "npm run build --workspace @mudd/contracts && npm run build --workspace @mudd/world-demo && npm run build --workspace @mudd/world-orraveth && npm run build --workspace @mudd/engine-core && npm run build --workspace @mudd/core-plugins && npm run build --workspace @mudd/client-sdk && npm run build --workspace @mudd/ui && npm run build --workspace @mudd/server && npm run build --workspace @mudd/web",
+    "typecheck": "npm run typecheck --workspace @mudd/contracts && npm run typecheck --workspace @mudd/world-demo && npm run typecheck --workspace @mudd/world-orraveth && npm run typecheck --workspace @mudd/engine-core && npm run typecheck --workspace @mudd/core-plugins && npm run typecheck --workspace @mudd/client-sdk && npm run typecheck --workspace @mudd/ui && npm run typecheck --workspace @mudd/server && npm run typecheck --workspace @mudd/web",
     "lint": "eslint apps packages engine-contracts eslint.config.mjs",
     "test": "npm run build --workspace @mudd/contracts && npm run build --workspace @mudd/world-demo && npm run build --workspace @mudd/engine-core && npm run build --workspace @mudd/core-plugins && npm run build --workspace @mudd/client-sdk && npm run test --workspace @mudd/contracts && npm run test --workspace @mudd/engine-core && npm run test --workspace @mudd/core-plugins && npm run test --workspace @mudd/client-sdk && npm run test --workspace @mudd/ui && npm run test --workspace @mudd/server && npm run test --workspace @mudd/web",
     "db:generate": "npm run db:generate --workspace @mudd/server",
@@ -25,6 +25,7 @@
     "@clerk/shared": "^4.40.0",
     "@clerk/themes": "^2.4.57",
     "@eslint/js": "^10.0.1",
+    "@mudd/world-orraveth": "^0.1.0",
     "@storybook/addon-a11y": "^10.6.2",
     "@storybook/react-vite": "^10.6.2",
     "@tailwindcss/vite": "^4.3.3",

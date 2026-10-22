@@ -17,6 +17,7 @@
     "@mudd/core-plugins": "0.1.0",
     "@mudd/engine-core": "0.1.0",
     "@mudd/world-demo": "0.1.0",
+    "@mudd/world-orraveth": "0.1.0",
     "drizzle-orm": "^0.44.0",
     "express": "^5.1.0",
     "pg": "^8.16.0",

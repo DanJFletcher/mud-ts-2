@@ -63,7 +63,7 @@ export interface EventStorePort {
     payloadHash: string,
   ): Promise<AppendOutcome | undefined>;
   append(request: AppendRequest): Promise<AppendOutcome>;
-  claimNextEffect(leaseMs: number): Promise<StoredEventEffect | undefined>;
+  claimNextEffect(leaseMs: number, worldInstanceId?: string): Promise<StoredEventEffect | undefined>;
   completeEffect(effectId: string, leaseToken: string): Promise<boolean>;
   retryEffect(effectId: string, leaseToken: string, delayMs: number, errorMessage: string): Promise<boolean>;
   deadLetterEffect(effectId: string, leaseToken: string, errorMessage: string): Promise<boolean>;

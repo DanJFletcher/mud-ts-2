@@ -227,11 +227,12 @@ export class PostgresEventStore implements EventStorePort {
     });
   }
 
-  async claimNextEffect(leaseMs: number): Promise<StoredEventEffect | undefined> {
+  async claimNextEffect(leaseMs: number, worldInstanceId?: string): Promise<StoredEventEffect | undefined> {
     if (!Number.isInteger(leaseMs) || leaseMs < 1) throw new RangeError('Effect lease must be a positive integer.');
     return db.transaction(async (tx) => {
       const now = new Date();
       const [pending] = await tx.select().from(durableEffects).where(and(
+        ...(worldInstanceId ? [eq(durableEffects.worldInstanceId, worldInstanceId)] : []),
         lte(durableEffects.availableAt, now),
         or(
           eq(durableEffects.status, 'pending'),

@@ -80,10 +80,25 @@ export type GameSnapshot = z.infer<typeof GameSnapshotSchema>;
 
 export const CharacterRosterSnapshotSchema = z.object({
   player: z.object({ id: IdSchema, displayName: z.string() }),
-  characters: z.array(CharacterProjectionSchema.extend({ locationTitle: z.string() })),
+  characters: z.array(CharacterProjectionSchema.extend({
+    locationTitle: z.string(),
+    worldName: z.string().optional(),
+  })),
   activeWorldSession: z.object({ id: IdSchema, characterId: IdSchema }).nullable(),
+  activeWorldSessions: z.array(z.object({
+    worldInstanceId: z.string(),
+    id: IdSchema,
+    characterId: IdSchema,
+  })).optional(),
 });
 export type CharacterRosterSnapshot = z.infer<typeof CharacterRosterSnapshotSchema>;
+export const WorldListSchema = z.array(z.object({
+  worldInstanceId: z.string().min(1),
+  packId: z.string().min(1),
+  name: z.string().min(1),
+  summary: z.string().min(1),
+}));
+export type WorldSummary = z.infer<typeof WorldListSchema>[number];
 const GuestSessionResponseSchema = z.object({
   player: z.object({ id: IdSchema, displayName: z.string() }),
 });
@@ -115,6 +130,15 @@ export class MuddHttpClient {
     this.fetcher = options.fetcher ?? fetch.bind(globalThis);
   }
 
+  setWorldInstanceId(worldInstanceId: string): void {
+    if (!worldInstanceId.trim()) throw new Error('Choose a valid world.');
+    this.options.worldInstanceId = worldInstanceId;
+  }
+
+  async getWorlds(): Promise<WorldSummary[]> {
+    return this.request('/api/worlds', {}, WorldListSchema);
+  }
+
   async getGame(): Promise<GameSnapshot> {
     return this.request('/api/game', {}, GameSnapshotSchema);
   }
@@ -135,10 +159,14 @@ export class MuddHttpClient {
     }, GuestSessionResponseSchema);
   }
 
-  async joinWorld(characterId: string): Promise<{ sessionId: string; characterId: string }> {
+  async joinWorld(
+    characterId: string,
+    worldInstanceId = this.options.worldInstanceId,
+  ): Promise<{ sessionId: string; characterId: string }> {
+    this.setWorldInstanceId(worldInstanceId);
     return this.request('/api/world-session', {
       method: 'POST',
-      body: JSON.stringify({ characterId }),
+      body: JSON.stringify({ characterId, worldInstanceId }),
     }, WorldSessionResponseSchema);
   }
 
@@ -146,7 +174,10 @@ export class MuddHttpClient {
     const response = await this.fetcher('/api/world-session', {
       method: 'DELETE',
       credentials: 'same-origin',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        'x-mudd-world-instance': this.options.worldInstanceId,
+      },
     });
     if (!response.ok) {
       const body: unknown = await response.json().catch(() => undefined);
@@ -739,6 +770,7 @@ export class MuddHttpClient {
       credentials: 'same-origin',
       headers: {
         'content-type': 'application/json',
+        'x-mudd-world-instance': this.options.worldInstanceId,
         ...init.headers,
       },
     });

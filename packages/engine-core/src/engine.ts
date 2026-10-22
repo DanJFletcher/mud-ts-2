@@ -266,7 +266,7 @@ export class EngineHost {
     this.started = false;
   }
 
-  async processPendingEffects(limit = 25): Promise<number> {
+  async processPendingEffects(limit = 25, worldInstanceId?: string): Promise<number> {
     if (!this.started) return 0;
     if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
       throw new RangeError('Effect processing limit must be an integer from 1 to 500.');
@@ -274,7 +274,7 @@ export class EngineHost {
 
     let processed = 0;
     while (processed < limit) {
-      const effect = await this.store.claimNextEffect(EFFECT_LEASE_MS);
+      const effect = await this.store.claimNextEffect(EFFECT_LEASE_MS, worldInstanceId);
       if (!effect) break;
       processed += 1;
       const definition = this.effects.get(effect.type);
