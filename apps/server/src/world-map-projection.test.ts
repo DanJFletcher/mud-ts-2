@@ -93,6 +93,43 @@ describe('visited world map projection', () => {
     });
   });
 
+  it('shows the full Bellwold river and bridge on the map before they are visited', () => {
+    const riverLocationIds = [
+      'bellwold-river-far-west-reach',
+      'bellwold-river-willow-reach',
+      'bellwold-river-west-reach',
+      'bellwold-river-east-reach',
+      'bellwold-river-alder-reach',
+      'bellwold-river-far-east-reach',
+    ];
+    const map = projectWorldMap(CharacterProjectionSchema.parse({
+      worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+      characterId: 'orraveth-south-river-map-character',
+      name: 'South Road Traveler',
+      locationId: 'bellwold-market-square',
+      visitedLocationIds: ['bellwold-market-square'],
+      revision: 1,
+    }), orravethWorld);
+
+    expect(map.locations.filter(({ id }) => riverLocationIds.includes(id))).toHaveLength(6);
+    expect(map.locations.filter(({ terrain }) => terrain === 'river')).toHaveLength(6);
+    expect(map.locations.find(({ id }) => id === 'bellwold-river-bridge'))
+      .toMatchObject({ x: 0, y: -7, terrain: 'land' });
+    expect(map.connections.some((connection) =>
+      new Set([connection.fromLocationId, connection.toLocationId]).has('bellwold-river-bridge') &&
+      new Set([connection.fromLocationId, connection.toLocationId]).has('bellwold-river-west-reach') &&
+      connection.oneWay === false,
+    )).toBe(true);
+    expect(map.connections.some((connection) =>
+      new Set([connection.fromLocationId, connection.toLocationId]).has('bellwold-river-bridge') &&
+      new Set([connection.fromLocationId, connection.toLocationId]).has('bellwold-river-east-reach') &&
+      connection.oneWay === false,
+    )).toBe(true);
+    expect(map.locations.some(({ id }) => riverLocationIds.includes(id) &&
+      orravethWorld.locations.find(({ id: worldLocationId }) => worldLocationId === id)?.mapPosition?.visibleWhenUnvisited !== true,
+    )).toBe(false);
+  });
+
   it('keeps on and under states on one map node and the same Z level', () => {
     const character = {
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
@@ -389,5 +426,92 @@ describe('visited world map projection', () => {
       fromLocationId: 'reedbank-stalls',
       toLocationId: 'willowrest-inn',
     });
+  });
+});
+
+describe('Orraveth south road travel', () => {
+  it('allows room-by-room road travel from Bellwold to the temporary end without starting combat', async () => {
+    const store = new InMemoryEventStore();
+    const testWorld = structuredClone(orravethWorld);
+    const session = {
+      sessionId: 'orraveth-south-road-session',
+      playerId: 'orraveth-south-road-player',
+      actorId: 'orraveth-south-road-player',
+      worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+      grantedPermissions: [],
+      authenticated: true,
+    } as const;
+    const engine = new EngineHost(
+      [
+        worldItemsPlugin,
+        characterPlugin,
+        groupsPlugin,
+        partyPlugin,
+        partyQuestPlugin,
+        interactionPlugin,
+        combatPlugin,
+        testCombatPresencePlugin,
+        partyCombatPolicyPlugin,
+        teamCombatPlugin,
+        movementPlugin,
+        roadTravelPlugin,
+        merchantPlugin,
+      ],
+      store,
+      { canAccessInstance: async () => true, ownsCharacter: async () => true },
+      testWorld,
+    );
+    const ready = engine.start();
+    const fetcher: typeof fetch = async (input, init = {}) => {
+      await ready;
+      const body = JSON.parse(String(init.body ?? '{}')) as unknown;
+      const path = String(input);
+      return Response.json(path.endsWith('/commands')
+        ? await engine.dispatch(body, session)
+        : await engine.query(body, session));
+    };
+    const client = new MuddHttpClient({ worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID, fetcher });
+
+    try {
+      const created = await client.createCharacter('Southbound Traveler', 'orraveth-south-road-create');
+      const characterId = created.streamId!;
+      const loadCharacter = async () => {
+        const character = replayCharacter(await store.readStream(ORRAVETH_WORLD_INSTANCE_ID, characterId));
+        if (!character) throw new Error('The south road test character is missing.');
+        return character;
+      };
+      const move = async (exitId: string, commandId: string) => {
+        const character = await loadCharacter();
+        const result = await client.move(characterId, exitId, character.revision, commandId);
+        if (!result.receipt.ok) throw new Error(result.receipt.message);
+        return loadCharacter();
+      };
+
+      await move('square-to-south-common', 'orraveth-road-to-south-common');
+      await move('south-common-to-well-court', 'orraveth-road-to-well-court');
+      await move('well-court-to-common-house', 'orraveth-road-to-common-house');
+      let character = await loadCharacter();
+      const road = testWorld.roads.find(({ id }) => id === 'bellwold-south-road')!;
+      for (const [index, nextLocationId] of road.locationIds.slice(1).entries()) {
+        const currentLocation = testWorld.locations.find(({ id }) => id === character.locationId)!;
+        const exit = currentLocation.exits.find(({ toLocationId, roadId }) =>
+          toLocationId === nextLocationId && roadId === road.id,
+        );
+        if (!exit) throw new Error(`Missing south road exit from ${currentLocation.id} to ${nextLocationId}.`);
+        const result = await client.roadStep(
+          characterId,
+          exit.id,
+          character.revision,
+          `orraveth-south-road-step-${index + 1}`,
+        );
+        if (!result.receipt.ok) throw new Error(result.receipt.message);
+        character = await loadCharacter();
+        expect(character.locationId).toBe(nextLocationId);
+        expect(character.combatEncounter).toBeUndefined();
+      }
+      expect(character.locationId).toBe('bellwold-unfinished-road-end');
+    } finally {
+      await engine.stop();
+    }
   });
 });

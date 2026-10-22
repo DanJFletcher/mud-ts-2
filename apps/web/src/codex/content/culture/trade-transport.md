@@ -20,3 +20,5 @@ The [[merefall-league|Merefall League]] depends on commercial networks, while th
 The form of travel differs by region. In Heskar, rigid borders and strong property law make land claims consequential; the [[merefall-league|Merefall League]] organizes much commercial life around guild-influenced city-states. In the [[rillward-freeholds|Rillward Freeholds]], river access is negotiated through councils and reciprocal rights. Those differences affect what a traveler must learn before setting out; they do not provide a single continent-wide rule.
 
 No complete route map or universal schedule is established. Distance, tolls, and access should remain local facts, not be invented from a generic map of the continent. [[bellwold|Bellwold]] sits near Heskar's frontier, but neither the village's precise jurisdiction nor every route beyond it is established.
+
+A provisional south road leaves Bellwold, crosses an unnamed river by a stone bridge, and ends beyond the far bank where the roadwork stops. No settlement has been established at its end, and the route gives no basis for assuming a destination or travel time.

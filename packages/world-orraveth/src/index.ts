@@ -9,7 +9,7 @@ export const ORRAVETH_WORLD_INSTANCE_ID = 'orraveth-bellwold-instance';
 const draft = {
   formatVersion: 1,
   packId: 'orraveth.bellwold',
-  packVersion: '1.4.1',
+  packVersion: '1.5.0',
   displayName: 'Orraveth: Bellwold',
   currency: {
     id: 'gold',
@@ -337,11 +337,12 @@ const draft = {
     {
       id: 'bellwold-common-house',
       name: 'Bellwold Common House',
-      description: 'The Common House is a plain timber building with a long table, benches, and a wall of notices copied from the market board. Neighbors use it for meetings and shared work rather than ceremony.\n\nWell Court is north; Tallow End Cottage is west.',
+      description: 'The Common House is a plain timber building with a long table, benches, and a wall of notices copied from the market board. Neighbors use it for meetings and shared work rather than ceremony.\n\nWell Court is north, Tallow End Cottage is west, and the south road leaves town beyond the last yards.',
       mapPosition: { x: 0, y: -3, terrain: 'building' },
       exits: [
         { id: 'common-house-to-well-court', fromLocationId: 'bellwold-common-house', toLocationId: 'bellwold-well-court', label: 'north', direction: 'north' },
         { id: 'common-house-to-tallow-cottage', fromLocationId: 'bellwold-common-house', toLocationId: 'tallow-end-cottage', label: 'west', direction: 'west' },
+        { id: 'common-house-to-south-gate', fromLocationId: 'bellwold-common-house', toLocationId: 'bellwold-south-gate', label: 'south', direction: 'south', roadId: 'bellwold-south-road' },
       ],
       npcs: [
         {
@@ -357,6 +358,144 @@ const draft = {
           ],
           unknownTopicResponse: '“Ask about the public notices or the records kept here.”',
         },
+      ],
+    },
+    {
+      id: 'bellwold-south-gate',
+      name: 'Bellwold South Gate',
+      description: 'The last cluster of village yards gives way to a low gate and a packed-earth road. The Common House is north; the southbound track continues south.',
+      mapPosition: { x: 0, y: -4, terrain: 'land' },
+      exits: [
+        { id: 'south-gate-to-common-house', fromLocationId: 'bellwold-south-gate', toLocationId: 'bellwold-common-house', label: 'north', direction: 'north', roadId: 'bellwold-south-road' },
+        { id: 'south-gate-to-track', fromLocationId: 'bellwold-south-gate', toLocationId: 'bellwold-southbound-track', label: 'south', direction: 'south', roadId: 'bellwold-south-road' },
+      ],
+    },
+    {
+      id: 'bellwold-southbound-track',
+      name: 'Southbound Track',
+      description: 'The packed road runs between open fields and low fence lines, with Bellwold’s roofs receding behind you. The South Gate is north; the reedbed approach lies south.',
+      mapPosition: { x: 0, y: -5, terrain: 'land' },
+      exits: [
+        { id: 'southbound-track-to-gate', fromLocationId: 'bellwold-southbound-track', toLocationId: 'bellwold-south-gate', label: 'north', direction: 'north', roadId: 'bellwold-south-road' },
+        { id: 'southbound-track-to-reedbed', fromLocationId: 'bellwold-southbound-track', toLocationId: 'bellwold-reedbed-approach', label: 'south', direction: 'south', roadId: 'bellwold-south-road' },
+      ],
+    },
+    {
+      id: 'bellwold-reedbed-approach',
+      name: 'Reedbed Approach',
+      description: 'The road dips through damp grass toward a low stone bridge. Reeds line the riverbanks beyond the approach. The Southbound Track is north; Bellwold River Bridge is south.',
+      mapPosition: { x: 0, y: -6, terrain: 'land' },
+      exits: [
+        { id: 'reedbed-approach-to-track', fromLocationId: 'bellwold-reedbed-approach', toLocationId: 'bellwold-southbound-track', label: 'north', direction: 'north', roadId: 'bellwold-south-road' },
+        { id: 'reedbed-approach-to-bridge', fromLocationId: 'bellwold-reedbed-approach', toLocationId: 'bellwold-river-bridge', label: 'south', direction: 'south', roadId: 'bellwold-south-road' },
+      ],
+    },
+    {
+      id: 'bellwold-river-bridge',
+      name: 'Bellwold River Bridge',
+      description: 'A low stone bridge carries the south road over a broad river. The current runs east and west beneath its arches. Reedbed Approach is north; Far Bank Track is south.',
+      mapPosition: { x: 0, y: -7, terrain: 'land', visibleWhenUnvisited: true },
+      defaultStateId: 'on',
+      states: [
+        { id: 'on' },
+        {
+          id: 'under',
+          name: 'Under Bellwold River Bridge',
+          description: 'The river moves beneath the stone arches. The road bridge rumbles overhead as the current passes east and west.',
+        },
+      ],
+      exits: [
+        { id: 'river-bridge-to-reedbed', fromLocationId: 'bellwold-river-bridge', toLocationId: 'bellwold-reedbed-approach', label: 'north', direction: 'north', fromStateId: 'on', roadId: 'bellwold-south-road' },
+        { id: 'river-bridge-to-far-bank', fromLocationId: 'bellwold-river-bridge', toLocationId: 'bellwold-far-bank-track', label: 'south', direction: 'south', fromStateId: 'on', roadId: 'bellwold-south-road' },
+        { id: 'bridge-under-to-west-reach', fromLocationId: 'bellwold-river-bridge', toLocationId: 'bellwold-river-west-reach', label: 'west', direction: 'west', fromStateId: 'under' },
+        { id: 'bridge-under-to-east-reach', fromLocationId: 'bellwold-river-bridge', toLocationId: 'bellwold-river-east-reach', label: 'east', direction: 'east', fromStateId: 'under' },
+      ],
+    },
+    {
+      id: 'bellwold-river-west-reach',
+      name: 'River West Reach',
+      description: 'The current passes the bridge piers and slides west beneath the reeds. The bridge lies east; Willow Reach is west.',
+      mapPosition: { x: -1, y: -7, terrain: 'river', visibleWhenUnvisited: true },
+      exits: [
+        { id: 'west-reach-to-bridge-under', fromLocationId: 'bellwold-river-west-reach', toLocationId: 'bellwold-river-bridge', label: 'east beneath Bellwold River Bridge', direction: 'east', toStateId: 'under' },
+        { id: 'west-reach-to-willow-reach', fromLocationId: 'bellwold-river-west-reach', toLocationId: 'bellwold-river-willow-reach', label: 'west along the river', direction: 'west' },
+      ],
+    },
+    {
+      id: 'bellwold-river-willow-reach',
+      name: 'River Willow Reach',
+      description: 'Willow roots trail into the slow water along this stretch. West Reach is east; Far West Reach is west.',
+      mapPosition: { x: -2, y: -7, terrain: 'river', visibleWhenUnvisited: true },
+      exits: [
+        { id: 'willow-reach-to-west-reach', fromLocationId: 'bellwold-river-willow-reach', toLocationId: 'bellwold-river-west-reach', label: 'east along the river', direction: 'east' },
+        { id: 'willow-reach-to-far-west-reach', fromLocationId: 'bellwold-river-willow-reach', toLocationId: 'bellwold-river-far-west-reach', label: 'west along the river', direction: 'west' },
+      ],
+    },
+    {
+      id: 'bellwold-river-far-west-reach',
+      name: 'River Far West Reach',
+      description: 'The river broadens beyond the western reedbeds and bends out of sight. Willow Reach is east.',
+      mapPosition: { x: -3, y: -7, terrain: 'river', visibleWhenUnvisited: true },
+      exits: [
+        { id: 'far-west-reach-to-willow-reach', fromLocationId: 'bellwold-river-far-west-reach', toLocationId: 'bellwold-river-willow-reach', label: 'east along the river', direction: 'east' },
+      ],
+    },
+    {
+      id: 'bellwold-river-east-reach',
+      name: 'River East Reach',
+      description: 'The current emerges from beneath the bridge and runs east through reeds and shallow stones. The bridge lies west; Alder Reach is east.',
+      mapPosition: { x: 1, y: -7, terrain: 'river', visibleWhenUnvisited: true },
+      exits: [
+        { id: 'east-reach-to-bridge-under', fromLocationId: 'bellwold-river-east-reach', toLocationId: 'bellwold-river-bridge', label: 'west beneath Bellwold River Bridge', direction: 'west', toStateId: 'under' },
+        { id: 'east-reach-to-alder-reach', fromLocationId: 'bellwold-river-east-reach', toLocationId: 'bellwold-river-alder-reach', label: 'east along the river', direction: 'east' },
+      ],
+    },
+    {
+      id: 'bellwold-river-alder-reach',
+      name: 'River Alder Reach',
+      description: 'A line of alder trees shadows this stretch of water. East Reach is west; Far East Reach is east.',
+      mapPosition: { x: 2, y: -7, terrain: 'river', visibleWhenUnvisited: true },
+      exits: [
+        { id: 'alder-reach-to-east-reach', fromLocationId: 'bellwold-river-alder-reach', toLocationId: 'bellwold-river-east-reach', label: 'west along the river', direction: 'west' },
+        { id: 'alder-reach-to-far-east-reach', fromLocationId: 'bellwold-river-alder-reach', toLocationId: 'bellwold-river-far-east-reach', label: 'east along the river', direction: 'east' },
+      ],
+    },
+    {
+      id: 'bellwold-river-far-east-reach',
+      name: 'River Far East Reach',
+      description: 'The eastern current continues past the last visible bank and around a long bend. Alder Reach is west.',
+      mapPosition: { x: 3, y: -7, terrain: 'river', visibleWhenUnvisited: true },
+      exits: [
+        { id: 'far-east-reach-to-alder-reach', fromLocationId: 'bellwold-river-far-east-reach', toLocationId: 'bellwold-river-alder-reach', label: 'west along the river', direction: 'west' },
+      ],
+    },
+    {
+      id: 'bellwold-far-bank-track',
+      name: 'Far Bank Track',
+      description: 'The road climbs away from the bridge onto firmer ground. Bellwold River Bridge is north; the old mile marker is south.',
+      mapPosition: { x: 0, y: -8, terrain: 'land' },
+      exits: [
+        { id: 'far-bank-track-to-bridge', fromLocationId: 'bellwold-far-bank-track', toLocationId: 'bellwold-river-bridge', label: 'north', direction: 'north', toStateId: 'on', roadId: 'bellwold-south-road' },
+        { id: 'far-bank-track-to-mile-marker', fromLocationId: 'bellwold-far-bank-track', toLocationId: 'bellwold-south-mile-marker', label: 'south', direction: 'south', roadId: 'bellwold-south-road' },
+      ],
+    },
+    {
+      id: 'bellwold-south-mile-marker',
+      name: 'Old South Mile Marker',
+      description: 'A weathered stone marker stands beside the packed road. Its worn face gives no reliable destination, only a distance from the village. Far Bank Track is north; the unfinished road lies south.',
+      mapPosition: { x: 0, y: -9, terrain: 'land' },
+      exits: [
+        { id: 'mile-marker-to-far-bank', fromLocationId: 'bellwold-south-mile-marker', toLocationId: 'bellwold-far-bank-track', label: 'north', direction: 'north', roadId: 'bellwold-south-road' },
+        { id: 'mile-marker-to-road-end', fromLocationId: 'bellwold-south-mile-marker', toLocationId: 'bellwold-unfinished-road-end', label: 'south', direction: 'south', roadId: 'bellwold-south-road' },
+      ],
+    },
+    {
+      id: 'bellwold-unfinished-road-end',
+      name: 'Unfinished South Road',
+      description: 'The packed road stops at a shallow cut where the ground has been cleared but not graded. No settlement stands beyond this point yet. The only marked route leads north to the old mile marker.',
+      mapPosition: { x: 0, y: -10, terrain: 'land' },
+      exits: [
+        { id: 'unfinished-road-to-mile-marker', fromLocationId: 'bellwold-unfinished-road-end', toLocationId: 'bellwold-south-mile-marker', label: 'north', direction: 'north', roadId: 'bellwold-south-road' },
       ],
     },
     {
@@ -405,6 +544,30 @@ const draft = {
       ],
     },
   ],
+  roads: [
+    {
+      id: 'bellwold-south-road',
+      name: 'Bellwold South Road',
+      locationIds: [
+        'bellwold-common-house',
+        'bellwold-south-gate',
+        'bellwold-southbound-track',
+        'bellwold-reedbed-approach',
+        'bellwold-river-bridge',
+        'bellwold-far-bank-track',
+        'bellwold-south-mile-marker',
+        'bellwold-unfinished-road-end',
+      ],
+      encounterChancePercent: 0,
+      encounters: [
+        {
+          id: 'bellwold-south-road-stray-hound',
+          name: 'Stray Hound',
+          combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' },
+        },
+      ],
+    },
+  ],
   quests: [
     {
       id: 'bellwold-mill-observations',
@@ -433,4 +596,4 @@ if (graphErrors.length > 0) {
 }
 
 export const ORRAVETH_WORLD_SUMMARY =
-  'Explore Bellwold, a growing frontier settlement of workshops, shared spaces, local residents, the silent old bell, and unresolved mysteries.';
+  'Explore Bellwold, a growing frontier settlement of workshops, shared spaces, local residents, the silent old bell, and an unfinished south road to a river bridge.';

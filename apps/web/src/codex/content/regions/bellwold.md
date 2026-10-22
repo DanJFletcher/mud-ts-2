@@ -3,7 +3,7 @@ id: orraveth-bellwold
 slug: bellwold
 worldId: orraveth
 title: Bellwold
-summary: A growing frontier settlement near the Heskar border, with a market, workshops, shared spaces, and residential lanes.
+summary: A growing frontier settlement near the Heskar border, with a market, workshops, residential lanes, and an unfinished south road.
 category: geography
 entityType: region
 tags: [Bellwold, village, frontier, trade]
@@ -26,5 +26,7 @@ Bellwold has no single established founding date or continuous town chronicle in
 The current Bellwold record uses [[currency-and-commerce|gold]] as Orraveth's provisional named currency. Local prices, accounting practices, and any relationship to regional coinage remain unspecified.
 
 Nearby are the [[old-bell-tower|old bell tower]], [[eastern-forest|eastern forest]], and [[abandoned-watermill|abandoned watermill]].
+
+An unfinished road leaves south from the Common House, crosses an unnamed river by a low stone bridge, and continues for several rooms beyond the far bank. It currently ends at a shallow cut in the ground; no settlement is established beyond it. The river's name and the road's eventual destination remain unrecorded.
 
 Bellwold's records are incomplete. The old bell, the disappearance of [[elira-venn|Professor Elira Venn]], and the [[mill-that-never-sleeps|watermill's continued operation]] have made it a place of scholarly attention and local unease.

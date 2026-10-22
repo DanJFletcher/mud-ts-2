@@ -84,9 +84,9 @@ function makeHarness(options: Readonly<{
 }
 
 describe('Orraveth Bellwold settlement', () => {
-  it('has a valid, fully reachable fifteen-location region with map directions matching its exits', () => {
+  it('has a valid, fully reachable twenty-eight-location region with map directions matching its exits', () => {
     expect(validateDraftWorldGraph(orravethWorld)).toEqual([]);
-    expect(orravethWorld.locations).toHaveLength(15);
+    expect(orravethWorld.locations).toHaveLength(28);
 
     const locationIds = new Set(orravethWorld.locations.map(({ id }) => id));
     const reached = new Set<string>(['bellwold-market-square']);
@@ -128,6 +128,58 @@ describe('Orraveth Bellwold settlement', () => {
       }
     }
     expect(reached).toEqual(locationIds);
+  });
+
+  it('defines the south road as a room-by-room route that ends before any new settlement', () => {
+    const road = orravethWorld.roads.find(({ id }) => id === 'bellwold-south-road');
+    expect(road).toMatchObject({
+      name: 'Bellwold South Road',
+      locationIds: [
+        'bellwold-common-house',
+        'bellwold-south-gate',
+        'bellwold-southbound-track',
+        'bellwold-reedbed-approach',
+        'bellwold-river-bridge',
+        'bellwold-far-bank-track',
+        'bellwold-south-mile-marker',
+        'bellwold-unfinished-road-end',
+      ],
+      encounterChancePercent: 0,
+    });
+
+    const routeLocations = road!.locationIds.map((id) =>
+      orravethWorld.locations.find(({ id: locationId }) => locationId === id)!,
+    );
+    for (const [index, current] of routeLocations.slice(0, -1).entries()) {
+      const next = routeLocations[index + 1]!;
+      expect(current.exits).toContainEqual(expect.objectContaining({
+        toLocationId: next.id,
+        roadId: road!.id,
+      }));
+      expect(next.exits).toContainEqual(expect.objectContaining({
+        toLocationId: current.id,
+        roadId: road!.id,
+      }));
+    }
+    expect(routeLocations.at(-1)?.exits).toEqual([
+      expect.objectContaining({
+        toLocationId: 'bellwold-south-mile-marker',
+        direction: 'north',
+      }),
+    ]);
+
+    const riverLocations = orravethWorld.locations.filter(
+      ({ mapPosition }) => mapPosition?.terrain === 'river',
+    );
+    expect(riverLocations).toHaveLength(6);
+    expect(riverLocations.every(({ mapPosition }) => mapPosition?.visibleWhenUnvisited === true)).toBe(true);
+    expect(orravethWorld.locations.find(({ id }) => id === 'bellwold-river-bridge'))
+      .toMatchObject({ defaultStateId: 'on', mapPosition: { x: 0, y: -7, visibleWhenUnvisited: true } });
+    expect(orravethWorld.locations.find(({ id }) => id === 'bellwold-river-bridge')?.states)
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'on' }),
+        expect.objectContaining({ id: 'under' }),
+      ]));
   });
 
   it('moves the villager through town and advances the guard along its patrol', async () => {
