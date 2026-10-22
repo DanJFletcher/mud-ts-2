@@ -230,15 +230,15 @@ describe('Orraveth Bellwold settlement', () => {
         if (!result.ok) throw new Error(result.message);
         return LocationProjectionSchema.parse(result.value);
       };
-      const talkToAnwen = async () => {
+      const talkToAnwen = async (topic?: string) => {
         const character = await h.loadCharacter(characterId);
         const result = await h.engine.query({
           type: 'npc.talk',
           version: 1,
-          queryId: `anwen-${character.revision}`,
+          queryId: `anwen-${character.revision}-${topic ?? 'default'}`,
           worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
           characterId,
-          payload: { npcId: 'anwen-marr' },
+          payload: { npcId: 'anwen-marr', ...(topic ? { topic } : {}) },
         }, h.session, { characterProjection: character });
         if (!result.ok) throw new Error(result.message);
         return NpcDialogueProjectionSchema.parse(result.value);
@@ -257,6 +257,7 @@ describe('Orraveth Bellwold settlement', () => {
 
       expect((await queryLocation()).shortName).toBe('Bellwold Market Square');
       await move('square-to-shop');
+      expect((await talkToAnwen('Age of Measures')).text).toContain('Age of Measures');
       const introduction = await talkToAnwen();
       expect(introduction.choices.map(({ id }) => id)).toContain('ask-anwen-about-mill');
       const characterAtShop = await h.loadCharacter(characterId);
@@ -356,12 +357,13 @@ describe('Orraveth Bellwold settlement', () => {
         if (!result.ok) throw new Error(result.message);
         return LocationProjectionSchema.parse(result.value);
       };
+      let talkQuerySequence = 0;
       const talk = async (npcId: string, topic: string) => {
         const character = await h.loadCharacter(characterId);
         const result = await h.engine.query({
           type: 'npc.talk',
           version: 1,
-          queryId: `expanded-talk-${npcId}-${character.revision}`,
+          queryId: `expanded-talk-${npcId}-${character.revision}-${talkQuerySequence++}`,
           worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
           characterId,
           payload: { npcId, topic },
@@ -369,35 +371,51 @@ describe('Orraveth Bellwold settlement', () => {
         if (!result.ok) throw new Error(result.message);
         return NpcDialogueProjectionSchema.parse(result.value);
       };
-      const expectResident = async (npcId: string, topic: string, name: string) => {
+      const expectResident = async (
+        npcId: string,
+        topic: string,
+        name: string,
+        followupTopic?: string,
+        expectedDetail?: string,
+      ) => {
         expect((await describe()).npcs.map(({ id }) => id)).toContain(npcId);
         const dialogue = await talk(npcId, topic);
         expect(dialogue.npcName).toBe(name);
         expect(dialogue.text.length).toBeGreaterThan(0);
+        if (followupTopic && expectedDetail) {
+          const followup = await talk(npcId, followupTopic);
+          expect(followup.text).toContain(expectedDetail);
+        }
       };
+
+      await expectResident('linnet-reed', 'Seli Tor', 'Linnet Reed', 'Aven Rusk', 'grain tally');
+      await expectResident('taren-voss', 'Heskar', 'Taren Voss', 'Merefall League', 'merchant city-states');
+      await move('square-to-inn');
+      await expectResident('tomas-innkeeper', 'road', 'Tomas', 'Merefall League', 'guild-influenced city-states');
+      await move('inn-to-square');
 
       await move('square-to-south-common');
       await move('south-common-to-blackwater-forge');
-      await expectResident('darric-holt', 'repairs', 'Darric Holt');
+      await expectResident('darric-holt', 'repairs', 'Darric Holt', 'Sevenfold Workshop', 'seven artisans');
 
       await move('blackwater-forge-to-south-common');
       await move('south-common-to-green-mortar');
-      await expectResident('ilya-fen', 'care', 'Ilya Fen');
+      await expectResident('ilya-fen', 'care', 'Ilya Fen', 'Unbinding Initiative', 'plant, mineral');
 
       await move('green-mortar-to-south-common');
       await move('south-common-to-well-court');
       await move('well-court-to-common-house');
-      await expectResident('enna-pell', 'meetings', 'Enna Pell');
+      await expectResident('enna-pell', 'meetings', 'Enna Pell', 'seventeen villagers', 'seventeen villagers');
 
       await move('common-house-to-tallow-cottage');
-      await expectResident('seli-tor', 'weaving', 'Seli Tor');
+      await expectResident('seli-tor', 'weaving', 'Seli Tor', 'customs', 'different ways');
       await move('tallow-cottage-to-wattle-row');
       await move('wattle-row-to-sovens-yard');
-      await expectResident('rell-soven', 'wheel-work', 'Rell Soven');
+      await expectResident('rell-soven', 'wheel-work', 'Rell Soven', 'Rillward Freeholds', 'river settlements');
       await move('sovens-yard-to-wattle-row');
       await move('wattle-row-to-well-court');
       await move('well-court-to-grain-house');
-      await expectResident('aven-rusk', 'stores', 'Aven Rusk');
+      await expectResident('aven-rusk', 'stores', 'Aven Rusk', 'regional records', 'different accounts');
     } finally {
       await h.engine.stop();
     }

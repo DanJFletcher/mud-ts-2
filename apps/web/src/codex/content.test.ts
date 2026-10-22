@@ -43,6 +43,8 @@ describe("Orraveth Codex content", () => {
       "mara-vale",
       "elira-venn",
       "bellwold",
+      "frontier-settlements",
+      "bellwold-records",
       "bellwold-south-common",
       "well-court",
       "wattle-row",

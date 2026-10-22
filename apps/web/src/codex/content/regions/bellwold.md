@@ -21,6 +21,8 @@ The market square and its nearby [[kindly-roof-inn|inn]] and [[marrs-general-goo
 
 [[linnet-reed|Linnet Reed]] is often seen walking between the square, the well, and the public lanes. [[taren-voss|Taren Voss]] keeps a regular watch circuit from the tower road through the southern public spaces.
 
+Bellwold has no single established founding date or continuous town chronicle in the current record. The provisional page on [[bellwold-records|Bellwold's fragmentary records]] compares the village's practical tallies with the older accounts surrounding the silent bell.
+
 The current Bellwold record uses [[currency-and-commerce|gold]] as Orraveth's provisional named currency. Local prices, accounting practices, and any relationship to regional coinage remain unspecified.
 
 Nearby are the [[old-bell-tower|old bell tower]], [[eastern-forest|eastern forest]], and [[abandoned-watermill|abandoned watermill]].
