@@ -481,6 +481,13 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
             ? { ...entry, locationId: null }
             : entry)
           : [...state.itemLocations, { item: taken.payload.item, locationId: null }],
+        ...(taken.payload.containerId
+          ? {
+            claimedContainerItemIds: state.claimedContainerItemIds.includes(taken.payload.item.id)
+              ? state.claimedContainerItemIds
+              : [...state.claimedContainerItemIds, taken.payload.item.id],
+          }
+          : {}),
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'character.item_dropped') {

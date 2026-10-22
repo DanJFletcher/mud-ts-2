@@ -248,6 +248,76 @@ test('world takeables retain authored equipment metadata', () => {
   }).success, false);
 });
 
+test('containers accept ordinary items and reject nested containers', () => {
+  const base = {
+    formatVersion: 1,
+    packId: 'container-test',
+    packVersion: '1.0.0',
+    displayName: 'Container Test',
+    locations: [{
+      id: 'room',
+      name: 'Room',
+      description: 'A test room.',
+      containers: [{
+        id: 'old-sack',
+        kind: 'sack',
+        label: 'Old sack',
+        description: 'A worn canvas sack.',
+        contents: [{
+          id: 'brass-key',
+          label: 'Brass key',
+          description: 'A small brass key.',
+          consumable: { effect: 'heal', amount: 2 },
+        }],
+      }],
+      exits: [],
+    }],
+  };
+  const parsed = WorldPackDraftSchema.parse(base);
+  assert.equal(parsed.locations[0].containers[0].kind, 'sack');
+  assert.deepEqual(parsed.locations[0].containers[0].contents[0].consumable, { effect: 'heal', amount: 2 });
+  assert.deepEqual(validateDraftWorldGraph(parsed), []);
+  assert.equal(WorldPackDraftSchema.safeParse({
+    ...base,
+    locations: [{
+      ...base.locations[0],
+      containers: [{
+        ...base.locations[0].containers[0],
+        containers: [{
+          id: 'nested-chest',
+          kind: 'chest',
+          label: 'Nested chest',
+          description: 'A chest inside a sack.',
+          contents: [],
+        }],
+      }],
+    }],
+  }).success, false);
+  assert.equal(WorldPackDraftSchema.safeParse({
+    ...base,
+    locations: [{
+      ...base.locations[0],
+      containers: [{
+        ...base.locations[0].containers[0],
+        kind: 'barrel',
+      }],
+    }],
+  }).success, false);
+  assert.equal(WorldPackDraftSchema.safeParse({
+    ...base,
+    locations: [{
+      ...base.locations[0],
+      containers: [{
+        ...base.locations[0].containers[0],
+        contents: [{
+          ...base.locations[0].containers[0].contents[0],
+          equipment: { slot: 'weapon', attackBonus: 1, defenseBonus: 0 },
+        }],
+      }],
+    }],
+  }).success, false);
+});
+
 test('draft content checks graph references', () => {
   const pack = WorldPackDraftSchema.parse({ formatVersion: 1, packId: 'starter', packVersion: '0.1.0', displayName: 'Starter', locations: [
     { id: 'r1', name: 'Crossroads', description: 'Paths branch', readables: [{ id: 'marker', label: 'Marker', description: 'A painted wooden sign.', text: 'North to the forest' }], takeables: [{ id: 'pebble', label: 'Pebble', description: 'A smooth pebble.', questBound: true }], interactables: [{ id: 'bell', label: 'Bell', description: 'A small brass bell.' }], itemUses: [{ id: 'ring-bell', itemId: 'pebble', targetId: 'bell', requiredVisitedLocationId: 'r1', response: 'A chime rings.' }], exits: [{ id: 'north', fromLocationId: 'r1', toLocationId: 'r2', label: 'North' }] },

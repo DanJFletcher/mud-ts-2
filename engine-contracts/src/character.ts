@@ -185,6 +185,7 @@ export const CharacterItemTakenEventSchema = DomainEventBaseSchema.extend({
   payload: z.object({
     characterId: IdSchema,
     locationId: IdSchema,
+    containerId: IdSchema.optional(),
     item: InventoryItemProjectionSchema,
   }).strict(),
 }).strict();
@@ -336,6 +337,7 @@ export const CharacterProjectionSchema = z.object({
     item: InventoryItemProjectionSchema,
     locationId: IdSchema.nullable(),
   }).strict()).default([]),
+  claimedContainerItemIds: z.array(IdSchema).default([]),
   npcProgress: z.array(z.object({
     npcId: IdSchema,
     progressFlagIds: z.array(IdSchema).default([]),

@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import { ClientCommandBaseSchema, ClientQueryBaseSchema } from './protocol.js';
 import { ContractVersionSchema, IdSchema, NonNegativeIntSchema } from './ids.js';
-import { InventoryEquipmentSchema } from './character.js';
+import { ConsumableItemSchema, InventoryEquipmentSchema } from './character.js';
 import { QuestDefinitionSchema, QuestDialogueActionSchema } from './quests.js';
 import {
   InnDefinitionSchema,
@@ -94,7 +94,27 @@ export const TakeableObjectDefinitionSchema = z.object({
   description: z.string().min(1).max(1000),
   roomDescription: z.string().min(1).max(1000).optional(),
   questBound: z.boolean().optional(),
+  consumable: ConsumableItemSchema.optional(),
   equipment: InventoryEquipmentSchema.optional(),
+}).strict().superRefine((item, context) => {
+  if (item.consumable && item.equipment) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['consumable'],
+      message: 'Consumable items cannot also be equipped.',
+    });
+  }
+});
+
+export const ContainerKindSchema = z.enum(['sack', 'chest', 'corpse', 'other']);
+
+export const ContainerDefinitionSchema = z.object({
+  id: IdSchema,
+  kind: ContainerKindSchema,
+  label: z.string().min(1).max(120),
+  description: z.string().min(1).max(1000),
+  roomDescription: z.string().min(1).max(1000).optional(),
+  contents: z.array(TakeableObjectDefinitionSchema).max(100),
 }).strict();
 
 export const InteractableObjectDefinitionSchema = z.object({
@@ -263,6 +283,7 @@ export const LocationDefinitionSchema = z.object({
   exits: z.array(ExitDefinitionSchema),
   readables: z.array(ReadableObjectDefinitionSchema).optional(),
   takeables: z.array(TakeableObjectDefinitionSchema).optional(),
+  containers: z.array(ContainerDefinitionSchema).max(100).optional(),
   interactables: z.array(InteractableObjectDefinitionSchema).optional(),
   itemUses: z.array(ItemUseInteractionDefinitionSchema).max(100).optional(),
   npcs: z.array(NpcDefinitionSchema).optional(),
@@ -631,6 +652,13 @@ export const LocationProjectionSchema = z.object({
     description: z.string().min(1).max(1000),
     readable: z.boolean(),
     takeable: z.boolean(),
+    containerId: IdSchema.optional(),
+    containerKind: ContainerKindSchema.optional(),
+    contents: z.array(z.object({
+      id: IdSchema,
+      label: z.string().min(1).max(120),
+      description: z.string().min(1).max(1000),
+    }).strict()).max(100).optional(),
   }).strict()),
   occupants: z.array(RoomOccupantProjectionSchema),
   npcs: z.array(NpcPresenceProjectionSchema).optional(),
@@ -707,6 +735,8 @@ export type NpcDialogueChoiceCommand = z.infer<typeof NpcDialogueChoiceCommandSc
 export type NpcDialogueProjection = z.infer<typeof NpcDialogueProjectionSchema>;
 export type ReadableObjectProjection = z.infer<typeof ReadableObjectProjectionSchema>;
 export type ObjectInspectionProjection = z.infer<typeof ObjectInspectionProjectionSchema>;
+export type ContainerDefinition = z.infer<typeof ContainerDefinitionSchema>;
+export type ContainerKind = z.infer<typeof ContainerKindSchema>;
 export type LocationProjection = z.infer<typeof LocationProjectionSchema>;
 export type RoomOccupantProjection = z.infer<typeof RoomOccupantProjectionSchema>;
 export type RoomPresenceProjection = z.infer<typeof RoomPresenceProjectionSchema>;
@@ -715,7 +745,19 @@ export type WorldMapProjection = z.infer<typeof WorldMapProjectionSchema>;
 export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
   const errors: string[] = [];
   const ids = new Set(pack.locations.map((room) => room.id));
-  const itemIds = new Set(pack.locations.flatMap((room) => (room.takeables ?? []).map((item) => item.id)));
+  const allTakeables = pack.locations.flatMap((room) => [
+    ...(room.takeables ?? []),
+    ...(room.containers ?? []).flatMap((container) => container.contents),
+  ]);
+  const itemIds = new Set(allTakeables.map((item) => item.id));
+  const containerIds = new Set(pack.locations.flatMap((room) => (room.containers ?? []).map((container) => container.id)));
+  if (itemIds.size !== allTakeables.length) errors.push('Duplicate takeable item ID');
+  if (containerIds.size !== pack.locations.reduce((total, room) => total + (room.containers?.length ?? 0), 0)) {
+    errors.push('Duplicate container ID');
+  }
+  for (const containerId of containerIds) {
+    if (itemIds.has(containerId)) errors.push(`Container ID ${containerId} conflicts with a takeable item ID`);
+  }
   const merchantListingIds = new Set<string>();
   const merchantItemIds = new Set<string>();
   const innIds = new Set<string>();
@@ -794,7 +836,7 @@ export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
       errors.push(`Quest ${quest.id} reward currency ${quest.reward.currencyId} does not match the world currency`);
     }
     for (const itemId of quest.reward?.itemIds ?? []) {
-      if (!pack.locations.some((location) => location.takeables?.some((item) => item.id === itemId))) {
+      if (!allTakeables.some((item) => item.id === itemId)) {
         errors.push(`Quest ${quest.id} reward references missing item ${itemId}`);
       }
     }
@@ -806,7 +848,7 @@ export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
     }
     for (const objective of quest.objectives) {
       if (objective.type === 'possess-item') {
-        if (!pack.locations.some((location) => location.takeables?.some((item) => item.id === objective.itemId))) {
+        if (!allTakeables.some((item) => item.id === objective.itemId)) {
           errors.push(`Quest ${quest.id} objective ${objective.id} points to missing item ${objective.itemId}`);
         }
         continue;

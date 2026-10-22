@@ -156,9 +156,16 @@ export const characterPlugin: EnginePlugin = {
         };
       }
       const trackedItem = character.itemLocations.find((entry) => entry.item.id === command.payload.itemId);
+      const authoredContainer = location.containers?.find((container) =>
+        container.contents.some((candidate) => candidate.id === command.payload.itemId),
+      );
+      const containerItem = authoredContainer?.contents.find((candidate) =>
+        candidate.id === command.payload.itemId &&
+        !character.claimedContainerItemIds.includes(candidate.id),
+      );
       const item = trackedItem
         ? trackedItem.locationId === character.locationId ? trackedItem.item : undefined
-        : (location.takeables ?? []).find((candidate) => candidate.id === command.payload.itemId);
+        : (location.takeables ?? []).find((candidate) => candidate.id === command.payload.itemId) ?? containerItem;
       if (!item) throw new RuleViolationError('That item is not available to take here.');
       const questBound = item.questBound === true || context.world.locations.some((worldLocation) =>
         worldLocation.takeables?.some((candidate) => candidate.id === item.id && candidate.questBound === true),
@@ -167,11 +174,13 @@ export const characterPlugin: EnginePlugin = {
       const payload = {
         characterId: character.characterId,
         locationId: character.locationId,
+        ...(containerItem && authoredContainer ? { containerId: authoredContainer.id } : {}),
         item: {
           id: inventoryItem.id,
           label: inventoryItem.label,
           description: inventoryItem.description,
           ...(inventoryItem.questBound ? { questBound: true } : {}),
+          ...(inventoryItem.consumable ? { consumable: inventoryItem.consumable } : {}),
           ...(inventoryItem.equipment ? { equipment: inventoryItem.equipment } : {}),
         },
       };
@@ -412,6 +421,12 @@ export const characterPlugin: EnginePlugin = {
       const sharedItems = (await worldItems.load(context)).items
         .filter((item) => item.locationId === character.locationId);
       const trackedItemIds = new Set(character.itemLocations.map((entry) => entry.item.id));
+      const visibleContainers = (location.containers ?? []).map((container) => ({
+        ...container,
+        contents: container.contents.filter((item) =>
+          !character.claimedContainerItemIds.includes(item.id) && !trackedItemIds.has(item.id),
+        ),
+      }));
       const roomTakeables = [
         ...(location.takeables ?? []).filter((item) => !trackedItemIds.has(item.id)),
         ...character.itemLocations
@@ -428,6 +443,13 @@ export const characterPlugin: EnginePlugin = {
         return roomDescription ? [roomDescription] : [];
       });
       const sharedItemDescriptions = sharedItems.map(({ item }) => `${item.label} lies here.`);
+      const containerDescriptions = visibleContainers.map((container) => {
+        const roomDescription = container.roomDescription ?? `${container.label} is here.`;
+        const contents = container.contents.length
+          ? ` It contains ${container.contents.map((item) => item.label).join(', ')}.`
+          : ' It is empty.';
+        return `${roomDescription}${contents}`;
+      });
       const roomNpcDescriptions = roomNpcs.map(
         ({ name, description }) => `${name} is here. ${description}`,
       );
@@ -457,6 +479,7 @@ export const characterPlugin: EnginePlugin = {
           locationState?.description ?? location.description,
           ...roomItemDescriptions,
           ...sharedItemDescriptions,
+          ...containerDescriptions,
           ...interactableRoomDescriptions,
           ...roomNpcDescriptions,
         ].join('\n\n'),
@@ -476,6 +499,25 @@ export const characterPlugin: EnginePlugin = {
           ...roomTakeables.map(({ id, label, description }) => ({
               id, label, description, readable: false, takeable: true,
           })),
+          ...visibleContainers.flatMap((container) => [
+            {
+              id: container.id,
+              label: container.label,
+              description: container.description,
+              readable: false,
+              takeable: false,
+              containerKind: container.kind,
+              contents: container.contents.map(({ id, label, description }) => ({ id, label, description })),
+            },
+            ...container.contents.map(({ id, label, description }) => ({
+              id,
+              label,
+              description,
+              readable: false,
+              takeable: true,
+              containerId: container.id,
+            })),
+          ]),
           ...sharedItems.map(({ worldItemId, item }) => ({
             id: worldItemId,
             label: item.label,
@@ -532,12 +574,30 @@ export const characterPlugin: EnginePlugin = {
       const location = context.world.locations.find((item) => item.id === character.locationId);
       if (!location) throw new Error('The character location is not present in this world version.');
       const trackedItemIds = new Set(character.itemLocations.map((entry) => entry.item.id));
+      const visibleContainers = (location.containers ?? []).map((container) => ({
+        ...container,
+        contents: container.contents.filter((item) =>
+          !character.claimedContainerItemIds.includes(item.id) && !trackedItemIds.has(item.id),
+        ),
+      }));
+      const roomContainers = visibleContainers.map((container) => ({
+        id: container.id,
+        label: container.label,
+        description: [
+          container.description,
+          container.contents.length
+            ? `It contains ${container.contents.map((item) => item.label).join(', ')}.`
+            : 'It is empty.',
+        ].join(' '),
+      }));
       const sharedItems = (await worldItems.load(context)).items
         .filter((item) => item.locationId === character.locationId);
       const objectInRoom = [
         ...(location.readables ?? []),
         ...(location.takeables ?? []).filter((item) => !trackedItemIds.has(item.id)),
         ...(location.interactables ?? []),
+        ...roomContainers,
+        ...visibleContainers.flatMap((container) => container.contents),
         ...character.itemLocations
           .filter((entry) => entry.locationId === location.id)
           .map(({ item }) => item),

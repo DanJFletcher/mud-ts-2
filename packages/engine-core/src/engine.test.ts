@@ -966,6 +966,133 @@ describe('MUDD engine host', () => {
     await engine.stop();
   });
 
+  it('projects container contents, takes them per character, and keeps drops out of their source container', async () => {
+    const testWorld = structuredClone(demoWorld);
+    testWorld.locations[0] = {
+      ...testWorld.locations[0]!,
+      containers: [{
+        id: 'mossgate-satchel',
+        kind: 'sack',
+        label: 'Traveler’s satchel',
+        description: 'A weathered leather satchel.',
+        contents: [{
+          id: 'satchel-healing-draught',
+          label: 'Healing draught',
+          description: 'A small flask of bitter herbal tonic.',
+          consumable: { effect: 'heal', amount: 2 },
+        }],
+      }],
+    };
+    const { engine, store } = makeEngine(testWorld);
+    await engine.start();
+
+    const first = await engine.dispatch({
+      type: 'character.create',
+      version: 1,
+      commandId: 'container-first-create',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      payload: { name: 'First Finder' },
+    }, session);
+    const second = await engine.dispatch({
+      type: 'character.create',
+      version: 1,
+      commandId: 'container-second-create',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      payload: { name: 'Second Finder' },
+    }, session);
+    const firstId = first.streamId!;
+    const secondId = second.streamId!;
+    const firstRoom = await engine.query({
+      type: 'location.describe',
+      version: 1,
+      queryId: 'container-first-room',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: firstId,
+      payload: {},
+    }, session);
+    expect(firstRoom).toMatchObject({
+      ok: true,
+      value: {
+        description: expect.stringContaining('Traveler’s satchel is here. It contains Healing draught.'),
+        objects: expect.arrayContaining([
+          expect.objectContaining({ id: 'satchel-healing-draught', takeable: true, containerId: 'mossgate-satchel' }),
+          expect.objectContaining({ id: 'mossgate-satchel', containerKind: 'sack' }),
+        ]),
+      },
+    });
+
+    const taken = await engine.dispatch({
+      type: 'character.take',
+      version: 1,
+      commandId: 'container-take-token',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: firstId,
+      expectedVersion: 1,
+      payload: { itemId: 'satchel-healing-draught' },
+    }, session);
+    expect(taken.receipt).toMatchObject({ ok: true, newAggregateVersion: 2 });
+    expect((await store.readStream(DEMO_WORLD_INSTANCE_ID, firstId)).at(-1)?.payload)
+      .toMatchObject({ containerId: 'mossgate-satchel', item: { consumable: { effect: 'heal', amount: 2 } } });
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, firstId))?.claimedContainerItemIds)
+      .toContain('satchel-healing-draught');
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, firstId))?.inventory[0]?.consumable)
+      .toEqual({ effect: 'heal', amount: 2 });
+
+    const firstAfterTake = await engine.query({
+      type: 'location.describe',
+      version: 1,
+      queryId: 'container-first-after-take',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: firstId,
+      payload: {},
+    }, session);
+    const secondRoom = await engine.query({
+      type: 'location.describe',
+      version: 1,
+      queryId: 'container-second-room',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: secondId,
+      payload: {},
+    }, session);
+    expect(firstAfterTake).toMatchObject({
+      ok: true,
+      value: { description: expect.stringContaining('Traveler’s satchel is here. It is empty.') },
+    });
+    expect(secondRoom).toMatchObject({
+      ok: true,
+      value: { objects: expect.arrayContaining([expect.objectContaining({ id: 'satchel-healing-draught', takeable: true })]) },
+    });
+
+    const dropped = await engine.dispatch({
+      type: 'character.drop',
+      version: 1,
+      commandId: 'container-drop-token',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: firstId,
+      expectedVersion: 2,
+      payload: { itemId: 'satchel-healing-draught' },
+    }, session);
+    expect(dropped.receipt).toMatchObject({ ok: true, newAggregateVersion: 3 });
+    const firstAfterDrop = await engine.query({
+      type: 'location.describe',
+      version: 1,
+      queryId: 'container-first-after-drop',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: firstId,
+      payload: {},
+    }, session);
+    expect(firstAfterDrop).toMatchObject({
+      ok: true,
+      value: {
+        description: expect.stringContaining('Traveler’s satchel is here. It is empty.'),
+        objects: expect.arrayContaining([
+          expect.objectContaining({ id: 'satchel-healing-draught', takeable: true }),
+        ]),
+      },
+    });
+    await engine.stop();
+  });
+
   it('keeps bridge states per character and resolves state-specific room exits', async () => {
     const testWorld = structuredClone(demoWorld);
     testWorld.locations.unshift({
