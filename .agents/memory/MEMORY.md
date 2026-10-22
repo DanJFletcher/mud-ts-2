@@ -11,3 +11,4 @@
 - [Party aggregate ownership](party-aggregate-ownership.md) — Keep group membership, encounter teams, party quest state, and durable character state in separate aggregates; see ADR 0014.
 - [World-pack authoring types](world-pack-authoring-types.md) — Author against Zod input types when defaults normalize content; keep runtime pack types fully parsed.
 - [Orraveth Codex separation](orraveth-codex.md) — Keep Orraveth lore separate from the existing MUDD demo world and gameplay state.
+- [Engine integration tests](engine-integration-tests.md) — Exercise content through a complete, authorized engine host; schema-only tests miss runtime plugin dependencies.
