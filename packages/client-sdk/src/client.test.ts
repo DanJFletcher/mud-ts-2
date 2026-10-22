@@ -112,6 +112,42 @@ describe('demo world navigation', () => {
       'Quest sedgewatch-waterline reward currency other-currency does not match the world currency',
     );
   });
+
+  it('keeps the Undercrypt maze connected and the sword room at its end', () => {
+    const undercrypt = demoWorld.locations.filter((location) => location.mapAreaId === 'bell-tower-undercrypt');
+    const locationsById = new Map(undercrypt.map((location) => [location.id, location]));
+    const reachable = new Set<string>(['undercrypt-entry-passage']);
+    const pending = ['undercrypt-entry-passage'];
+
+    while (pending.length > 0) {
+      const current = locationsById.get(pending.shift()!);
+      for (const exit of current?.exits ?? []) {
+        if (locationsById.has(exit.toLocationId) && !reachable.has(exit.toLocationId)) {
+          reachable.add(exit.toLocationId);
+          pending.push(exit.toLocationId);
+        }
+      }
+    }
+
+    expect(undercrypt.every((location) => reachable.has(location.id))).toBe(true);
+    expect(locationsById.get('undercrypt-crossway')?.exits.map((exit) => exit.direction))
+      .toEqual(expect.arrayContaining(['west', 'east', 'south']));
+    expect(locationsById.get('undercrypt-flooded-archive')?.exits).toContainEqual(expect.objectContaining({
+      id: 'flooded-archive-to-reliquary-approach',
+      requiredInteractionId: 'set-archive-reflection',
+    }));
+    expect(locationsById.get('undercrypt-bellwright-reliquary')?.exits).toHaveLength(1);
+    expect(locationsById.get('undercrypt-bellwright-reliquary')?.exits[0]?.toLocationId)
+      .toBe('undercrypt-reliquary-approach');
+
+    const ratCorridors = demoWorld.roads.filter((road) => road.id.startsWith('undercrypt-'));
+    expect(ratCorridors).toHaveLength(2);
+    expect(ratCorridors.every((road) =>
+      road.encounterChancePercent === 15 &&
+      road.encounters.some((encounter) => encounter.name === 'Giant Rat') &&
+      road.locationIds.every((locationId) => locationsById.has(locationId)),
+    )).toBe(true);
+  });
 });
 
 const testCombatPresencePlugin: EnginePlugin = {
@@ -796,17 +832,19 @@ describe('MuddHttpClient', () => {
     const echoGalleryDefinition = demoWorld.locations.find((location) => location.id === 'undercrypt-echo-gallery');
     expect(echoGalleryDefinition).toMatchObject({
       mapAreaId: 'bell-tower-undercrypt',
-      mapPosition: { x: 3, y: 0, z: 0 },
+      mapPosition: { x: 2, y: 2, z: 0 },
     });
     expect(echoGalleryDefinition?.mapAreaId).not.toBe(hallwayDefinition?.mapAreaId);
+    expect(demoWorld.locations.find((location) => location.id === 'undercrypt-entry-passage'))
+      .toMatchObject({ mapAreaId: 'bell-tower-undercrypt', mapPosition: { x: 3, y: 0, z: 0 } });
 
     expect(serviceHall.exits).toContainEqual(expect.objectContaining({
-      id: 'service-hall-to-echo-gallery',
+      id: 'service-hall-to-undercrypt-entry',
       available: false,
     }));
     await expect(client.move(
       characterId,
-      'service-hall-to-echo-gallery',
+      'service-hall-to-undercrypt-entry',
       serviceHall.revision,
       'puzzle-try-locked-undercrypt-arch',
     )).rejects.toThrow('That passage is still sealed.');
@@ -819,13 +857,39 @@ describe('MuddHttpClient', () => {
     );
     const openedServiceHall = await client.look(characterId, 'puzzle-look-open-undercrypt-arch');
     expect(openedServiceHall.exits).toContainEqual(expect.objectContaining({
-      id: 'service-hall-to-echo-gallery',
+      id: 'service-hall-to-undercrypt-entry',
       available: true,
     }));
     await client.move(
       characterId,
-      'service-hall-to-echo-gallery',
+      'service-hall-to-undercrypt-entry',
       openedServiceHall.revision,
+      'puzzle-enter-undercrypt-entry',
+    );
+    const entryPassage = await client.look(characterId, 'puzzle-look-undercrypt-entry');
+    expect(entryPassage.title).toBe('Undercrypt Entry Passage');
+    await client.move(
+      characterId,
+      'undercrypt-entry-to-rattle-run',
+      entryPassage.revision,
+      'puzzle-enter-rattle-run',
+    );
+    let rattleRun = await client.look(characterId, 'puzzle-look-rattle-run');
+    await client.roadStep(
+      characterId,
+      'rattle-run-to-crossway',
+      rattleRun.revision,
+      'puzzle-enter-crossway',
+    );
+    let crossway = await client.look(characterId, 'puzzle-look-crossway');
+    expect(crossway.exits).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'crossway-to-echo-gallery', available: true }),
+      expect.objectContaining({ id: 'crossway-to-east-bend', available: true }),
+    ]));
+    await client.move(
+      characterId,
+      'crossway-to-echo-gallery',
+      crossway.revision,
       'puzzle-enter-echo-gallery',
     );
     let echoGallery = await client.look(characterId, 'puzzle-look-echo-gallery');
@@ -870,19 +934,52 @@ describe('MuddHttpClient', () => {
     );
     echoGallery = await client.look(characterId, 'puzzle-look-after-echo-solution');
     expect(echoGallery.exits).toContainEqual(expect.objectContaining({
-      id: 'echo-gallery-to-flooded-archive',
+      id: 'echo-gallery-to-west-passage',
       available: true,
     }));
     await client.move(
       characterId,
-      'echo-gallery-to-flooded-archive',
+      'echo-gallery-to-west-passage',
       echoGallery.revision,
+      'puzzle-enter-west-passage',
+    );
+    let westPassage = await client.look(characterId, 'puzzle-look-west-passage');
+    expect(westPassage.title).toBe('West Passage');
+    await client.roadStep(
+      characterId,
+      'west-passage-to-west-bend',
+      westPassage.revision,
+      'puzzle-enter-west-bend',
+    );
+    let westBend = await client.look(characterId, 'puzzle-look-west-bend');
+    await client.roadStep(
+      characterId,
+      'west-bend-to-west-turn',
+      westBend.revision,
+      'puzzle-enter-west-turn',
+    );
+    const westTurn = await client.look(characterId, 'puzzle-look-west-turn');
+    await client.roadStep(
+      characterId,
+      'west-turn-to-north-junction',
+      westTurn.revision,
+      'puzzle-enter-north-junction',
+    );
+    const northJunction = await client.look(characterId, 'puzzle-look-north-junction');
+    expect(northJunction.exits).toContainEqual(expect.objectContaining({
+      id: 'north-junction-to-flooded-archive',
+      available: true,
+    }));
+    await client.move(
+      characterId,
+      'north-junction-to-flooded-archive',
+      northJunction.revision,
       'puzzle-enter-flooded-archive',
     );
     let archive = await client.look(characterId, 'puzzle-look-flooded-archive');
     expect(archive.title).toBe('Flooded Archive');
     expect(archive.exits).toContainEqual(expect.objectContaining({
-      id: 'flooded-archive-to-reliquary',
+      id: 'flooded-archive-to-reliquary-approach',
       available: false,
     }));
     const archiveLedger = await client.read(
@@ -925,7 +1022,7 @@ describe('MuddHttpClient', () => {
     );
     archive = await client.look(characterId, 'puzzle-look-after-archive-solution');
     expect(archive.exits).toContainEqual(expect.objectContaining({
-      id: 'flooded-archive-to-reliquary',
+      id: 'flooded-archive-to-reliquary-approach',
       available: true,
     }));
     const archiveState = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
@@ -944,8 +1041,16 @@ describe('MuddHttpClient', () => {
     expect(gearedArchiveState.equipment.armorItemId).toBe('undercrypt-bellwright-vest');
     await client.move(
       characterId,
-      'flooded-archive-to-reliquary',
+      'flooded-archive-to-reliquary-approach',
       archive.revision,
+      'puzzle-enter-reliquary-approach',
+    );
+    let approach = await client.look(characterId, 'puzzle-look-reliquary-approach');
+    expect(approach.title).toBe('Reliquary Approach');
+    await client.move(
+      characterId,
+      'reliquary-approach-to-reliquary',
+      approach.revision,
       'puzzle-enter-bellwright-reliquary',
     );
     let reliquary = await client.look(characterId, 'puzzle-look-bellwright-reliquary');
@@ -968,27 +1073,82 @@ describe('MuddHttpClient', () => {
     expect(armedCharacter.equipment.armorItemId).toBe('undercrypt-bellwright-vest');
     await client.move(
       characterId,
-      'reliquary-to-flooded-archive',
+      'reliquary-to-reliquary-approach',
       reliquary.revision,
+      'puzzle-return-to-reliquary-approach',
+    );
+    approach = await client.look(characterId, 'puzzle-look-after-reliquary');
+    await client.move(
+      characterId,
+      'reliquary-approach-to-archive',
+      approach.revision,
       'puzzle-return-to-archive',
     );
     archive = await client.look(characterId, 'puzzle-look-after-reliquary');
     await client.move(
       characterId,
-      'flooded-archive-to-echo-gallery',
+      'flooded-archive-to-north-junction',
       archive.revision,
-      'puzzle-return-to-echo-gallery',
+      'puzzle-return-to-north-junction',
     );
-    echoGallery = await client.look(characterId, 'puzzle-look-after-archive');
+    const northJunctionAfter = await client.look(characterId, 'puzzle-look-north-junction-after-archive');
+    await client.roadStep(
+      characterId,
+      'north-junction-to-west-turn',
+      northJunctionAfter.revision,
+      'puzzle-return-to-west-turn',
+    );
+    const westTurnAfter = await client.look(characterId, 'puzzle-look-west-turn-after-archive');
+    await client.roadStep(
+      characterId,
+      'west-turn-to-west-bend',
+      westTurnAfter.revision,
+      'puzzle-return-to-west-bend',
+    );
+    westBend = await client.look(characterId, 'puzzle-look-west-bend-after-archive');
+    await client.roadStep(
+      characterId,
+      'west-bend-to-west-passage',
+      westBend.revision,
+      'puzzle-return-to-west-passage',
+    );
+    westPassage = await client.look(characterId, 'puzzle-look-west-passage-after-archive');
     await client.move(
       characterId,
-      'echo-gallery-to-service-hall',
+      'west-passage-to-echo-gallery',
+      westPassage.revision,
+      'puzzle-return-to-echo-gallery',
+    );
+    echoGallery = await client.look(characterId, 'puzzle-look-echo-gallery-after-archive');
+    await client.move(
+      characterId,
+      'echo-gallery-to-crossway',
       echoGallery.revision,
+      'puzzle-return-to-crossway',
+    );
+    crossway = await client.look(characterId, 'puzzle-look-crossway-after-archive');
+    await client.roadStep(
+      characterId,
+      'crossway-to-rattle-run',
+      crossway.revision,
+      'puzzle-return-to-rattle-run',
+    );
+    rattleRun = await client.look(characterId, 'puzzle-look-rattle-run-after-archive');
+    await client.move(
+      characterId,
+      'rattle-run-to-entry-passage',
+      rattleRun.revision,
+      'puzzle-return-to-entry-passage',
+    );
+    await client.move(
+      characterId,
+      'undercrypt-entry-to-service-hall',
+      (await client.look(characterId, 'puzzle-look-entry-after-dungeon')).revision,
       'puzzle-return-to-service-hall-from-dungeon',
     );
     const hallAfterDungeon = await client.look(characterId, 'puzzle-look-service-hall-after-dungeon');
     expect(hallAfterDungeon.exits).toContainEqual(expect.objectContaining({
-      id: 'service-hall-to-echo-gallery',
+      id: 'service-hall-to-undercrypt-entry',
       available: true,
     }));
 
