@@ -9,7 +9,7 @@ export const ORRAVETH_WORLD_INSTANCE_ID = 'orraveth-bellwold-instance';
 const draft = {
   formatVersion: 1,
   packId: 'orraveth.bellwold',
-  packVersion: '1.1.0',
+  packVersion: '1.2.0',
   displayName: 'Orraveth: Bellwold',
   currency: {
     id: 'gold',
@@ -21,12 +21,13 @@ const draft = {
     {
       id: 'bellwold-market-square',
       name: 'Bellwold Market Square',
-      description: 'Bellwold is a small trading village near the Crown of Heskar frontier. Its market square is a practical meeting place: baskets, tools, and travel goods change hands while local news travels with them.\n\nThe roads lead west to the Kindly Roof, east to Marr’s General Goods, and north toward the old bell tower.',
+      description: 'Bellwold’s market square anchors a larger frontier settlement. Stalls and handcarts crowd the open ground on busy mornings, while the inn and general shop serve travelers and residents through the day.\n\nThe Kindly Roof lies west, Marr’s General Goods east, the old tower road north, and South Common south.',
       mapPosition: { x: 0, y: 0, terrain: 'land' },
       exits: [
         { id: 'square-to-inn', fromLocationId: 'bellwold-market-square', toLocationId: 'kindly-roof-inn', label: 'west', direction: 'west' },
         { id: 'square-to-shop', fromLocationId: 'bellwold-market-square', toLocationId: 'marrs-general-goods', label: 'east', direction: 'east' },
         { id: 'square-to-tower-road', fromLocationId: 'bellwold-market-square', toLocationId: 'old-bell-tower-approach', label: 'north', direction: 'north' },
+        { id: 'square-to-south-common', fromLocationId: 'bellwold-market-square', toLocationId: 'bellwold-south-common', label: 'south', direction: 'south' },
       ],
     },
     {
@@ -107,6 +108,177 @@ const draft = {
       ],
     },
     {
+      id: 'bellwold-south-common',
+      name: 'Bellwold South Common',
+      description: 'The street widens into a practical green where neighbors pause beside benches, drying lines, and a public notice board. Work carries on around it without the market-square bustle.\n\nThe market square is north, the Green Mortar west, Blackwater Forge east, and Well Court south.',
+      mapPosition: { x: 0, y: -1, terrain: 'land' },
+      exits: [
+        { id: 'south-common-to-square', fromLocationId: 'bellwold-south-common', toLocationId: 'bellwold-market-square', label: 'north', direction: 'north' },
+        { id: 'south-common-to-green-mortar', fromLocationId: 'bellwold-south-common', toLocationId: 'green-mortar', label: 'west', direction: 'west' },
+        { id: 'south-common-to-blackwater-forge', fromLocationId: 'bellwold-south-common', toLocationId: 'blackwater-forge', label: 'east', direction: 'east' },
+        { id: 'south-common-to-well-court', fromLocationId: 'bellwold-south-common', toLocationId: 'bellwold-well-court', label: 'south', direction: 'south' },
+      ],
+    },
+    {
+      id: 'green-mortar',
+      name: 'The Green Mortar',
+      description: 'Bundles of dried plants hang above a workbench, and clean cloth is folded within reach. Ilya keeps the room orderly enough for careful work, though the village brings in mud, rain, and ordinary interruptions.\n\nThe open green is east; Wattle Row is south.',
+      mapPosition: { x: -1, y: -1, terrain: 'building' },
+      exits: [
+        { id: 'green-mortar-to-south-common', fromLocationId: 'green-mortar', toLocationId: 'bellwold-south-common', label: 'east', direction: 'east' },
+        { id: 'green-mortar-to-wattle-row', fromLocationId: 'green-mortar', toLocationId: 'bellwold-wattle-row', label: 'south', direction: 'south' },
+      ],
+      npcs: [
+        {
+          id: 'ilya-fen',
+          name: 'Ilya Fen',
+          description: 'Ilya Fen tends Bellwold’s Green Mortar, sorting local plants and practical care from claims that have not been tested.',
+          greeting: '“Tell me what you noticed and when. A careful account is a better beginning than a guess.”',
+          topics: [
+            { id: 'care', keywords: ['care', 'healing', 'hurt', 'medicine'], response: '“Rest, clean water, and a clear description of what changed can matter as much as any remedy. I will not promise more than I know.”' },
+            { id: 'plants', keywords: ['plant', 'plants', 'herb', 'herbs'], response: '“I gather what grows nearby, but a plant’s reputation is not proof of what it can do.”' },
+          ],
+          unknownTopicResponse: '“I can speak about the care I have seen here. Ask me something specific.”',
+        },
+      ],
+    },
+    {
+      id: 'blackwater-forge',
+      name: 'Blackwater Forge',
+      description: 'A low forge stands open to the street, its stone hearth dark between jobs. Tongs, hammers, and half-mended farm fittings hang within reach; the smell of coal clings to the beams.\n\nSouth Common is west.',
+      mapPosition: { x: 1, y: -1, terrain: 'building' },
+      exits: [
+        { id: 'blackwater-forge-to-south-common', fromLocationId: 'blackwater-forge', toLocationId: 'bellwold-south-common', label: 'west', direction: 'west' },
+      ],
+      npcs: [
+        {
+          id: 'darric-holt',
+          name: 'Darric Holt',
+          description: 'Darric Holt works at the forge, repairing tools and fittings used around the settlement.',
+          greeting: '“If something is broken, show me where it failed. If it is only a rumor, I have work to finish.”',
+          topics: [
+            { id: 'repairs', keywords: ['repair', 'repairs', 'forge', 'smith', 'tools'], response: '“Most days it is hinges, blades, and cart fittings. Keeping a place working is less dramatic than building it from scratch.”' },
+            { id: 'bell', keywords: ['bell', 'tower'], response: '“I know how metal wears. I do not know why the tower bell went silent.”' },
+          ],
+          unknownTopicResponse: '“Ask about the work here. I am not a keeper of every local story.”',
+        },
+      ],
+    },
+    {
+      id: 'bellwold-well-court',
+      name: 'Bellwold Well Court',
+      description: 'A stone-rimmed well and a broad trough give this quiet court a steady rhythm of buckets, footsteps, and short conversations. A covered storehouse stands to the east; Wattle Row branches west.\n\nSouth Common is north, and the Common House is south.',
+      mapPosition: { x: 0, y: -2, terrain: 'land' },
+      exits: [
+        { id: 'well-court-to-south-common', fromLocationId: 'bellwold-well-court', toLocationId: 'bellwold-south-common', label: 'north', direction: 'north' },
+        { id: 'well-court-to-wattle-row', fromLocationId: 'bellwold-well-court', toLocationId: 'bellwold-wattle-row', label: 'west', direction: 'west' },
+        { id: 'well-court-to-grain-house', fromLocationId: 'bellwold-well-court', toLocationId: 'old-grain-house', label: 'east', direction: 'east' },
+        { id: 'well-court-to-common-house', fromLocationId: 'bellwold-well-court', toLocationId: 'bellwold-common-house', label: 'south', direction: 'south' },
+      ],
+    },
+    {
+      id: 'bellwold-wattle-row',
+      name: 'Wattle Row',
+      description: 'Low homes and work yards line a narrow lane, their wattle walls patched with whatever material the season has left to hand. The Green Mortar is north, Well Court east, a wheelwright’s yard west, and Tallow End Cottage south.',
+      mapPosition: { x: -1, y: -2, terrain: 'land' },
+      exits: [
+        { id: 'wattle-row-to-green-mortar', fromLocationId: 'bellwold-wattle-row', toLocationId: 'green-mortar', label: 'north', direction: 'north' },
+        { id: 'wattle-row-to-well-court', fromLocationId: 'bellwold-wattle-row', toLocationId: 'bellwold-well-court', label: 'east', direction: 'east' },
+        { id: 'wattle-row-to-sovens-yard', fromLocationId: 'bellwold-wattle-row', toLocationId: 'sovens-wheelwright-yard', label: 'west', direction: 'west' },
+        { id: 'wattle-row-to-tallow-cottage', fromLocationId: 'bellwold-wattle-row', toLocationId: 'tallow-end-cottage', label: 'south', direction: 'south' },
+      ],
+    },
+    {
+      id: 'sovens-wheelwright-yard',
+      name: 'Soven’s Wheelwright Yard',
+      description: 'A turning frame, wooden spokes, and a rack of finished rims fill this fenced yard. Shavings gather in the corners despite the broom leaning by the gate.\n\nWattle Row is east.',
+      mapPosition: { x: -2, y: -2, terrain: 'building' },
+      exits: [
+        { id: 'sovens-yard-to-wattle-row', fromLocationId: 'sovens-wheelwright-yard', toLocationId: 'bellwold-wattle-row', label: 'east', direction: 'east' },
+      ],
+      npcs: [
+        {
+          id: 'rell-soven',
+          name: 'Rell Soven',
+          description: 'Rell Soven builds and repairs wheels, axles, and wooden fittings for Bellwold’s carts.',
+          greeting: '“A wheel tells you where it is failing if you watch it turn.”',
+          topics: [
+            { id: 'wheel-work', keywords: ['wheel', 'wheels', 'cart', 'carpentry', 'work'], response: '“I make the parts that keep a cart straight on a rough road. Most repairs begin with listening for a wobble.”' },
+            { id: 'mill', keywords: ['mill', 'watermill'], response: '“I have not worked on the mill wheel. I can describe a wheel; I cannot say what moves one when no one is there.”' },
+          ],
+          unknownTopicResponse: '“Ask me about wheels or the work in this yard.”',
+        },
+      ],
+    },
+    {
+      id: 'tallow-end-cottage',
+      name: 'Tallow End Cottage',
+      description: 'A narrow cottage opens onto Wattle Row. A loom stands beside the window, with folded cloth kept clear of the hearth and a basket of mending beside the door.\n\nWattle Row is north; the Common House is east.',
+      mapPosition: { x: -1, y: -3, terrain: 'building' },
+      exits: [
+        { id: 'tallow-cottage-to-wattle-row', fromLocationId: 'tallow-end-cottage', toLocationId: 'bellwold-wattle-row', label: 'north', direction: 'north' },
+        { id: 'tallow-cottage-to-common-house', fromLocationId: 'tallow-end-cottage', toLocationId: 'bellwold-common-house', label: 'east', direction: 'east' },
+      ],
+      npcs: [
+        {
+          id: 'seli-tor',
+          name: 'Seli Tor',
+          description: 'Seli Tor weaves and mends cloth at home, taking on work from neighbors when the loom is free.',
+          greeting: '“Mind the loose thread by the door. It has already caught two sleeves today.”',
+          topics: [
+            { id: 'weaving', keywords: ['weaving', 'cloth', 'loom', 'mending'], response: '“A torn sack is a small problem until the road is long. Most of my work keeps ordinary things useful a little longer.”' },
+            { id: 'wattle-row', keywords: ['wattle', 'row', 'homes', 'neighbors'], response: '“The lane is close, but people keep their own hours. You learn who is awake by the sound of their work.”' },
+          ],
+          unknownTopicResponse: '“I am happy to talk, but the loom will not wait forever.”',
+        },
+      ],
+    },
+    {
+      id: 'old-grain-house',
+      name: 'Old Grain House',
+      description: 'The timber storehouse is built on a raised stone sill. Vent gaps run high along the walls, and chalk marks divide the bins by season rather than by owner.\n\nWell Court is west.',
+      mapPosition: { x: 1, y: -2, terrain: 'building' },
+      exits: [
+        { id: 'grain-house-to-well-court', fromLocationId: 'old-grain-house', toLocationId: 'bellwold-well-court', label: 'west', direction: 'west' },
+      ],
+      npcs: [
+        {
+          id: 'aven-rusk',
+          name: 'Aven Rusk',
+          description: 'Aven Rusk keeps the grain house’s records and checks that the stored sacks remain dry and accounted for.',
+          greeting: '“If you need the store, tell me what you are looking for. I keep the tally, not the harvest.”',
+          topics: [
+            { id: 'stores', keywords: ['grain', 'store', 'stores', 'harvest', 'sacks'], response: '“The chalk marks show what is stored and when it was checked. They do not tell us what next season will bring.”' },
+            { id: 'records', keywords: ['record', 'records', 'tally'], response: '“I write down what comes in and what leaves. A neat ledger is useful, but it cannot explain every loss.”' },
+          ],
+          unknownTopicResponse: '“Ask about the storehouse or its records, and I will check what I know.”',
+        },
+      ],
+    },
+    {
+      id: 'bellwold-common-house',
+      name: 'Bellwold Common House',
+      description: 'The Common House is a plain timber building with a long table, benches, and a wall of notices copied from the market board. Neighbors use it for meetings and shared work rather than ceremony.\n\nWell Court is north; Tallow End Cottage is west.',
+      mapPosition: { x: 0, y: -3, terrain: 'building' },
+      exits: [
+        { id: 'common-house-to-well-court', fromLocationId: 'bellwold-common-house', toLocationId: 'bellwold-well-court', label: 'north', direction: 'north' },
+        { id: 'common-house-to-tallow-cottage', fromLocationId: 'bellwold-common-house', toLocationId: 'tallow-end-cottage', label: 'west', direction: 'west' },
+      ],
+      npcs: [
+        {
+          id: 'enna-pell',
+          name: 'Enna Pell',
+          description: 'Enna Pell keeps the Common House notices and copies agreed decisions into the village record book.',
+          greeting: '“The notes are public. If something is missing, tell me what you saw and when.”',
+          topics: [
+            { id: 'meetings', keywords: ['meeting', 'meetings', 'common house', 'notices'], response: '“People bring repairs, water use, and market-day concerns here. The notes record what was agreed, not what everyone wished had been agreed.”' },
+            { id: 'records', keywords: ['record', 'records', 'book', 'ledger'], response: '“I keep the wording close to what people said. A record should help the next person check, not decide for them.”' },
+          ],
+          unknownTopicResponse: '“Ask about the public notices or the records kept here.”',
+        },
+      ],
+    },
+    {
       id: 'old-bell-tower-approach',
       name: 'Old Bell Tower Road',
       description: 'The road climbs north from the market toward Bellwold’s old tower. From here, the village roofs fall behind the rise, and the tower’s outline stands against the open sky.\n\nA track east follows the water toward the abandoned mill.',
@@ -180,4 +352,4 @@ if (graphErrors.length > 0) {
 }
 
 export const ORRAVETH_WORLD_SUMMARY =
-  'Explore Bellwold, a frontier village of trade, the silent old bell, unusual measurements, and unresolved local mysteries.';
+  'Explore Bellwold, a growing frontier settlement of workshops, shared spaces, local residents, the silent old bell, and unresolved mysteries.';

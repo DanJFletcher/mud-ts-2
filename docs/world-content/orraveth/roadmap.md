@@ -10,12 +10,12 @@ This roadmap develops the Codex into playable regions without adding engine syst
 - Verified movement, dialogue, read-object progression, completion, and replay.
 - Preserve the unresolved Bellwold mysteries; no combat, crafting, or bespoke puzzle mechanics.
 
-## Phase 2 — Expand Bellwold from Codex facts
+## Phase 2 — Expand Bellwold from Codex facts (implemented)
 
-- Review the Codex entries for Blackwater Forge, the Green Mortar, and the Eastern Forest before authoring additional locations.
-- Add one location group or short connected route only when the existing geography supports it; keep new details explicitly provisional until reviewed.
-- Give every new NPC a clear location, limited knowledge, and interaction purpose; avoid duplicating the same NPC under multiple IDs.
-- Add optional quests only where an existing supported objective and dialogue transition fit the story.
+- Added a connected southern settlement district with South Common, Well Court, Wattle Row, shared storage, a Common House, and additional homes and work yards.
+- Made the established Blackwater Forge and Green Mortar playable, with Darric Holt and Ilya Fen in their documented workplaces.
+- Added four provisional residents—Rell Soven, Enna Pell, Seli Tor, and Aven Rusk—with local, talkable topics and no new quest or state mechanics.
+- Verified every room is reachable, exits match the cardinal map directions, and the new residents can be reached and spoken to through the engine.
 
 ## Phase 3 — Develop one Codex mystery as a player-led investigation
 

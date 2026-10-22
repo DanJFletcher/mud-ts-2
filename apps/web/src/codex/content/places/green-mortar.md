@@ -7,7 +7,7 @@ summary: A Bellwold healing practice associated with Ilya Fen.
 category: geography
 entityType: location
 tags: [Bellwold, healing, medicine]
-relatedIds: [orraveth-bellwold, orraveth-ilya-fen, orraveth-medicine-and-care, orraveth-alternative-medicine]
+relatedIds: [orraveth-bellwold, orraveth-ilya-fen, orraveth-medicine-and-care, orraveth-alternative-medicine, orraveth-bellwold-south-common]
 relationships:
   - type: located-in
     targetId: orraveth-bellwold
@@ -17,7 +17,7 @@ lastUpdated: "2026-10-22"
 regionId: orraveth-bellwold
 ---
 
-The Green Mortar is Bellwold's healing practice, associated with [[ilya-fen|Ilya Fen]]. Its name suggests the preparation of remedies, though the exact range of treatments offered has not been recorded.
+The Green Mortar is Bellwold's healing practice, associated with [[ilya-fen|Ilya Fen]]. It stands beside [[bellwold-south-common|South Common]], accessible from the shared village lanes. Its name suggests the preparation of remedies, though the exact range of treatments offered has not been recorded.
 
 In a frontier village, care draws on practical knowledge, local plants, and the ability to obtain supplies from travelers and merchants. The Green Mortar exists alongside the wider and often expensive market for [[healing-potions|healing potions]].
 

@@ -3,11 +3,11 @@ id: orraveth-bellwold-market-square
 slug: bellwold-market-square
 worldId: orraveth
 title: Bellwold Market Square
-summary: The village's public meeting point for local trade, announcements, and exchange between residents and travelers.
+summary: Bellwold's central public square for local trade, announcements, and travel between the older village core and its southern lanes.
 category: geography
 entityType: location
 tags: [Bellwold, market, trade, public life]
-relatedIds: [orraveth-bellwold, orraveth-marrs-general-goods, orraveth-trade-and-transport, orraveth-currency-and-commerce]
+relatedIds: [orraveth-bellwold, orraveth-marrs-general-goods, orraveth-bellwold-south-common, orraveth-kindly-roof-inn, orraveth-trade-and-transport]
 relationships:
   - type: located-in
     targetId: orraveth-bellwold
@@ -17,8 +17,8 @@ lastUpdated: "2026-10-22"
 regionId: orraveth-bellwold
 ---
 
-Bellwold Market Square is the village's public meeting point. Residents and travelers exchange goods and news there, and local activity makes the square a natural place for announcements and negotiation.
+Bellwold Market Square is the settlement's central public meeting point. Residents and travelers exchange goods and news there, and local activity makes the square a natural place for announcements and negotiation.
 
-The market is closely tied to the small businesses around the village, including [[marrs-general-goods|Marr's General Goods]]. Its size, schedule, and layout have not been fixed in the current record.
+The [[kindly-roof-inn|Kindly Roof]] stands to the west and [[marrs-general-goods|Marr's General Goods]] to the east. A northbound road leads toward the old bell tower; south, the street opens onto [[bellwold-south-common|South Common]] and Bellwold's newer residential and workshop lanes.
 
-The square is a place of shared access, but that does not mean every resident has equal influence over prices or public decisions. Its future detail should grow from Bellwold's own community and trade rather than a generic fantasy-market template.
+The square is a place of shared access, but that does not mean every resident has equal influence over prices or public decisions. The layout beyond the square continues to be refined as Bellwold's public and working spaces are documented.

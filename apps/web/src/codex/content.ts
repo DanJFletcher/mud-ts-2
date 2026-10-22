@@ -8,7 +8,7 @@ const articleFiles = import.meta.glob("./content/**/*.md", {
   import: "default",
 }) as Record<string, string>;
 
-const wikiLinkPattern = /\[\[([a-z0-9-]+)(?:\|[^\]]+)?\]\]/g;
+const wikiLinkPattern = /\[\[([a-z0-9-]+)(?:\|([^\]]+))?\]\]/g;
 
 function parseArticle(sourcePath: string, raw: string): CodexArticle {
   const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)([\s\S]*)$/);
