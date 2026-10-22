@@ -14,7 +14,7 @@ async function openInfoSection(section: 'Vitals' | 'Items' | 'Equipment' | 'Stat
   fireEvent.click(screen.getByRole('link', { name: 'Info' }));
   const tabs = await screen.findByRole('navigation', { name: 'Info sections' });
   fireEvent.click(within(tabs).getByRole('link', { name: section }));
-  await screen.findByRole('heading', { name: section === 'Codex' ? /A world, carefullyremembered/ : section });
+  await screen.findByRole('heading', { name: section === 'Codex' ? /A world, carefully remembered/ : section });
   return tabs;
 }
 
@@ -1000,7 +1000,7 @@ describe('single-character world session client', () => {
     expect(screen.getByText('No completed quests yet.')).toBeVisible();
     expect(screen.getByText('A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east. One loose stone bears a pale stripe.')).toBeVisible();
     fireEvent.click(within(infoTabs).getByRole('link', { name: 'Codex' }));
-    await screen.findByRole('heading', { name: /A world, carefullyremembered/ });
+    await screen.findByRole('heading', { name: /A world, carefully remembered/ });
     expect(screen.getByText('Orraveth is separate from the active MUDD world.')).toBeVisible();
     expect(document.querySelector('.focused-topbar')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));

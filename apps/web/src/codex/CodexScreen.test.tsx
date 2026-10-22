@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import CodexScreen from "./CodexScreen.js";
 
@@ -9,7 +9,7 @@ describe("CodexScreen", () => {
 
   it("opens on the Orraveth index with the archive sections", () => {
     render(<CodexScreen />);
-    expect(screen.getByRole("heading", { name: /A world, carefullyremembered/ })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /A world, carefully remembered/ })).toBeVisible();
     expect(screen.getByRole("navigation", { name: "Codex sections" })).toBeVisible();
     expect(screen.getByRole("link", { name: /Explore/ })).toHaveAttribute("href", "#/info/codex/explore");
     expect(screen.getByText("Orraveth is separate from the active MUDD world.")).toBeVisible();
@@ -23,10 +23,15 @@ describe("CodexScreen", () => {
 
     await screen.findByRole("heading", { name: "“Elira Venn”" });
     expect(screen.getByRole("link", { name: /Professor Elira Venn/ })).toBeVisible();
+    const firstResult = screen.getAllByRole("option")[0];
+    const firstResultTitle = within(firstResult).getByRole("link").textContent?.trim() ?? "";
     fireEvent.keyDown(search, { key: "ArrowDown" });
+    expect(screen.getAllByRole("option")[1]).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(search, { key: "ArrowUp" });
+    expect(screen.getAllByRole("option")[0]).toHaveAttribute("aria-selected", "true");
     fireEvent.keyDown(search, { key: "Enter" });
-    await screen.findByRole("heading", { name: "Professor Elira Venn" });
-    expect(screen.getByText("Established Canon")).toBeVisible();
+    await screen.findByRole("heading", { level: 1, name: firstResultTitle });
+    expect(screen.getByText(/Canon$/, { selector: ".codex-article-meta .codex-canon" })).toBeVisible();
   });
 
   it("renders a mystery article and turns internal links into Codex navigation", async () => {
@@ -43,7 +48,7 @@ describe("CodexScreen", () => {
     window.location.hash = "#/info/codex/atlas";
     render(<CodexScreen />);
     expect(await screen.findByRole("heading", { name: "Regions & places" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Bellwold", exact: true })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^Bellwold$/ })).toBeVisible();
     await waitFor(() => expect(window.location.hash).toContain("/info/codex/atlas"));
   });
 });

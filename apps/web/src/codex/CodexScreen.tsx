@@ -115,15 +115,10 @@ export default function CodexScreen() {
         if (route.page === "search") window.location.hash = "/info/codex";
         else (document.getElementById("codex-search") as HTMLInputElement | null)?.blur();
       }
-      if (route.page === "search" && routeResults.length && target?.id === "codex-search") {
-        if (event.key === "ArrowDown") { event.preventDefault(); setActiveResult((value) => Math.min(value + 1, routeResults.length - 1)); }
-        if (event.key === "ArrowUp") { event.preventDefault(); setActiveResult((value) => Math.max(value - 1, 0)); }
-        if (event.key === "Enter") { event.preventDefault(); window.location.hash = articleHref(routeResults[activeResult].slug).slice(1); }
-      }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeResult, route, routeResults]);
+  }, [route]);
 
   const linkedArticle = (id: string) => ORRAVETH_ARTICLES_BY_ID.get(id);
   return (
@@ -166,7 +161,7 @@ export default function CodexScreen() {
         <div className="codex-hero">
           <div className="codex-hero-copy">
             <p className="codex-kicker"><span>VOL. I</span> &nbsp;·&nbsp; AN INDEPENDENT ARCHIVE</p>
-            <h1>A world, <em>carefully</em><br />remembered.</h1>
+            <h1 aria-label="A world, carefully remembered.">A world, <em>carefully</em><br />remembered.</h1>
             <p className="codex-lede">A field guide to Orraveth: its places, peoples, beliefs, and the histories that still shape the present.</p>
             <a className="codex-primary-link" href="#/info/codex/explore">Open the index <ArrowRight size={17} /></a>
           </div>

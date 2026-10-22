@@ -18,14 +18,14 @@ function parseArticle(sourcePath: string, raw: string): CodexArticle {
   try {
     metadata = parseYaml(match[1]);
   } catch (error) {
-    throw new Error(`Codex article ${sourcePath} has invalid YAML: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`Codex article ${sourcePath} has invalid YAML: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
 
   let validatedMetadata;
   try {
     validatedMetadata = CodexArticleMetadataSchema.parse(metadata);
   } catch (error) {
-    throw new Error(`Codex article ${sourcePath} has invalid metadata: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`Codex article ${sourcePath} has invalid metadata: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
 
   const body = match[2].trim();
