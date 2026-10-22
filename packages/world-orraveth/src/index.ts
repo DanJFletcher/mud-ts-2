@@ -587,11 +587,63 @@ const draft = {
     {
       id: 'bellwold-east-road-bend',
       name: 'East Road Bend',
-      description: 'The track bends around a low rise, with the mill channel now out of sight. East Mill Track is west; the road verge lies east.',
+      description: 'The track bends around a low rise, with the mill channel now out of sight. East Mill Track is west; the road verge lies east, and a narrower road turns north toward an abandoned church.',
       mapPosition: { x: 3, y: 1, terrain: 'land' },
       exits: [
         { id: 'east-road-bend-to-track', fromLocationId: 'bellwold-east-road-bend', toLocationId: 'bellwold-east-mill-track', label: 'west', direction: 'west', roadId: 'bellwold-east-mill-road' },
         { id: 'east-road-bend-to-verge', fromLocationId: 'bellwold-east-road-bend', toLocationId: 'bellwold-east-road-verge', label: 'east', direction: 'east', roadId: 'bellwold-east-mill-road' },
+        { id: 'east-road-bend-to-church-track', fromLocationId: 'bellwold-east-road-bend', toLocationId: 'bellwold-north-church-track', label: 'north toward the abandoned church', direction: 'north', roadId: 'bellwold-north-church-road' },
+      ],
+    },
+    {
+      id: 'bellwold-north-church-track',
+      name: 'North Church Track',
+      description: 'A narrow track climbs north from East Road Bend between low banks of grass. The bend is south; an open approach before the abandoned church lies north.',
+      mapPosition: { x: 3, y: 2, terrain: 'land' },
+      exits: [
+        { id: 'church-track-to-east-bend', fromLocationId: 'bellwold-north-church-track', toLocationId: 'bellwold-east-road-bend', label: 'south to East Road Bend', direction: 'south', roadId: 'bellwold-north-church-road' },
+        { id: 'church-track-to-approach', fromLocationId: 'bellwold-north-church-track', toLocationId: 'bellwold-church-approach', label: 'north to the church approach', direction: 'north', roadId: 'bellwold-north-church-road' },
+      ],
+    },
+    {
+      id: 'bellwold-church-approach',
+      name: 'Church Approach',
+      description: 'The track reaches a small open space before the abandoned church. North is the church entrance; the road returns south toward East Road Bend.',
+      mapPosition: { x: 3, y: 3, terrain: 'land' },
+      exits: [
+        { id: 'church-approach-to-track', fromLocationId: 'bellwold-church-approach', toLocationId: 'bellwold-north-church-track', label: 'south along the road', direction: 'south', roadId: 'bellwold-north-church-road' },
+        { id: 'church-approach-to-church', fromLocationId: 'bellwold-church-approach', toLocationId: 'bellwold-abandoned-church', label: 'north into the church', direction: 'north' },
+      ],
+    },
+    {
+      id: 'bellwold-abandoned-church',
+      name: 'Abandoned Church',
+      description: 'The abandoned church stands north of the track. Dust has settled over the nave, and weather has darkened the boards beneath the roof. A narrow stair climbs to the belfry; worn stone steps descend to an annex below.',
+      mapPosition: { x: 3, y: 4, z: 0, terrain: 'building' },
+      exits: [
+        { id: 'church-to-approach', fromLocationId: 'bellwold-abandoned-church', toLocationId: 'bellwold-church-approach', label: 'south to the church approach', direction: 'south' },
+        { id: 'church-to-belfry', fromLocationId: 'bellwold-abandoned-church', toLocationId: 'bellwold-church-belfry', label: 'up to the belfry', direction: 'up' },
+        { id: 'church-to-annex', fromLocationId: 'bellwold-abandoned-church', toLocationId: 'bellwold-church-annex', label: 'down to the annex', direction: 'down' },
+      ],
+    },
+    {
+      id: 'bellwold-church-belfry',
+      name: 'Church Belfry',
+      description: 'The stair opens into a narrow belfry exposed to the wind. A weathered frame hangs above the roofline, but the bell is long gone; only empty mounting bolts and a cut length of rope remain. The stair leads down to the church nave.',
+      mapAreaId: 'bellwold-abandoned-church',
+      mapPosition: { x: 3, y: 4, z: 1, terrain: 'building' },
+      exits: [
+        { id: 'belfry-to-church', fromLocationId: 'bellwold-church-belfry', toLocationId: 'bellwold-abandoned-church', label: 'down to the church', direction: 'down' },
+      ],
+    },
+    {
+      id: 'bellwold-church-annex',
+      name: 'Church Annex',
+      description: 'The steps descend into a low stone annex beneath the church. Damp has darkened the mortar, and shallow shelves run along the walls. The only stair leads up to the nave.',
+      mapAreaId: 'bellwold-abandoned-church',
+      mapPosition: { x: 3, y: 4, z: -1, terrain: 'building' },
+      exits: [
+        { id: 'annex-to-church', fromLocationId: 'bellwold-church-annex', toLocationId: 'bellwold-abandoned-church', label: 'up to the church', direction: 'up' },
       ],
     },
     {
@@ -639,6 +691,23 @@ const draft = {
       encounters: [
         {
           id: 'bellwold-east-road-stray-hound',
+          name: 'Stray Hound',
+          combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' },
+        },
+      ],
+    },
+    {
+      id: 'bellwold-north-church-road',
+      name: 'Bellwold North Church Road',
+      locationIds: [
+        'bellwold-east-road-bend',
+        'bellwold-north-church-track',
+        'bellwold-church-approach',
+      ],
+      encounterChancePercent: 10,
+      encounters: [
+        {
+          id: 'bellwold-north-church-road-stray-hound',
           name: 'Stray Hound',
           combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' },
         },

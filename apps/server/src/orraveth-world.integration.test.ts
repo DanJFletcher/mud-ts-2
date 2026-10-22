@@ -20,6 +20,7 @@ import {
   createAutonomousNpcScheduler,
 } from './autonomous-npc-scheduler.js';
 import { worldEventEffectsPlugin } from './demo-event-effects-plugin.js';
+import { projectWorldMap } from './world-map-projection.js';
 
 function makeHarness(options: Readonly<{
   now?: () => Date;
@@ -84,9 +85,9 @@ function makeHarness(options: Readonly<{
 }
 
 describe('Orraveth Bellwold settlement', () => {
-  it('has a valid, fully reachable thirty-four-location region with map directions matching its exits', () => {
+  it('has a valid, fully reachable thirty-nine-location region with map directions matching its exits', () => {
     expect(validateDraftWorldGraph(orravethWorld)).toEqual([]);
-    expect(orravethWorld.locations).toHaveLength(34);
+    expect(orravethWorld.locations).toHaveLength(39);
 
     const locationIds = new Set(orravethWorld.locations.map(({ id }) => id));
     const reached = new Set<string>(['bellwold-market-square']);
@@ -120,6 +121,10 @@ describe('Orraveth Bellwold settlement', () => {
             x: current.mapPosition.x + offset.x,
             y: current.mapPosition.y + offset.y,
           });
+        }
+        if ((exit.direction === 'up' || exit.direction === 'down') && current.mapPosition && destination.mapPosition) {
+          const verticalOffset = exit.direction === 'up' ? 1 : -1;
+          expect(destination.mapPosition.z ?? 0).toBe((current.mapPosition.z ?? 0) + verticalOffset);
         }
         if (!reached.has(exit.toLocationId)) {
           reached.add(exit.toLocationId);
@@ -202,6 +207,15 @@ describe('Orraveth Bellwold settlement', () => {
           'bellwold-west-road-end',
         ],
       },
+      {
+        id: 'bellwold-north-church-road',
+        name: 'Bellwold North Church Road',
+        locationIds: [
+          'bellwold-east-road-bend',
+          'bellwold-north-church-track',
+          'bellwold-church-approach',
+        ],
+      },
     ];
 
     for (const expected of expectedRoads) {
@@ -232,6 +246,45 @@ describe('Orraveth Bellwold settlement', () => {
         }));
       }
     }
+  });
+
+  it('keeps the church belfry and annex on separate Z-level maps', () => {
+    const visitedLocationIds = [
+      'bellwold-east-road-bend',
+      'bellwold-north-church-track',
+      'bellwold-church-approach',
+      'bellwold-abandoned-church',
+      'bellwold-church-belfry',
+      'bellwold-church-annex',
+    ];
+    const mapAt = (locationId: string) => projectWorldMap(
+      CharacterProjectionSchema.parse({
+        worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+        characterId: 'church-map-traveler',
+        name: 'Map Traveler',
+        locationId,
+        visitedLocationIds,
+        revision: 1,
+      }),
+      orravethWorld,
+    );
+
+    const naveMap = mapAt('bellwold-abandoned-church');
+    expect(naveMap.locations.map(({ id }) => id)).toContain('bellwold-abandoned-church');
+    expect(naveMap.locations.map(({ id }) => id)).toContain('bellwold-east-road-bend');
+    expect(naveMap.locations.map(({ id }) => id)).not.toContain('bellwold-church-belfry');
+    expect(naveMap.locations.map(({ id }) => id)).not.toContain('bellwold-church-annex');
+    expect(naveMap.connections).toContainEqual(expect.objectContaining({
+      fromLocationId: 'bellwold-church-approach',
+      toLocationId: 'bellwold-abandoned-church',
+      direction: 'north',
+      oneWay: false,
+    }));
+
+    expect(mapAt('bellwold-church-belfry').locations.map(({ id }) => id))
+      .toEqual(['bellwold-church-belfry']);
+    expect(mapAt('bellwold-church-annex').locations.map(({ id }) => id))
+      .toEqual(['bellwold-church-annex']);
   });
 
   it('moves the villager through town and advances the guard along its patrol', async () => {

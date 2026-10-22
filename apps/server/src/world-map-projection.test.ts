@@ -487,6 +487,12 @@ describe('Orraveth Bellwold road travel', () => {
         if (!result.receipt.ok) throw new Error(result.receipt.message);
         return loadCharacter();
       };
+      const stepRoad = async (exitId: string, commandId: string) => {
+        const character = await loadCharacter();
+        const result = await client.roadStep(characterId, exitId, character.revision, commandId);
+        if (!result.receipt.ok) throw new Error(result.receipt.message);
+        return loadCharacter();
+      };
       const travelRoad = async (roadId: string) => {
         const road = testWorld.roads.find(({ id }) => id === roadId);
         if (!road) throw new Error(`Missing road ${roadId}.`);
@@ -550,7 +556,23 @@ describe('Orraveth Bellwold road travel', () => {
       await move('south-common-to-square', 'orraveth-road-back-to-square');
       await move('square-to-tower-road', 'orraveth-road-to-tower-road');
       await move('tower-road-to-mill', 'orraveth-road-to-watermill');
-      character = await travelRoad('bellwold-east-mill-road');
+      await stepRoad('mill-to-east-track', 'orraveth-road-to-east-track');
+      await stepRoad('east-mill-track-to-bend', 'orraveth-road-to-east-bend');
+      await stepRoad('east-road-bend-to-church-track', 'orraveth-road-to-church-track');
+      await stepRoad('church-track-to-approach', 'orraveth-road-to-church-approach');
+      await move('church-approach-to-church', 'orraveth-road-into-church');
+      await move('church-to-belfry', 'orraveth-church-up-to-belfry');
+      expect(projectWorldMap(await loadCharacter(), testWorld).locations.map(({ id }) => id))
+        .toEqual(['bellwold-church-belfry']);
+      await move('belfry-to-church', 'orraveth-church-down-to-nave');
+      await move('church-to-annex', 'orraveth-church-down-to-annex');
+      expect(projectWorldMap(await loadCharacter(), testWorld).locations.map(({ id }) => id))
+        .toEqual(['bellwold-church-annex']);
+      await move('annex-to-church', 'orraveth-church-up-to-nave');
+      await move('church-to-approach', 'orraveth-road-back-to-church-approach');
+      await stepRoad('church-approach-to-track', 'orraveth-road-back-to-church-track');
+      await stepRoad('church-track-to-east-bend', 'orraveth-road-back-to-east-bend');
+      character = await stepRoad('east-road-bend-to-verge', 'orraveth-road-to-east-verge');
       expect(character.locationId).toBe('bellwold-east-road-verge');
       character = await returnAlongRoad('bellwold-east-mill-road');
       expect(character.locationId).toBe('abandoned-watermill');
