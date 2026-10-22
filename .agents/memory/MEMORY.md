@@ -12,3 +12,4 @@
 - [World-pack authoring types](world-pack-authoring-types.md) — Author against Zod input types when defaults normalize content; keep runtime pack types fully parsed.
 - [Orraveth Codex separation](orraveth-codex.md) — Keep Orraveth lore separate from the existing MUDD demo world and gameplay state.
 - [Engine integration tests](engine-integration-tests.md) — Exercise content through a complete, authorized engine host; schema-only tests miss runtime plugin dependencies.
+- [World runtime capabilities](world-runtime-capabilities.md) — Treat currency as optional per world, and register shared effect handlers in every runtime that emits those effects.

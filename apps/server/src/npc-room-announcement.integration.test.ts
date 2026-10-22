@@ -3,6 +3,33 @@ import { once } from 'node:events';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
+  world: {
+    locations: [
+      {
+        id: 'npc-room',
+        npcs: [{
+          id: 'mara',
+          name: 'Mara',
+          announcements: ['The north bridge is open.'],
+          roomChatReactions: [{
+            keywords: ['marker', 'sign'],
+            response: 'The marker still points east.',
+          }],
+        }],
+      },
+      { id: 'other-room', npcs: [] },
+      { id: 'entry-room', npcs: [] },
+      {
+        id: 'arrival-room',
+        npcs: [{
+          id: 'mara-arrival',
+          name: 'Mara',
+          announcements: ['The north bridge is open.'],
+        }],
+      },
+      { id: 'quiet-room', npcs: [] },
+    ],
+  },
   characters: {
     'character-alice': {
       characterId: 'character-alice',
@@ -189,7 +216,10 @@ vi.mock('@mudd/engine-core', () => ({
       while (state.pendingEffects.length) {
         const effect = state.pendingEffects.shift();
         if (!effect) continue;
-        await state.effectHandlers.get(effect.type)?.(effect.payload, effect.context);
+        await state.effectHandlers.get(effect.type)?.(effect.payload, {
+          ...effect.context,
+          world: state.world,
+        });
       }
     }
     async dispatch(command: {
@@ -261,33 +291,7 @@ vi.mock('./npc-announcer.js', async (importOriginal) => {
 
 vi.mock('@mudd/world-demo', () => ({
   DEMO_WORLD_INSTANCE_ID: instanceId,
-  demoWorld: {
-    locations: [
-      {
-        id: 'npc-room',
-        npcs: [{
-          id: 'mara',
-          name: 'Mara',
-          announcements: ['The north bridge is open.'],
-          roomChatReactions: [{
-            keywords: ['marker', 'sign'],
-            response: 'The marker still points east.',
-          }],
-        }],
-      },
-      { id: 'other-room', npcs: [] },
-      { id: 'entry-room', npcs: [] },
-      {
-        id: 'arrival-room',
-        npcs: [{
-          id: 'mara-arrival',
-          name: 'Mara',
-          announcements: ['The north bridge is open.'],
-        }],
-      },
-      { id: 'quiet-room', npcs: [] },
-    ],
-  },
+  demoWorld: state.world,
 }));
 
 vi.mock('./db/client.js', async () => {
@@ -1009,6 +1013,7 @@ describe('NPC room announcements through the server', () => {
           worldInstanceId: instanceId,
           sourceStreamId: characterId,
           causationCommandId: effectId,
+          world: state.world,
         },
       );
     }
