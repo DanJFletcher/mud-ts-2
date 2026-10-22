@@ -101,12 +101,12 @@ describe('autonomous NPC scheduler and room movement messages', () => {
     expect(publishNpcMessage).toHaveBeenCalledTimes(2);
     expect(publishNpcMessage).toHaveBeenNthCalledWith(1, expect.objectContaining({
       roomId: 'mossgate-clearing',
-      text: 'The guard continues the patrol to the east.',
+      text: 'The guard leaves toward the east, eyes alert.',
       sourceEffectId: expect.stringMatching(/:departure$/),
     }));
     expect(publishNpcMessage).toHaveBeenNthCalledWith(2, expect.objectContaining({
       roomId: 'bellwarden-track',
-      text: 'A town guard marches in from the west, surveying the surroundings.',
+      text: 'A town guard enters from the west, eyes alert.',
       sourceEffectId: expect.stringMatching(/:arrival$/),
     }));
     await engine.stop();

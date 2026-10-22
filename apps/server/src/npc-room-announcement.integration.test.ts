@@ -163,6 +163,7 @@ vi.mock('@mudd/core-plugins', () => ({
       read: async () => ({ packId: 'test-pack', packVersion: '1.0.0', revision: 0, groups: [] }),
     },
   }),
+  mobileNpcDefinitions: () => [],
   autonomousNpcsPlugin: {},
   characterPlugin: {},
   combatPlugin: {},
@@ -847,14 +848,29 @@ describe('NPC room announcements through the server', () => {
       text: 'A villager heads south, hands clasped behind their back.',
       sourceEffectId: 'world-npc-movement:test-effect:departure',
     });
+    const arrivalNotice = await publishNpcRoomMessage({
+      worldInstanceId: instanceId,
+      roomId: 'npc-room',
+      npcId: 'mossgate-patrolling-guard',
+      npcName: 'Patrolling Guard',
+      text: 'A town guard enters from the north, eyes alert.',
+      sourceEffectId: 'world-npc-movement:test-effect:arrival',
+    });
     const update = await readRoom('alice', 'npc-room', initial.body.cursor);
     expect(update.response.status).toBe(200);
     expect(update.body.messages).toEqual([]);
-    expect(update.body.terminalEvents).toEqual([expect.objectContaining({
-      id: movementNotice.id,
-      speakerName: 'Wandering Villager',
-      text: 'A villager heads south, hands clasped behind their back.',
-    })]);
+    expect(update.body.terminalEvents).toEqual([
+      expect.objectContaining({
+        id: movementNotice.id,
+        speakerName: 'Wandering Villager',
+        text: 'A villager heads south, hands clasped behind their back.',
+      }),
+      expect.objectContaining({
+        id: arrivalNotice.id,
+        speakerName: 'Patrolling Guard',
+        text: 'A town guard enters from the north, eyes alert.',
+      }),
+    ]);
   });
 
   it('lets an NPC answer a matching public room message and shares the reply with room occupants', async () => {

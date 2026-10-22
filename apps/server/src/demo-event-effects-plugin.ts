@@ -42,11 +42,11 @@ export const worldEventEffectsPlugin: EnginePlugin = {
         const arrivalDirection = reverseExit?.direction ?? oppositeDirection(departureDirection);
         const narrative = npc.movement?.narrative;
         const departure = formatMovementNarrative(
-          narrative?.departure ?? `${npc.name} heads {direction}.`,
+          narrative?.departure ?? 'leaves toward the {direction}.',
           departureDirection,
         );
         const arrival = formatMovementNarrative(
-          narrative?.arrival ?? `${npc.name} arrives from the {direction}.`,
+          narrative?.arrival ?? 'enters from the {direction}.',
           arrivalDirection,
         );
         await publishNpcRoomMessage({

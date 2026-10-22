@@ -9,7 +9,7 @@ import {
 const draft = {
   formatVersion: 1,
   packId: 'mudd.first-steps',
-  packVersion: '1.1.0',
+  packVersion: '1.1.1',
   displayName: 'The Waystone Path',
   respawn: { locationId: 'stillwater-fountain' },
   currency: {
@@ -298,8 +298,8 @@ const draft = {
             stayChancePercent: 20,
             allowedLocationIds: ['mossgate-clearing', 'glasswater-approach', 'glasswater-bridge'],
             narrative: {
-              arrival: 'A villager strolls in from the {direction}, hands clasped behind their back.',
-              departure: 'A villager heads {direction}, hands clasped behind their back.',
+              arrival: 'A villager enters from the {direction}, hands clasped behind their back.',
+              departure: 'A villager leaves toward the {direction}, hands clasped behind their back.',
             },
           },
         },
@@ -320,8 +320,8 @@ const draft = {
               'bellwarden-track',
             ],
             narrative: {
-              arrival: 'A town guard marches in from the {direction}, surveying the surroundings.',
-              departure: 'The guard continues the patrol to the {direction}.',
+              arrival: 'A town guard enters from the {direction}, eyes alert.',
+              departure: 'The guard leaves toward the {direction}, eyes alert.',
             },
           },
         },

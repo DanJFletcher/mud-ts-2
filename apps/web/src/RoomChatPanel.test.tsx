@@ -105,7 +105,7 @@ describe('RoomChatPanel message polling', () => {
     expect(screen.getAllByText('Hello')).toHaveLength(1);
   });
 
-  it('forwards NPC movement notices to the terminal instead of rendering them in room chat', async () => {
+  it('forwards NPC departures and arrivals to the terminal instead of rendering them in room chat', async () => {
     const onTerminalEvent = vi.fn();
     render(
       <RoomChatPanel
@@ -116,23 +116,35 @@ describe('RoomChatPanel message polling', () => {
       />,
     );
     expect(await screen.findByText('No room messages yet.')).toBeVisible();
-    const event: RoomChatMessage = {
+    const departure: RoomChatMessage = {
       id: 13,
       roomId: 'test-room',
       speakerType: 'npc',
-      speakerName: 'Wandering Villager',
-      text: 'A villager heads south, hands clasped behind their back.',
+      speakerName: 'Taren Voss',
+      text: 'The guard leaves toward the south, continuing the patrol.',
       createdAt: '2026-10-21T12:00:00.000Z',
     };
-    pendingTerminalEvents = [event];
+    const arrival: RoomChatMessage = {
+      id: 14,
+      roomId: 'test-room',
+      speakerType: 'npc',
+      speakerName: 'Linnet Reed',
+      text: 'A villager enters from the north, nodding to a familiar face.',
+      createdAt: '2026-10-21T12:00:01.000Z',
+    };
+    pendingTerminalEvents = [departure, arrival];
 
     await act(async () => {
       intervals[0]?.();
     });
 
-    await waitFor(() => expect(onTerminalEvent).toHaveBeenCalledWith(event));
-    expect(screen.queryByText(event.text)).not.toBeInTheDocument();
-    expect(screen.queryByText(event.speakerName)).not.toBeInTheDocument();
+    await waitFor(() => expect(onTerminalEvent).toHaveBeenCalledTimes(2));
+    expect(onTerminalEvent).toHaveBeenNthCalledWith(1, departure);
+    expect(onTerminalEvent).toHaveBeenNthCalledWith(2, arrival);
+    expect(screen.queryByText(departure.text)).not.toBeInTheDocument();
+    expect(screen.queryByText(arrival.text)).not.toBeInTheDocument();
+    expect(screen.queryByText(departure.speakerName)).not.toBeInTheDocument();
+    expect(screen.queryByText(arrival.speakerName)).not.toBeInTheDocument();
   });
 
   it('reuses the same submission ID when the player retries a failed send', async () => {

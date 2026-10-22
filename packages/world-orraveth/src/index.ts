@@ -9,7 +9,7 @@ export const ORRAVETH_WORLD_INSTANCE_ID = 'orraveth-bellwold-instance';
 const draft = {
   formatVersion: 1,
   packId: 'orraveth.bellwold',
-  packVersion: '1.4.0',
+  packVersion: '1.4.1',
   displayName: 'Orraveth: Bellwold',
   currency: {
     id: 'gold',
@@ -54,8 +54,8 @@ const draft = {
               'bellwold-common-house',
             ],
             narrative: {
-              arrival: 'Linnet Reed wanders in from the {direction}, nodding to a familiar face.',
-              departure: 'Linnet Reed sets off {direction}, drifting toward another town errand.',
+              arrival: 'A villager enters from the {direction}, nodding to a familiar face.',
+              departure: 'A villager leaves toward the {direction}, carrying on with a town errand.',
             },
           },
         },
@@ -85,8 +85,8 @@ const draft = {
               'old-bell-tower-approach',
             ],
             narrative: {
-              arrival: 'Taren Voss comes in from the {direction}, eyes on the street.',
-              departure: 'Taren Voss continues the patrol to the {direction}.',
+              arrival: 'The guard enters from the {direction}, eyes alert.',
+              departure: 'The guard leaves toward the {direction}, continuing the patrol.',
             },
           },
         },
