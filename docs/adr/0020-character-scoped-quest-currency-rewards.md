@@ -43,4 +43,4 @@ Character quests can be accepted and completed through NPC dialogue, and each ch
 
 ## Follow-up / revisit trigger
 
-Revisit the decision when item rewards or party quest payouts are requested; define item-instance ownership or party distribution before expanding the contract.
+Revisit the decision when newly created item rewards or party quest payouts are requested. Same-item quest returns are addressed by ADR 0023.

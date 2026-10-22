@@ -233,12 +233,24 @@ export const npcDialoguePlugin: EnginePlugin = {
             if (character.wallet.balance > 2_147_483_647 - quest.reward.amount) {
               throw new RuleViolationError('Your wallet cannot hold that quest reward.');
             }
+            const missingRewardItemId = (quest.reward.itemIds ?? []).find((itemId) =>
+              !character.inventory.some((item) => item.id === itemId),
+            );
+            if (missingRewardItemId) {
+              const item = context.world.locations
+                .flatMap((location) => location.takeables ?? [])
+                .find((candidate) => candidate.id === missingRewardItemId);
+              throw new RuleViolationError(
+                `You must carry ${item?.label ?? 'the required item'} before claiming this quest reward.`,
+              );
+            }
             const rewardPayload = {
               characterId: character.characterId,
               questId: quest.id,
               definitionVersion: quest.version,
               currencyId: currency.id,
               amount: quest.reward.amount,
+              ...((quest.reward.itemIds?.length ?? 0) > 0 ? { itemIds: quest.reward.itemIds } : {}),
             };
             CharacterQuestRewardedEventSchema.shape.payload.parse(rewardPayload);
             events.push({ type: 'character.quest_rewarded', version: 1, payload: rewardPayload });

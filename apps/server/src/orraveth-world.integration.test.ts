@@ -85,9 +85,19 @@ function makeHarness(options: Readonly<{
 }
 
 describe('Orraveth Bellwold settlement', () => {
-  it('has a valid, fully reachable thirty-nine-location region with map directions matching its exits', () => {
+  it('has a valid, fully reachable fifty-six-location region with map directions matching its exits', () => {
     expect(validateDraftWorldGraph(orravethWorld)).toEqual([]);
-    expect(orravethWorld.locations).toHaveLength(39);
+    expect(orravethWorld.locations).toHaveLength(56);
+
+    const worldWithMissingQuestRewardItem = structuredClone(orravethWorld);
+    const churchQuest = worldWithMissingQuestRewardItem.quests?.find(
+      (quest) => quest.id === 'bellwold-church-sword',
+    );
+    if (!churchQuest?.reward) throw new Error('The church quest reward is missing.');
+    churchQuest.reward.itemIds = ['missing-reliquary-sword'];
+    expect(validateDraftWorldGraph(worldWithMissingQuestRewardItem)).toContain(
+      'Quest bellwold-church-sword reward references missing item missing-reliquary-sword',
+    );
 
     const locationIds = new Set(orravethWorld.locations.map(({ id }) => id));
     const reached = new Set<string>(['bellwold-market-square']);
@@ -473,6 +483,36 @@ describe('Orraveth Bellwold settlement', () => {
     } finally {
       await h.engine.stop();
     }
+  });
+
+  it('keeps the church undercrypt as a reachable maze with six dead ends and a final sword chamber', () => {
+    const crypt = orravethWorld.locations.filter(
+      (location) => location.mapAreaId === 'bellwold-church-undercrypt',
+    );
+    const cryptIds = new Set(crypt.map(({ id }) => id));
+    const visited = new Set<string>();
+    const pending = ['bellwold-church-crypt-entry'];
+    while (pending.length > 0) {
+      const locationId = pending.pop()!;
+      if (visited.has(locationId)) continue;
+      visited.add(locationId);
+      const location = crypt.find(({ id }) => id === locationId);
+      for (const exit of location?.exits ?? []) {
+        if (cryptIds.has(exit.toLocationId)) pending.push(exit.toLocationId);
+      }
+    }
+
+    expect(crypt).toHaveLength(17);
+    expect(visited.size).toBe(crypt.length);
+    const deadEnds = crypt.filter((location) =>
+      location.id !== 'bellwold-church-crypt-entry'
+      && location.id !== 'bellwold-church-reliquary'
+      && location.exits.filter((exit) => cryptIds.has(exit.toLocationId)).length === 1,
+    );
+    expect(deadEnds).toHaveLength(6);
+    const reliquary = crypt.find(({ id }) => id === 'bellwold-church-reliquary');
+    expect(reliquary?.takeables?.map(({ id }) => id)).toContain('bellwold-reliquary-sword');
+    expect(reliquary?.exits.map(({ direction }) => direction)).toEqual(['south']);
   });
 
   it('lets players reach and talk with residents in the expanded settlement', async () => {

@@ -9,7 +9,7 @@ export const ORRAVETH_WORLD_INSTANCE_ID = 'orraveth-bellwold-instance';
 const draft = {
   formatVersion: 1,
   packId: 'orraveth.bellwold',
-  packVersion: '1.5.0',
+  packVersion: '1.6.0',
   displayName: 'Orraveth: Bellwold',
   currency: {
     id: 'gold',
@@ -193,6 +193,13 @@ const draft = {
                 questAction: { type: 'accept', questId: 'bellwold-mill-observations' },
               },
               {
+                id: 'ask-anwen-about-church-sword',
+                label: 'Ask about the abandoned church',
+                response: '“There is a locked annex beneath the abandoned church. A brass key is behind the tally cabinet in the Old Grain House. A sword is sealed beyond that door. Bring it to me; I will pay you 20 gold, inspect the blade, and return it to you.”',
+                progressFlagId: 'accepted-church-sword-recovery',
+                questAction: { type: 'accept', questId: 'bellwold-church-sword' },
+              },
+              {
                 id: 'report-mill-ledger',
                 label: 'Report what the ledger says',
                 response: '“Good. Keep the record separate from the explanation. One tells us what was observed; the other still needs work.”',
@@ -203,6 +210,22 @@ const draft = {
                   requiresCompletedObjectiveIds: ['read-mill-ledger'],
                 },
                 questAction: { type: 'turn-in', questId: 'bellwold-mill-observations' },
+              },
+              {
+                id: 'return-church-sword-to-anwen',
+                label: 'Return the church sword',
+                response: '“Anwen checks the blade and its fittings, then places the same sword back in your hands. She counts out 20 gold. ‘Keep it. You found it, and now it is accounted for.’”',
+                progressFlagId: 'returned-church-sword-to-anwen',
+                questCondition: {
+                  questId: 'bellwold-church-sword',
+                  status: 'active',
+                  requiresCompletedObjectiveIds: [
+                    'find-church-key',
+                    'unlock-church-annex',
+                    'recover-church-sword',
+                  ],
+                },
+                questAction: { type: 'turn-in', questId: 'bellwold-church-sword' },
               },
             ],
           },
@@ -348,6 +371,15 @@ const draft = {
       mapPosition: { x: 1, y: -2, terrain: 'building' },
       exits: [
         { id: 'grain-house-to-well-court', fromLocationId: 'old-grain-house', toLocationId: 'bellwold-well-court', label: 'west', direction: 'west' },
+      ],
+      takeables: [
+        {
+          id: 'bellwold-church-annex-key',
+          label: 'Old church key',
+          description: 'A tarnished brass key with a long, worn bit. It fits the iron door beneath the abandoned church.',
+          roomDescription: 'A tarnished brass key lies behind the grain tally cabinet.',
+          questBound: true,
+        },
       ],
       npcs: [
         {
@@ -639,11 +671,233 @@ const draft = {
     {
       id: 'bellwold-church-annex',
       name: 'Church Annex',
-      description: 'The steps descend into a low stone annex beneath the church. Damp has darkened the mortar, and shallow shelves run along the walls. The only stair leads up to the nave.',
+      description: 'The steps descend into a low stone annex beneath the church. Damp has darkened the mortar, and shallow shelves run along the walls. A locked iron door stands in the eastern wall; the stair leads up to the nave.',
       mapAreaId: 'bellwold-abandoned-church',
       mapPosition: { x: 3, y: 4, z: -1, terrain: 'building' },
+      interactables: [
+        {
+          id: 'bellwold-church-iron-door',
+          label: 'Iron door',
+          description: 'A heavy iron door is set into the eastern wall. A narrow keyhole is worn smooth around its edge.',
+        },
+      ],
+      itemUses: [
+        {
+          id: 'unlock-bellwold-church-door',
+          itemId: 'bellwold-church-annex-key',
+          targetId: 'bellwold-church-iron-door',
+          response: 'The old church key turns with a dry click. The iron door opens onto a low corridor descending beneath the annex.',
+          repeatResponse: 'The iron door stands open. The old key still turns in its lock.',
+        },
+      ],
       exits: [
         { id: 'annex-to-church', fromLocationId: 'bellwold-church-annex', toLocationId: 'bellwold-abandoned-church', label: 'up to the church', direction: 'up' },
+        {
+          id: 'annex-to-crypt-entry',
+          fromLocationId: 'bellwold-church-annex',
+          toLocationId: 'bellwold-church-crypt-entry',
+          label: 'east through the iron door',
+          direction: 'east',
+          requiredInteractionId: 'unlock-bellwold-church-door',
+        },
+      ],
+    },
+    {
+      id: 'bellwold-church-crypt-entry',
+      name: 'Undercrypt Entry',
+      description: 'A low stone corridor begins beyond the iron door. The annex is west, a narrow passage runs north, and a shallow recess opens east.',
+      mapAreaId: 'bellwold-church-undercrypt',
+      mapPosition: { x: 4, y: 4, z: -1, terrain: 'building' },
+      exits: [
+        { id: 'crypt-entry-to-annex', fromLocationId: 'bellwold-church-crypt-entry', toLocationId: 'bellwold-church-annex', label: 'west to the annex', direction: 'west' },
+        { id: 'crypt-entry-to-passage', fromLocationId: 'bellwold-church-crypt-entry', toLocationId: 'bellwold-crypt-entry-passage', label: 'north', direction: 'north' },
+        { id: 'crypt-entry-to-recess', fromLocationId: 'bellwold-church-crypt-entry', toLocationId: 'bellwold-crypt-entry-recess', label: 'east', direction: 'east' },
+      ],
+    },
+    {
+      id: 'bellwold-crypt-entry-recess',
+      name: 'Entry Recess',
+      description: 'The eastern recess ends at a blank wall. Dust lies smooth on the floor; the corridor returns west.',
+      mapAreaId: 'bellwold-church-undercrypt',
+      mapPosition: { x: 5, y: 4, z: -1, terrain: 'building' },
+      exits: [
+        { id: 'crypt-recess-to-entry', fromLocationId: 'bellwold-crypt-entry-recess', toLocationId: 'bellwold-church-crypt-entry', label: 'west', direction: 'west' },
+      ],
+    },
+    {
+      id: 'bellwold-crypt-entry-passage',
+      name: 'First Passage',
+      description: 'The passage is just wide enough for two people to pass. The entry is south; a fork lies north.',
+      mapAreaId: 'bellwold-church-undercrypt',
+      mapPosition: { x: 4, y: 5, z: -1, terrain: 'building' },
+      exits: [
+        { id: 'crypt-passage-to-entry', fromLocationId: 'bellwold-crypt-entry-passage', toLocationId: 'bellwold-church-crypt-entry', label: 'south', direction: 'south' },
+        { id: 'crypt-passage-to-fork', fromLocationId: 'bellwold-crypt-entry-passage', toLocationId: 'bellwold-crypt-fork', label: 'north', direction: 'north' },
+      ],
+    },
+    {
+      id: 'bellwold-crypt-fork',
+      name: 'Three-Way Fork',
+      description: 'Three worn corridors meet beneath a cracked arch. The first passage is south; the central hall is north, with narrow branches to the east and west.',
+      mapAreaId: 'bellwold-church-undercrypt',
+      mapPosition: { x: 4, y: 6, z: -1, terrain: 'building' },
+      exits: [
+        { id: 'crypt-fork-to-passage', fromLocationId: 'bellwold-crypt-fork', toLocationId: 'bellwold-crypt-entry-passage', label: 'south', direction: 'south' },
+        { id: 'crypt-fork-to-central-hall', fromLocationId: 'bellwold-crypt-fork', toLocationId: 'bellwold-crypt-central-hall', label: 'north', direction: 'north' },
+        { id: 'crypt-fork-to-west-blind-passage', fromLocationId: 'bellwold-crypt-fork', toLocationId: 'bellwold-crypt-west-blind-passage', label: 'west', direction: 'west' },
+        { id: 'crypt-fork-to-east-bend', fromLocationId: 'bellwold-crypt-fork', toLocationId: 'bellwold-crypt-east-bend', label: 'east', direction: 'east' },
+      ],
+    },
+    {
+      id: 'bellwold-crypt-west-blind-passage',
+      name: 'Blind Passage',
+      description: 'The western branch stops at a rough stone wall. The only way back is east to the fork.',
+      mapAreaId: 'bellwold-church-undercrypt',
+      mapPosition: { x: 3, y: 6, z: -1, terrain: 'building' },
+      exits: [
+        { id: 'crypt-blind-passage-to-fork', fromLocationId: 'bellwold-crypt-west-blind-passage', toLocationId: 'bellwold-crypt-fork', label: 'east', direction: 'east' },
+      ],
+    },
+    {
+      id: 'bellwold-crypt-east-bend',
+      name: 'Eastern Bend',
+      description: 'The eastern branch bends north and joins a longer corridor. The fork is west.',
+      mapAreaId: 'bellwold-church-undercrypt',
+      mapPosition: { x: 5, y: 6, z: -1, terrain: 'building' },
+      exits: [
+        { id: 'crypt-east-bend-to-fork', fromLocationId: 'bellwold-crypt-east-bend', toLocationId: 'bellwold-crypt-fork', label: 'west', direction: 'west' },
+        { id: 'crypt-east-bend-to-east-corridor', fromLocationId: 'bellwold-crypt-east-bend', toLocationId: 'bellwold-crypt-east-corridor', label: 'north', direction: 'north' },
+      ],
+    },
+    {
+      id: 'bellwold-crypt-east-corridor',
+      name: 'Eastern Corridor',
+      description: 'A straight corridor meets the central hall to the west, returns south, and ends at a short dead end to the east.',
+      mapAreaId: 'bellwold-church-undercrypt',
+      mapPosition: { x: 5, y: 7, z: -1, terrain: 'building' },
+      exits: [
+        { id: 'crypt-east-corridor-to-east-bend', fromLocationId: 'bellwold-crypt-east-corridor', toLocationId: 'bellwold-crypt-east-bend', label: 'south', direction: 'south' },
+        { id: 'crypt-east-corridor-to-central-hall', fromLocationId: 'bellwold-crypt-east-corridor', toLocationId: 'bellwold-crypt-central-hall', label: 'west', direction: 'west' },
+        { id: 'crypt-east-corridor-to-dead-end', fromLocationId: 'bellwold-crypt-east-corridor', toLocationId: 'bellwold-crypt-east-dead-end', label: 'east', direction: 'east' },
+      ],
+    },
+    {
+      id: 'bellwold-crypt-east-dead-end',
+      name: 'Eastern Dead End',
+      description: 'The eastern corridor ends at a collapsed niche. The corridor is west.',
+      mapAreaId: 'bellwold-church-undercrypt',
+      mapPosition: { x: 6, y: 7, z: -1, terrain: 'building' },
+      exits: [
+        { id: 'crypt-east-dead-end-to-corridor', fromLocationId: 'bellwold-crypt-east-dead-end', toLocationId: 'bellwold-crypt-east-corridor', label: 'west', direction: 'west' },
+      ],
+    },
+    {
+      id: 'bellwold-crypt-central-hall',
+      name: 'Central Hall',
+      description: 'A square chamber joins four passages. The fork is south, a cross-corridor runs west and east, and a colder passage continues north.',
+      mapAreaId: 'bellwold-church-undercrypt',
+      mapPosition: { x: 4, y: 7, z: -1, terrain: 'building' },
+      exits: [
+        { id: 'crypt-central-hall-to-fork', fromLocationId: 'bellwold-crypt-central-hall', toLocationId: 'bellwold-crypt-fork', label: 'south', direction: 'south' },
+        { id: 'crypt-central-hall-to-west-corridor', fromLocationId: 'bellwold-crypt-central-hall', toLocationId: 'bellwold-crypt-west-corridor', label: 'west', direction: 'west' },
+        { id: 'crypt-central-hall-to-east-corridor', fromLocationId: 'bellwold-crypt-central-hall', toLocationId: 'bellwold-crypt-east-corridor', label: 'east', direction: 'east' },
+        { id: 'crypt-central-hall-to-north-passage', fromLocationId: 'bellwold-crypt-central-hall', toLocationId: 'bellwold-crypt-north-passage', label: 'north', direction: 'north' },
+      ],
+    },
+    {
+      id: 'bellwold-crypt-west-corridor',
+      name: 'Western Corridor',
+      description: 'A narrow corridor runs west from the central hall, then ends in a small burial recess to the north.',
+      mapAreaId: 'bellwold-church-undercrypt',
+      mapPosition: { x: 3, y: 7, z: -1, terrain: 'building' },
+      exits: [
+        { id: 'crypt-west-corridor-to-central-hall', fromLocationId: 'bellwold-crypt-west-corridor', toLocationId: 'bellwold-crypt-central-hall', label: 'east', direction: 'east' },
+        { id: 'crypt-west-corridor-to-recess', fromLocationId: 'bellwold-crypt-west-corridor', toLocationId: 'bellwold-crypt-west-recess', label: 'north', direction: 'north' },
+      ],
+    },
+    {
+      id: 'bellwold-crypt-west-recess',
+      name: 'Western Burial Recess',
+      description: 'A shallow burial recess ends against stone. The corridor back to the central hall is south.',
+      mapAreaId: 'bellwold-church-undercrypt',
+      mapPosition: { x: 3, y: 8, z: -1, terrain: 'building' },
+      exits: [
+        { id: 'crypt-west-recess-to-corridor', fromLocationId: 'bellwold-crypt-west-recess', toLocationId: 'bellwold-crypt-west-corridor', label: 'south', direction: 'south' },
+      ],
+    },
+    {
+      id: 'bellwold-crypt-north-passage',
+      name: 'Northern Passage',
+      description: 'The air grows cooler in this straight passage. The central hall lies south; a larger junction waits north.',
+      mapAreaId: 'bellwold-church-undercrypt',
+      mapPosition: { x: 4, y: 8, z: -1, terrain: 'building' },
+      exits: [
+        { id: 'crypt-north-passage-to-central-hall', fromLocationId: 'bellwold-crypt-north-passage', toLocationId: 'bellwold-crypt-central-hall', label: 'south', direction: 'south' },
+        { id: 'crypt-north-passage-to-upper-junction', fromLocationId: 'bellwold-crypt-north-passage', toLocationId: 'bellwold-crypt-upper-junction', label: 'north', direction: 'north' },
+      ],
+    },
+    {
+      id: 'bellwold-crypt-upper-junction',
+      name: 'Upper Junction',
+      description: 'Three short branches meet beneath an old stone lintel. The northern passage is south, with burial recesses east and west; a narrow route continues north.',
+      mapAreaId: 'bellwold-church-undercrypt',
+      mapPosition: { x: 4, y: 9, z: -1, terrain: 'building' },
+      exits: [
+        { id: 'crypt-upper-junction-to-north-passage', fromLocationId: 'bellwold-crypt-upper-junction', toLocationId: 'bellwold-crypt-north-passage', label: 'south', direction: 'south' },
+        { id: 'crypt-upper-junction-to-west-recess', fromLocationId: 'bellwold-crypt-upper-junction', toLocationId: 'bellwold-crypt-west-burial-recess', label: 'west', direction: 'west' },
+        { id: 'crypt-upper-junction-to-east-recess', fromLocationId: 'bellwold-crypt-upper-junction', toLocationId: 'bellwold-crypt-east-burial-recess', label: 'east', direction: 'east' },
+        { id: 'crypt-upper-junction-to-north-approach', fromLocationId: 'bellwold-crypt-upper-junction', toLocationId: 'bellwold-crypt-north-approach', label: 'north', direction: 'north' },
+      ],
+    },
+    {
+      id: 'bellwold-crypt-west-burial-recess',
+      name: 'West Burial Recess',
+      description: 'A narrow stone shelf is set into the western wall. There is no passage onward; the junction is east.',
+      mapAreaId: 'bellwold-church-undercrypt',
+      mapPosition: { x: 3, y: 9, z: -1, terrain: 'building' },
+      exits: [
+        { id: 'crypt-west-burial-recess-to-junction', fromLocationId: 'bellwold-crypt-west-burial-recess', toLocationId: 'bellwold-crypt-upper-junction', label: 'east', direction: 'east' },
+      ],
+    },
+    {
+      id: 'bellwold-crypt-east-burial-recess',
+      name: 'East Burial Recess',
+      description: 'A cracked stone slab rests in this small recess. The corridor returns west to the junction.',
+      mapAreaId: 'bellwold-church-undercrypt',
+      mapPosition: { x: 5, y: 9, z: -1, terrain: 'building' },
+      exits: [
+        { id: 'crypt-east-burial-recess-to-junction', fromLocationId: 'bellwold-crypt-east-burial-recess', toLocationId: 'bellwold-crypt-upper-junction', label: 'west', direction: 'west' },
+      ],
+    },
+    {
+      id: 'bellwold-crypt-north-approach',
+      name: 'Reliquary Approach',
+      description: 'A squared arch marks the end of the maze. A quiet chamber lies north; the upper junction is south.',
+      mapAreaId: 'bellwold-church-undercrypt',
+      mapPosition: { x: 4, y: 10, z: -1, terrain: 'building' },
+      exits: [
+        { id: 'crypt-approach-to-junction', fromLocationId: 'bellwold-crypt-north-approach', toLocationId: 'bellwold-crypt-upper-junction', label: 'south', direction: 'south' },
+        { id: 'crypt-approach-to-reliquary', fromLocationId: 'bellwold-crypt-north-approach', toLocationId: 'bellwold-church-reliquary', label: 'north', direction: 'north' },
+      ],
+    },
+    {
+      id: 'bellwold-church-reliquary',
+      name: 'Church Reliquary',
+      description: 'The final chamber is dry and still. A narrow sword rests on a black stone shelf beneath a faded carving of a watchful hand.',
+      mapAreaId: 'bellwold-church-undercrypt',
+      mapPosition: { x: 4, y: 11, z: -1, terrain: 'building' },
+      takeables: [
+        {
+          id: 'bellwold-reliquary-sword',
+          label: 'Reliquary sword',
+          description: 'A carefully balanced steel sword with a narrow fuller. Its workmanship grants +2 attack power when equipped.',
+          roomDescription: 'The reliquary sword rests on the black stone shelf.',
+          questBound: true,
+          equipment: { slot: 'weapon', attackBonus: 2, defenseBonus: 0 },
+        },
+      ],
+      exits: [
+        { id: 'reliquary-to-approach', fromLocationId: 'bellwold-church-reliquary', toLocationId: 'bellwold-crypt-north-approach', label: 'south', direction: 'south' },
       ],
     },
     {
@@ -749,6 +1003,41 @@ const draft = {
         },
       ],
     },
+    {
+      id: 'bellwold-church-sword',
+      version: '1.0.0',
+      title: 'The Church Reliquary',
+      summary: 'Find the old church key in the Old Grain House, open the annex beneath the abandoned church, and recover the reliquary sword. Return it to Anwen for 20 gold; she will inspect it and return the same blade to you.',
+      scope: 'character',
+      giverNpcId: 'anwen-marr',
+      turnInNpcId: 'anwen-marr',
+      reward: {
+        currencyId: 'gold',
+        amount: 20,
+        itemIds: ['bellwold-reliquary-sword'],
+      },
+      objectives: [
+        {
+          id: 'find-church-key',
+          label: 'Find the old church key behind the Old Grain House tally cabinet',
+          type: 'possess-item',
+          itemId: 'bellwold-church-annex-key',
+        },
+        {
+          id: 'unlock-church-annex',
+          label: 'Unlock the iron door in the church annex',
+          type: 'perform-interaction',
+          interactionId: 'unlock-bellwold-church-door',
+          locationId: 'bellwold-church-annex',
+        },
+        {
+          id: 'recover-church-sword',
+          label: 'Recover the reliquary sword from the undercrypt',
+          type: 'possess-item',
+          itemId: 'bellwold-reliquary-sword',
+        },
+      ],
+    },
   ],
 } as const;
 
@@ -759,4 +1048,4 @@ if (graphErrors.length > 0) {
 }
 
 export const ORRAVETH_WORLD_SUMMARY =
-  'Explore Bellwold, a growing frontier settlement of workshops, shared spaces, local residents, the silent old bell, and an unfinished south road to a river bridge.';
+  'Explore Bellwold, a frontier settlement with local residents, the silent old bell, roads beyond town, and a maze beneath the abandoned church.';

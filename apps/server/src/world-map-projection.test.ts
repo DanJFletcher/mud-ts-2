@@ -8,6 +8,7 @@ import {
   interactionPlugin,
   merchantPlugin,
   movementPlugin,
+  npcDialoguePlugin,
   partyCombatPolicyPlugin,
   partyPlugin,
   partyQuestPlugin,
@@ -457,6 +458,7 @@ describe('Orraveth Bellwold road travel', () => {
         movementPlugin,
         roadTravelPlugin,
         merchantPlugin,
+        npcDialoguePlugin,
       ],
       store,
       { canAccessInstance: async () => true, ownsCharacter: async () => true },
@@ -541,8 +543,32 @@ describe('Orraveth Bellwold road travel', () => {
         return character;
       };
 
+      await move('square-to-shop', 'orraveth-quest-to-anwen');
+      const initialAnwenDialogue = await client.talk(characterId, 'anwen-marr');
+      expect(initialAnwenDialogue.choices.map(({ id }) => id)).toContain('ask-anwen-about-church-sword');
+      const atShop = await loadCharacter();
+      const questAccepted = await client.chooseNpcDialogue(
+        characterId,
+        'anwen-marr',
+        'ask-anwen-about-church-sword',
+        atShop.revision,
+        'orraveth-accept-church-sword-quest',
+      );
+      expect(questAccepted.receipt.ok).toBe(true);
+      await move('shop-to-square', 'orraveth-quest-return-to-square');
+
       await move('square-to-south-common', 'orraveth-road-to-south-common');
       await move('south-common-to-well-court', 'orraveth-road-to-well-court');
+      await move('well-court-to-grain-house', 'orraveth-quest-to-old-grain-house');
+      const atGrainHouse = await loadCharacter();
+      const keyTaken = await client.take(
+        characterId,
+        'bellwold-church-annex-key',
+        atGrainHouse.revision,
+        'orraveth-take-church-key',
+      );
+      expect(keyTaken.receipt.ok).toBe(true);
+      await move('grain-house-to-well-court', 'orraveth-quest-return-from-grain-house');
       await move('well-court-to-common-house', 'orraveth-road-to-common-house');
       await move('common-house-to-south-gate', 'orraveth-road-to-south-gate');
       let character = await travelRoad('bellwold-south-road');
@@ -568,6 +594,48 @@ describe('Orraveth Bellwold road travel', () => {
       await move('church-to-annex', 'orraveth-church-down-to-annex');
       expect(projectWorldMap(await loadCharacter(), testWorld).locations.map(({ id }) => id))
         .toEqual(['bellwold-church-annex']);
+      const atAnnex = await loadCharacter();
+      await expect(client.move(
+        characterId,
+        'annex-to-crypt-entry',
+        atAnnex.revision,
+        'orraveth-test-locked-church-door',
+      )).rejects.toThrow('That passage is still sealed.');
+      const afterLockedDoorAttempt = await loadCharacter();
+      const unlocked = await client.use(
+        characterId,
+        'bellwold-church-annex-key',
+        'bellwold-church-iron-door',
+        afterLockedDoorAttempt.revision,
+        'orraveth-unlock-church-annex',
+      );
+      expect(unlocked.interactionId).toBe('unlock-bellwold-church-door');
+      await move('annex-to-crypt-entry', 'orraveth-enter-church-undercrypt');
+      expect(projectWorldMap(await loadCharacter(), testWorld).locations.map(({ id }) => id))
+        .toEqual(['bellwold-church-crypt-entry']);
+      await move('crypt-entry-to-passage', 'orraveth-crypt-north-1');
+      await move('crypt-passage-to-fork', 'orraveth-crypt-north-2');
+      await move('crypt-fork-to-central-hall', 'orraveth-crypt-north-3');
+      await move('crypt-central-hall-to-north-passage', 'orraveth-crypt-north-4');
+      await move('crypt-north-passage-to-upper-junction', 'orraveth-crypt-north-5');
+      await move('crypt-upper-junction-to-north-approach', 'orraveth-crypt-north-6');
+      await move('crypt-approach-to-reliquary', 'orraveth-crypt-north-7');
+      const atReliquary = await loadCharacter();
+      const swordTaken = await client.take(
+        characterId,
+        'bellwold-reliquary-sword',
+        atReliquary.revision,
+        'orraveth-take-reliquary-sword',
+      );
+      expect(swordTaken.receipt.ok).toBe(true);
+      await move('reliquary-to-approach', 'orraveth-crypt-south-1');
+      await move('crypt-approach-to-junction', 'orraveth-crypt-south-2');
+      await move('crypt-upper-junction-to-north-passage', 'orraveth-crypt-south-3');
+      await move('crypt-north-passage-to-central-hall', 'orraveth-crypt-south-4');
+      await move('crypt-central-hall-to-fork', 'orraveth-crypt-south-5');
+      await move('crypt-fork-to-passage', 'orraveth-crypt-south-6');
+      await move('crypt-passage-to-entry', 'orraveth-crypt-south-7');
+      await move('crypt-entry-to-annex', 'orraveth-leave-church-undercrypt');
       await move('annex-to-church', 'orraveth-church-up-to-nave');
       await move('church-to-approach', 'orraveth-road-back-to-church-approach');
       await stepRoad('church-approach-to-track', 'orraveth-road-back-to-church-track');
@@ -579,6 +647,41 @@ describe('Orraveth Bellwold road travel', () => {
 
       await move('mill-to-tower-road', 'orraveth-road-back-to-tower-road');
       await move('tower-road-to-square', 'orraveth-road-back-to-square-from-tower-road');
+      await move('square-to-shop', 'orraveth-return-reliquary-sword');
+      const readyToTurnIn = await client.talk(characterId, 'anwen-marr');
+      expect(readyToTurnIn.choices.map(({ id }) => id)).toContain('return-church-sword-to-anwen');
+      const atTurnIn = await loadCharacter();
+      const turnIn = await client.chooseNpcDialogue(
+        characterId,
+        'anwen-marr',
+        'return-church-sword-to-anwen',
+        atTurnIn.revision,
+        'orraveth-turn-in-church-sword',
+      );
+      expect(turnIn.receipt.ok).toBe(true);
+      const retriedTurnIn = await client.chooseNpcDialogue(
+        characterId,
+        'anwen-marr',
+        'return-church-sword-to-anwen',
+        atTurnIn.revision,
+        'orraveth-turn-in-church-sword',
+      );
+      expect(retriedTurnIn.receipt).toEqual(turnIn.receipt);
+      const rewardedCharacter = await loadCharacter();
+      expect(rewardedCharacter.wallet).toMatchObject({ currencyId: 'gold', balance: 20 });
+      expect(rewardedCharacter.inventory.filter(({ id }) => id === 'bellwold-reliquary-sword')).toHaveLength(1);
+      expect(rewardedCharacter.inventory.find(({ id }) => id === 'bellwold-reliquary-sword')).toMatchObject({
+        questBound: true,
+        equipment: { slot: 'weapon', attackBonus: 2 },
+      });
+      expect(rewardedCharacter.questRewardedIds).toContain('bellwold-church-sword');
+      const characterEvents = await store.readStream(ORRAVETH_WORLD_INSTANCE_ID, characterId);
+      expect(characterEvents.filter(({ type }) => type === 'character.quest_rewarded')).toHaveLength(1);
+      expect(characterEvents.find(
+        (event) => event.type === 'character.quest_rewarded'
+          && (event.payload as { questId?: string }).questId === 'bellwold-church-sword',
+      )?.payload).toMatchObject({ itemIds: ['bellwold-reliquary-sword'], amount: 20 });
+      await move('shop-to-square', 'orraveth-quest-return-to-square-after-turn-in');
       await move('square-to-inn', 'orraveth-road-to-inn');
       await move('inn-to-west-gate', 'orraveth-road-to-west-gate');
       character = await travelRoad('bellwold-west-road');

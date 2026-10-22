@@ -23,6 +23,9 @@ export function questObjectiveIsComplete(
     );
   }
   if (objective.type === 'defeat-npc') return false;
+  if (objective.type === 'possess-item') {
+    return character.inventory.some((item) => item.id === objective.itemId);
+  }
   return character.visitedLocationIds.includes(objective.locationId);
 }
 

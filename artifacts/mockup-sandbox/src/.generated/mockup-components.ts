@@ -5,8 +5,8 @@ export const modules: ModuleMap = {
   "./components/mockups/mudd-client/FocusedClient.tsx": () => import("../components/mockups/mudd-client/FocusedClient.tsx"),
   "./components/mockups/navigation-menu/Current.tsx": () => import("../components/mockups/navigation-menu/Current.tsx"),
   "./components/mockups/navigation-menu/MobileChat.tsx": () => import("../components/mockups/navigation-menu/MobileChat.tsx"),
-  "./components/mockups/world-map-floating/FloatingMinimap.tsx": () => import("../components/mockups/world-map-floating/FloatingMinimap.tsx"),
   "./components/mockups/world-map/Current.tsx": () => import("../components/mockups/world-map/Current.tsx"),
   "./components/mockups/world-map/Readable.tsx": () => import("../components/mockups/world-map/Readable.tsx"),
-  "./components/mockups/world-map/WorldMapPanel.tsx": () => import("../components/mockups/world-map/WorldMapPanel.tsx")
+  "./components/mockups/world-map/WorldMapPanel.tsx": () => import("../components/mockups/world-map/WorldMapPanel.tsx"),
+  "./components/mockups/world-map-floating/FloatingMinimap.tsx": () => import("../components/mockups/world-map-floating/FloatingMinimap.tsx")
 };

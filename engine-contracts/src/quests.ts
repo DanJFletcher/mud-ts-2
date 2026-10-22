@@ -31,16 +31,27 @@ export const QuestObjectiveDefinitionSchema = z.discriminatedUnion('type', [
   z.object({
     id: IdSchema,
     label: z.string().trim().min(1).max(160),
+    type: z.literal('possess-item'),
+    itemId: IdSchema,
+  }).strict(),
+  z.object({
+    id: IdSchema,
+    label: z.string().trim().min(1).max(160),
     type: z.literal('defeat-npc'),
     npcId: IdSchema,
     requiredCount: z.number().int().min(1).max(100),
   }).strict(),
 ]);
 
-export const QuestCurrencyRewardSchema = z.object({
+export const QuestRewardSchema = z.object({
   currencyId: IdSchema,
   amount: z.number().int().min(1).max(2_147_483_647),
+  /** Already-carried unique items that are returned to the character at turn-in. */
+  itemIds: z.array(IdSchema).max(12).optional(),
 }).strict();
+
+/** @deprecated Use QuestRewardSchema. */
+export const QuestCurrencyRewardSchema = QuestRewardSchema;
 
 export const QuestDefinitionSchema = z.object({
   id: IdSchema,
@@ -50,14 +61,21 @@ export const QuestDefinitionSchema = z.object({
   scope: z.enum(['character', 'party']).optional(),
   giverNpcId: IdSchema,
   turnInNpcId: IdSchema,
-  reward: QuestCurrencyRewardSchema.optional(),
+  reward: QuestRewardSchema.optional(),
   objectives: z.array(QuestObjectiveDefinitionSchema).min(1).max(12),
 }).strict().superRefine((quest, context) => {
   if (quest.reward && quest.scope === 'party') {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['reward'],
-      message: 'Currency rewards currently require character quest scope.',
+      message: 'Quest rewards currently require character quest scope.',
+    });
+  }
+  if (quest.reward?.itemIds && new Set(quest.reward.itemIds).size !== quest.reward.itemIds.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['reward', 'itemIds'],
+      message: 'Quest item rewards must reference distinct items.',
     });
   }
   const objectiveIds = new Set<string>();
@@ -75,6 +93,13 @@ export const QuestDefinitionSchema = z.object({
         code: z.ZodIssueCode.custom,
         path: ['objectives', index],
         message: 'Defeat-NPC objectives require party quest scope.',
+      });
+    }
+    if (objective.type === 'possess-item' && quest.scope === 'party') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['objectives', index],
+        message: 'Item-possession objectives require character quest scope.',
       });
     }
   });
@@ -107,6 +132,10 @@ export const CharacterQuestRewardedEventSchema = DomainEventBaseSchema.extend({
     definitionVersion: z.string().min(1).max(40),
     currencyId: IdSchema,
     amount: z.number().int().min(1).max(2_147_483_647),
+    itemIds: z.array(IdSchema).max(12).refine(
+      (itemIds) => new Set(itemIds).size === itemIds.length,
+      'Quest reward items must be distinct.',
+    ).optional(),
   }).strict(),
 }).strict();
 

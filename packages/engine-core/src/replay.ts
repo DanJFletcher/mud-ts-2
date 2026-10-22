@@ -643,6 +643,7 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
       const rewarded = CharacterQuestRewardedEventSchema.parse(publicEvent);
       const progress = state.questProgress.find((entry) => entry.questId === rewarded.payload.questId);
       const nextBalance = state.wallet ? state.wallet.balance + rewarded.payload.amount : Number.MAX_SAFE_INTEGER;
+      const inventory = state.inventory;
       if (
         rewarded.payload.characterId !== state.characterId ||
         !progress ||
@@ -651,6 +652,9 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         state.questRewardedIds.includes(rewarded.payload.questId) ||
         !state.wallet ||
         state.wallet.currencyId !== rewarded.payload.currencyId ||
+        (rewarded.payload.itemIds ?? []).some((itemId) =>
+          !inventory.some((item) => item.id === itemId),
+        ) ||
         !Number.isSafeInteger(nextBalance) ||
         nextBalance > 2_147_483_647
       ) {

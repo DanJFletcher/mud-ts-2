@@ -753,6 +753,11 @@ export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
     if (quest.reward && quest.reward.currencyId !== pack.currency?.id) {
       errors.push(`Quest ${quest.id} reward currency ${quest.reward.currencyId} does not match the world currency`);
     }
+    for (const itemId of quest.reward?.itemIds ?? []) {
+      if (!pack.locations.some((location) => location.takeables?.some((item) => item.id === itemId))) {
+        errors.push(`Quest ${quest.id} reward references missing item ${itemId}`);
+      }
+    }
     if (!npcs.some(({ npc }) => npc.id === quest.giverNpcId)) {
       errors.push(`Quest ${quest.id} has a missing giver NPC ${quest.giverNpcId}`);
     }
@@ -760,6 +765,12 @@ export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
       errors.push(`Quest ${quest.id} has a missing turn-in NPC ${quest.turnInNpcId}`);
     }
     for (const objective of quest.objectives) {
+      if (objective.type === 'possess-item') {
+        if (!pack.locations.some((location) => location.takeables?.some((item) => item.id === objective.itemId))) {
+          errors.push(`Quest ${quest.id} objective ${objective.id} points to missing item ${objective.itemId}`);
+        }
+        continue;
+      }
       if (objective.type === 'defeat-npc') {
         if (quest.scope !== 'party') {
           errors.push(`Quest ${quest.id} uses a defeat-NPC objective outside party scope`);
