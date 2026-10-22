@@ -24,11 +24,12 @@ import { ChevronDown, Compass, Info as InfoIcon, Keyboard, Menu, Moon, Sun, User
 import { RoomChatPanel, type RoomChatMessage } from "./RoomChatPanel.js";
 import { TerminalPanel } from "./TerminalPanel.js";
 import { WorldMapPanel } from "./WorldMapPanel.js";
+import CodexScreen from "./codex/CodexScreen.js";
 
 const client = new MuddHttpClient({ worldInstanceId: "mudd-demo-instance" });
 type DialogueProjection = Awaited<ReturnType<MuddHttpClient["talk"]>>;
 type MerchantCatalog = Awaited<ReturnType<MuddHttpClient["getMerchantCatalog"]>>;
-type Screen = "play" | "vitals" | "items" | "equipment" | "stats" | "notes";
+type Screen = "play" | "vitals" | "items" | "equipment" | "stats" | "notes" | "codex";
 type WorldClientProps = { onLeaveWorld: () => Promise<void> };
 type VisibleNpc = NonNullable<NonNullable<GameSnapshot["location"]>["npcs"]>[number];
 
@@ -185,7 +186,8 @@ function getCommandHelp(topic: string): readonly string[] {
 }
 
 function currentScreen(): Screen {
-  const route = window.location.hash.slice(2);
+  const route = window.location.hash.slice(2).split("?")[0];
+  if (route === "info/codex" || route.startsWith("info/codex/")) return "codex";
   if (route === "notes" || route === "info/notes" || route === "info/field-notes") return "notes";
   if (route === "info/items") return "items";
   if (route === "info/equipment") return "equipment";
@@ -1888,6 +1890,7 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
         { id: "equipment", label: "Equipment", href: "#/info/equipment" },
         { id: "stats", label: "Stats", href: "#/info/stats" },
         { id: "notes", label: "Field notes", href: "#/info/notes" },
+        { id: "codex", label: "Codex", href: "#/info/codex" },
       ] as const).map((tab) => (
         <a
           key={tab.id}
@@ -2996,6 +2999,13 @@ export function WorldClient({ onLeaveWorld }: WorldClientProps) {
                 )}
               </div>
             </div>
+          </div>
+        )}
+
+        {!isGameOver && screen === "codex" && (
+          <div className="focused-screen focused-codex-screen" aria-label="Orraveth Codex">
+            {infoTabs}
+            <CodexScreen />
           </div>
         )}
       </section>

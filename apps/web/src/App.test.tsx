@@ -10,11 +10,11 @@ const { apiFetch } = vi.hoisted(() => {
 
 import { WorldClient } from './App.js';
 
-async function openInfoSection(section: 'Vitals' | 'Items' | 'Equipment' | 'Stats' | 'Field notes') {
+async function openInfoSection(section: 'Vitals' | 'Items' | 'Equipment' | 'Stats' | 'Field notes' | 'Codex') {
   fireEvent.click(screen.getByRole('link', { name: 'Info' }));
   const tabs = await screen.findByRole('navigation', { name: 'Info sections' });
   fireEvent.click(within(tabs).getByRole('link', { name: section }));
-  await screen.findByRole('heading', { name: section });
+  await screen.findByRole('heading', { name: section === 'Codex' ? /A world, carefullyremembered/ : section });
   return tabs;
 }
 
@@ -979,6 +979,7 @@ describe('single-character world session client', () => {
     expect(within(infoTabs).getByRole('link', { name: 'Equipment' })).toBeVisible();
     expect(within(infoTabs).getByRole('link', { name: 'Stats' })).toBeVisible();
     expect(within(infoTabs).getByRole('link', { name: 'Field notes' })).toBeVisible();
+    expect(within(infoTabs).getByRole('link', { name: 'Codex' })).toBeVisible();
     expect(screen.getByRole('link', { name: 'Info' })).toHaveAttribute('aria-current', 'page');
     await screen.findByRole('heading', { name: 'Vitals' });
     expect(screen.getByRole('heading', { name: 'Rowan' })).toBeVisible();
@@ -998,6 +999,9 @@ describe('single-character world session client', () => {
     expect(screen.getByText('No current quests.')).toBeVisible();
     expect(screen.getByText('No completed quests yet.')).toBeVisible();
     expect(screen.getByText('A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east. One loose stone bears a pale stripe.')).toBeVisible();
+    fireEvent.click(within(infoTabs).getByRole('link', { name: 'Codex' }));
+    await screen.findByRole('heading', { name: /A world, carefullyremembered/ });
+    expect(screen.getByText('Orraveth is separate from the active MUDD world.')).toBeVisible();
     expect(document.querySelector('.focused-topbar')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
     expect(screen.getByRole('region', { name: 'Menu' })).toBeVisible();
