@@ -7,7 +7,7 @@ summary: A growing frontier settlement near the Heskar border, with a market, wo
 category: geography
 entityType: region
 tags: [Bellwold, village, frontier, trade]
-relatedIds: [orraveth-crown-of-heskar, orraveth-bellwold-market-square, orraveth-kindly-roof-inn, orraveth-blackwater-forge, orraveth-green-mortar, orraveth-bellwold-common-house, orraveth-old-bell-tower, orraveth-abandoned-watermill, orraveth-currency-and-commerce]
+relatedIds: [orraveth-crown-of-heskar, orraveth-bellwold-market-square, orraveth-kindly-roof-inn, orraveth-blackwater-forge, orraveth-green-mortar, orraveth-bellwold-common-house, orraveth-linnet-reed, orraveth-taren-voss, orraveth-old-bell-tower, orraveth-abandoned-watermill, orraveth-currency-and-commerce]
 canonStatus: Established Canon
 sourceRefs: [attached_assets/Pasted-Replit-Agent-Task-Build-the-Orraveth-Codex-Project-Over_1792634102724.txt]
 lastUpdated: "2026-10-22"
@@ -18,6 +18,8 @@ Bellwold is a growing trading settlement near the frontier of the [[crown-of-hes
 The current Bellwold record uses [[currency-and-commerce|gold]] as Orraveth's provisional named currency. Local prices, accounting practices, and any relationship to regional coinage remain unspecified.
 
 The market square and its nearby [[kindly-roof-inn|inn]] and [[marrs-general-goods|general store]] remain the settlement's busiest point. South of them, [[bellwold-south-common|South Common]] opens onto [[well-court|Well Court]], [[wattle-row|Wattle Row]], and several shared and residential buildings. [[blackwater-forge|Blackwater Forge]] and [[green-mortar|the Green Mortar]] serve practical needs, while the [[bellwold-common-house|Common House]] keeps public notices and records. The exact arrangement of these newer streets and buildings remains provisional.
+
+[[linnet-reed|Linnet Reed]] is often seen walking between the square, the well, and the public lanes. [[taren-voss|Taren Voss]] keeps a regular watch circuit from the tower road through the southern public spaces.
 
 The current Bellwold record uses [[currency-and-commerce|gold]] as Orraveth's provisional named currency. Local prices, accounting practices, and any relationship to regional coinage remain unspecified.
 

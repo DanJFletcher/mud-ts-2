@@ -21,12 +21,14 @@ The first session introduces Orraveth through Bellwold, a growing frontier settl
 
 The fifteen connected locations are Bellwold Market Square, The Kindly Roof, Marr's General Goods, Old Bell Tower Road, Old Bell Tower, the Abandoned Watermill, Bellwold South Common, the Green Mortar, Blackwater Forge, Bellwold Well Court, Wattle Row, Soven's Wheelwright Yard, Tallow End Cottage, Old Grain House, and Bellwold Common House. The market square is the starting room. The southern branch adds workshops, a well, residential lanes, shared storage, and a meeting room. Every route is reachable in both directions and uses the supported cardinal directions.
 
-Eight residents are available to meet:
+Ten residents are available to meet:
 
 - **Anwen Marr**, the practical shopkeeper, distinguishes repeatable observations from unproven causes. She offers the optional Mill Ledger quest.
 - **Tomas**, innkeeper of the Kindly Roof, shares road reports while making clear that reports are not guarantees.
 - **Darric Holt** and **Ilya Fen**, established in the Codex as the blacksmith and healer, are now present at their respective workplaces.
 - **Rell Soven**, **Enna Pell**, **Seli Tor**, and **Aven Rusk** are new provisional residents associated with wheel repair, public records, weaving, and grain storage. Their knowledge stays close to their work.
+- **Linnet Reed** walks among Bellwold's public streets and shared spaces without a fixed itinerary.
+- **Taren Voss** follows a regular watch patrol from the tower road through the square and southern public spaces.
 
 The optional **The Mill Ledger** quest asks the player to read the existing ledger and report its recorded observations to Anwen. It uses the character-scoped quest and dialogue APIs, has no reward, and does not establish why the wheel moved.
 
@@ -34,6 +36,7 @@ The optional **The Mill Ledger** quest asks the player to read the existing ledg
 
 - Keep NPCs' knowledge local and attributable. Do not make every resident an expert on every mystery.
 - Treat the new residents, southern buildings, and their exact arrangement as provisional until separately approved; do not extend their biographies or relationships beyond the documented facts.
+- Autonomous movement uses the existing shared-world NPC capability: Linnet may choose among authored public destinations, while Taren follows his ordered route. Neither behavior makes the NPC a combatant.
 - Do not add new world mechanics, combat, a puzzle chain, or private player state to this content slice.
 - Keep stable IDs stable when names or prose change. A location ID must never be repurposed for a different place.
 - Treat substantial additions to unresolved mysteries as proposals for Codex review before they become canonical.

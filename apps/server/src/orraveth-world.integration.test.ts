@@ -6,16 +6,37 @@ import {
   validateDraftWorldGraph,
 } from '@mudd/contracts';
 import { EngineHost, InMemoryEventStore, replayCharacter } from '@mudd/engine-core';
-import { characterPlugin, movementPlugin, npcDialoguePlugin, worldItemsPlugin } from '@mudd/core-plugins';
+import {
+  autonomousNpcsPlugin,
+  autonomousNpcStreamId,
+  characterPlugin,
+  movementPlugin,
+  npcDialoguePlugin,
+  projectAutonomousNpcPosition,
+  worldItemsPlugin,
+} from '@mudd/core-plugins';
 import { ORRAVETH_WORLD_INSTANCE_ID, orravethWorld } from '@mudd/world-orraveth';
+import {
+  createAutonomousNpcScheduler,
+} from './autonomous-npc-scheduler.js';
 import { worldEventEffectsPlugin } from './demo-event-effects-plugin.js';
 
-function makeHarness() {
+function makeHarness(options: Readonly<{
+  now?: () => Date;
+  rng?: Readonly<{ roll: (sides: number) => number }>;
+}> = {}) {
   let id = 0;
   const owners = new Map<string, string>();
   const store = new InMemoryEventStore();
   const engine = new EngineHost(
-    [worldItemsPlugin, characterPlugin, movementPlugin, npcDialoguePlugin, worldEventEffectsPlugin],
+    [
+      worldItemsPlugin,
+      autonomousNpcsPlugin,
+      characterPlugin,
+      movementPlugin,
+      npcDialoguePlugin,
+      worldEventEffectsPlugin,
+    ],
     store,
     {
       canAccessInstance: async (_session, worldInstanceId) => worldInstanceId === ORRAVETH_WORLD_INSTANCE_ID,
@@ -23,6 +44,8 @@ function makeHarness() {
     },
     orravethWorld,
     () => `orraveth-test-id-${++id}`,
+    options.now,
+    options.rng,
   );
   const session = {
     sessionId: 'orraveth-test-session',
@@ -105,6 +128,78 @@ describe('Orraveth Bellwold settlement', () => {
       }
     }
     expect(reached).toEqual(locationIds);
+  });
+
+  it('moves the villager through town and advances the guard along its patrol', async () => {
+    let now = new Date('2026-10-22T12:00:00.000Z');
+    const h = makeHarness({ now: () => now, rng: { roll: (sides) => sides } });
+    await h.engine.start();
+    try {
+      const created = await h.dispatch(undefined, {
+        type: 'character.create',
+        version: 1,
+        commandId: 'orraveth-create-mobile-npc-test-character',
+        payload: { name: 'Lena' },
+      });
+      const createdEvent = created.events.find((event) => event.type === 'character.created');
+      const characterId = (createdEvent?.payload as { characterId?: string } | undefined)?.characterId;
+      if (!characterId) throw new Error('Character creation returned no character ID.');
+      h.owners.set(characterId, h.session.playerId);
+
+      const scheduler = createAutonomousNpcScheduler({
+        engine: h.engine,
+        store: h.store,
+        world: orravethWorld,
+        worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+        now: () => now,
+      });
+      expect(await scheduler.tick()).toBe(2);
+
+      const atSquare = await h.loadCharacter(characterId);
+      await h.dispatch(characterId, {
+        type: 'character.move',
+        version: 1,
+        commandId: 'orraveth-mobile-test-to-south-common',
+        expectedVersion: atSquare.revision,
+        payload: { exitId: 'square-to-south-common' },
+      });
+      const atCommon = await h.loadCharacter(characterId);
+      const room = await h.engine.query({
+        type: 'location.describe',
+        version: 1,
+        queryId: 'orraveth-mobile-test-room-description',
+        worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+        characterId,
+        payload: {},
+      }, h.session, { characterProjection: atCommon });
+      if (!room.ok) throw new Error(room.message);
+      const projection = LocationProjectionSchema.parse(room.value);
+      expect(projection.npcs.map(({ id }) => id)).toEqual(
+        expect.arrayContaining(['linnet-reed', 'taren-voss']),
+      );
+      const villagerDialogue = await h.engine.query({
+        type: 'npc.talk',
+        version: 1,
+        queryId: 'orraveth-linnet-talk',
+        worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+        characterId,
+        payload: { npcId: 'linnet-reed', topic: 'market' },
+      }, h.session, { characterProjection: atCommon });
+      expect(villagerDialogue.ok).toBe(true);
+      if (!villagerDialogue.ok) throw new Error(villagerDialogue.message);
+      expect(NpcDialogueProjectionSchema.parse(villagerDialogue.value).npcName).toBe('Linnet Reed');
+
+      now = new Date(now.getTime() + 60_000);
+      expect(await scheduler.tick()).toBe(2);
+      const guardEvents = await h.store.readStream(
+        ORRAVETH_WORLD_INSTANCE_ID,
+        autonomousNpcStreamId('taren-voss'),
+      );
+      expect(projectAutonomousNpcPosition(guardEvents, 'taren-voss', 'bellwold-market-square'))
+        .toMatchObject({ locationId: 'bellwold-well-court', routeIndex: 2 });
+    } finally {
+      await h.engine.stop();
+    }
   });
 
   it('supports a complete server-authoritative exploration, dialogue, quest, and replay flow', async () => {

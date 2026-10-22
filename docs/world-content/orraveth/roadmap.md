@@ -15,6 +15,7 @@ This roadmap develops the Codex into playable regions without adding engine syst
 - Added a connected southern settlement district with South Common, Well Court, Wattle Row, shared storage, a Common House, and additional homes and work yards.
 - Made the established Blackwater Forge and Green Mortar playable, with Darric Holt and Ilya Fen in their documented workplaces.
 - Added four provisional residents—Rell Soven, Enna Pell, Seli Tor, and Aven Rusk—with local, talkable topics and no new quest or state mechanics.
+- Added Linnet Reed as a wandering villager and Taren Voss as a guard on a fixed patrol, using the existing event-backed NPC movement capability.
 - Verified every room is reachable, exits match the cardinal map directions, and the new residents can be reached and spoken to through the engine.
 
 ## Phase 3 — Develop one Codex mystery as a player-led investigation
@@ -34,4 +35,4 @@ This roadmap develops the Codex into playable regions without adding engine syst
 
 - Authenticated content import/version activation is not present in the checked-in public APIs; any authoring workflow needs an authorization and compatibility design.
 - Relationship/reputation state is not part of this slice's content contracts.
-- New puzzle mechanics, crafting, combat encounters, and scheduled NPC behavior are deliberately deferred until a story need and engine capability are both established.
+- New puzzle mechanics, crafting, and combat encounters remain deferred until a story need and engine capability are both established. Scheduled NPC movement is available through the existing capability.

@@ -33,10 +33,11 @@ import {
 import { projectQuestJournal, replayCharacter } from '@mudd/engine-core';
 import {
   interactionStreamId,
+  mobileNpcDefinitions,
   projectInteractionEvents,
   updateInteractionRequestStatus,
 } from '@mudd/core-plugins';
-import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
+import { DEMO_WORLD_INSTANCE_ID } from '@mudd/world-demo';
 import { db, pool } from './db/client.js';
 import { characters, durableEffects, worldSessions } from './db/schema.js';
 import { PostgresEventStore } from './persistence/postgres-event-store.js';
@@ -112,17 +113,21 @@ function runtimeFor(worldInstanceId: string): WorldRuntime {
   return runtime;
 }
 
-const demoRuntime = runtimeFor(DEMO_WORLD_INSTANCE_ID);
-const autonomousNpcScheduler = createAutonomousNpcScheduler({
-  engine: demoRuntime.engine,
-  store,
-  world: demoWorld,
-  worldInstanceId: DEMO_WORLD_INSTANCE_ID,
-  onError(error, npcId) {
-    console.error(`Could not run autonomous movement for NPC ${npcId}.`, error);
-  },
-});
-autonomousNpcScheduler.start();
+const autonomousNpcSchedulers = [...worldRuntimes.values()]
+  .filter((runtime) => mobileNpcDefinitions(runtime.world).length > 0)
+  .map((runtime) => createAutonomousNpcScheduler({
+    engine: runtime.engine,
+    store,
+    world: runtime.world,
+    worldInstanceId: runtime.worldInstanceId,
+    onError(error, npcId) {
+      console.error(
+        `Could not run autonomous movement for NPC ${npcId} in world ${runtime.worldInstanceId}.`,
+        error,
+      );
+    },
+  }));
+for (const scheduler of autonomousNpcSchedulers) scheduler.start();
 
 let effectBatchRunning = false;
 async function runPendingEffectBatch() {
@@ -919,6 +924,7 @@ export const server = app.listen(port, '0.0.0.0', () => {
 
 async function shutdown() {
   server.close();
+  for (const scheduler of autonomousNpcSchedulers) scheduler.stop();
   await stopWorldRuntimes(worldRuntimes);
   await pool.end();
 }

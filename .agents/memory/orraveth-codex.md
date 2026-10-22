@@ -9,6 +9,8 @@ Gold is Orraveth's provisional currency name. Denominations, prices, and exchang
 
 Bellwold is intended to be a larger frontier settlement with more buildings, locations, and talkable residents. Specific new details remain provisional until approved.
 
-**Why:** the user clarified that Orraveth is a new world, named gold as its current currency, and asked to expand Bellwold; further economic and settlement details remain open.
+Bellwold includes a wandering villager and a guard on a fixed public-street patrol. Their location is shared world state, not a client timer or per-character copy.
 
-**How to apply:** Keep Orraveth articles and its world pack standalone. Use gold only in Orraveth; do not invent prices, denominations, or exchange rules. Keep Bellwold additions connected and NPC knowledge local, and do not turn unresolved mysteries into established explanations.
+**Why:** the user clarified that Orraveth is a new world, named gold as its current currency, asked to expand Bellwold, and requested autonomous village movement; further economic and settlement details remain open.
+
+**How to apply:** Keep Orraveth articles and its world pack standalone. Use gold only in Orraveth; do not invent prices, denominations, or exchange rules. Keep Bellwold additions connected, NPC knowledge local, and autonomous movement in shared world state. Do not turn unresolved mysteries into established explanations.

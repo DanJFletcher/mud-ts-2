@@ -9,7 +9,7 @@ export const ORRAVETH_WORLD_INSTANCE_ID = 'orraveth-bellwold-instance';
 const draft = {
   formatVersion: 1,
   packId: 'orraveth.bellwold',
-  packVersion: '1.2.0',
+  packVersion: '1.3.0',
   displayName: 'Orraveth: Bellwold',
   currency: {
     id: 'gold',
@@ -23,6 +23,70 @@ const draft = {
       name: 'Bellwold Market Square',
       description: 'Bellwold’s market square anchors a larger frontier settlement. Stalls and handcarts crowd the open ground on busy mornings, while the inn and general shop serve travelers and residents through the day.\n\nThe Kindly Roof lies west, Marr’s General Goods east, the old tower road north, and South Common south.',
       mapPosition: { x: 0, y: 0, terrain: 'land' },
+      npcs: [
+        {
+          id: 'linnet-reed',
+          name: 'Linnet Reed',
+          description: 'Linnet Reed is a Bellwold villager on foot between the market, the well, and the settlement’s shared spaces.',
+          greeting: '“I was headed to the well. Or the square. I’ll know when I get there.”',
+          topics: [
+            { id: 'town', keywords: ['town', 'bellwold', 'neighbors'], response: '“There is always someone to meet between the square and the well. You learn more by walking than by asking for a grand account.”' },
+            { id: 'market', keywords: ['market', 'square', 'stalls'], response: '“The square is busiest early. By noon, half the people have gone off to their work.”' },
+          ],
+          unknownTopicResponse: '“I’m just on an errand. Try the market or the well if you need directions.”',
+          movement: {
+            strategy: 'wander',
+            intervalMs: 45_000,
+            stayChancePercent: 20,
+            allowedLocationIds: [
+              'bellwold-market-square',
+              'kindly-roof-inn',
+              'marrs-general-goods',
+              'old-bell-tower-approach',
+              'bellwold-south-common',
+              'green-mortar',
+              'blackwater-forge',
+              'bellwold-well-court',
+              'bellwold-wattle-row',
+              'old-grain-house',
+              'bellwold-common-house',
+            ],
+            narrative: {
+              arrival: 'Linnet Reed wanders in from the {direction}, nodding to a familiar face.',
+              departure: 'Linnet Reed sets off {direction}, drifting toward another town errand.',
+            },
+          },
+        },
+        {
+          id: 'taren-voss',
+          name: 'Taren Voss',
+          description: 'Taren Voss is a Bellwold watch guard, keeping an eye on the road, the square, and the southern public lanes.',
+          greeting: '“Keep the road clear and let people pass. That is most of the work.”',
+          topics: [
+            { id: 'patrol', keywords: ['patrol', 'watch', 'guard'], response: '“My circuit runs from the tower road through the square and down to the Common House. I check each crossing as I go.”' },
+            { id: 'road', keywords: ['road', 'tower', 'crossing'], response: '“The north road is quiet most days. I still walk it; quiet is not the same as watched.”' },
+          ],
+          unknownTopicResponse: '“I’m on patrol. Keep to the marked paths and speak plainly if there’s trouble.”',
+          movement: {
+            strategy: 'route',
+            intervalMs: 60_000,
+            routeLocationIds: [
+              'bellwold-market-square',
+              'bellwold-south-common',
+              'bellwold-well-court',
+              'bellwold-common-house',
+              'bellwold-well-court',
+              'bellwold-south-common',
+              'bellwold-market-square',
+              'old-bell-tower-approach',
+            ],
+            narrative: {
+              arrival: 'Taren Voss comes in from the {direction}, eyes on the street.',
+              departure: 'Taren Voss continues the patrol to the {direction}.',
+            },
+          },
+        },
+      ],
       exits: [
         { id: 'square-to-inn', fromLocationId: 'bellwold-market-square', toLocationId: 'kindly-roof-inn', label: 'west', direction: 'west' },
         { id: 'square-to-shop', fromLocationId: 'bellwold-market-square', toLocationId: 'marrs-general-goods', label: 'east', direction: 'east' },

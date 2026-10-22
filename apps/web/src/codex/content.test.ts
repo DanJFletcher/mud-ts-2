@@ -54,6 +54,8 @@ describe("Orraveth Codex content", () => {
       "enna-pell",
       "seli-tor",
       "aven-rusk",
+      "linnet-reed",
+      "taren-voss",
       "silent-bell",
       "forgotten-journal",
       "mill-that-never-sleeps",
