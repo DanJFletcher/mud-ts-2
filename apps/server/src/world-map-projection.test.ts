@@ -16,6 +16,7 @@ import {
   worldItemsPlugin,
 } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
+import { ORRAVETH_WORLD_INSTANCE_ID, orravethWorld } from '@mudd/world-orraveth';
 import { MuddHttpClient } from '@mudd/client-sdk';
 import { projectWorldMap } from './world-map-projection.js';
 import { CharacterProjectionSchema } from '@mudd/contracts';
@@ -65,6 +66,33 @@ async function moveAlongRoad(
 }
 
 describe('visited world map projection', () => {
+  it('places the Bellwold tower road north of the market on the map', () => {
+    const map = projectWorldMap(CharacterProjectionSchema.parse({
+      worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+      characterId: 'orraveth-map-direction-character',
+      name: 'Map Direction',
+      locationId: 'bellwold-market-square',
+      visitedLocationIds: [
+        'bellwold-market-square',
+        'old-bell-tower-approach',
+        'old-bell-tower',
+        'abandoned-watermill',
+      ],
+      revision: 1,
+    }), orravethWorld);
+    const yById = new Map(map.locations.map(({ id, y }) => [id, y]));
+
+    expect(yById.get('old-bell-tower-approach')).toBeGreaterThan(yById.get('bellwold-market-square')!);
+    expect(yById.get('old-bell-tower')).toBeGreaterThan(yById.get('old-bell-tower-approach')!);
+    expect(yById.get('abandoned-watermill')).toBe(yById.get('old-bell-tower-approach'));
+    expect(map.connections).toContainEqual({
+      fromLocationId: 'bellwold-market-square',
+      toLocationId: 'old-bell-tower-approach',
+      direction: 'north',
+      oneWay: false,
+    });
+  });
+
   it('keeps on and under states on one map node and the same Z level', () => {
     const character = {
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,

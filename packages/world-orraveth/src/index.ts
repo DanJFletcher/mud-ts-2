@@ -104,7 +104,7 @@ const draft = {
       id: 'old-bell-tower-approach',
       name: 'Old Bell Tower Road',
       description: 'The road climbs north from the market toward Bellwold’s old tower. From here, the village roofs fall behind the rise, and the tower’s outline stands against the open sky.\n\nA track east follows the water toward the abandoned mill.',
-      mapPosition: { x: 0, y: -1, terrain: 'land' },
+      mapPosition: { x: 0, y: 1, terrain: 'land' },
       exits: [
         { id: 'tower-road-to-square', fromLocationId: 'old-bell-tower-approach', toLocationId: 'bellwold-market-square', label: 'south', direction: 'south' },
         { id: 'tower-road-to-tower', fromLocationId: 'old-bell-tower-approach', toLocationId: 'old-bell-tower', label: 'north', direction: 'north' },
@@ -115,7 +115,7 @@ const draft = {
       id: 'old-bell-tower',
       name: 'Old Bell Tower',
       description: 'The old tower rises above Bellwold’s road. Inside, dust settles in the seams of the stonework, and the bell hangs silent where generations of records place it.\n\nThe tower has drawn scholars and local stories. Neither has settled what the bell is or why it stopped ringing.',
-      mapPosition: { x: 0, y: -2, terrain: 'building' },
+      mapPosition: { x: 0, y: 2, terrain: 'building' },
       exits: [
         { id: 'tower-to-road', fromLocationId: 'old-bell-tower', toLocationId: 'old-bell-tower-approach', label: 'south', direction: 'south' },
       ],
@@ -132,7 +132,7 @@ const draft = {
       id: 'abandoned-watermill',
       name: 'Abandoned Watermill',
       description: 'The abandoned watermill stands beside its channel outside Bellwold. The air near the wheel is damp and cool; a slow wooden creak can be heard even when the water runs low.\n\nThe mill’s continued movement is an observation, not an explanation. A work ledger remains on the desk.',
-      mapPosition: { x: 1, y: -1, terrain: 'land' },
+      mapPosition: { x: 1, y: 1, terrain: 'land' },
       exits: [
         { id: 'mill-to-tower-road', fromLocationId: 'abandoned-watermill', toLocationId: 'old-bell-tower-approach', label: 'west', direction: 'west' },
       ],

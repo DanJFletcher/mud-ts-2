@@ -39,6 +39,35 @@ const denseMap: WorldMapProjection = {
 };
 
 describe('map switching between floors', () => {
+  it('renders a northward exit above the current room', () => {
+    const map: WorldMapProjection = {
+      worldInstanceId: 'world',
+      packId: 'pack',
+      packVersion: '1.0.0',
+      currentLocationId: 'market',
+      locationGroups: [],
+      locations: [
+        { id: 'market', name: 'Market', shortName: 'Market', qualifiedName: 'Market', locationGroupIds: [], x: 0, y: 0 },
+        { id: 'road', name: 'Tower Road', shortName: 'Tower Road', qualifiedName: 'Tower Road', locationGroupIds: [], x: 0, y: 1 },
+        { id: 'tower', name: 'Bell Tower', shortName: 'Bell Tower', qualifiedName: 'Bell Tower', locationGroupIds: [], x: 0, y: 2 },
+      ],
+      connections: [
+        { fromLocationId: 'market', toLocationId: 'road', direction: 'north' },
+        { fromLocationId: 'road', toLocationId: 'tower', direction: 'north' },
+      ],
+    };
+    render(<WorldMapPanel map={map} fullscreen={false} onFullscreenChange={vi.fn()} />);
+    const svg = screen.getByRole('group', { name: 'Directional map of visited locations' });
+    const tileY = (name: string) => Number(
+      within(svg).getByRole('button', { name: `Focus ${name} on map${name === 'Market' ? ', current location' : ''}` })
+        .querySelector('.focused-world-map__tile')
+        ?.getAttribute('y'),
+    );
+
+    expect(tileY('Tower Road')).toBeLessThan(tileY('Market'));
+    expect(tileY('Bell Tower')).toBeLessThan(tileY('Tower Road'));
+  });
+
   for (const fullscreen of [false, true]) {
     it(`replaces visual and accessible locations in ${fullscreen ? 'full-screen' : 'compact'} mode`, () => {
       const onFullscreenChange = vi.fn();
