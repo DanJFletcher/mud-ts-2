@@ -21,9 +21,9 @@ import {
 } from './interactions.js';
 import { prepareCharacterRespawn } from './respawn.js';
 import { worldItemDropEffect } from './world-items.js';
+import { characterAttackDamage, maximumHealthForLevel } from './character-stats.js';
 
 const PVP_CHALLENGE_KIND = 'pvp.challenge';
-const BASE_ATTACK_DAMAGE = 2;
 const PVP_OUTCOME_EFFECT = 'pvp.apply_outcome';
 const MAX_LEVEL = 10;
 
@@ -53,7 +53,10 @@ const OutcomeEffectSchema = z.object({
 
 function maximumHealth(character: Awaited<ReturnType<CharacterStateCapability['load']>>): number {
   const level = character?.advancement?.level ?? 1;
-  return character?.health?.maximum ?? 6 + (Math.min(level, MAX_LEVEL) - 1) * 2;
+  return character?.health?.maximum ?? maximumHealthForLevel(
+    Math.min(level, MAX_LEVEL),
+    character?.attributes.constitution ?? 10,
+  );
 }
 
 function latestPrivateEncounter(
@@ -105,7 +108,6 @@ function createEncounter(
 ): z.infer<typeof PrivateEncounterSchema> {
   const getStats = (character: typeof left) => {
     const max = maximumHealth(character);
-    const weapon = character.inventory.find((item) => item.id === character.equipment.weaponItemId);
     const armor = character.inventory.find((item) => item.id === character.equipment.armorItemId);
     return {
       projection: {
@@ -116,7 +118,7 @@ function createEncounter(
       },
       private: {
         characterId: character.characterId,
-        attackDamage: BASE_ATTACK_DAMAGE + (weapon?.equipment?.attackBonus ?? 0),
+        attackDamage: characterAttackDamage(character),
         defenseReduction: armor?.equipment?.defenseBonus ?? 0,
         consumables: character.inventory
           .filter((item) => item.consumable && !item.equipment)

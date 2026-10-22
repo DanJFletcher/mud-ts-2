@@ -20,7 +20,7 @@ import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import { ORRAVETH_WORLD_INSTANCE_ID, orravethWorld } from '@mudd/world-orraveth';
 import { MuddHttpClient } from '@mudd/client-sdk';
 import { projectWorldMap } from './world-map-projection.js';
-import { CharacterProjectionSchema } from '@mudd/contracts';
+import { CharacterProjectionSchema, CharacterStatsQuerySchema } from '@mudd/contracts';
 
 const session = {
   sessionId: 'world-map-session',
@@ -478,6 +478,17 @@ describe('Orraveth Bellwold road travel', () => {
     try {
       const created = await client.createCharacter('Southbound Traveler', 'orraveth-south-road-create');
       const characterId = created.streamId!;
+      const statsResult = await engine.query(CharacterStatsQuerySchema.parse({
+        type: 'character.stats',
+        version: 1,
+        queryId: globalThis.crypto.randomUUID(),
+        worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+        characterId,
+        payload: {},
+      }), session);
+      expect(statsResult.ok).toBe(true);
+      if (!statsResult.ok) throw new Error(statsResult.message);
+      expect(statsResult.value.damage).toBe(2);
       const loadCharacter = async () => {
         const character = replayCharacter(await store.readStream(ORRAVETH_WORLD_INSTANCE_ID, characterId));
         if (!character) throw new Error('The south road test character is missing.');

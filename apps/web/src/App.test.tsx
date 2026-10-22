@@ -430,6 +430,8 @@ beforeEach(() => {
           visitedLocationIds,
           revision,
           wallet: { currencyId: 'moss-mark', balance: walletBalance },
+          attributes: { strength: 10, intelligence: 10, constitution: 10, dexterity: 10 },
+          honors: { glory: 0, medals: 0 },
           ...(characterHealth ? { health: characterHealth } : {}),
           ...(combatEncounter ? { combat: combatEncounter } : {}),
           inventory: [
@@ -456,6 +458,19 @@ beforeEach(() => {
               consumable: { effect: 'heal' as const, amount: 3 },
             }] : []),
           ],
+        },
+        stats: {
+          attributes: { strength: 10, intelligence: 10, constitution: 10, dexterity: 10 },
+          attackPower: 30,
+          spellPower: 30,
+          damage: 2,
+          critChancePercent: 5,
+          healthRegen: 0,
+          manaRegen: 0,
+          staminaRegen: 0,
+          armorPercent: 0,
+          resiliencePercent: 0,
+          dodgePercent: 0,
         },
         currency: worldCurrency,
         location: currentLocation(),
@@ -995,8 +1010,15 @@ describe('single-character world session client', () => {
     await screen.findByRole('heading', { name: 'Equipment' });
     expect(screen.getByText('Available gear')).toBeVisible();
     fireEvent.click(within(infoTabs).getByRole('link', { name: 'Stats' }));
-    await screen.findByRole('heading', { name: 'Stats' });
-    expect(screen.getByText('Character attributes such as Strength and Dexterity are not tracked yet.')).toBeVisible();
+    await screen.findByRole('heading', { name: 'Stats', level: 1 });
+    expect(screen.getByText('Strength')).toBeVisible();
+    expect(screen.getByText('Intelligence')).toBeVisible();
+    expect(screen.getByText('Attack Power')).toBeVisible();
+    expect(screen.getByText('Spell Power')).toBeVisible();
+    expect(screen.getByText('Crit Chance')).toBeVisible();
+    expect(screen.getByText('Stamina Regen')).toBeVisible();
+    expect(screen.getByText('Glory')).toBeVisible();
+    expect(screen.getByText('Medals')).toBeVisible();
     fireEvent.click(within(infoTabs).getByRole('link', { name: 'Field notes' }));
     await screen.findByRole('heading', { name: 'Field notes' });
     expect(screen.getByText('No current quests.')).toBeVisible();

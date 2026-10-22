@@ -1,6 +1,6 @@
 /** PROPOSED minimal character intent/view, independent of race/class rulesets. */
 import { z } from 'zod';
-import { ClientCommandBaseSchema, DomainEventBaseSchema } from './protocol.js';
+import { ClientCommandBaseSchema, ClientQueryBaseSchema, DomainEventBaseSchema } from './protocol.js';
 import { IdSchema, NonEmptyNameSchema, NonNegativeIntSchema, PositiveIntSchema, ContractVersionSchema } from './ids.js';
 import { CombatEncounterProjectionSchema } from './combat.js';
 import { CharacterHealthSchema } from './health.js';
@@ -60,6 +60,50 @@ export const CharacterWalletSchema = z.object({
   balance: NonNegativeIntSchema.max(2_147_483_647),
 }).strict();
 
+export const DEFAULT_CHARACTER_ATTRIBUTES = Object.freeze({
+  strength: 10,
+  intelligence: 10,
+  constitution: 10,
+  dexterity: 10,
+});
+
+export const DEFAULT_CHARACTER_HONORS = Object.freeze({
+  glory: 0,
+  medals: 0,
+});
+
+export const CharacterAttributesSchema = z.object({
+  strength: PositiveIntSchema.max(100),
+  intelligence: PositiveIntSchema.max(100),
+  constitution: PositiveIntSchema.max(100),
+  dexterity: PositiveIntSchema.max(100),
+}).strict();
+
+export const CharacterHonorsSchema = z.object({
+  glory: NonNegativeIntSchema.max(2_147_483_647),
+  medals: NonNegativeIntSchema.max(2_147_483_647),
+}).strict();
+
+export const CharacterStatsQuerySchema = ClientQueryBaseSchema.extend({
+  type: z.literal('character.stats'),
+  characterId: IdSchema,
+  payload: z.object({}).strict(),
+}).strict();
+
+export const CharacterStatsProjectionSchema = z.object({
+  attributes: CharacterAttributesSchema,
+  attackPower: NonNegativeIntSchema.max(100_000),
+  spellPower: NonNegativeIntSchema.max(100_000),
+  damage: NonNegativeIntSchema.max(100_000),
+  critChancePercent: z.number().min(0).max(100),
+  healthRegen: NonNegativeIntSchema.max(100_000),
+  manaRegen: NonNegativeIntSchema.max(100_000),
+  staminaRegen: NonNegativeIntSchema.max(100_000),
+  armorPercent: z.number().min(0).max(100),
+  resiliencePercent: z.number().min(0).max(100),
+  dodgePercent: z.number().min(0).max(100),
+}).strict();
+
 export const CharacterAdvancementProjectionSchema = z.object({
   experience: NonNegativeIntSchema.max(2_147_483_647),
   level: PositiveIntSchema,
@@ -111,6 +155,8 @@ export const CharacterCreatedEventSchema = DomainEventBaseSchema.extend({
     startingLocationId: IdSchema,
     startingStateId: IdSchema.optional(),
     wallet: CharacterWalletSchema.optional(),
+    attributes: CharacterAttributesSchema.optional(),
+    honors: CharacterHonorsSchema.optional(),
   }).strict(),
 }).strict();
 
@@ -279,6 +325,8 @@ export const CharacterProjectionSchema = z.object({
   revision: NonNegativeIntSchema,
   inventory: z.array(InventoryItemProjectionSchema).default([]),
   equipment: CharacterEquipmentSchema.default({ weaponItemId: null, armorItemId: null }),
+  attributes: CharacterAttributesSchema.default(DEFAULT_CHARACTER_ATTRIBUTES),
+  honors: CharacterHonorsSchema.default(DEFAULT_CHARACTER_HONORS),
   wallet: CharacterWalletSchema.optional(),
   advancement: CharacterAdvancementProjectionSchema.optional(),
   health: CharacterHealthSchema.optional(),

@@ -1,5 +1,7 @@
 import {
   CharacterCreatedEventSchema,
+  DEFAULT_CHARACTER_ATTRIBUTES,
+  DEFAULT_CHARACTER_HONORS,
   CharacterSharedItemRelinquishedEventSchema,
   CharacterItemTakenEventSchema,
   CharacterItemDroppedEventSchema,
@@ -101,6 +103,8 @@ export const characterPlugin: EnginePlugin = {
         name,
         startingLocationId: startingLocation.id,
         ...(startingLocation.defaultStateId ? { startingStateId: startingLocation.defaultStateId } : {}),
+        attributes: DEFAULT_CHARACTER_ATTRIBUTES,
+        honors: DEFAULT_CHARACTER_HONORS,
         ...(context.world.currency
           ? {
             wallet: {

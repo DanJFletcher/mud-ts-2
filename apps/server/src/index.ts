@@ -8,6 +8,7 @@ import {
   ArchiveCharacterCommandSchema,
   InitializeCharacterWalletCommandSchema,
   CreateCharacterCommandSchema,
+  CharacterStatsQuerySchema,
   IdSchema,
   LocationDescribeQuerySchema,
   NpcTalkQuerySchema,
@@ -529,9 +530,29 @@ app.get('/api/game', async (req, res, next) => {
       current.characterId,
       locationGroupCatalog.groups,
     );
+    const statsQuery = CharacterStatsQuerySchema.parse({
+      type: 'character.stats',
+      version: 1,
+      queryId: globalThis.crypto.randomUUID(),
+      worldInstanceId: current.worldInstanceId,
+      characterId: current.characterId,
+      payload: {},
+    });
+    const statsResult = await selected.engine.query(statsQuery, worldContext(identity, current), {
+      characterProjection: character,
+      correlationId: res.locals.requestId,
+    });
+    if (!statsResult.ok) {
+      const status = statsResult.code === 'INTERNAL_ERROR' ? 500 : statsResult.code === 'NOT_FOUND' ? 404 : 403;
+      return res.status(status).json({
+        message: statsResult.message,
+        ...(statsResult.code === 'INTERNAL_ERROR' ? { requestId: statsResult.correlationId ?? res.locals.requestId } : {}),
+      });
+    }
     return res.json({
       player: { id: identity.playerId, displayName: identity.displayName },
       character,
+      stats: statsResult.value,
       ...(selected.world.currency
         ? {
           currency: {

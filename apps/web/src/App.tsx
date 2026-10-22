@@ -2901,20 +2901,44 @@ export function WorldClient({
                   <div>
                     <h2 className="focused-identity-name">{snapshot.character?.name || "Guest"}</h2>
                     <p className="focused-identity-label">
-                      {snapshot.character?.advancement
-                        ? `Level ${snapshot.character.advancement.level}`
-                        : "No combat victories yet"}
+                      {`Level ${snapshot.character?.advancement?.level ?? 1}`}
                     </p>
                   </div>
                 </div>
-                <div className="focused-details">
-                  <div className="focused-detail"><span>Level</span><strong>{snapshot.character?.advancement?.level ?? "—"}</strong></div>
-                  <div className="focused-detail"><span>Experience</span><strong>{snapshot.character?.advancement?.experience ?? "—"}</strong></div>
-                  <div className="focused-detail"><span>Health capacity</span><strong>{snapshot.character?.health?.maximum ?? "—"}</strong></div>
-                  <div className="focused-detail"><span>Weapon bonus</span><strong>+{snapshot.character?.inventory.find((item) => item.id === snapshot.character?.equipment.weaponItemId)?.equipment?.attackBonus ?? 0}</strong></div>
-                  <div className="focused-detail"><span>Armor bonus</span><strong>+{snapshot.character?.inventory.find((item) => item.id === snapshot.character?.equipment.armorItemId)?.equipment?.defenseBonus ?? 0}</strong></div>
-                </div>
-                <p className="focused-note">Character attributes such as Strength and Dexterity are not tracked yet.</p>
+                <section className="focused-stat-section" aria-labelledby="primary-stats-title">
+                  <h2 id="primary-stats-title">Stats</h2>
+                  <div className="focused-stat-grid">
+                    <div className="focused-stat"><span>Strength</span><strong>{snapshot.stats?.attributes.strength ?? "—"}</strong></div>
+                    <div className="focused-stat"><span>Intelligence</span><strong>{snapshot.stats?.attributes.intelligence ?? "—"}</strong></div>
+                    <div className="focused-stat"><span>Constitution</span><strong>{snapshot.stats?.attributes.constitution ?? "—"}</strong></div>
+                    <div className="focused-stat"><span>Dexterity</span><strong>{snapshot.stats?.attributes.dexterity ?? "—"}</strong></div>
+                  </div>
+                </section>
+                <section className="focused-stat-section" aria-labelledby="derived-stats-title">
+                  <h2 id="derived-stats-title">Attributes</h2>
+                  <div className="focused-stat-grid">
+                    <div className="focused-stat"><span>Attack Power</span><strong>{snapshot.stats?.attackPower ?? "—"}</strong></div>
+                    <div className="focused-stat"><span>Spell Power</span><strong>{snapshot.stats?.spellPower ?? "—"}</strong></div>
+                    <div className="focused-stat"><span>Damage</span><strong>{snapshot.stats?.damage ?? "—"}</strong></div>
+                    <div className="focused-stat"><span>Crit Chance</span><strong>{snapshot.stats ? `${snapshot.stats.critChancePercent.toFixed(1)}%` : "—"}</strong></div>
+                    <div className="focused-stat"><span>Health Regen</span><strong>{snapshot.stats?.healthRegen ?? "—"}</strong></div>
+                    <div className="focused-stat"><span>Mana Regen</span><strong>{snapshot.stats?.manaRegen ?? "—"}</strong></div>
+                    <div className="focused-stat"><span>Stamina Regen</span><strong>{snapshot.stats?.staminaRegen ?? "—"}</strong></div>
+                    <div className="focused-stat"><span>Armor</span><strong>{snapshot.stats ? `${snapshot.stats.armorPercent.toFixed(1)}%` : "—"}</strong></div>
+                    <div className="focused-stat"><span>Resilience</span><strong>{snapshot.stats ? `${snapshot.stats.resiliencePercent.toFixed(1)}%` : "—"}</strong></div>
+                    <div className="focused-stat"><span>Dodge</span><strong>{snapshot.stats ? `${snapshot.stats.dodgePercent.toFixed(1)}%` : "—"}</strong></div>
+                  </div>
+                </section>
+                <section className="focused-stat-section" aria-labelledby="other-stats-title">
+                  <h2 id="other-stats-title">Other</h2>
+                  <div className="focused-stat-grid">
+                    <div className="focused-stat"><span>Exp</span><strong>{snapshot.character?.advancement?.experience ?? 0}</strong></div>
+                    <div className="focused-stat"><span>{snapshot.currency?.name ?? "Gold"}</span><strong>{snapshot.character?.wallet?.balance ?? 0}</strong></div>
+                    <div className="focused-stat"><span>Glory</span><strong>{snapshot.character?.honors?.glory ?? 0}</strong></div>
+                    <div className="focused-stat"><span>Medals</span><strong>{snapshot.character?.honors?.medals ?? 0}</strong></div>
+                  </div>
+                </section>
+                <p className="focused-note">Strength, Constitution, weapons, and armor affect current combat. Spell power, regeneration, critical, avoidance, Glory, and Medals are tracked for future systems.</p>
                 {!snapshot.character && <p className="focused-note">Begin from Play to enter the world.</p>}
               </Panel>
             ) : (

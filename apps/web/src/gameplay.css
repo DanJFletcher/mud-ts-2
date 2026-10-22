@@ -1636,6 +1636,12 @@
 .focused-detail--wide { grid-column: 1 / -1; }
 .focused-detail span { color: var(--mudd-muted); font: 500 .65rem "DM Mono", monospace; letter-spacing: .1em; text-transform: uppercase; }
 .focused-detail strong { font-size: .9rem; font-weight: 600; }
+.focused-stat-section { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--mudd-border); }
+.focused-stat-section h2 { margin: 0 0 9px; color: var(--mudd-muted); font: 500 .7rem "DM Mono", monospace; letter-spacing: .12em; text-transform: uppercase; }
+.focused-stat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 18px; }
+.focused-stat { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: 8px; }
+.focused-stat span { overflow-wrap: anywhere; color: var(--mudd-muted); font-size: .82rem; }
+.focused-stat strong { flex-shrink: 0; font-size: .84rem; font-weight: 500; text-align: right; }
 .focused-vitals { display: grid; gap: 14px; padding-top: 18px; }
 .focused-vital { display: grid; gap: 7px; }
 .focused-vital-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

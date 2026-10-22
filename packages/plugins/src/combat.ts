@@ -3,6 +3,8 @@ import {
   CharacterCombatEncounterStartedEventSchema,
   CharacterCombatItemUsedEventSchema,
   CharacterInnRestCompletedEventSchema,
+  CharacterStatsProjectionSchema,
+  CharacterStatsQuerySchema,
   CombatActionCommandSchema,
   CombatActionResolvedEventV3Schema,
   InnRestCommandSchema,
@@ -20,23 +22,20 @@ import { assertCharacterAlive, characterStateCapability, type CharacterStateCapa
 import { prepareCharacterRespawn } from './respawn.js';
 import { registerPvpCombat } from './pvp-combat.js';
 import { interactionPolicyRegistry } from './interactions.js';
+import { calculateCharacterStats, characterAttackDamage, maximumHealthForLevel } from './character-stats.js';
 
-const PLAYER_BASE_MAX_HEALTH = 6;
-const PLAYER_HEALTH_PER_LEVEL = 2;
-const PLAYER_ATTACK_DAMAGE = 2;
 const VICTORY_EXPERIENCE_REWARD = 10;
 const MAX_LEVEL = 10;
-
-function maximumHealthForLevel(level: number): number {
-  return PLAYER_BASE_MAX_HEALTH + (level - 1) * PLAYER_HEALTH_PER_LEVEL;
-}
 
 export function createRoadEncounterStartEvent(
   context: EngineCommandContext,
   character: CharacterProjection,
   opponent: RoadEncounterDefinition,
 ): ProposedDomainEvent {
-  const playerMaxHealth = maximumHealthForLevel(character.advancement?.level ?? 1);
+  const playerMaxHealth = maximumHealthForLevel(
+    character.advancement?.level ?? 1,
+    character.attributes.constitution,
+  );
   const playerHealth = Math.min(character.health?.current ?? playerMaxHealth, playerMaxHealth);
   if (playerHealth <= 0) throw new RuleViolationError('You are too hurt to survive a road encounter.');
   const encounter = {
@@ -99,10 +98,16 @@ export const combatPlugin: EnginePlugin = {
     },
   },
   register(pluginContext) {
-    const { registerCommand, requireCapability } = pluginContext;
+    const { registerCommand, registerQuery, requireCapability } = pluginContext;
     const characterState = requireCapability<CharacterStateCapability>(characterStateCapability);
     requireCapability(interactionPolicyRegistry);
     registerPvpCombat(pluginContext, characterState);
+
+    registerQuery('character.stats', CharacterStatsQuerySchema, async (query, context) => {
+      const character = await characterState.load(context, query.characterId);
+      if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
+      return CharacterStatsProjectionSchema.parse(calculateCharacterStats(character));
+    });
 
     registerCommand('inn.rest', InnRestCommandSchema, async (command, context) => {
       const character = await characterState.load(context, command.characterId);
@@ -127,7 +132,10 @@ export const combatPlugin: EnginePlugin = {
         throw new RuleViolationError(`You need ${inn.restPrice} ${currency.name}${inn.restPrice === 1 ? '' : 's'} to rest.`);
       }
 
-      const maximum = maximumHealthForLevel(character.advancement?.level ?? 1);
+      const maximum = maximumHealthForLevel(
+        character.advancement?.level ?? 1,
+        character.attributes.constitution,
+      );
       const current = Math.min(character.health?.current ?? maximum, maximum);
       if (current >= maximum) throw new RuleViolationError('You are already at full health.');
       const healthRestored = maximum - current;
@@ -162,7 +170,10 @@ export const combatPlugin: EnginePlugin = {
         if (!item.consumable || item.equipment) {
           throw new RuleViolationError(`${item.label} cannot be used as a healing item.`);
         }
-        const maximum = maximumHealthForLevel(character.advancement?.level ?? 1);
+        const maximum = maximumHealthForLevel(
+          character.advancement?.level ?? 1,
+          character.attributes.constitution,
+        );
         const current = Math.min(character.health?.current ?? maximum, maximum);
         if (current >= maximum) throw new RuleViolationError('You are already at full health.');
         const healingDone = Math.min(item.consumable.amount, maximum - current);
@@ -197,7 +208,10 @@ export const combatPlugin: EnginePlugin = {
         if (!npc?.combatProfile) {
           throw new RuleViolationError('That opponent is not available here.');
         }
-        const playerMaxHealth = maximumHealthForLevel(character.advancement?.level ?? 1);
+        const playerMaxHealth = maximumHealthForLevel(
+          character.advancement?.level ?? 1,
+          character.attributes.constitution,
+        );
         const playerHealth = Math.min(character.health?.current ?? playerMaxHealth, playerMaxHealth);
         if (playerHealth <= 0) {
           throw new RuleViolationError('You are too hurt to begin another encounter. Use a healing item first.');
@@ -224,9 +238,8 @@ export const combatPlugin: EnginePlugin = {
 
       const action = command.payload.action;
       const opponentStyle = encounter.opponentStyle ?? npc.combatProfile.style ?? 'steady';
-      const weapon = character.inventory.find((item) => item.id === character.equipment.weaponItemId);
       const armor = character.inventory.find((item) => item.id === character.equipment.armorItemId);
-      const attackDamage = PLAYER_ATTACK_DAMAGE + (weapon?.equipment?.attackBonus ?? 0);
+      const attackDamage = characterAttackDamage(character);
       const damageReduction = armor?.equipment?.defenseBonus ?? 0;
       let damageDealt = 0;
       let damageTaken = 0;
@@ -344,7 +357,7 @@ export const combatPlugin: EnginePlugin = {
         };
         const advancementWithHealth = {
           ...advancementPayload,
-          maximumHealth: maximumHealthForLevel(level),
+          maximumHealth: maximumHealthForLevel(level, character.attributes.constitution),
         };
         CharacterAdvancementAwardedEventV2Schema.shape.payload.parse(advancementWithHealth);
         events.push({

@@ -1,5 +1,6 @@
 import {
   CharacterProjectionSchema,
+  CharacterStatsProjectionSchema,
   CommandReceiptSchema,
   CreateCharacterCommandSchema,
   RenameCharacterCommandSchema,
@@ -72,6 +73,7 @@ import { z } from 'zod';
 export const GameSnapshotSchema = z.object({
   player: z.object({ id: IdSchema, displayName: z.string() }),
   character: CharacterProjectionSchema.optional(),
+  stats: CharacterStatsProjectionSchema.optional(),
   currency: z.object({
     id: IdSchema,
     name: z.string().min(1),

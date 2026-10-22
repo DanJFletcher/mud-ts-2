@@ -33,7 +33,15 @@ const created = event('character.created', 1, {
 
 describe('character event replay validation', () => {
   it('keeps legacy character streams valid without progression and rejects duplicate victory rewards', () => {
-    expect(replayCharacter([created])?.advancement).toBeUndefined();
+    const legacyCharacter = replayCharacter([created]);
+    expect(legacyCharacter?.advancement).toBeUndefined();
+    expect(legacyCharacter?.attributes).toEqual({
+      strength: 10,
+      intelligence: 10,
+      constitution: 10,
+      dexterity: 10,
+    });
+    expect(legacyCharacter?.honors).toEqual({ glory: 0, medals: 0 });
 
     const victory = event('character.combat_action_resolved', 2, {
       characterId: 'character-test',

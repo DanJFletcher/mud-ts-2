@@ -50,6 +50,8 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         ...(created.payload.startingStateId ? { locationStateId: created.payload.startingStateId } : {}),
         visitedLocationIds: [created.payload.startingLocationId],
         revision: event.aggregateVersion,
+        ...(created.payload.attributes ? { attributes: created.payload.attributes } : {}),
+        ...(created.payload.honors ? { honors: created.payload.honors } : {}),
         ...(created.payload.wallet ? { wallet: created.payload.wallet } : {}),
       });
     } else if (event.type === 'character.wallet_initialized') {

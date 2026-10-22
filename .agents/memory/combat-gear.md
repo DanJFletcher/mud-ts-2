@@ -9,6 +9,12 @@ Keep equipment, current/max health, consumables, combat outcomes, and advancemen
 
 **How to apply:** Preserve character-stream authority for personal equipment, health, consumables, and progression. Keep quest-bound and equipped items protected from death drops; use the world-item aggregate for loot any player may claim. Read `docs/adr/0013-character-respawn-and-shared-death-drops.md` before extending respawn or shared-item behavior.
 
+Primary attributes and honors also belong to the character aggregate. Derive combat ratings on the server from character attributes and equipped gear instead of persisting a second, potentially stale stat snapshot. Strength affects damage and Constitution affects maximum health in solo, party, and PvP combat; other ratings remain tracked until their mechanics are defined.
+
+**Why:** The Stats screen and combat need one authoritative source while previously recorded combat outcomes remain stable during replay.
+
+**How to apply:** Keep formulas and the `character.stats` query authoritative in the combat plugin. Read `docs/adr/0024-character-stats-and-combat-projections.md` before changing stat ownership, formulas, or activation scope.
+
 While combat is active, the client shows dedicated combat controls only; hide the regular quick-action menu and free-text terminal input.
 
 **Why:** The user wants the battle interface focused on the actions available in combat.

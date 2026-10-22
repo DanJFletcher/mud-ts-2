@@ -34,6 +34,8 @@ const firstCharacter = {
   revision: 1,
   inventory: [],
   equipment: { weaponItemId: null, armorItemId: null },
+  attributes: { strength: 10, intelligence: 10, constitution: 10, dexterity: 10 },
+  honors: { glory: 0, medals: 0 },
   purchasedMerchantListingIds: [],
   itemLocations: [],
   npcProgress: [],

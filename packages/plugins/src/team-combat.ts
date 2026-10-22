@@ -21,6 +21,7 @@ import type { CommandPlan, EngineCommandContext, EnginePlugin, EventEffectContex
 import { replayCharacter, RuleViolationError } from '@mudd/engine-core';
 import { assertCharacterAlive, characterStateCapability, type CharacterStateCapability } from './character.js';
 import { prepareCharacterRespawn } from './respawn.js';
+import { characterAttackDamage, maximumHealthForLevel } from './character-stats.js';
 import {
   teamCombatRosterPolicyCapability,
   teamRoadEncounterCapability,
@@ -73,8 +74,15 @@ function encounterFor(events: ReturnType<typeof project>['encounters'], characte
   ) ?? null;
 }
 
-function maximumHealth(character: { health?: { maximum: number }; advancement?: { level: number } }) {
-  return character.health?.maximum ?? 6 + ((character.advancement?.level ?? 1) - 1) * 2;
+function maximumHealth(character: {
+  health?: { maximum: number };
+  advancement?: { level: number };
+  attributes: { constitution: number };
+}) {
+  return character.health?.maximum ?? maximumHealthForLevel(
+    character.advancement?.level ?? 1,
+    character.attributes.constitution,
+  );
 }
 
 function findCombatNpc(
@@ -129,7 +137,7 @@ async function applyOutcomes(
       const totalExperience = advancement.experience + 10;
       let level = advancement.level;
       while (level < 10 && totalExperience >= level * 20) level += 1;
-      nextMaximumHealth = 6 + (level - 1) * 2;
+      nextMaximumHealth = maximumHealthForLevel(level, character.attributes.constitution);
       const advancementPayload = CharacterAdvancementAwardedEventV2Schema.shape.payload.parse({
         characterId: player.characterId,
         encounterId: payload.encounterId,
@@ -475,9 +483,8 @@ export const teamCombatPlugin: EnginePlugin = {
           state.roadTravelByEncounter.get(encounter.encounterId)?.roadId,
         );
         if (!npc?.combatProfile) throw new RuleViolationError('The opponent is no longer available.');
-        const weapon = character.inventory.find((item) => item.id === character.equipment.weaponItemId);
         const defense = npc.combatProfile.style === 'guardian' ? npc.combatProfile.defense ?? 1 : 0;
-        damageDealt = Math.max(1, 2 + (weapon?.equipment?.attackBonus ?? 0) - defense);
+        damageDealt = Math.max(1, characterAttackDamage(character) - defense);
         target.health = Math.max(0, target.health - damageDealt);
         if (target.health === 0) target.status = 'defeated';
         narration = `${character.name} hits ${target.displayName} for ${damageDealt} damage.`;
