@@ -31,4 +31,10 @@ Paid inn rest belongs to the character stream: the server resolves the authored 
 
 **Why:** The user chose paid full-health restoration at inns and later chose for inns to restore stamina and mana at the existing price. The existing rules make health, resources, currency, and death character-scoped.
 
-**How to apply:** Reject rest away from an authored inn, during active solo combat, when all three vitals are full, without sufficient currency, or after permanent death. Do not move recovery or price authority into the client.
+**How to apply:** Reject paid inn rest away from an authored inn, during active solo combat, when all three vitals are full, without sufficient currency, or after permanent death. Do not move recovery or price authority into the client.
+
+Free resting should be allowed anywhere and should restore health, stamina, and mana, rather than only stamina at designated safe locations.
+
+**Why:** The user requested resting anywhere and explicitly chose recovery for all three vitals, using Written Realms’ recovery loop as the reference.
+
+**How to apply:** Treat this as the requested free-rest policy, distinct from paid instant inn recovery; check implementation status before claiming the behavior is already available.
