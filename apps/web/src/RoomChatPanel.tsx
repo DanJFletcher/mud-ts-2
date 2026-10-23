@@ -14,6 +14,7 @@ export type RoomChatMessage = Readonly<{
 }>;
 
 type RoomChatPanelProps = Readonly<{
+  worldInstanceId: string;
   roomId: string;
   fullscreen: boolean;
   onFullscreenChange: (fullscreen: boolean) => void;
@@ -42,6 +43,7 @@ function mergeMessages(current: readonly RoomChatMessage[], incoming: readonly R
 }
 
 export function RoomChatPanel({
+  worldInstanceId,
   roomId,
   fullscreen,
   onFullscreenChange,
@@ -59,7 +61,8 @@ export function RoomChatPanel({
   const [fullscreenClosing, setFullscreenClosing] = useState(false);
   const messagesRef = useRef<HTMLDivElement>(null);
   const followsLatestRef = useRef(true);
-  const currentRoomIdRef = useRef(roomId);
+  const scope = JSON.stringify([worldInstanceId, roomId]);
+  const currentScopeRef = useRef(scope);
   const lastMessageIdRef = useRef(0);
   const pendingSubmissionRef = useRef<{ text: string; id: string } | null>(null);
   const initialLoadCompleteRef = useRef(false);
@@ -67,7 +70,7 @@ export function RoomChatPanel({
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const wasFullscreenRef = useRef(false);
 
-  currentRoomIdRef.current = roomId;
+  currentScopeRef.current = scope;
 
   useEffect(() => {
     if (fullscreen) {
@@ -119,6 +122,7 @@ export function RoomChatPanel({
     followsLatestRef.current = true;
     lastMessageIdRef.current = 0;
     initialLoadCompleteRef.current = false;
+    pendingSubmissionRef.current = null;
     setMessages([]);
     setDraft('');
     setLoading(true);
@@ -134,7 +138,10 @@ export function RoomChatPanel({
         if (initialLoadCompleteRef.current) {
           query.set('afterId', String(lastMessageIdRef.current));
         }
-        const response = await fetch(`/api/chat?${query.toString()}`, { credentials: 'include' });
+        const response = await fetch(`/api/chat?${query.toString()}`, {
+          credentials: 'include',
+          headers: { 'x-mudd-world-instance': worldInstanceId },
+        });
         const body = await response.json() as RoomChatResponse & { message?: string };
         if (!response.ok) throw new Error(errorMessage(body, 'Could not load room chat.'));
         if (body.roomId !== roomId || !Array.isArray(body.messages)) {
@@ -171,7 +178,7 @@ export function RoomChatPanel({
       active = false;
       window.clearInterval(interval);
     };
-  }, [onTerminalEvent, roomId]);
+  }, [onTerminalEvent, roomId, worldInstanceId]);
 
   useEffect(() => {
     const messagesElement = messagesRef.current;
@@ -194,7 +201,10 @@ export function RoomChatPanel({
       const response = await fetch('/api/chat', {
         method: 'POST',
         credentials: 'include',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          'x-mudd-world-instance': worldInstanceId,
+        },
         body: JSON.stringify({
           roomId,
           text,
@@ -211,18 +221,18 @@ export function RoomChatPanel({
       ) {
         throw new Error('The room chat response was invalid.');
       }
-      if (currentRoomIdRef.current !== roomId) return;
+      if (currentScopeRef.current !== scope) return;
 
       const incomingMessages = [payload.message, ...(payload.npcMessage ? [payload.npcMessage] : [])];
       setMessages((current) => mergeMessages(current, incomingMessages));
       setDraft('');
       pendingSubmissionRef.current = null;
     } catch (error) {
-      if (currentRoomIdRef.current === roomId) {
+      if (currentScopeRef.current === scope) {
         setSendError(error instanceof Error ? error.message : 'Could not send room message.');
       }
     } finally {
-      if (currentRoomIdRef.current === roomId) setSending(false);
+      if (currentScopeRef.current === scope) setSending(false);
     }
   };
 

@@ -2,6 +2,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RoomChatPanel, type RoomChatMessage } from './RoomChatPanel.js';
 
+const worldInstanceId = 'orraveth-test-instance';
+
 describe('RoomChatPanel message polling', () => {
   let storedMessages: RoomChatMessage[];
   let intervals: Array<() => void>;
@@ -18,6 +20,9 @@ describe('RoomChatPanel message polling', () => {
     pendingTerminalEvents = [];
     fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input), 'http://mudd.test');
+      if (new Headers(init?.headers).get('x-mudd-world-instance') !== worldInstanceId) {
+        return Response.json({ message: 'Wrong world selected.' }, { status: 409 });
+      }
       if (init?.method === 'POST') {
         const requestBody = JSON.parse(String(init.body)) as { clientMessageId: string; text: string };
         postedSubmissionIds.push(requestBody.clientMessageId);
@@ -70,7 +75,7 @@ describe('RoomChatPanel message polling', () => {
 
   it('groups the room chat controls at the right edge of the header', async () => {
     const { container } = render(
-      <RoomChatPanel roomId="test-room" fullscreen={false} onFullscreenChange={vi.fn()} />,
+      <RoomChatPanel worldInstanceId={worldInstanceId} roomId="test-room" fullscreen={false} onFullscreenChange={vi.fn()} />,
     );
     const header = container.querySelector('.focused-room-chat__header')!;
     const controls = header.querySelector('.focused-room-chat__controls')!;
@@ -91,7 +96,7 @@ describe('RoomChatPanel message polling', () => {
       text: 'The marker points east.',
       createdAt: '2026-10-18T12:00:00.000Z',
     }];
-    render(<RoomChatPanel roomId="test-room" fullscreen={false} onFullscreenChange={vi.fn()} />);
+    render(<RoomChatPanel worldInstanceId={worldInstanceId} roomId="test-room" fullscreen={false} onFullscreenChange={vi.fn()} />);
 
     expect(await screen.findByText('The marker points east.')).toBeVisible();
     storedMessages.push({
@@ -119,10 +124,11 @@ describe('RoomChatPanel message polling', () => {
     expect(screen.getAllByText('Hello')).toHaveLength(1);
   });
 
-  it('forwards NPC departures and arrivals to the terminal instead of rendering them in room chat', async () => {
+  it('polls the selected non-demo world and forwards NPC departures and arrivals to the terminal', async () => {
     const onTerminalEvent = vi.fn();
     render(
       <RoomChatPanel
+        worldInstanceId={worldInstanceId}
         roomId="test-room"
         fullscreen={false}
         onFullscreenChange={vi.fn()}
@@ -155,15 +161,38 @@ describe('RoomChatPanel message polling', () => {
     await waitFor(() => expect(onTerminalEvent).toHaveBeenCalledTimes(2));
     expect(onTerminalEvent).toHaveBeenNthCalledWith(1, departure);
     expect(onTerminalEvent).toHaveBeenNthCalledWith(2, arrival);
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(new Headers(init?.headers).get('x-mudd-world-instance')).toBe(worldInstanceId);
+    }
     expect(screen.queryByText(departure.text)).not.toBeInTheDocument();
     expect(screen.queryByText(arrival.text)).not.toBeInTheDocument();
     expect(screen.queryByText(departure.speakerName)).not.toBeInTheDocument();
     expect(screen.queryByText(arrival.speakerName)).not.toBeInTheDocument();
   });
 
+  it('sends player chat to the selected non-demo world', async () => {
+    render(
+      <RoomChatPanel
+        worldInstanceId={worldInstanceId}
+        roomId="test-room"
+        fullscreen={false}
+        onFullscreenChange={vi.fn()}
+      />,
+    );
+    await screen.findByText('No room messages yet.');
+    const textbox = screen.getByRole('textbox', { name: 'Message the room' });
+    fireEvent.change(textbox, { target: { value: 'Hello Bellwold' } });
+    fireEvent.submit(textbox.closest('form')!);
+
+    expect(await screen.findByText('Hello Bellwold')).toBeVisible();
+    const post = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST');
+    expect(post).toBeDefined();
+    expect(new Headers(post?.[1]?.headers).get('x-mudd-world-instance')).toBe(worldInstanceId);
+  });
+
   it('reuses the same submission ID when the player retries a failed send', async () => {
     failedPostRequests = 1;
-    render(<RoomChatPanel roomId="test-room" fullscreen={false} onFullscreenChange={vi.fn()} />);
+    render(<RoomChatPanel worldInstanceId={worldInstanceId} roomId="test-room" fullscreen={false} onFullscreenChange={vi.fn()} />);
 
     const textbox = await screen.findByRole('textbox', { name: 'Message the room' });
     fireEvent.change(textbox, { target: { value: 'Hello again' } });

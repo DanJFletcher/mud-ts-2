@@ -2948,6 +2948,7 @@ export function WorldClient({
                   </section>}
                   {isMobileViewport && (
                     <RoomChatPanel
+                      worldInstanceId={worldInstanceId}
                       roomId={snapshot.location.locationId}
                       fullscreen={chatFullscreen}
                       onFullscreenChange={handleChatFullscreenChange}
@@ -2979,6 +2980,7 @@ export function WorldClient({
                 </TerminalPanel>
                 {!isMobileViewport && (
                   <RoomChatPanel
+                    worldInstanceId={worldInstanceId}
                     roomId={snapshot.location.locationId}
                     fullscreen={chatFullscreen}
                     onFullscreenChange={handleChatFullscreenChange}
