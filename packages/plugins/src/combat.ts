@@ -21,7 +21,13 @@ import type {
 } from '@mudd/contracts';
 import type { EngineCommandContext } from '@mudd/engine-core';
 import { RuleViolationError } from '@mudd/engine-core';
-import { assertCharacterAlive, characterStateCapability, type CharacterStateCapability } from './character.js';
+import {
+  assertCharacterAlive,
+  assertCharacterStanding,
+  characterStateCapability,
+  staminaRecoveryEvent,
+  type CharacterStateCapability,
+} from './character.js';
 import { prepareCharacterRespawn } from './respawn.js';
 import { registerPvpCombat } from './pvp-combat.js';
 import { interactionPolicyRegistry } from './interactions.js';
@@ -132,6 +138,7 @@ export const combatPlugin: EnginePlugin = {
       const character = await characterState.load(context, command.characterId);
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
       assertCharacterAlive(character);
+      assertCharacterStanding(character);
       if (character.combat?.status === 'active') {
         throw new RuleViolationError('You cannot rest while combat is active. Flee first.');
       }
@@ -189,9 +196,16 @@ export const combatPlugin: EnginePlugin = {
 
     registerCommand('combat.action', CombatActionCommandSchema, async (command, context) => {
       const guards = context.world.classCatalog ? await classAdoptionGuards(context, command.characterId) : undefined;
-      const character = await characterState.load(context, command.characterId);
-      if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
-      assertCharacterAlive(character);
+      const loadedCharacter = await characterState.load(context, command.characterId);
+      if (!loadedCharacter || loadedCharacter.archived) throw new RuleViolationError('That character is no longer available.');
+      assertCharacterAlive(loadedCharacter);
+      assertCharacterStanding(loadedCharacter);
+      const recoveryEvent = staminaRecoveryEvent(loadedCharacter, context.now());
+      const character: CharacterProjection = {
+        ...loadedCharacter,
+        resources: recoveryEvent.payload.resources,
+        staminaRecovery: recoveryEvent.payload.recovery,
+      };
 
       if (command.payload.action === 'use-item' && character.combat?.status !== 'active') {
         if (command.payload.encounterId) {
@@ -363,7 +377,7 @@ export const combatPlugin: EnginePlugin = {
         encounter: resolvedEncounter,
       };
       CombatActionResolvedEventV3Schema.shape.payload.parse(payload);
-      const events: ProposedDomainEvent[] = [{
+      const events: ProposedDomainEvent[] = [recoveryEvent, {
         type: 'character.combat_action_resolved',
         version: 3,
         payload,

@@ -57,7 +57,9 @@ async function harness(options: { catalog?: typeof orravethClassCatalog; armor?:
   };
   const makeEngine = (classless = false, eventStore: EventStorePort = store, selectedCatalog = catalog) => new EngineHost(
     [...(!classless ? [createClassRulesetPlugin(selectedCatalog)] : []), ...plugins], eventStore, authorization,
-    { ...world, classCatalog: classless ? undefined : selectedCatalog }, () => `class-fixture-${++id}`,
+    { ...world, classCatalog: classless ? undefined : selectedCatalog },
+    () => `class-fixture-${++id}`,
+    () => new Date('2026-10-23T12:00:00.000Z'),
   );
   const engine = makeEngine();
   await engine.start();
@@ -187,7 +189,7 @@ describe('optional world character classes through authorized hosts', () => {
     const h = await harness();
     const id = await h.create(undefined, 'alice', true);
     const started = await h.dispatch('team.combat.start', id, { targetNpcId: 'training-target' });
-    const encounterId = (started.events[0]!.payload.encounter as { encounterId: string }).encounterId;
+    const encounterId = (started.events.find((event) => event.type === 'team.combat_started')!.payload.encounter as { encounterId: string }).encounterId;
     expect((await h.dispatch('team.combat.action', id, { encounterId, action: 'flee' })).receipt.ok).toBe(true);
     const escaped = await h.load(id);
     expect(escaped.resources.stamina.current).toBe(80);
@@ -211,7 +213,7 @@ describe('optional world character classes through authorized hosts', () => {
       const before = await h.load(id);
       const result = await h.solo(id, 'ability', definition.coreAction.id, 'same-ability');
       expect(result.receipt.ok).toBe(true);
-      expect(result.events[0]!.payload.damageDealt).toBe(3);
+      expect(result.events.find((event) => event.type === 'character.combat_action_resolved')?.payload.damageDealt).toBe(3);
       const after = await h.load(id);
       expect(after.resources[definition.coreAction.cost.resource].current).toBe(100 - definition.coreAction.cost.amount);
       expect(after.combat?.round).toBe(before.combat!.round + 1);
@@ -239,7 +241,7 @@ describe('optional world character classes through authorized hosts', () => {
       const replayedAction = await h.dispatch('combat.action', id, { action: 'ability',
         encounterId: after.combat!.encounterId, abilityId: definition.coreAction.id },
       'alice', after.revision, undefined, restarted);
-      expect(replayedAction.events[0]!.payload.damageDealt).toBe(3);
+      expect(replayedAction.events.find((event) => event.type === 'character.combat_action_resolved')?.payload.damageDealt).toBe(3);
       // Replay of the pre-change history never consults changed catalogs.
       expect(replayCharacter((await h.store.readStream(worldId, id)).slice(0, after.revision))).toEqual(after);
     });
@@ -249,7 +251,7 @@ describe('optional world character classes through authorized hosts', () => {
       const id = await h.create(definition.id);
       const started = await h.dispatch('team.combat.start', id, { targetNpcId: 'training-target' });
       expect(started.receipt.ok).toBe(true);
-      const encounterId = (started.events[0]!.payload.encounter as { encounterId: string }).encounterId;
+      const encounterId = (started.events.find((event) => event.type === 'team.combat_started')!.payload.encounter as { encounterId: string }).encounterId;
       const before = await h.load(id);
       const invalid = await h.dispatch('team.combat.action', id, {
         encounterId, action: 'ability', abilityId: definition.coreAction.id, targetParticipantId: id,
@@ -305,13 +307,15 @@ describe('optional world character classes through authorized hosts', () => {
       while ((await h.load(id)).combat?.status === 'active') expect((await h.solo(id)).receipt.ok).toBe(true);
       const advanced = await h.load(id);
       const started = await h.dispatch('team.combat.start', id, { targetNpcId: 'training-target' });
-      const encounterId = (started.events[0]!.payload.encounter as { encounterId: string }).encounterId;
+      const encounterId = (started.events.find((event) => event.type === 'team.combat_started')!.payload.encounter as { encounterId: string }).encounterId;
       const beforeShared = await h.store.readStream(worldId, 'world-team-combat');
       expect((await h.dispatch('team.combat.action', id, {
         encounterId, action: 'ability', abilityId: definition.coreAction.id,
       })).receipt.ok).toBe(false);
       expect(await h.store.readStream(worldId, 'world-team-combat')).toEqual(beforeShared);
-      expect(await h.load(id)).toEqual(advanced);
+      const afterRejectedAction = await h.load(id);
+      expect(afterRejectedAction.resources).toEqual(advanced.resources);
+      expect(afterRejectedAction.combat).toEqual(advanced.combat);
       // End via ordinary attacks, avoiding flee's separate stamina requirement.
       for (let count = 0; count < 100; count++) {
         const result = await h.dispatch('team.combat.action', id, { encounterId, action: 'attack' });

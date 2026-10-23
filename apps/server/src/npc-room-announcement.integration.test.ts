@@ -187,6 +187,7 @@ vi.mock('@mudd/core-plugins', () => ({
 }));
 
 vi.mock('@mudd/engine-core', () => ({
+  SYSTEM_ACTOR_ID: 'system-test-actor',
   EngineHost: class {
     constructor(plugins: unknown[] = []) {
       for (const candidate of plugins) {
@@ -265,6 +266,9 @@ vi.mock('@mudd/engine-core', () => ({
         return result;
       }
       return { receipt: { ok: true }, commitOutcome: 'committed' };
+    }
+    async dispatchSystem() {
+      return { receipt: { ok: true } };
     }
   },
   replayCharacter: (character: unknown) => character,

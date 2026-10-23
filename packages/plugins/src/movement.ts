@@ -7,7 +7,10 @@ import type { EnginePlugin } from '@mudd/engine-core';
 import type { CharacterProjection } from '@mudd/contracts';
 import type { EngineCommandContext, ProposedEventEffect } from '@mudd/engine-core';
 import { RuleViolationError } from '@mudd/engine-core';
-import { assertCharacterAlive, characterStateCapability } from './character.js';
+import { MOVEMENT_STAMINA_COST } from '@mudd/contracts';
+import {
+  assertCharacterAlive, characterStateCapability, staminaRecoveryEvent,
+} from './character.js';
 import { exitsForLocationState, resolveLocationState } from './location-state.js';
 
 interface CharacterStateCapability {
@@ -26,6 +29,7 @@ export interface MovementPolicyCapability {
     character: CharacterProjection,
     exitId: string,
     allowRoad?: boolean,
+    now?: Date,
   ): MovementPlan;
 }
 
@@ -39,8 +43,12 @@ export function createMovementPlan(
   character: CharacterProjection,
   exitId: string,
   allowRoad = false,
+  now = new Date(),
 ): MovementPlan {
   assertCharacterAlive(character);
+  if (character.staminaRecovery.posture === 'resting') {
+    throw new RuleViolationError('You are resting. Stand before you move.');
+  }
   if (character.combat?.status === 'active') {
     throw new RuleViolationError('You cannot leave while combat is active. Flee first.');
   }
@@ -75,6 +83,13 @@ export function createMovementPlan(
   ) {
     throw new RuleViolationError('That passage is still sealed.');
   }
+  const recoveryEvent = staminaRecoveryEvent(character, now);
+  const recoveredResources = recoveryEvent.payload.resources as CharacterProjection['resources'];
+  if (recoveredResources.stamina.current < MOVEMENT_STAMINA_COST) {
+    throw new RuleViolationError(
+      `You need ${MOVEMENT_STAMINA_COST} stamina to travel; you have ${recoveredResources.stamina.current}.`,
+    );
+  }
   const payload = {
     characterId: character.characterId,
     fromLocationId: character.locationId,
@@ -82,11 +97,15 @@ export function createMovementPlan(
     fromStateId: currentState?.id ?? null,
     toStateId: destinationState?.id ?? null,
     exitId: exit.id,
+    movementCost: MOVEMENT_STAMINA_COST,
   };
   CharacterMovedEventSchema.shape.payload.parse(payload);
   return {
     exit,
-    events: [{ type: 'character.moved', version: 1, payload }],
+    events: [
+      recoveryEvent,
+      { type: 'character.moved', version: 1, payload },
+    ],
     effects: exit.toLocationId === character.locationId ? [] : [{
       type: 'world.location.entered',
       version: 1,
@@ -115,7 +134,7 @@ export const movementPlugin: EnginePlugin = {
     registerCommand('character.move', MoveCharacterCommandSchema, async (command, context) => {
       const character = await characterState.load(context, command.characterId);
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
-      const plan = createMovementPlan(context.world, character, command.payload.exitId);
+      const plan = createMovementPlan(context.world, character, command.payload.exitId, false, context.now());
       return {
         streamId: command.characterId,
         expectedVersion: command.expectedVersion,

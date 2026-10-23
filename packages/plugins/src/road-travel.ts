@@ -42,7 +42,7 @@ export const roadTravelPlugin: EnginePlugin = {
       const character = await characterState.load(context, command.characterId);
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
       assertCharacterAlive(character);
-      const movement = movementPolicy.plan(context.world, character, command.payload.exitId, true);
+      const movement = movementPolicy.plan(context.world, character, command.payload.exitId, true, context.now());
       const roadId = movement.exit.roadId;
       if (!roadId) throw new RuleViolationError('That exit is not part of a road.');
       const road = context.world.roads.find((candidate) => candidate.id === roadId);
@@ -84,9 +84,11 @@ export const roadTravelPlugin: EnginePlugin = {
         ...movementEvent.payload,
         roadTravel,
       });
-      const events: ProposedDomainEvent[] = [
-        { ...movementEvent, payload: movementPayload },
-      ];
+      const events: ProposedDomainEvent[] = movement.events.map((event) =>
+        event.type === 'character.moved'
+          ? { ...event, payload: movementPayload }
+          : event,
+      );
       if (encounterOccurred) {
         if (!opponent) throw new Error('A successful road encounter did not select an opponent.');
         events.push(createRoadEncounterStartEvent(context, characterAtDestination(character, movement.exit.toLocationId), opponent));

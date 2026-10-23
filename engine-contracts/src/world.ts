@@ -309,6 +309,8 @@ export const LocationDefinitionSchema = z.object({
   states: z.array(LocationStateDefinitionSchema).min(1).max(16).optional(),
   /** This location cannot be entered until the character has visited the named location. */
   requiredVisitedLocationId: IdSchema.optional(),
+  /** Characters may adopt the free resting posture only at explicitly safe locations. */
+  safeResting: z.boolean().optional(),
   exits: z.array(ExitDefinitionSchema),
   readables: z.array(ReadableObjectDefinitionSchema).optional(),
   takeables: z.array(TakeableObjectDefinitionSchema).optional(),
@@ -696,6 +698,7 @@ export const LocationProjectionSchema = z.object({
   occupants: z.array(RoomOccupantProjectionSchema),
   npcs: z.array(NpcPresenceProjectionSchema).optional(),
   inn: InnProjectionSchema.optional(),
+  safeResting: z.boolean().default(false),
 }).strict();
 
 export const WorldMapProjectionSchema = z.object({

@@ -249,7 +249,7 @@ async function moveAlongDemoRoad(
     result = await client.roadStep(
       characterId,
       exitId,
-      expectedVersion + index,
+      expectedVersion + index * 2,
       `${commandId}-step-${index + 1}`,
     );
     if (!result.receipt.ok) return result;
@@ -618,11 +618,18 @@ describe('MuddHttpClient', () => {
       authenticated: true,
     } as const;
     const store = new InMemoryEventStore();
+    let simulatedNow = new Date('2026-10-23T12:00:00.000Z');
     const engine = new EngineHost(
       testPlugins,
       store,
       { canAccessInstance: async () => true, ownsCharacter: async () => true },
       demoTestWorld(),
+      undefined,
+      () => {
+        const settledAt = simulatedNow;
+        simulatedNow = new Date(simulatedNow.getTime() + 5_000);
+        return settledAt;
+      },
     );
     await engine.start();
     const fetcher: typeof fetch = async (input, init = {}) => {
@@ -1212,11 +1219,18 @@ describe('MuddHttpClient', () => {
       authenticated: true,
     } as const;
     const store = new InMemoryEventStore();
+    let simulatedNow = new Date('2026-10-23T12:00:00.000Z');
     const engine = new EngineHost(
       testPlugins,
       store,
       { canAccessInstance: async () => true, ownsCharacter: async () => true },
       demoTestWorld(),
+      undefined,
+      () => {
+        const settledAt = simulatedNow;
+        simulatedNow = new Date(simulatedNow.getTime() + 5_000);
+        return settledAt;
+      },
     );
     await engine.start();
     const fetcher: typeof fetch = async (input, init = {}) => {
@@ -1390,11 +1404,18 @@ describe('MuddHttpClient', () => {
       authenticated: true,
     } as const;
     const store = new InMemoryEventStore();
+    let simulatedNow = new Date('2026-10-23T12:00:00.000Z');
     const engine = new EngineHost(
       testPlugins,
       store,
       { canAccessInstance: async () => true, ownsCharacter: async () => true },
       demoTestWorld(),
+      undefined,
+      () => {
+        const settledAt = simulatedNow;
+        simulatedNow = new Date(simulatedNow.getTime() + 5_000);
+        return settledAt;
+      },
     );
     await engine.start();
     const fetcher: typeof fetch = async (input, init = {}) => {

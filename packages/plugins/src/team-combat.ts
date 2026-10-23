@@ -3,6 +3,7 @@ import {
   CharacterMovedEventSchema,
   CharacterTeamCombatOutcomeAppliedEventSchema,
   CharacterStaminaSpentEventSchema,
+  MOVEMENT_STAMINA_COST,
   TeamCombatActionCommandSchema,
   TeamCombatActionResolvedEventSchema,
   TeamCombatEndedEventSchema,
@@ -23,8 +24,9 @@ import type { CommandPlan, EngineCommandContext, EnginePlugin, EventEffectContex
 import { replayCharacter, RuleViolationError, SYSTEM_ACTOR_ID } from '@mudd/engine-core';
 import {
   assertCharacterAlive,
+  assertCharacterStanding,
   characterStateCapability,
-  teamFleeStaminaEffect,
+  staminaRecoveryEvent,
   type CharacterStateCapability,
 } from './character.js';
 import { prepareCharacterRespawn } from './respawn.js';
@@ -123,12 +125,18 @@ async function applyOutcomes(
     if (character.locationId !== payload.locationId) {
       throw new Error('A team combat participant changed locations before encounter resolution.');
     }
+    const recoveryEvent = staminaRecoveryEvent(character, context.now());
+    const settledCharacter: CharacterProjection = {
+      ...character,
+      resources: recoveryEvent.payload.resources,
+      staminaRecovery: recoveryEvent.payload.recovery,
+    };
     const previousMaximum = character.health?.maximum ?? player.maximumHealth;
     const health = { current: Math.min(player.health, previousMaximum), maximum: previousMaximum };
     const consumedItemIds = payload.players.find((entry) =>
       entry.characterId === player.characterId,
     )?.consumedItemIds ?? [];
-    const events: ProposedDomainEvent[] = [{
+    const events: ProposedDomainEvent[] = [recoveryEvent, {
       type: 'character.team_combat_outcome_applied',
       version: 1,
       payload: CharacterTeamCombatOutcomeAppliedEventSchema.shape.payload.parse({
@@ -177,12 +185,14 @@ async function applyOutcomes(
         effects.push(...respawn.effects);
       }
     }
-    if (payload.result === 'victory' && payload.roadTravel && health.current > 0) {
+    if (payload.result === 'victory' && payload.roadTravel && health.current > 0 &&
+        settledCharacter.resources.stamina.current >= MOVEMENT_STAMINA_COST) {
       const movementPayload = CharacterMovedEventSchema.shape.payload.parse({
         characterId: player.characterId,
         fromLocationId: payload.roadTravel.fromLocationId,
         toLocationId: payload.roadTravel.toLocationId,
         exitId: payload.roadTravel.exitId,
+        movementCost: MOVEMENT_STAMINA_COST,
         roadTravel: {
           roadId: payload.roadTravel.roadId,
           segmentIndex: payload.roadTravel.segmentIndex,
@@ -295,16 +305,36 @@ export const teamCombatPlugin: EnginePlugin = {
         }
 
         const guards: StreamGuard[] = [];
+        const companions: NonNullable<CommandPlan['companions']>[number][] = [];
         const players = await Promise.all(orderedPlayers.map(async (player) => {
           const projection = await characters.load(context, player.characterId);
           if (!projection || projection.locationId !== initiator.locationId) {
             throw new RuleViolationError('A party member is no longer in this room.');
           }
           assertCharacterAlive(projection);
+          assertCharacterStanding(projection);
+          const recovery = staminaRecoveryEvent(projection, context.now());
+          const recoveredCharacter: CharacterProjection = {
+            ...projection,
+            resources: recovery.payload.resources,
+            staminaRecovery: recovery.payload.recovery,
+          };
+          if (recoveredCharacter.resources.stamina.current < MOVEMENT_STAMINA_COST) {
+            throw new RuleViolationError(
+              `Every party member needs ${MOVEMENT_STAMINA_COST} stamina to take this road step.`,
+            );
+          }
+          companions.push({
+            streamId: projection.characterId,
+            expectedVersion: projection.revision,
+            events: [recovery],
+          });
+          if (projection.characterId !== initiator.characterId) {
+            guards.push({ streamId: projection.characterId, expectedVersion: projection.revision });
+          }
           if (context.world.classCatalog) {
             if (projection.combat?.status === 'active') throw new RuleViolationError('A party member is already in combat.');
-            guards.push({ streamId: projection.characterId, expectedVersion: projection.revision },
-              ...await classAdoptionGuards(context, projection.characterId));
+            guards.push(...await classAdoptionGuards(context, projection.characterId));
           }
           const maximum = maximumHealth(projection);
           return {
@@ -362,15 +392,23 @@ export const teamCombatPlugin: EnginePlugin = {
             payload: TeamRoadEncounterStartedEventSchema.shape.payload.parse({ encounter, roadTravel }),
           }],
           guards,
+          companions,
         };
       },
     };
     provideCapability(teamRoadEncounterCapability, roadEncounterCapability);
 
     registerCommand('team.combat.start', TeamCombatStartCommandSchema, async (command, context) => {
-      const character = await characters.load(context, command.characterId);
-      if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
-      assertCharacterAlive(character);
+      const loadedCharacter = await characters.load(context, command.characterId);
+      if (!loadedCharacter || loadedCharacter.archived) throw new RuleViolationError('That character is no longer available.');
+      assertCharacterAlive(loadedCharacter);
+      assertCharacterStanding(loadedCharacter);
+      const recoveryEvent = staminaRecoveryEvent(loadedCharacter, context.now());
+      const character: CharacterProjection = {
+        ...loadedCharacter,
+        resources: recoveryEvent.payload.resources,
+        staminaRecovery: recoveryEvent.payload.recovery,
+      };
       const location = context.world.locations.find((candidate) => candidate.id === character.locationId);
       const npc = location?.npcs?.find((candidate) => candidate.id === command.payload.targetNpcId);
       if (!npc?.combatProfile) throw new RuleViolationError('That opponent cannot be fought here.');
@@ -407,10 +445,11 @@ export const teamCombatPlugin: EnginePlugin = {
           throw new RuleViolationError('A party member is no longer in this room.');
         }
         assertCharacterAlive(projection);
+        assertCharacterStanding(projection);
+        guards.push({ streamId: projection.characterId, expectedVersion: projection.revision });
         if (context.world.classCatalog) {
           if (projection.combat?.status === 'active') throw new RuleViolationError('A party member is already in combat.');
-          guards.push({ streamId: projection.characterId, expectedVersion: projection.revision },
-            ...await classAdoptionGuards(context, projection.characterId));
+          guards.push(...await classAdoptionGuards(context, projection.characterId));
         }
         const maximum = maximumHealth(projection);
         return {
@@ -462,6 +501,11 @@ export const teamCombatPlugin: EnginePlugin = {
           payload: TeamCombatStartedEventSchema.shape.payload.parse({ encounter }),
         }],
         guards,
+        companions: [{
+          streamId: character.characterId,
+          expectedVersion: loadedCharacter.revision,
+          events: [recoveryEvent],
+        }],
       };
     });
 
@@ -479,9 +523,16 @@ export const teamCombatPlugin: EnginePlugin = {
         participant.kind === 'player' && participant.characterId === command.characterId,
       );
       if (!actor || actor.status !== 'active') throw new RuleViolationError('Your character cannot act in this encounter.');
-      const character = await characters.load(context, command.characterId);
-      if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
-      assertCharacterAlive(character);
+      const loadedCharacter = await characters.load(context, command.characterId);
+      if (!loadedCharacter || loadedCharacter.archived) throw new RuleViolationError('That character is no longer available.');
+      assertCharacterAlive(loadedCharacter);
+      assertCharacterStanding(loadedCharacter);
+      const recoveryEvent = staminaRecoveryEvent(loadedCharacter, context.now());
+      const character: CharacterProjection = {
+        ...loadedCharacter,
+        resources: recoveryEvent.payload.resources,
+        staminaRecovery: recoveryEvent.payload.recovery,
+      };
 
       const participants = encounter.participants.map((participant) => ({ ...participant }));
       const guards = context.world.classCatalog
@@ -532,17 +583,15 @@ export const teamCombatPlugin: EnginePlugin = {
         }
         activeActor.status = 'escaped';
         narration = `${character.name} retreats from the encounter and spends ${FLEE_STAMINA_COST} stamina.`;
-        if (context.world.classCatalog) {
-          fleeResourceEvent = {
-            type: 'character.stamina_spent', version: 1,
-            payload: CharacterStaminaSpentEventSchema.shape.payload.parse({
-              characterId: character.characterId, cause: 'team-flee', causeId: encounter.encounterId,
-              staminaSpent: FLEE_STAMINA_COST,
-              resources: { ...character.resources, stamina: { ...character.resources.stamina,
-                current: character.resources.stamina.current - FLEE_STAMINA_COST } },
-            }),
-          };
-        } else effects.push(teamFleeStaminaEffect(character.characterId, encounter.encounterId));
+        fleeResourceEvent = {
+          type: 'character.stamina_spent', version: 1,
+          payload: CharacterStaminaSpentEventSchema.shape.payload.parse({
+            characterId: character.characterId, cause: 'team-flee', causeId: encounter.encounterId,
+            staminaSpent: FLEE_STAMINA_COST,
+            resources: { ...character.resources, stamina: { ...character.resources.stamina,
+              current: character.resources.stamina.current - FLEE_STAMINA_COST } },
+          }),
+        };
       } else {
         const item = character.inventory.find((candidate) => candidate.id === command.payload.itemId);
         const alreadyConsumed = consumed[character.characterId] ?? [];
@@ -707,8 +756,14 @@ export const teamCombatPlugin: EnginePlugin = {
       }
       return { streamId: STREAM_ID, expectedVersion: state.revision, events, effects,
         guards,
-        ...(ability || fleeResourceEvent ? { companions: [{ streamId: character.characterId, expectedVersion: character.revision,
-          events: [ability?.event ?? fleeResourceEvent!] }] } : {}),
+        companions: [{
+          streamId: character.characterId,
+          expectedVersion: character.revision,
+          events: [
+            recoveryEvent,
+            ...(ability ? [ability.event] : fleeResourceEvent ? [fleeResourceEvent] : []),
+          ],
+        }],
       };
     });
 

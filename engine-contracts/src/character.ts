@@ -1,7 +1,10 @@
 /** PROPOSED minimal character intent/view, independent of race/class rulesets. */
 import { z } from 'zod';
 import { ClientCommandBaseSchema, ClientQueryBaseSchema, DomainEventBaseSchema } from './protocol.js';
-import { IdSchema, NonEmptyNameSchema, NonNegativeIntSchema, PositiveIntSchema, ContractVersionSchema } from './ids.js';
+import {
+  IdSchema, NonEmptyNameSchema, NonNegativeIntSchema, PositiveIntSchema, ContractVersionSchema,
+  IsoDateTimeSchema,
+} from './ids.js';
 import { CombatEncounterProjectionSchema } from './combat.js';
 import { CharacterHealthSchema } from './health.js';
 import { CharacterClassSnapshotSchema, AvailableClassActionSchema } from './classes.js';
@@ -97,11 +100,22 @@ export const CharacterResourcePoolSchema = z.object({
     });
   }
 });
+export type CharacterResourcePool = z.infer<typeof CharacterResourcePoolSchema>;
 
 export const CharacterResourcesSchema = z.object({
   stamina: CharacterResourcePoolSchema,
   mana: CharacterResourcePoolSchema,
 }).strict();
+
+export const StaminaPostureSchema = z.enum(['standing', 'resting']);
+export const CharacterStaminaRecoverySchema = z.object({
+  posture: StaminaPostureSchema.default('standing'),
+  /** Null is used only by legacy streams until their first online settlement. */
+  lastSettledAt: IsoDateTimeSchema.nullable().default(null),
+  /** Hundred-thousandths of a stamina point, carried between settlements. */
+  fractionalCarry: NonNegativeIntSchema.max(99_999).default(0),
+}).strict();
+export type CharacterStaminaRecovery = z.infer<typeof CharacterStaminaRecoverySchema>;
 
 export const DEFAULT_CHARACTER_RESOURCES = Object.freeze({
   stamina: Object.freeze({ current: 100, maximum: 100 }),
@@ -215,6 +229,39 @@ export const CharacterStaminaSpentEventSchema = DomainEventBaseSchema.extend({
     staminaSpent: PositiveIntSchema.max(1000),
     resources: CharacterResourcesSchema,
   }).strict(),
+}).strict();
+
+export const CharacterStaminaRecoverySettledEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('character.stamina_recovery_settled'),
+  version: z.literal(1),
+  payload: z.object({
+    characterId: IdSchema,
+    resources: CharacterResourcesSchema,
+    recovery: CharacterStaminaRecoverySchema,
+    resetAnchor: z.boolean().default(false),
+  }).strict(),
+}).strict();
+
+export const CharacterPostureChangedEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('character.posture_changed'),
+  version: z.literal(1),
+  payload: z.object({
+    characterId: IdSchema,
+    posture: StaminaPostureSchema,
+    locationId: IdSchema,
+  }).strict(),
+}).strict();
+
+export const CharacterRestCommandSchema = ClientCommandBaseSchema.extend({
+  type: z.literal('character.rest'),
+  expectedVersion: NonNegativeIntSchema,
+  payload: z.object({}).strict(),
+}).strict();
+
+export const CharacterStandCommandSchema = ClientCommandBaseSchema.extend({
+  type: z.literal('character.stand'),
+  expectedVersion: NonNegativeIntSchema,
+  payload: z.object({}).strict(),
 }).strict();
 
 export const InitializeCharacterWalletCommandSchema = ClientCommandBaseSchema.extend({
@@ -399,6 +446,11 @@ export const CharacterProjectionSchema = z.object({
   availableClassActions: z.array(AvailableClassActionSchema).default([]),
   honors: CharacterHonorsSchema.default(DEFAULT_CHARACTER_HONORS),
   resources: CharacterResourcesSchema.default(DEFAULT_CHARACTER_RESOURCES),
+  staminaRecovery: CharacterStaminaRecoverySchema.default({
+    posture: 'standing',
+    lastSettledAt: null,
+    fractionalCarry: 0,
+  }),
   wallet: CharacterWalletSchema.optional(),
   advancement: CharacterAdvancementProjectionSchema.optional(),
   health: CharacterHealthSchema.optional(),

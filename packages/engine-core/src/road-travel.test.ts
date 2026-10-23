@@ -184,6 +184,33 @@ async function createRoadCharacter(
 }
 
 describe('stepwise road travel', () => {
+  async function drainRoadCharacterStamina(store: InMemoryEventStore, characterId: string) {
+    const history = await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId);
+    const result = await store.append({
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      streamId: characterId,
+      actorId: session.actorId,
+      commandId: `drain-stamina-${characterId}`,
+      payloadHash: characterId,
+      expectedVersion: history.at(-1)?.aggregateVersion ?? 0,
+      events: Array.from({ length: 20 }, (_, index) => {
+        const fromLocationId = index % 2 === 0 ? 'road-start' : 'road-segment';
+        return {
+          type: 'character.moved',
+          version: 1,
+          payload: {
+            characterId,
+            fromLocationId,
+            toLocationId: fromLocationId === 'road-start' ? 'road-segment' : 'road-start',
+            exitId: `test-drain-${index + 1}`,
+            movementCost: 5,
+          },
+        };
+      }),
+    });
+    if (result.kind !== 'committed') throw new Error('Could not drain the road traveler stamina.');
+  }
+
   it('rejects bypassing a road and records a single segment when no encounter occurs', async () => {
     const { engine, store, rng } = makeRoadEngine(0, [1]);
     await engine.start();
@@ -209,16 +236,21 @@ describe('stepwise road travel', () => {
       expectedVersion: 1,
       payload: { exitId: 'start-to-segment' },
     }, session);
-    expect(stepped.receipt).toMatchObject({ ok: true, newAggregateVersion: 2 });
-    expect(stepped.events.map(({ type }) => type)).toEqual(['character.moved']);
+    expect(stepped.receipt).toMatchObject({ ok: true, newAggregateVersion: 3 });
+    expect(stepped.events.map(({ type }) => type)).toEqual([
+      'character.stamina_recovery_settled',
+      'character.moved',
+    ]);
     const projection = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId));
     expect(projection).toMatchObject({
       locationId: 'road-segment',
       visitedLocationIds: ['road-start', 'road-segment'],
-      revision: 2,
+      revision: 3,
+      resources: { stamina: { current: 95, maximum: 100 } },
     });
     expect(rng.roll).toHaveBeenCalledTimes(1);
-    expect(stepped.events[0]?.payload).toMatchObject({
+    expect(stepped.events[1]?.payload).toMatchObject({
+      movementCost: 5,
       roadTravel: {
         roadId: 'test-road',
         segmentIndex: 1,
@@ -226,6 +258,42 @@ describe('stepwise road travel', () => {
         encounterOccurred: false,
       },
     });
+    await engine.stop();
+  });
+
+  it('rejects an unaffordable road step before moving, starting combat, or changing stamina', async () => {
+    const { engine, store, rng } = makeRoadEngine(100, [1]);
+    await engine.start();
+    const characterId = await createRoadCharacter(engine);
+    await drainRoadCharacterStamina(store, characterId);
+    const before = await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId);
+
+    const result = await engine.dispatch({
+      type: 'character.road.step',
+      version: 1,
+      commandId: 'road-step-insufficient-stamina',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 21,
+      payload: { exitId: 'start-to-segment' },
+    }, session);
+
+    expect(result.receipt).toMatchObject({ ok: false, code: 'RULE_VIOLATION' });
+    const history = await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId);
+    const projection = replayCharacter(history);
+    expect(projection).toMatchObject({
+      locationId: 'road-start',
+      resources: { stamina: { current: 0, maximum: 100 } },
+    });
+    expect(projection?.combat).toBeUndefined();
+    expect(history).toHaveLength(before.length);
+    expect(history.filter((event) => event.type === 'character.moved')).toHaveLength(
+      before.filter((event) => event.type === 'character.moved').length,
+    );
+    expect(history.filter((event) => event.type === 'character.combat_encounter_started')).toHaveLength(
+      before.filter((event) => event.type === 'character.combat_encounter_started').length,
+    );
+    expect(rng.roll).not.toHaveBeenCalled();
     await engine.stop();
   });
 
@@ -290,7 +358,7 @@ describe('stepwise road travel', () => {
       commandId: 'road-room-take-token',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
-      expectedVersion: 2,
+      expectedVersion: 3,
       payload: { itemId: 'road-segment-fallen-token' },
     }, session);
     expect(take.receipt.ok).toBe(true);
@@ -300,7 +368,7 @@ describe('stepwise road travel', () => {
       commandId: 'road-room-buy-bandage',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
-      expectedVersion: 3,
+      expectedVersion: 4,
       payload: { merchantNpcId: 'roadside-trader', listingId: 'roadside-bandage' },
     }, session);
     expect(purchase.receipt.ok).toBe(true);
@@ -330,8 +398,9 @@ describe('stepwise road travel', () => {
       payload: { exitId: 'start-to-segment' },
     };
     const ambush = await engine.dispatch(command, session);
-    expect(ambush.receipt).toMatchObject({ ok: true, newAggregateVersion: 3 });
+    expect(ambush.receipt).toMatchObject({ ok: true, newAggregateVersion: 4 });
     expect(ambush.events.map(({ type }) => type)).toEqual([
+      'character.stamina_recovery_settled',
       'character.moved',
       'character.combat_encounter_started',
     ]);
@@ -356,12 +425,54 @@ describe('stepwise road travel', () => {
       commandId: 'road-ambush-attack',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId,
-      expectedVersion: 3,
+      expectedVersion: 4,
       payload: { action: 'attack', encounterId: started.combat!.encounterId },
     }, session);
-    expect(attack.receipt).toMatchObject({ ok: true, newAggregateVersion: 5 });
+    expect(attack.receipt).toMatchObject({ ok: true, newAggregateVersion: 7 });
     const resolved = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId));
     expect(resolved.combat).toMatchObject({ status: 'victory', round: 1, opponentHealth: 0 });
+    await engine.stop();
+  });
+
+  it('rejects a shared road encounter when any party member cannot afford the move', async () => {
+    activeRoadPartyRoster = undefined;
+    const { engine, store } = makeRoadEngine(100, [1, 1]);
+    await engine.start();
+    const firstSession = { ...session, playerId: 'road-short-player-a', actorId: 'road-short-player-a' };
+    const secondSession = { ...session, playerId: 'road-short-player-b', actorId: 'road-short-player-b' };
+    const firstCharacterId = await createRoadCharacter(engine, firstSession, 'road-short-character-a');
+    const secondCharacterId = await createRoadCharacter(engine, secondSession, 'road-short-character-b');
+    await drainRoadCharacterStamina(store, secondCharacterId);
+    activeRoadPartyRoster = {
+      sourceGroupId: 'road-short-party',
+      maxPlayers: 4,
+      players: [
+        { playerId: firstSession.playerId, characterId: firstCharacterId, displayName: 'Wayfarer A' },
+        { playerId: secondSession.playerId, characterId: secondCharacterId, displayName: 'Wayfarer B' },
+      ],
+    };
+
+    const result = await engine.dispatch({
+      type: 'character.road.step',
+      version: 1,
+      commandId: 'road-party-insufficient-stamina',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: firstCharacterId,
+      expectedVersion: 1,
+      payload: { exitId: 'start-to-segment' },
+    }, firstSession);
+
+    expect(result.receipt).toMatchObject({ ok: false, code: 'RULE_VIOLATION' });
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, firstCharacterId))).toMatchObject({
+      locationId: 'road-start',
+      resources: { stamina: { current: 100, maximum: 100 } },
+    });
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, secondCharacterId))).toMatchObject({
+      locationId: 'road-start',
+      resources: { stamina: { current: 0, maximum: 100 } },
+    });
+    expect(await store.readStream(DEMO_WORLD_INSTANCE_ID, 'world-team-combat')).toHaveLength(0);
+    activeRoadPartyRoster = undefined;
     await engine.stop();
   });
 
@@ -447,10 +558,12 @@ describe('stepwise road travel', () => {
       expect(replayCharacter(history)).toMatchObject({
         locationId: 'road-segment',
         visitedLocationIds: ['road-start', 'road-segment'],
+        resources: { stamina: { current: 95, maximum: 100 } },
       });
       expect(movedEvents[0]?.payload).toMatchObject({
         fromLocationId: 'road-start',
         toLocationId: 'road-segment',
+        movementCost: 5,
         roadTravel: { roadId: 'test-road', encounterOccurred: true },
       });
     }

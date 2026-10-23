@@ -103,7 +103,7 @@ async function moveAlongDemoRoad(
     result = await client.roadStep(
       characterId,
       exitId,
-      expectedVersion + index,
+      expectedVersion + index * 2,
       `${commandId}-step-${index + 1}`,
     );
     if (!result.receipt.ok) return result;
@@ -111,7 +111,7 @@ async function moveAlongDemoRoad(
   return result!;
 }
 
-function makeClient(world = demoWorld) {
+function makeClient(world = demoWorld, now: () => Date = () => new Date()) {
   const store = new InMemoryEventStore();
   const testWorld = structuredClone(world);
   for (const road of testWorld.roads ?? []) road.encounterChancePercent = 0;
@@ -120,6 +120,8 @@ function makeClient(world = demoWorld) {
     store,
     { canAccessInstance: async () => true, ownsCharacter: async () => true },
     testWorld,
+    undefined,
+    now,
   );
   const ready = engine.start();
   const fetcher: typeof fetch = async (input, init = {}) => {
@@ -306,8 +308,8 @@ describe('turn-based PvE combat', () => {
       'combat-first-attack',
     );
     expect(retriedAttack.receipt).toEqual(attack.receipt);
-    expect((await store.readStream(DEMO_WORLD_INSTANCE_ID, firstId))).toHaveLength(2);
-    expect((await store.readStream(DEMO_WORLD_INSTANCE_ID, firstId))[1]?.version).toBe(3);
+    expect((await store.readStream(DEMO_WORLD_INSTANCE_ID, firstId))).toHaveLength(3);
+    expect((await store.readStream(DEMO_WORLD_INSTANCE_ID, firstId))[1]?.version).toBe(1);
     await expect(client.roadStep(firstId, 'clearing-to-glasswater-road', firstState.revision, 'combat-move-during'))
       .rejects.toThrow('You cannot leave while combat is active. Flee first.');
 
@@ -502,7 +504,7 @@ describe('turn-based PvE combat', () => {
     const retry = await client.performCombatAction(
       characterId,
       'use-item',
-      state.revision - 1,
+      state.revision - 2,
       { encounterId: state.combat!.encounterId, itemId: potion.id },
       'combat-potion-use',
     );
@@ -857,6 +859,60 @@ describe('turn-based PvE combat', () => {
 });
 
 describe('paid inn rest', () => {
+  it('recovers while resting at Willowrest, then charges exactly five for a road step after standing', async () => {
+    let now = new Date('2026-10-23T12:00:00.000Z');
+    const { client, store, engine } = makeClient(demoWorld, () => now);
+    const created = await client.createCharacter('Juniper', 'stamina-rest-journey-create');
+    const characterId = created.streamId!;
+    let state = await travelToWillowrestInn(client, store, characterId, 'stamina-rest-journey', false);
+    expect(state.resources.stamina.current).toBe(70);
+    expect(state.locationId).toBe('willowrest-inn');
+
+    await client.rest(characterId, state.revision, 'stamina-rest-journey-rest');
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(state.staminaRecovery.posture).toBe('resting');
+    now = new Date(now.getTime() + 10_000);
+    const recovery = await engine.dispatchSystem({
+      type: 'character.stamina.recover',
+      version: 1,
+      commandId: 'stamina-rest-journey-recover',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: state.revision,
+      payload: { settleAt: now.toISOString(), resetAnchor: false },
+    }, SYSTEM_ACTOR_ID);
+    expect(recovery.receipt.ok).toBe(true);
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(state.resources.stamina.current).toBe(100);
+
+    await expect(client.roadStep(
+      characterId,
+      'willowrest-to-lane',
+      state.revision,
+      'stamina-resting-road-block',
+    )).rejects.toThrow('You are resting. Stand before you move.');
+    await expect(client.performCombatAction(
+      characterId,
+      'attack',
+      state.revision,
+      { targetNpcId: 'mossgate-training-sentinel' },
+      'stamina-resting-attack-block',
+    )).rejects.toThrow('You are resting. Stand before taking that action.');
+
+    await client.stand(characterId, state.revision, 'stamina-rest-journey-stand');
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(state.staminaRecovery.posture).toBe('standing');
+    await client.roadStep(
+      characterId,
+      'willowrest-to-lane',
+      state.revision,
+      'stamina-rest-journey-road',
+    );
+    const moved = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(moved.resources.stamina.current).toBe(95);
+    expect(moved.locationId).toBe('willowrest-lane');
+  });
+
   it('charges five moss marks, restores health atomically, and retries without charging twice', async () => {
     const { client, store } = makeClient();
     const created = await client.createCharacter('Briar', 'inn-rest-create');
@@ -866,7 +922,7 @@ describe('paid inn rest', () => {
       locationId: 'willowrest-inn',
       health: { current: 5, maximum: 6 },
       resources: {
-        stamina: { current: 80, maximum: 100 },
+        stamina: { current: 50, maximum: 100 },
         mana: { current: 100, maximum: 100 },
       },
       wallet: { currencyId: 'moss-mark', balance: 12 },
@@ -910,7 +966,7 @@ describe('paid inn rest', () => {
         currencyId: 'moss-mark',
         price: 5,
         healthRestored: 1,
-        staminaRestored: 20,
+        staminaRestored: 50,
         manaRestored: 0,
         health: { current: 6, maximum: 6 },
         resources: {
@@ -938,7 +994,7 @@ describe('paid inn rest', () => {
     await spendStaminaForTest(store, characterId, 'inn-rest-stamina-only-flee');
     const atInn = await travelToWillowrestInn(client, store, characterId, 'inn-rest-stamina-only', false);
     expect(atInn.health).toBeUndefined();
-    expect(atInn.resources.stamina.current).toBe(80);
+    expect(atInn.resources.stamina.current).toBe(50);
 
     const rest = await client.restAtInn(
       characterId,
@@ -977,8 +1033,9 @@ describe('paid inn rest', () => {
     });
   });
 
-  it('rejects resting away from the inn, at full health, during combat, or without enough money', async () => {
-    const { client, store } = makeClient();
+  it('rejects paid inn rest away from the inn, when all vitals are full, during combat, or without enough money', async () => {
+    let now = new Date('2026-10-23T12:00:00.000Z');
+    const { client, engine, store } = makeClient(demoWorld, () => now);
     const created = await client.createCharacter('Alder', 'inn-rest-invalid-create');
     const characterId = created.streamId!;
     let state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
@@ -987,6 +1044,23 @@ describe('paid inn rest', () => {
     expect(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).toHaveLength(1);
 
     state = await travelToWillowrestInn(client, store, characterId, 'inn-rest-full', false);
+    await client.rest(characterId, state.revision, 'inn-rest-full-free-rest');
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    now = new Date(now.getTime() + 20_000);
+    const recovery = await engine.dispatchSystem({
+      type: 'character.stamina.recover',
+      version: 1,
+      commandId: 'inn-rest-full-stamina-recovery',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: state.revision,
+      payload: { settleAt: now.toISOString(), resetAnchor: false },
+    }, SYSTEM_ACTOR_ID);
+    expect(recovery.receipt.ok).toBe(true);
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    await client.stand(characterId, state.revision, 'inn-rest-full-stand');
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(state.resources.stamina.current).toBe(100);
     const fullHealthEventCount = (await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).length;
     await expect(client.restAtInn(characterId, 'willowrest-inn-service', state.revision, 'inn-rest-full'))
       .rejects.toThrow('Your health, stamina, and mana are already full.');

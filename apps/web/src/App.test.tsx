@@ -72,6 +72,7 @@ function classApiFixture(initiallySelected = false, completedDuel = false) {
 
 const characterId = '11111111-1111-4111-8111-111111111111';
 let room: 'clearing' | 'bridge' | 'market' | 'inn' | 'belfry';
+let orravethWorld: boolean;
 let visitedLocationIds: string[];
 let revision: number;
 let moveError: string | null;
@@ -104,6 +105,8 @@ let worldCurrency: { id: string; name: string; symbol: string };
 let merchantLanternPurchased: boolean;
 let healingDraughtCarried: boolean;
 let characterHealth: { current: number; maximum: number } | null;
+let characterStamina: { current: number; maximum: number };
+let staminaPosture: 'standing' | 'resting';
 let combatEncounter: {
   encounterId: string;
   locationId: string;
@@ -140,7 +143,9 @@ let partyActivity: Array<{
 let teamCombatEncounter: TeamCombatEncounter | null;
 
 function currentLocation(includeNpcDescriptions = false) {
-  const title = room === 'clearing'
+  const title = orravethWorld
+    ? 'The Kindly Roof'
+    : room === 'clearing'
     ? 'Mossgate Clearing'
     : room === 'market'
       ? 'Reedbank Stalls'
@@ -148,13 +153,18 @@ function currentLocation(includeNpcDescriptions = false) {
         ? 'Willowrest Inn'
         : 'Glasswater Bridge';
   return {
-    worldInstanceId: 'mudd-demo-instance',
-    locationId: room === 'clearing' ? 'mossgate-clearing' : room === 'market' ? 'reedbank-stalls' : room === 'inn' ? 'willowrest-inn' : 'glasswater-bridge',
+    worldInstanceId: orravethWorld ? 'orraveth-bellwold-instance' : 'mudd-demo-instance',
+    locationId: orravethWorld
+      ? 'kindly-roof'
+      : room === 'clearing' ? 'mossgate-clearing' : room === 'market' ? 'reedbank-stalls' : room === 'inn' ? 'willowrest-inn' : 'glasswater-bridge',
     title,
     shortName: title,
     qualifiedName: title,
     locationGroups: [],
-    description: room === 'clearing'
+    safeResting: orravethWorld || room === 'inn',
+    description: orravethWorld
+      ? 'A quiet, shared rooftop where travelers may rest safely.'
+      : room === 'clearing'
       ? [
         itemTaken
           ? 'A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east.'
@@ -169,7 +179,7 @@ function currentLocation(includeNpcDescriptions = false) {
           ? 'A warm timber inn offers a full night’s rest for five moss marks.'
           : 'A stone bridge crosses clear water.',
     revision,
-    ...(room === 'inn' ? {
+    ...(!orravethWorld && room === 'inn' ? {
       inn: {
         id: 'willowrest-inn-service',
         name: 'Willowrest Inn',
@@ -420,6 +430,7 @@ beforeEach(() => {
   window.localStorage.clear();
   delete document.documentElement.dataset.theme;
   room = 'clearing';
+  orravethWorld = false;
   visitedLocationIds = ['mossgate-clearing'];
   revision = 1;
   moveError = null;
@@ -437,6 +448,8 @@ beforeEach(() => {
   merchantLanternPurchased = false;
   healingDraughtCarried = false;
   characterHealth = null;
+  characterStamina = { current: 100, maximum: 100 };
+  staminaPosture = 'standing';
   combatEncounter = null;
   activePartyInfo = null;
   partyRevision = 0;
@@ -446,6 +459,8 @@ beforeEach(() => {
   apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
     if (path === '/api/worlds') return json([{
       worldInstanceId: 'mudd-demo-instance', packId: 'demo', name: 'Waystone', summary: 'A first journey.',
+    }, {
+      worldInstanceId: 'orraveth-bellwold-instance', packId: 'orraveth', name: 'Orraveth: Bellwold', summary: 'A frontier settlement.',
     }]);
     if (path === '/api/world-session/heartbeat') {
       return json({
@@ -498,7 +513,7 @@ beforeEach(() => {
         player: { id: 'account-1', displayName: 'Traveler' },
         character: {
           characterId,
-          worldInstanceId: 'mudd-demo-instance',
+          worldInstanceId: currentLocation().worldInstanceId,
           name: 'Rowan',
           locationId: currentLocation().locationId,
           visitedLocationIds,
@@ -507,6 +522,15 @@ beforeEach(() => {
           attributes: { strength: 10, intelligence: 10, constitution: 10, dexterity: 10 },
           honors: { glory: 0, medals: 0 },
           ...(characterHealth ? { health: characterHealth } : {}),
+          resources: {
+            stamina: characterStamina,
+            mana: { current: 100, maximum: 100 },
+          },
+          staminaRecovery: {
+            posture: staminaPosture,
+            lastSettledAt: '2026-10-23T12:00:00.000Z',
+            fractionalCarry: 0,
+          },
           ...(combatEncounter ? { combat: combatEncounter } : {}),
           inventory: [
             ...(itemTaken ? [{
@@ -664,8 +688,19 @@ beforeEach(() => {
           targetNpcId?: string;
         };
       };
+      if (command.type === 'character.rest' || command.type === 'character.stand') {
+        if (command.type === 'character.rest' && ((!orravethWorld && room !== 'inn') || staminaPosture === 'resting')) {
+          return json({ receipt: { ok: false, commandId: command.commandId ?? 'mock-command', code: 'RULE_VIOLATION', message: 'This is not a safe place to rest.' } });
+        }
+        staminaPosture = command.type === 'character.rest' ? 'resting' : 'standing';
+        revision += 2;
+        return json({
+          receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision },
+          streamId: characterId,
+        });
+      }
       if (command.type === 'inn.rest') {
-        if (room !== 'inn' || command.payload?.innId !== 'willowrest-inn-service') {
+        if (orravethWorld || room !== 'inn' || command.payload?.innId !== 'willowrest-inn-service') {
           return json({ receipt: { ok: false, commandId: command.commandId ?? 'mock-command', code: 'RULE_VIOLATION', message: 'There is no such inn here.' } });
         }
         if (characterHealth && characterHealth.current >= characterHealth.maximum) {
@@ -1151,6 +1186,15 @@ describe('single-character world session client', () => {
   it('preserves terminal scroll position for live updates and offers a scroll-to-latest control', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    await waitFor(() => {
+      expect(apiFetch.mock.calls.some(([path, init]) => {
+        if (path !== '/api/queries') return false;
+        return JSON.parse(String(init?.body ?? '{}')).type === 'party.info';
+      })).toBe(true);
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
     const history = screen.getByRole('region', { name: 'Terminal output' });
     let scrollTop = 60;
     Object.defineProperties(history, {
@@ -1874,9 +1918,9 @@ describe('single-character world session client', () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Willowrest Inn' });
     expect(screen.getByText(/full night’s rest for five moss marks/i)).toBeInTheDocument();
-    expect(quickActionVisibleAnywhere('Rest at Willowrest Inn for 5 moss marks')).toBe(true);
+    expect(quickActionVisibleAnywhere('Paid immediate inn recovery at Willowrest Inn for 5 moss marks')).toBe(true);
 
-    clickQuickAction('Rest at Willowrest Inn for 5 moss marks');
+    clickQuickAction('Paid immediate inn recovery at Willowrest Inn for 5 moss marks');
 
     await screen.findByText(/You rest at Willowrest Inn, restore 2 health, \d+ stamina, and \d+ mana, and pay 5 moss marks/);
     expect(screen.getByLabelText('Character health')).toHaveTextContent('Health 6/6');
@@ -1890,6 +1934,71 @@ describe('single-character world session client', () => {
     })).toBe(true);
   });
 
+  it('keeps free stamina rest and stand separate from paid inn recovery', async () => {
+    room = 'inn';
+    visitedLocationIds = ['mossgate-clearing', 'glasswater-bridge', 'reedbank-stalls', 'willowrest-inn'];
+    characterStamina = { current: 40, maximum: 100 };
+    characterHealth = { current: 6, maximum: 6 };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Willowrest Inn' });
+    expect(screen.getByRole('progressbar', { name: 'Stamina 40 of 100' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Rest here for free' }));
+
+    await screen.findByText(/Resting · recovers 3% of maximum stamina per second while connected/i);
+    expect(apiFetch.mock.calls.some(([path, init]) => {
+      if (path !== '/api/commands') return false;
+      return JSON.parse(String(init?.body ?? '{}')).type === 'character.rest';
+    })).toBe(true);
+    expect(walletBalance).toBe(12);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stand' }));
+    await screen.findByText(/Standing · recovers 1% of maximum stamina per second while connected/i);
+    expect(apiFetch.mock.calls.some(([path, init]) => {
+      if (path !== '/api/commands') return false;
+      return JSON.parse(String(init?.body ?? '{}')).type === 'character.stand';
+    })).toBe(true);
+    expect(apiFetch.mock.calls.some(([path, init]) => {
+      if (path !== '/api/commands') return false;
+      return JSON.parse(String(init?.body ?? '{}')).type === 'inn.rest';
+    })).toBe(false);
+  });
+
+  it('supports free rest and stand at Orraveth’s Kindly Roof without an inn service', async () => {
+    orravethWorld = true;
+    room = 'inn';
+    characterStamina = { current: 40, maximum: 100 };
+    render(<WorldClient
+      worldInstanceId="orraveth-bellwold-instance"
+      onLeaveWorld={vi.fn().mockResolvedValue(undefined)}
+    />);
+    await screen.findByRole('heading', { name: 'The Kindly Roof' });
+    expect(screen.getByRole('progressbar', { name: 'Stamina 40 of 100' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Rest here for free' })).toBeInTheDocument();
+    expect(screen.queryByText(/moss marks|gold/)).not.toBeInTheDocument();
+
+    const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
+    fireEvent.change(commandInput, { target: { value: 'rest' } });
+    fireEvent.submit(commandInput.closest('form')!);
+    await screen.findByText(/Resting · recovers 3% of maximum stamina per second while connected/i);
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'character.rest' &&
+      JSON.parse(String(init?.body ?? '{}')).worldInstanceId === 'orraveth-bellwold-instance'
+    )).toBe(true);
+
+    fireEvent.change(commandInput, { target: { value: 'stand' } });
+    fireEvent.submit(commandInput.closest('form')!);
+    await screen.findByText(/Standing · recovers 1% of maximum stamina per second while connected/i);
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'character.stand' &&
+      JSON.parse(String(init?.body ?? '{}')).worldInstanceId === 'orraveth-bellwold-instance'
+    )).toBe(true);
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' && JSON.parse(String(init?.body ?? '{}')).type === 'inn.rest'
+    )).toBe(false);
+  });
+
   it('hides inn rest quick action when the traveler is already at full health', async () => {
     room = 'inn';
     visitedLocationIds = ['mossgate-clearing', 'glasswater-bridge', 'reedbank-stalls', 'willowrest-inn'];
@@ -1897,7 +2006,7 @@ describe('single-character world session client', () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Willowrest Inn' });
 
-    expect(quickActionVisibleAnywhere('Rest at Willowrest Inn for 5 moss marks')).toBe(false);
+    expect(quickActionVisibleAnywhere('Paid immediate inn recovery at Willowrest Inn for 5 moss marks')).toBe(false);
   });
 
   it('offers between-fight potion use in quick actions only when health is missing', async () => {

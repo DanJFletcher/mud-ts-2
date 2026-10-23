@@ -81,6 +81,11 @@
 
 .mudd-panel { padding: clamp(1rem, 3vw, 1.6rem); border: 1px solid var(--mudd-border); border-radius: 1.25rem; background: var(--mudd-surface); box-shadow: var(--mudd-shadow); }
 .mudd-panel__title { margin: 0.3rem 0 1rem; color: var(--mudd-text); font: 600 1.35rem/1.2 "Literata", Georgia, serif; }
+.mudd-stamina-status { display: grid; gap: 0.55rem; padding: 0.85rem; border: 1px solid var(--mudd-border); border-radius: 0.9rem; background: var(--mudd-surface-raised); color: var(--mudd-text); }
+.mudd-stamina-status__heading { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.95rem; }
+.mudd-stamina-status__heading h2 { margin: 0; font-size: inherit; }
+.mudd-stamina-status progress { width: 100%; height: 0.65rem; accent-color: var(--mudd-accent); }
+.mudd-stamina-status__posture, .mudd-stamina-status__note { margin: 0; color: var(--mudd-muted); font-size: 0.82rem; line-height: 1.45; }
 .mudd-field { display: grid; gap: 0.45rem; }
 .mudd-field__label { color: var(--mudd-text); font-size: 0.9rem; font-weight: 650; }
 .mudd-input { width: 100%; min-height: 2.9rem; box-sizing: border-box; padding: 0.7rem 0.85rem; border: 1px solid var(--mudd-border); border-radius: 0.75rem; background: var(--mudd-surface-raised); color: var(--mudd-text); font: inherit; }

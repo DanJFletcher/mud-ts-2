@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ActivityLog } from './ActivityLog.js';
 import { Button } from './Button.js';
 import { DisclosureButton } from './DisclosureButton.js';
@@ -14,6 +14,9 @@ import type { CharacterClassDefinition, AvailableClassAction } from './classType
 import { WorldCard } from './WorldCard.js';
 import { WorldHero } from './WorldHero.js';
 import { CharacterEntryCard } from './CharacterEntryCard.js';
+import { StaminaStatus } from './StaminaStatus.js';
+
+afterEach(() => cleanup());
 
 const classFixture: CharacterClassDefinition = {
   id: 'warden', revision: 1, label: 'Warden', description: 'A steady protector.',
@@ -27,6 +30,38 @@ const abilityFixture: AvailableClassAction = {
 };
 
 describe('@mudd/ui components', () => {
+  it('announces projected stamina and offers a free rest action at safe places', () => {
+    const onRest = vi.fn();
+    render(
+      <StaminaStatus
+        current={60}
+        maximum={100}
+        posture="standing"
+        safeToRest
+        onRest={onRest}
+        onStand={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('progressbar', { name: 'Stamina 60 of 100' })).toHaveValue(60);
+    expect(screen.getByRole('status')).toHaveTextContent('1% of maximum stamina per second');
+    fireEvent.click(screen.getByRole('button', { name: 'Rest here for free' }));
+    expect(onRest).toHaveBeenCalledOnce();
+  });
+
+  it('offers stand while resting and hides free rest at unsafe places', () => {
+    const onStand = vi.fn();
+    const { rerender } = render(
+      <StaminaStatus current={80} maximum={100} posture="resting" safeToRest onRest={vi.fn()} onStand={onStand} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Stand' }));
+    expect(onStand).toHaveBeenCalledOnce();
+    rerender(
+      <StaminaStatus current={80} maximum={100} posture="standing" safeToRest={false} onRest={vi.fn()} onStand={onStand} />,
+    );
+    expect(screen.queryByRole('button', { name: 'Rest here for free' })).not.toBeInTheDocument();
+    expect(screen.getByText('Free rest is only available at safe places.')).toBeInTheDocument();
+  });
+
   it('renders world navigation as a native link with meaningful text and recovers from failed art', () => {
     render(<WorldCard name="Orraveth" summary="A salt-road world." href="/worlds/orraveth" imageSrc="/missing.png" />);
     const link = screen.getByRole('link', { name: /Orraveth.*A salt-road world/i });

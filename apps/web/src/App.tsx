@@ -18,6 +18,7 @@ import {
   DisclosureButton,
   NavigationControls,
   Panel,
+  StaminaStatus,
   Text,
   TextInput,
   type ActivityEntry,
@@ -141,7 +142,15 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
   ],
   rest: [
     "Usage: rest",
-    "Restore missing health, stamina, and mana for the inn’s listed price.",
+    "Begin free stamina recovery at a safe resting place. Standing restores 1% and resting restores 3% of maximum stamina per connected second.",
+  ],
+  stand: [
+    "Usage: stand",
+    "Leave the free resting posture so you can travel or begin combat.",
+  ],
+  inn: [
+    "Usage: inn rest",
+    "Immediately restore missing health, stamina, and mana at this inn for its listed price.",
   ],
   drop: [
     "Usage: drop <item>",
@@ -179,7 +188,9 @@ const GENERAL_HELP = [
   "equip <item> — Equip a carried weapon or armor item.",
   "unequip <weapon|armor> — Remove equipped gear from a slot.",
   "use <item> on <target> | use <healing item> — Use a room item or restore health during or between encounters.",
-  "rest — Restore missing health, stamina, and mana at an inn for its listed price.",
+  "rest — Begin free stamina recovery at a safe place.",
+  "stand — Leave the free resting posture.",
+  "inn rest — Immediately restore missing health, stamina, and mana for the inn’s listed price.",
   "drop <item> — Put down an item you carry.",
   "attack <opponent> — Begin an encounter or attack during combat.",
   "defend — Guard against the opponent’s next strike.",
@@ -234,7 +245,7 @@ export function WorldClient({
   const [teamCombatInfo, setTeamCombatInfo] = useState<Awaited<ReturnType<MuddHttpClient["getTeamCombatInfo"]>> | null>(null);
   const [presenceStale, setPresenceStale] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"look" | "read" | "take" | "use" | "drop" | "move" | "talk" | "shop" | "buy" | "combat" | "rest" | "equip" | "party" | null>(null);
+  const [pending, setPending] = useState<"look" | "read" | "take" | "use" | "drop" | "move" | "talk" | "shop" | "buy" | "combat" | "rest" | "stand" | "equip" | "party" | null>(null);
   const [command, setCommand] = useState("");
   const [quickCommandPage, setQuickCommandPage] = useState(1);
   const [quickCommandPageSize, setQuickCommandPageSize] = useState(() =>
@@ -449,20 +460,20 @@ export function WorldClient({
       try {
         const presence = await client.heartbeatWorldSession();
         if (!active) return;
-        setSnapshot((current) => {
-          if (
-            !current?.location ||
-            current.location.worldInstanceId !== presence.worldInstanceId ||
-            current.location.locationId !== presence.locationId
-          ) return current;
-          const unchanged = current.location.occupants.length === presence.occupants.length &&
-            current.location.occupants.every((occupant, index) =>
-              occupant.id === presence.occupants[index]?.id &&
-              occupant.displayName === presence.occupants[index]?.displayName
-            );
-          return unchanged
-            ? current
-            : { ...current, location: { ...current.location, occupants: [...presence.occupants] } };
+        const latest = await client.getGame();
+        if (!active) return;
+        const location = latest.location;
+        setSnapshot({
+          ...latest,
+          ...(location ? {
+            location: {
+              ...location,
+              occupants: presence.worldInstanceId === location.worldInstanceId &&
+                presence.locationId === location.locationId
+                ? presence.occupants
+                : location.occupants,
+            },
+          } : {}),
         });
         setPresenceStale(false);
       } catch {
@@ -476,7 +487,7 @@ export function WorldClient({
     };
 
     void sendHeartbeat();
-    const interval = window.setInterval(() => void sendHeartbeat(), 30_000);
+    const interval = window.setInterval(() => void sendHeartbeat(), 3_000);
     document.addEventListener("visibilitychange", refreshWhenVisible);
     window.addEventListener("pageshow", refreshWhenVisible);
     return () => {
@@ -1227,6 +1238,28 @@ export function WorldClient({
     }
   }, [addEntry, interactionInbox, pending, snapshot]);
 
+  const performStaminaPostureChange = useCallback(async (posture: "rest" | "stand") => {
+    if (!snapshot?.character || pending) return;
+    setPending(posture);
+    try {
+      if (posture === "rest") {
+        await client.rest(snapshot.character.characterId, snapshot.character.revision);
+      } else {
+        await client.stand(snapshot.character.characterId, snapshot.character.revision);
+      }
+      const nextSnapshot = await client.getGame();
+      setSnapshot(nextSnapshot);
+      setConnectionError("");
+      addEntry("narration", posture === "rest"
+        ? "You settle into a free resting posture. Stamina recovers at 3% of its maximum per connected second."
+        : "You stand. Stamina now recovers at 1% of its maximum per connected second, and you can travel again.");
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "You could not change your resting posture.");
+    } finally {
+      setPending(null);
+    }
+  }, [addEntry, pending, snapshot]);
+
   const performInnRest = useCallback(async () => {
     if (!snapshot?.character || !snapshot.location?.inn || pending) return;
     const inn = snapshot.location.inn;
@@ -1386,11 +1419,29 @@ export function WorldClient({
     if (verb.toLowerCase() === "rest") {
       addEntry("system", `> ${value}`);
       if (target) {
-        addEntry("error", "Rest at the inn in this location; no target is needed.");
+        addEntry("error", 'Use “inn rest” for the paid immediate inn service.');
+        return;
+      }
+      await performStaminaPostureChange("rest");
+      return;
+    }
+    if (verb.toLowerCase() === "stand") {
+      addEntry("system", `> ${value}`);
+      if (target) {
+        addEntry("error", "Use “stand” without a target.");
+        return;
+      }
+      await performStaminaPostureChange("stand");
+      return;
+    }
+    if (verb.toLowerCase() === "inn") {
+      addEntry("system", `> ${value}`);
+      if (target.toLocaleLowerCase() !== "rest") {
+        addEntry("error", 'Usage: inn rest — immediately restore health, stamina, and mana for the listed price.');
         return;
       }
       if (!snapshot?.location?.inn) {
-        addEntry("error", "There is no inn here where you can rest.");
+        addEntry("error", "There is no priced inn service in this location.");
         return;
       }
       await performInnRest();
@@ -1729,7 +1780,7 @@ export function WorldClient({
     }
     addEntry("system", `> ${value}`);
     addEntry("error", 'Unknown command. Try "help" for the command list.');
-  }, [addEntry, browseMerchant, changeEquipment, dropObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, activeMerchantCatalog, performCombatAction, performInnRest, interactionInbox, respondToPlayerChallenge, challengePlayer, partyInfo, refreshPartyState, teamCombatInfo]);
+  }, [addEntry, browseMerchant, changeEquipment, dropObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, activeMerchantCatalog, performCombatAction, performInnRest, performStaminaPostureChange, interactionInbox, respondToPlayerChallenge, challengePlayer, partyInfo, refreshPartyState, teamCombatInfo]);
 
   const submitQuickCommand = useCallback((rawCommand: string) => {
     setQuickCommandMode("quick");
@@ -1848,7 +1899,8 @@ export function WorldClient({
         else if (event.key === "ArrowDown") direction = "south";
         else if (event.key === "ArrowLeft") direction = "west";
       }
-      if (!direction || !snapshot?.character || !snapshot.location || pending || isAnyCombatActive || hasVisiblePvp) return;
+      if (!direction || !snapshot?.character || !snapshot.location || pending || isAnyCombatActive || hasVisiblePvp ||
+          snapshot.character.staminaRecovery.posture === "resting") return;
 
       event.preventDefault();
       const matchingExits = snapshot.location.exits.filter((exit) =>
@@ -1917,6 +1969,16 @@ export function WorldClient({
     const gearToEquip = inventory.filter((item) => item.equipment &&
       (item.equipment.slot === "weapon" ? equipment?.weaponItemId : equipment?.armorItemId) !== item.id);
     const readableObjects = (snapshot?.location?.objects ?? []).filter((object) => object.readable);
+    if (snapshot?.character?.staminaRecovery.posture === "resting") {
+      actions.push({
+        id: "help",
+        label: "help",
+        ariaLabel: "Show command help",
+        opensMenu: false,
+        onSelect: () => submitQuickCommand("help"),
+      });
+      return actions;
+    }
 
     addMode("look", "look", "Show look targets");
     if (readableObjects.length > 0) addMode("read", "read", "Show readable objects");
@@ -1976,11 +2038,11 @@ export function WorldClient({
     ) {
       const inn = snapshot.location.inn;
       actions.push({
-        id: "rest",
-        label: "rest",
-        ariaLabel: `Rest at ${inn.name} for ${inn.restPrice} ${inn.currency.name}${inn.restPrice === 1 ? "" : "s"}`,
+        id: "paid-inn-rest",
+        label: `paid inn rest · ${inn.restPrice} ${inn.currency.name}${inn.restPrice === 1 ? "" : "s"}`,
+        ariaLabel: `Paid immediate inn recovery at ${inn.name} for ${inn.restPrice} ${inn.currency.name}${inn.restPrice === 1 ? "" : "s"}`,
         opensMenu: false,
-        onSelect: () => submitQuickCommand("rest"),
+        onSelect: () => submitQuickCommand("inn rest"),
       });
     }
     actions.push({
@@ -2005,6 +2067,7 @@ export function WorldClient({
     snapshot?.location?.inn,
     snapshot?.character?.health,
     snapshot?.character?.resources,
+    snapshot?.character?.staminaRecovery.posture,
     canFlee,
     submitQuickCommand,
     visibleCombat,
@@ -2168,6 +2231,17 @@ export function WorldClient({
                       <div className="focused-terminal-health" aria-label="Character health">
                         Health {snapshot.character.health.current}/{snapshot.character.health.maximum}
                       </div>
+                    )}
+                    {snapshot.character && !isAnyCombatActive && !visiblePvp && (
+                      <StaminaStatus
+                        current={snapshot.character.resources.stamina.current}
+                        maximum={snapshot.character.resources.stamina.maximum}
+                        posture={snapshot.character.staminaRecovery.posture}
+                        safeToRest={Boolean(snapshot.location.safeResting)}
+                        disabled={pending !== null}
+                        onRest={() => void performStaminaPostureChange("rest")}
+                        onStand={() => void performStaminaPostureChange("stand")}
+                      />
                     )}
                     <div className="focused-terminal-history-shell">
                       <div
@@ -2421,7 +2495,7 @@ export function WorldClient({
                         setQuickCommandPage(1);
                         setQuickCommandMode("choose-exit");
                       }}
-                      disabled={!snapshot.character || pending !== null}
+                      disabled={!snapshot.character || pending !== null || snapshot.character.staminaRecovery.posture === "resting"}
                     />
                   )}
                   {!isAnyCombatActive && !visiblePvp && <section className="focused-quick-commands" aria-label="Quick commands">
@@ -2955,6 +3029,7 @@ export function WorldClient({
                   ))}
                 </div>
                 <div className="focused-details">
+                  <div className="focused-detail"><span>Posture</span><strong>{snapshot.character?.staminaRecovery.posture === "resting" ? "Resting · 3% per connected second" : "Standing · 1% per connected second"}</strong></div>
                   <div className="focused-detail"><span>Standing</span><strong>{snapshot.character?.health?.current === 0 ? "Down" : snapshot.character ? "Alive" : "Not started"}</strong></div>
                   <div className="focused-detail"><span>Wallet</span><strong>
                     {snapshot.character?.wallet && snapshot.currency

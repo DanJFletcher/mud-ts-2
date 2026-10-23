@@ -34,6 +34,8 @@ import {
   MerchantCatalogQuerySchema,
   MerchantPurchaseCommandSchema,
   InnRestCommandSchema,
+  CharacterRestCommandSchema,
+  CharacterStandCommandSchema,
   CombatActionCommandSchema,
   InteractionInboxSchema,
   InteractionRequestCommandSchema,
@@ -435,6 +437,32 @@ export class MuddHttpClient {
       characterId,
       expectedVersion,
       payload: { innId },
+    });
+    return this.send(command);
+  }
+
+  async rest(characterId: string, expectedVersion: number, commandId = crypto.randomUUID()): Promise<CommandResponse> {
+    const command = CharacterRestCommandSchema.parse({
+      type: 'character.rest',
+      version: 1,
+      commandId,
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      expectedVersion,
+      payload: {},
+    });
+    return this.send(command);
+  }
+
+  async stand(characterId: string, expectedVersion: number, commandId = crypto.randomUUID()): Promise<CommandResponse> {
+    const command = CharacterStandCommandSchema.parse({
+      type: 'character.stand',
+      version: 1,
+      commandId,
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      expectedVersion,
+      payload: {},
     });
     return this.send(command);
   }

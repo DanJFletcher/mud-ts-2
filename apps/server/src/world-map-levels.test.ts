@@ -207,7 +207,7 @@ describe('current-area and Z-level maps', () => {
         result = await client.roadStep(
           characterId,
           roadExitId,
-          character.revision + index,
+          character.revision + index * 2,
           `${commandId}-step-${index + 1}`,
         );
         if (!result.receipt.ok) return result;

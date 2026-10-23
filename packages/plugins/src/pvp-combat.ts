@@ -22,6 +22,7 @@ import {
 import { prepareCharacterRespawn } from './respawn.js';
 import { worldItemDropEffect } from './world-items.js';
 import { characterAttackDamage, maximumHealthForLevel } from './character-stats.js';
+import { assertCharacterStanding } from './character.js';
 import { classAdoptionGuards, classCombatPolicyCapability, type ClassCombatPolicy } from './classes.js';
 
 const PVP_CHALLENGE_KIND = 'pvp.challenge';
@@ -267,6 +268,8 @@ export function registerPvpCombat(
       }
       assertCharacterAlive(initiator);
       assertCharacterAlive(recipient);
+      assertCharacterStanding(initiator);
+      assertCharacterStanding(recipient);
       if (initiator.locationId !== recipient.locationId) {
         throw new RuleViolationError('You can only challenge someone in the same room.');
       }
@@ -294,6 +297,8 @@ export function registerPvpCombat(
       }
       assertCharacterAlive(initiator);
       assertCharacterAlive(recipient);
+      assertCharacterStanding(initiator);
+      assertCharacterStanding(recipient);
       if (initiator.locationId !== recipient.locationId) {
         throw new RuleViolationError('You must both remain in the same room to begin.');
       }
@@ -337,6 +342,11 @@ export function registerPvpCombat(
     const actorIndex = state.encounter.participants.findIndex((participant) =>
       participant.characterId === command.characterId);
     if (actorIndex < 0) throw new RuleViolationError('You are not part of that encounter.');
+    const actingCharacter = await characterState.load(context, command.characterId);
+    if (!actingCharacter || actingCharacter.archived) {
+      throw new RuleViolationError('That character is no longer available.');
+    }
+    assertCharacterStanding(actingCharacter);
     if (state.encounter.turnCharacterId !== command.characterId) {
       throw new RuleViolationError('Wait for your turn.');
     }

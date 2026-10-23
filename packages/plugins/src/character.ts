@@ -3,6 +3,13 @@ import {
   CharacterCreatedEventV2Schema,
   CharacterCreatedEventV3Schema,
   CharacterStaminaSpentEventSchema,
+  CharacterStaminaRecoverySettledEventSchema,
+  CharacterPostureChangedEventSchema,
+  CharacterRestCommandSchema,
+  CharacterStandCommandSchema,
+  CharacterStaminaRecoverySchema,
+  resolveStaminaRecovery,
+  IsoDateTimeSchema,
   DEFAULT_CHARACTER_RESOURCES,
   DEFAULT_CHARACTER_ATTRIBUTES,
   DEFAULT_CHARACTER_HONORS,
@@ -72,6 +79,33 @@ export function assertCharacterAlive(character: CharacterProjection): void {
   if (character.combat?.status === 'defeat' || character.health?.current === 0) {
     throw new RuleViolationError('Your character has died. Start a new character to begin again.');
   }
+}
+
+export function assertCharacterStanding(character: CharacterProjection): void {
+  if (character.staminaRecovery.posture === 'resting') {
+    throw new RuleViolationError('You are resting. Stand before taking that action.');
+  }
+}
+
+export function staminaRecoveryEvent(
+  character: CharacterProjection,
+  settledAt: Date,
+) {
+  const result = resolveStaminaRecovery(
+    character.resources.stamina,
+    character.staminaRecovery,
+    settledAt,
+  );
+  const payload = CharacterStaminaRecoverySettledEventSchema.shape.payload.parse({
+    characterId: character.characterId,
+    resources: { ...character.resources, stamina: result.stamina },
+    recovery: result.recovery,
+  });
+  return {
+    type: 'character.stamina_recovery_settled',
+    version: 1,
+    payload,
+  };
 }
 
 export const characterStateCapability = Object.freeze({
@@ -172,6 +206,8 @@ export const characterPlugin: EnginePlugin = {
     eventSchemaVersions: {
       'character.created': 3,
       'character.stamina_spent': 1,
+      'character.stamina_recovery_settled': 1,
+      'character.posture_changed': 1,
       'character.equipment_changed': 1,
       'character.shared_item_received': 1,
       'character.shared_item_relinquished': 1,
@@ -179,7 +215,10 @@ export const characterPlugin: EnginePlugin = {
       'character.respawned': 1,
     },
   },
-  register({ registerCommand, registerQuery, registerEffect, provideCapability, requireCapability, optionalCapability }) {
+  register({
+    registerCommand, registerSystemCommand, registerQuery, registerEffect,
+    provideCapability, requireCapability, optionalCapability,
+  }) {
     const worldItems = requireCapability<WorldItemsStateCapability>(worldItemsStateCapability);
     const autonomousNpcs = optionalCapability<AutonomousNpcStateCapability>(autonomousNpcStateCapability);
     const state: CharacterStateCapability = {
@@ -197,6 +236,117 @@ export const characterPlugin: EnginePlugin = {
       TeamFleeStaminaEffectSchema,
       spendTeamFleeStamina,
     );
+
+    const StaminaRecoverySystemCommandSchema = z.object({
+      type: z.literal('character.stamina.recover'),
+      version: z.literal(1),
+      commandId: z.string().min(1).max(128),
+      worldInstanceId: z.string().min(1).max(128),
+      characterId: z.string().min(1).max(128),
+      expectedVersion: z.number().int().nonnegative(),
+      payload: z.object({
+        settleAt: IsoDateTimeSchema,
+        resetAnchor: z.boolean().default(false),
+      }).strict(),
+    }).strict();
+
+    registerSystemCommand(
+      'character.stamina.recover',
+      StaminaRecoverySystemCommandSchema,
+      async (command, context) => {
+        const character = await state.load(context, command.characterId);
+        if (!character || character.archived) {
+          throw new RuleViolationError('That character is no longer available.');
+        }
+        assertCharacterAlive(character);
+        const settledAt = new Date(command.payload.settleAt);
+        const recovery = command.payload.resetAnchor
+          ? CharacterStaminaRecoverySchema.parse({
+            ...character.staminaRecovery,
+            lastSettledAt: settledAt.toISOString(),
+            fractionalCarry: 0,
+          })
+          : resolveStaminaRecovery(
+            character.resources.stamina,
+            character.staminaRecovery,
+            settledAt,
+          ).recovery;
+        const resources = command.payload.resetAnchor
+          ? character.resources
+          : {
+            ...character.resources,
+            stamina: resolveStaminaRecovery(
+              character.resources.stamina,
+              character.staminaRecovery,
+              settledAt,
+            ).stamina,
+          };
+        const payload = CharacterStaminaRecoverySettledEventSchema.shape.payload.parse({
+          characterId: character.characterId,
+          resources,
+          recovery,
+          resetAnchor: command.payload.resetAnchor,
+        });
+        return {
+          streamId: character.characterId,
+          expectedVersion: command.expectedVersion,
+          events: [{ type: 'character.stamina_recovery_settled', version: 1, payload }],
+        };
+      },
+    );
+
+    registerCommand('character.rest', CharacterRestCommandSchema, async (command, context) => {
+      const character = await state.load(context, command.characterId);
+      if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
+      assertCharacterAlive(character);
+      if (character.combat?.status === 'active') {
+        throw new RuleViolationError('You cannot rest while combat is active.');
+      }
+      if (character.staminaRecovery.posture === 'resting') {
+        throw new RuleViolationError('You are already resting.');
+      }
+      const location = context.world.locations.find((candidate) => candidate.id === character.locationId);
+      if (!location?.safeResting) {
+        throw new RuleViolationError('This is not a safe place to rest.');
+      }
+      const settled = staminaRecoveryEvent(character, context.now());
+      const posture = CharacterPostureChangedEventSchema.shape.payload.parse({
+        characterId: character.characterId,
+        posture: 'resting',
+        locationId: character.locationId,
+      });
+      return {
+        streamId: character.characterId,
+        expectedVersion: command.expectedVersion,
+        events: [
+          settled,
+          { type: 'character.posture_changed', version: 1, payload: posture },
+        ],
+      };
+    });
+
+    registerCommand('character.stand', CharacterStandCommandSchema, async (command, context) => {
+      const character = await state.load(context, command.characterId);
+      if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
+      assertCharacterAlive(character);
+      if (character.staminaRecovery.posture !== 'resting') {
+        throw new RuleViolationError('You are already standing.');
+      }
+      const settled = staminaRecoveryEvent(character, context.now());
+      const posture = CharacterPostureChangedEventSchema.shape.payload.parse({
+        characterId: character.characterId,
+        posture: 'standing',
+        locationId: character.locationId,
+      });
+      return {
+        streamId: character.characterId,
+        expectedVersion: command.expectedVersion,
+        events: [
+          settled,
+          { type: 'character.posture_changed', version: 1, payload: posture },
+        ],
+      };
+    });
 
     registerCommand('character.create', CreateCharacterCommandSchema, async (command, context) => {
       const name = command.payload.name.trim();
@@ -239,6 +389,7 @@ export const characterPlugin: EnginePlugin = {
       const character = await state.load(context, command.characterId);
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
       assertCharacterAlive(character);
+      assertCharacterStanding(character);
       if (character.inventory.some((item) => item.id === command.payload.itemId)) {
         throw new RuleViolationError('You are already carrying that item.');
       }
@@ -347,6 +498,7 @@ export const characterPlugin: EnginePlugin = {
       const character = await state.load(context, command.characterId);
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
       assertCharacterAlive(character);
+      assertCharacterStanding(character);
       const item = character.inventory.find((candidate) => candidate.id === command.payload.itemId);
       if (!item) throw new RuleViolationError('You are not carrying that item.');
       const questBound = item.questBound === true || context.world.locations.some((worldLocation) =>
@@ -400,6 +552,7 @@ export const characterPlugin: EnginePlugin = {
       const character = await state.load(context, command.characterId);
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
       assertCharacterAlive(character);
+      assertCharacterStanding(character);
       if (character.combat?.status === 'active') {
         throw new RuleViolationError('You cannot change equipment during an active encounter.');
       }
@@ -424,6 +577,7 @@ export const characterPlugin: EnginePlugin = {
       const character = await state.load(context, command.characterId);
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
       assertCharacterAlive(character);
+      assertCharacterStanding(character);
       if (character.combat?.status === 'active') {
         throw new RuleViolationError('You cannot change equipment during an active encounter.');
       }
@@ -444,6 +598,7 @@ export const characterPlugin: EnginePlugin = {
       const character = await state.load(context, command.characterId);
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
       assertCharacterAlive(character);
+      assertCharacterStanding(character);
       if (character.combat?.status === 'active') {
         throw new RuleViolationError('Use a healing item through your combat action while a fight is active.');
       }
@@ -653,6 +808,7 @@ export const characterPlugin: EnginePlugin = {
         locationId: location.id,
         ...(locationState ? { locationStateId: locationState.id } : {}),
         revision: character.revision,
+        safeResting: location.safeResting ?? false,
         title: displayName.qualifiedName,
         shortName: displayName.shortName,
         qualifiedName: displayName.qualifiedName,

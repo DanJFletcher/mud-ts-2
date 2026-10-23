@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { StoredGameEvent } from './types.js';
 import { replayCharacter } from './replay.js';
+import { resolveStaminaRecovery } from '@mudd/contracts';
 
 function event(
   type: string,
   aggregateVersion: number,
   payload: Record<string, unknown>,
   version = 1,
+  occurredAt = '2026-10-18T12:00:00.000Z',
 ): StoredGameEvent {
   return {
     type,
@@ -18,7 +20,7 @@ function event(
     aggregateVersion,
     causationCommandId: `command-${aggregateVersion}`,
     actorId: 'player-test',
-    occurredAt: '2026-10-18T12:00:00.000Z',
+    occurredAt,
     tick: 0,
     payload,
   };
@@ -32,6 +34,85 @@ const created = event('character.created', 1, {
 });
 
 describe('character event replay validation', () => {
+  it('replays legacy stamina defaults, exact recovery, posture transitions, and movement restrictions', () => {
+    const start = new Date('2026-10-18T12:00:00.000Z');
+    const createdV2 = event('character.created', 1, {
+      characterId: 'character-test',
+      playerId: 'player-test',
+      name: 'Rowan',
+      startingLocationId: 'mossgate-clearing',
+      resources: {
+        stamina: { current: 0, maximum: 100 },
+        mana: { current: 100, maximum: 100 },
+      },
+    }, 2);
+    const legacy = replayCharacter([created]);
+    expect(legacy?.staminaRecovery).toEqual({
+      posture: 'standing',
+      lastSettledAt: null,
+      fractionalCarry: 0,
+    });
+
+    const initial = replayCharacter([createdV2])!;
+    const anchored = resolveStaminaRecovery(
+      initial.resources.stamina,
+      initial.staminaRecovery,
+      start,
+    );
+    const initialAnchor = event('character.stamina_recovery_settled', 2, {
+      characterId: initial.characterId,
+      resources: { ...initial.resources, stamina: anchored.stamina },
+      recovery: anchored.recovery,
+    }, 1, start.toISOString());
+    const anchoredProjection = replayCharacter([createdV2, initialAnchor])!;
+    const standingRecoveryAt = new Date(start.getTime() + 1_000);
+    const standing = resolveStaminaRecovery(
+      anchoredProjection.resources.stamina,
+      anchoredProjection.staminaRecovery,
+      standingRecoveryAt,
+    );
+    const standingEvent = event('character.stamina_recovery_settled', 3, {
+      characterId: initial.characterId,
+      resources: { ...anchoredProjection.resources, stamina: standing.stamina },
+      recovery: standing.recovery,
+    }, 1, standingRecoveryAt.toISOString());
+    const postureEvent = event('character.posture_changed', 4, {
+      characterId: initial.characterId,
+      posture: 'resting',
+      locationId: initial.locationId,
+    }, 1, standingRecoveryAt.toISOString());
+    const afterRest = replayCharacter([createdV2, initialAnchor, standingEvent, postureEvent])!;
+    expect(afterRest.resources.stamina.current).toBe(1);
+    expect(afterRest.staminaRecovery.posture).toBe('resting');
+
+    const restingRecoveryAt = new Date(start.getTime() + 2_000);
+    const rested = resolveStaminaRecovery(
+      afterRest.resources.stamina,
+      afterRest.staminaRecovery,
+      restingRecoveryAt,
+    );
+    const restingEvent = event('character.stamina_recovery_settled', 5, {
+      characterId: initial.characterId,
+      resources: { ...afterRest.resources, stamina: rested.stamina },
+      recovery: rested.recovery,
+    }, 1, restingRecoveryAt.toISOString());
+    expect(replayCharacter([createdV2, initialAnchor, standingEvent, postureEvent, restingEvent])?.resources.stamina.current).toBe(4);
+    expect(() => replayCharacter([
+      createdV2,
+      initialAnchor,
+      standingEvent,
+      postureEvent,
+      restingEvent,
+      event('character.moved', 6, {
+        characterId: initial.characterId,
+        fromLocationId: initial.locationId,
+        toLocationId: 'glasswater-bridge',
+        exitId: 'clearing-to-bridge',
+        movementCost: 5,
+      }),
+    ])).toThrow(/invalid movement event/i);
+  });
+
   it('keeps legacy character streams valid without progression and rejects duplicate victory rewards', () => {
     const legacyCharacter = replayCharacter([created]);
     expect(legacyCharacter?.advancement).toBeUndefined();

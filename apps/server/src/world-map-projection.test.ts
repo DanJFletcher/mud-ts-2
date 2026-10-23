@@ -59,7 +59,7 @@ async function moveAlongRoad(
     result = await client.roadStep(
       characterId,
       exitId,
-      expectedVersion + index,
+      expectedVersion + index * 2,
       `${commandId}-step-${index + 1}`,
     );
     if (!result.receipt.ok) return result;
@@ -525,6 +525,7 @@ describe('Orraveth Bellwold road travel', () => {
     const store = new InMemoryEventStore();
     const testWorld = structuredClone(orravethWorld);
     for (const road of testWorld.roads ?? []) road.encounterChancePercent = 0;
+    let simulatedNow = new Date('2026-10-23T12:00:00.000Z');
     const session = {
       sessionId: 'orraveth-south-road-session',
       playerId: 'orraveth-south-road-player',
@@ -554,6 +555,12 @@ describe('Orraveth Bellwold road travel', () => {
       store,
       { canAccessInstance: async () => true, ownsCharacter: async () => true },
       testWorld,
+      undefined,
+      () => {
+        const settledAt = simulatedNow;
+        simulatedNow = new Date(simulatedNow.getTime() + 5_000);
+        return settledAt;
+      },
     );
     const ready = engine.start();
     const fetcher: typeof fetch = async (input, init = {}) => {

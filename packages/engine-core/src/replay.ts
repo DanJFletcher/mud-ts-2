@@ -16,7 +16,11 @@ import {
   CharacterClassSelectedEventSchema,
   CharacterAbilityResourceSpentEventSchema,
   CharacterStaminaSpentEventSchema,
+  CharacterStaminaRecoverySettledEventSchema,
+  CharacterPostureChangedEventSchema,
   DEFAULT_CHARACTER_RESOURCES,
+  resolveStaminaRecovery,
+  MOVEMENT_STAMINA_COST,
   CharacterMovedEventSchema,
   CharacterRenamedEventSchema,
   CharacterArchivedEventSchema,
@@ -194,6 +198,59 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
       state = CharacterProjectionSchema.parse({
         ...state,
         resources: spent.payload.resources,
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.stamina_recovery_settled') {
+      if (!state) throw new Error('Stamina recovery encountered before character creation.');
+      const settled = CharacterStaminaRecoverySettledEventSchema.parse(publicEvent).payload;
+      const at = settled.recovery.lastSettledAt;
+      const expected = at ? settled.resetAnchor
+        ? {
+          stamina: state.resources.stamina,
+          recovery: {
+            ...state.staminaRecovery,
+            lastSettledAt: new Date(Math.max(
+              state.staminaRecovery.lastSettledAt ? Date.parse(state.staminaRecovery.lastSettledAt) : 0,
+              Date.parse(at),
+            )).toISOString(),
+            fractionalCarry: 0,
+          },
+        }
+        : resolveStaminaRecovery(state.resources.stamina, state.staminaRecovery, new Date(at))
+        : undefined;
+      if (
+        settled.characterId !== state.characterId ||
+        !at ||
+        Date.parse(at) > Date.parse(event.occurredAt) ||
+        !expected ||
+        JSON.stringify(settled.resources.stamina) !== JSON.stringify(expected.stamina) ||
+        settled.resources.mana.current !== state.resources.mana.current ||
+        settled.resources.mana.maximum !== state.resources.mana.maximum ||
+        JSON.stringify(settled.recovery) !== JSON.stringify(expected.recovery)
+      ) {
+        throw new Error(`Invalid stamina recovery event at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        resources: settled.resources,
+        staminaRecovery: settled.recovery,
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.posture_changed') {
+      if (!state) throw new Error('Posture change encountered before character creation.');
+      const changed = CharacterPostureChangedEventSchema.parse(publicEvent).payload;
+      if (
+        changed.characterId !== state.characterId ||
+        changed.locationId !== state.locationId ||
+        changed.posture === state.staminaRecovery.posture ||
+        (changed.posture === 'resting' &&
+          (state.combat?.status === 'active' || state.health?.current === 0))
+      ) {
+        throw new Error(`Invalid posture change at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        staminaRecovery: { ...state.staminaRecovery, posture: changed.posture },
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'character.combat_encounter_started') {
@@ -462,6 +519,7 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         ...state,
         locationId: respawnLocationId,
         locationStateId: undefined,
+        staminaRecovery: { posture: 'standing', lastSettledAt: null, fractionalCarry: 0 },
         visitedLocationIds: state.visitedLocationIds.includes(respawnLocationId)
           ? state.visitedLocationIds
           : [...state.visitedLocationIds, respawnLocationId],
@@ -520,6 +578,10 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
       if (
         moved.payload.characterId !== state.characterId ||
         moved.payload.fromLocationId !== state.locationId ||
+        state.staminaRecovery.posture === 'resting' ||
+        (moved.payload.movementCost !== undefined &&
+          (moved.payload.movementCost !== MOVEMENT_STAMINA_COST ||
+            state.resources.stamina.current < MOVEMENT_STAMINA_COST)) ||
         (
           moved.payload.fromStateId !== undefined &&
           state.locationStateId !== undefined &&
@@ -530,6 +592,15 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
       }
       state = CharacterProjectionSchema.parse({
         ...state,
+        ...(moved.payload.movementCost !== undefined ? {
+          resources: {
+            ...state.resources,
+            stamina: {
+              ...state.resources.stamina,
+              current: state.resources.stamina.current - MOVEMENT_STAMINA_COST,
+            },
+          },
+        } : {}),
         locationId: moved.payload.toLocationId,
         ...(moved.payload.toStateId !== undefined
           ? { locationStateId: moved.payload.toStateId ?? undefined }

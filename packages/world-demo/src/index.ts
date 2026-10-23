@@ -1504,6 +1504,7 @@ const draft = {
     {
       id: 'willowrest-inn',
       name: 'Willowrest Inn',
+      safeResting: true,
       mapPosition: { x: 2, y: 4, terrain: 'building' },
       description: 'A warm timber inn stands at the edge of Reedbank, its windows bright against the river mist. A painted sign promises a full night’s rest for five moss marks. A lamp-lit lane leads west to Reedbank Stalls.',
       inn: {

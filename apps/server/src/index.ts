@@ -31,7 +31,7 @@ import {
   resolveLocationDisplayName,
   type LocationGroupDefinition,
 } from '@mudd/contracts';
-import { projectQuestJournal, replayCharacter } from '@mudd/engine-core';
+import { projectQuestJournal, replayCharacter, SYSTEM_ACTOR_ID } from '@mudd/engine-core';
 import {
   interactionStreamId,
   mobileNpcDefinitions,
@@ -45,6 +45,7 @@ import { PostgresEventStore } from './persistence/postgres-event-store.js';
 import { projectLocationWithGroups } from './location-group-projection.js';
 import { listRoomOccupants, touchWorldSessionPresence } from './room-presence-service.js';
 import { createAutonomousNpcScheduler } from './autonomous-npc-scheduler.js';
+import { createStaminaRecoveryScheduler } from './stamina-recovery-scheduler.js';
 import { enterWorld } from './world-entry.js';
 import { shouldInitializeCharacterWallet } from './world-wallet-policy.js';
 import { projectWorldMap } from './world-map-projection.js';
@@ -129,6 +130,46 @@ const autonomousNpcSchedulers = [...worldRuntimes.values()]
     },
   }));
 for (const scheduler of autonomousNpcSchedulers) scheduler.start();
+
+const staminaRecoverySchedulers = [...worldRuntimes.values()].map((runtime) =>
+  createStaminaRecoveryScheduler({
+    engine: runtime.engine,
+    store,
+    worldInstanceId: runtime.worldInstanceId,
+    listSessions: async () => {
+      const sessions = await db.select({
+        characterId: worldSessions.characterId,
+        lastSeenAt: worldSessions.lastSeenAt,
+      }).from(worldSessions).where(eq(worldSessions.worldInstanceId, runtime.worldInstanceId));
+      return sessions;
+    },
+    onError(error, characterId) {
+      console.error(`Could not settle stamina for character ${characterId} in ${runtime.worldInstanceId}.`, error);
+    },
+  }),
+);
+for (const scheduler of staminaRecoverySchedulers) scheduler.start();
+
+async function resetStaminaRecoveryAnchor(runtime: WorldRuntime, characterId: string) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const character = replayCharacter(await store.readStream(runtime.worldInstanceId, characterId));
+    if (!character || character.archived || character.health?.current === 0) return false;
+    const result = await runtime.engine.dispatchSystem({
+      type: 'character.stamina.recover',
+      version: 1,
+      commandId: `stamina-reconnect:${character.characterId}:${character.revision}`,
+      worldInstanceId: runtime.worldInstanceId,
+      characterId: character.characterId,
+      expectedVersion: character.revision,
+      payload: { settleAt: new Date().toISOString(), resetAnchor: true },
+    }, SYSTEM_ACTOR_ID);
+    if (result.receipt.ok) return true;
+    if (result.receipt.code !== 'VERSION_CONFLICT') {
+      throw new Error(result.receipt.message);
+    }
+  }
+  throw new Error('Could not safely reset the stamina recovery anchor.');
+}
 
 let effectBatchRunning = false;
 async function runPendingEffectBatch() {
@@ -391,6 +432,16 @@ app.post('/api/world-session', async (req, res, next) => {
 
     if (result.kind === 'missing') return res.status(404).json({ message: 'That character is unavailable.' });
     if (result.kind === 'occupied') return res.status(409).json({ message: 'Leave the current world session before switching characters.' });
+    const lastSeenAt = result.session.lastSeenAt instanceof Date
+      ? result.session.lastSeenAt.getTime()
+      : undefined;
+    if (lastSeenAt === undefined || Date.now() - lastSeenAt > INTERACTION_HEARTBEAT_FRESH_MS) {
+      if (lastSeenAt !== undefined) {
+        await touchWorldSessionPresence(identity.playerId, result.session.worldInstanceId, result.session.id);
+      }
+      const reset = await resetStaminaRecoveryAnchor(selected, result.session.characterId);
+      if (!reset) return res.status(409).json({ message: 'Your character is no longer available.' });
+    }
     await runPendingEffectBatch();
     return res.json({ sessionId: result.session.id, characterId: result.session.characterId });
   } catch (error) {
@@ -398,7 +449,7 @@ app.post('/api/world-session', async (req, res, next) => {
   }
 });
 
-app.post('/api/world-session/heartbeat', createRateLimiter({ windowMs: 60_000, maxRequests: 20 }), async (req, res, next) => {
+app.post('/api/world-session/heartbeat', createRateLimiter({ windowMs: 60_000, maxRequests: 90 }), async (req, res, next) => {
   try {
     const identity = await accountFor(req, res);
     if (!identity) return;
@@ -414,12 +465,17 @@ app.post('/api/world-session/heartbeat', createRateLimiter({ windowMs: 60_000, m
       return res.status(409).json({ message: 'Your character has died. Start a new character to begin again.' });
     }
 
+    const wasStale = Date.now() - current.lastSeenAt.getTime() > INTERACTION_HEARTBEAT_FRESH_MS;
     const refreshed = await touchWorldSessionPresence(
       identity.playerId,
       current.worldInstanceId,
       current.id,
     );
     if (!refreshed) return res.status(409).json({ message: 'Your world session is no longer active.' });
+    if (wasStale) {
+      const reset = await resetStaminaRecoveryAnchor(selected, current.characterId);
+      if (!reset) return res.status(409).json({ message: 'Your character is no longer available.' });
+    }
 
     return res.json({
       worldInstanceId: current.worldInstanceId,
@@ -906,6 +962,7 @@ export const server = app.listen(port, '0.0.0.0', () => {
 async function shutdown() {
   server.close();
   for (const scheduler of autonomousNpcSchedulers) scheduler.stop();
+  for (const scheduler of staminaRecoverySchedulers) scheduler.stop();
   await stopWorldRuntimes(worldRuntimes);
   await pool.end();
 }

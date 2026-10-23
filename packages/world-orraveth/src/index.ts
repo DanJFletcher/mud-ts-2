@@ -106,6 +106,7 @@ const draft = {
     {
       id: 'kindly-roof-inn',
       name: 'The Kindly Roof',
+      safeResting: true,
       description: 'The Kindly Roof is Bellwold’s working inn, kept by Tomas. The common room holds the warmth of a banked fire and the low murmur of travelers comparing what they have heard on the road.\n\nA place to sleep is also a place to exchange news; Tomas listens without pretending every rumor is true. The west road begins outside the inn.',
       mapPosition: { x: -1, y: 0, terrain: 'building' },
       exits: [

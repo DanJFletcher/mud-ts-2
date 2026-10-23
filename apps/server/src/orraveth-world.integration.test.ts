@@ -5,7 +5,7 @@ import {
   NpcDialogueProjectionSchema,
   validateDraftWorldGraph,
 } from '@mudd/contracts';
-import { EngineHost, InMemoryEventStore, replayCharacter } from '@mudd/engine-core';
+import { EngineHost, InMemoryEventStore, replayCharacter, SYSTEM_ACTOR_ID } from '@mudd/engine-core';
 import {
   autonomousNpcsPlugin,
   autonomousNpcStreamId,
@@ -22,6 +22,7 @@ import {
 } from './autonomous-npc-scheduler.js';
 import { worldEventEffectsPlugin } from './demo-event-effects-plugin.js';
 import { projectWorldMap } from './world-map-projection.js';
+import { MuddHttpClient } from '@mudd/client-sdk';
 
 function makeHarness(options: Readonly<{
   now?: () => Date;
@@ -87,6 +88,66 @@ function makeHarness(options: Readonly<{
 }
 
 describe('Orraveth Bellwold settlement', () => {
+  it('supports free safe resting and stamina-funded travel through the host and client SDK without an inn price', async () => {
+    let now = new Date('2026-10-23T12:00:00.000Z');
+    const h = makeHarness({ now: () => now });
+    await h.engine.start();
+    const client = new MuddHttpClient({
+      worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+      fetcher: async (input, init = {}) => {
+        const body = JSON.parse(String(init.body ?? '{}')) as unknown;
+        const path = String(input);
+        const result = path.endsWith('/commands')
+          ? await h.engine.dispatch(body, h.session)
+          : await h.engine.query(body, h.session);
+        return Response.json(result);
+      },
+    });
+    try {
+      const created = await client.createCharacter(
+        'Safe Rest Traveler',
+        'orraveth-stamina-journey-create',
+        'orraveth.scout',
+      );
+      const characterId = created.streamId!;
+      h.owners.set(characterId, h.session.playerId);
+      let character = await h.loadCharacter(characterId);
+      await client.move(characterId, 'square-to-inn', character.revision, 'orraveth-stamina-to-inn');
+      character = await h.loadCharacter(characterId);
+      expect(character.resources.stamina.current).toBe(95);
+      const room = await client.look(characterId, 'orraveth-stamina-look-safe-place');
+      expect(room.safeResting).toBe(true);
+      expect(room.inn).toBeUndefined();
+
+      await client.rest(characterId, character.revision, 'orraveth-stamina-rest');
+      character = await h.loadCharacter(characterId);
+      now = new Date(now.getTime() + 10_000);
+      const recovery = await h.engine.dispatchSystem({
+        type: 'character.stamina.recover',
+        version: 1,
+        commandId: 'orraveth-stamina-recover',
+        worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+        characterId,
+        expectedVersion: character.revision,
+        payload: { settleAt: now.toISOString(), resetAnchor: false },
+      }, SYSTEM_ACTOR_ID);
+      expect(recovery.receipt.ok).toBe(true);
+      character = await h.loadCharacter(characterId);
+      expect(character.resources.stamina.current).toBe(100);
+      expect(character.staminaRecovery.posture).toBe('resting');
+
+      await client.stand(characterId, character.revision, 'orraveth-stamina-stand');
+      character = await h.loadCharacter(characterId);
+      await client.move(characterId, 'inn-to-square', character.revision, 'orraveth-stamina-back-to-square');
+      character = await h.loadCharacter(characterId);
+      expect(character.locationId).toBe('bellwold-market-square');
+      expect(character.resources.stamina.current).toBe(95);
+      expect(character.staminaRecovery.posture).toBe('standing');
+    } finally {
+      await h.engine.stop();
+    }
+  });
+
   it('has a valid, fully reachable fifty-six-location region with map directions matching its exits', () => {
     expect(validateDraftWorldGraph(orravethWorld)).toEqual([]);
     expect(orravethWorld.locations).toHaveLength(56);
