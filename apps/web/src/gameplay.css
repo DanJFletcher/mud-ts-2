@@ -1333,7 +1333,7 @@
     top: calc(env(safe-area-inset-top) + 8px);
     right: 10px;
     display: grid;
-    width: clamp(88px, 28vw, 112px);
+    width: clamp(80px, 24vw, 96px);
     aspect-ratio: 1 / 1;
     place-items: center;
     overflow: hidden;
