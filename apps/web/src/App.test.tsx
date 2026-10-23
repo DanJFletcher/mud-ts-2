@@ -1908,15 +1908,19 @@ describe('single-character world session client', () => {
   it('uses a healing potion outside combat and displays persistent character health', async () => {
     healingDraughtCarried = true;
     characterHealth = { current: 2, maximum: 6 };
+    characterStamina = { current: 70, maximum: 100 };
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
-    expect(screen.getByLabelText('Character health')).toHaveTextContent('Health 2/6');
+    expect(screen.getByLabelText('Character health')).toHaveTextContent('2/6');
+    expect(screen.getByLabelText('Character stamina')).toHaveTextContent('70/100');
+    expect(screen.getByLabelText('Character mana')).toHaveTextContent('100/100');
+    expect(screen.getByLabelText('Character vitals').querySelectorAll('svg')).toHaveLength(3);
     const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
     fireEvent.change(commandInput, { target: { value: 'use Small healing draught' } });
     fireEvent.submit(commandInput.closest('form')!);
 
     await screen.findByText(/You use the small healing draught and recover 3 health/);
-    expect(screen.getByLabelText('Character health')).toHaveTextContent('Health 5/6');
+    expect(screen.getByLabelText('Character health')).toHaveTextContent('5/6');
     expect(healingDraughtCarried).toBe(false);
     expect(apiFetch.mock.calls.some(([path, init]) => {
       if (path !== '/api/commands') return false;
@@ -1940,7 +1944,7 @@ describe('single-character world session client', () => {
     clickQuickAction('Paid immediate inn recovery at Willowrest Inn for 5 moss marks');
 
     await screen.findByText(/You rest at Willowrest Inn, restore 2 health, \d+ stamina, and \d+ mana, and pay 5 moss marks/);
-    expect(screen.getByLabelText('Character health')).toHaveTextContent('Health 6/6');
+    expect(screen.getByLabelText('Character health')).toHaveTextContent('6/6');
     expect(walletBalance).toBe(7);
     expect(apiFetch.mock.calls.some(([path, init]) => {
       if (path !== '/api/commands') return false;
@@ -2038,7 +2042,7 @@ describe('single-character world session client', () => {
     clickQuickAction('Show items to use');
     fireEvent.click(screen.getByRole('button', { name: 'Use Small healing draught' }));
     await screen.findByText(/You use the small healing draught and recover 2 health/);
-    expect(screen.getByLabelText('Character health')).toHaveTextContent('Health 6/6');
+    expect(screen.getByLabelText('Character health')).toHaveTextContent('6/6');
     expect(healingDraughtCarried).toBe(false);
   });
 

@@ -24,7 +24,7 @@ import {
   type AvailableClassAction,
   type CharacterClassDefinition,
 } from "@mudd/ui";
-import { ChevronDown, Compass, Info as InfoIcon, Keyboard, Menu, Moon, Sun, Users, X } from "lucide-react";
+import { ChevronDown, Compass, Heart, Info as InfoIcon, Keyboard, Menu, Moon, Sparkles, Sun, Users, X, Zap } from "lucide-react";
 import { RoomChatPanel, type RoomChatMessage } from "./RoomChatPanel.js";
 import { TerminalPanel } from "./TerminalPanel.js";
 import { WorldMapPanel } from "./WorldMapPanel.js";
@@ -2245,8 +2245,19 @@ export function WorldClient({
                       )}
                     </div>
                     {snapshot.character?.health && !isAnyCombatActive && !visiblePvp && (
-                      <div className="focused-terminal-health" aria-label="Character health">
-                        Health {snapshot.character.health.current}/{snapshot.character.health.maximum}
+                      <div className="focused-terminal-vitals" role="group" aria-label="Character vitals">
+                        <span className="focused-terminal-vital" role="group" aria-label="Character health" title="Health">
+                          <Heart size={14} aria-hidden="true" />
+                          {snapshot.character.health.current}/{snapshot.character.health.maximum}
+                        </span>
+                        <span className="focused-terminal-vital" role="group" aria-label="Character stamina" title="Stamina">
+                          <Zap size={14} aria-hidden="true" />
+                          {snapshot.character.resources.stamina.current}/{snapshot.character.resources.stamina.maximum}
+                        </span>
+                        <span className="focused-terminal-vital" role="group" aria-label="Character mana" title="Mana">
+                          <Sparkles size={14} aria-hidden="true" />
+                          {snapshot.character.resources.mana.current}/{snapshot.character.resources.mana.maximum}
+                        </span>
                       </div>
                     )}
                     <div className="focused-terminal-history-shell">
