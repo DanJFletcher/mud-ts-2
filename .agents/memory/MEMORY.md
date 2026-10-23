@@ -14,3 +14,4 @@
 - [Engine integration tests](engine-integration-tests.md) — Exercise content through a complete, authorized engine host; schema-only tests miss runtime plugin dependencies.
 - [World runtime capabilities](world-runtime-capabilities.md) — Treat currency as optional per world, and register shared effect handlers in every runtime that emits those effects.
 - [Shared corpses and loot](shared-corpses.md) — Dynamic PvE corpses and their unclaimed loot belong to the shared world-item stream.
+- [Room narration](room-narration.md) — Look descriptions use one or two senses; background knowledge belongs in readable sources and NPC dialogue.
