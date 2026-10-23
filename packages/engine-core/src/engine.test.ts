@@ -15,8 +15,10 @@ import {
   partyPlugin,
   partyQuestPlugin,
   projectGroups,
+  projectWorldItems,
   roadTravelPlugin,
   worldItemsPlugin,
+  worldItemsStreamId,
   teamCombatPlugin,
   type ActiveRoomCharacter,
 } from '@mudd/core-plugins';
@@ -860,6 +862,16 @@ describe('MUDD engine host', () => {
     const secondAfterOutcome = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, secondCharacterId))!;
     expect(firstAfterOutcome.advancement?.experience).toBe(10);
     expect(secondAfterOutcome.advancement?.experience).toBe(10);
+    expect(projectWorldItems(await store.readStream(
+      DEMO_WORLD_INSTANCE_ID,
+      worldItemsStreamId(DEMO_WORLD_INSTANCE_ID),
+    )).corpses).toEqual([
+      expect.objectContaining({
+        opponentId: 'mossgate-training-sentinel',
+        locationId: 'mossgate-clearing',
+        goldClaimed: false,
+      }),
+    ]);
     const sharedQuestJournal = await engine.query({
       type: 'party.quests',
       version: 1,

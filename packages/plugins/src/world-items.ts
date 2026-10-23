@@ -86,7 +86,6 @@ export function worldCorpseGoldCreditEffect(
   return {
     type: WORLD_CORPSE_GOLD_CREDIT_EFFECT,
     version: 1,
-    effectId: `world-corpse-gold-credit:${payload.corpseId}:${payload.characterId}`,
     payload,
   };
 }
@@ -141,7 +140,6 @@ export function createWorldCorpseEffect(
   return {
     type: WORLD_CORPSE_CREATE_EFFECT,
     version: 1,
-    effectId: `world-corpse-create:${input.encounterId}`,
     payload,
   };
 }

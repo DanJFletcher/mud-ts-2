@@ -38,6 +38,8 @@ const firstCharacter = {
   honors: { glory: 0, medals: 0 },
   purchasedMerchantListingIds: [],
   itemLocations: [],
+  claimedContainerItemIds: [],
+  claimedCorpseGoldIds: [],
   npcProgress: [],
   readableObservations: [],
   itemUseObservations: [],

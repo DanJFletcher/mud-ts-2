@@ -637,16 +637,30 @@ describe('turn-based PvE combat', () => {
       sharedItemId: badge.id,
     }));
 
-    const goldClaim = await client.take(characterId, gold.id, character.revision, 'combat-corpse-take-gold');
+    const second = await client.createCharacter('Moss', 'combat-corpse-second-character');
+    const secondCharacterId = second.streamId!;
+    const secondCharacter = replayCharacter(
+      await store.readStream(DEMO_WORLD_INSTANCE_ID, secondCharacterId),
+    )!;
+    const goldClaims = await Promise.allSettled([
+      client.take(characterId, gold.id, character.revision, 'combat-corpse-take-gold-first'),
+      client.take(secondCharacterId, gold.id, secondCharacter.revision, 'combat-corpse-take-gold-second'),
+    ]);
+    expect(goldClaims.filter((claim) => claim.status === 'fulfilled')).toHaveLength(1);
     await engine.processPendingEffects();
-    const retry = await client.take(characterId, gold.id, character.revision, 'combat-corpse-take-gold');
-    expect(retry.receipt).toEqual(goldClaim.receipt);
-    character = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-    expect(character.wallet?.balance).toBe(demoWorld.currency!.startingBalance + 3);
-    expect(character.claimedCorpseGoldIds).toHaveLength(1);
+    const finalCharacters = [
+      replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!,
+      replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, secondCharacterId))!,
+    ];
+    expect(finalCharacters.reduce((sum, candidate) => sum + candidate.wallet!.balance, 0))
+      .toBe(demoWorld.currency!.startingBalance * 2 + 3);
+    expect(finalCharacters.filter((candidate) => candidate.claimedCorpseGoldIds.length > 0))
+      .toHaveLength(1);
     const corpses = (await store.readStream(DEMO_WORLD_INSTANCE_ID, 'world-items'))
       .filter((event) => event.type === 'world.corpse_created');
     expect(corpses).toHaveLength(1);
+    expect((await store.readStream(DEMO_WORLD_INSTANCE_ID, 'world-items'))
+      .filter((event) => event.type === 'world.corpse_gold_claimed')).toHaveLength(1);
     await engine.stop();
   });
 

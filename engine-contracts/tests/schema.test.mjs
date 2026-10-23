@@ -318,6 +318,59 @@ test('containers accept ordinary items and reject nested containers', () => {
   }).success, false);
 });
 
+test('combat loot accepts ordinary items and currency but rejects quest-bound loot', () => {
+  const pack = {
+    formatVersion: 1,
+    packId: 'combat-loot-test',
+    packVersion: '1.0.0',
+    displayName: 'Combat Loot Test',
+    currency: { id: 'gold', name: 'gold piece', symbol: 'G', startingBalance: 0 },
+    locations: [{
+      id: 'room',
+      name: 'Room',
+      description: 'A test room.',
+      exits: [],
+      npcs: [{
+        id: 'rat',
+        name: 'Giant Rat',
+        description: 'A large rat.',
+        greeting: 'The rat squeaks.',
+        topics: [],
+        unknownTopicResponse: 'The rat squeaks again.',
+        combatProfile: { maxHealth: 2, attackDamage: 1 },
+        loot: {
+          items: [{ id: 'rat-whisker', label: 'Rat whisker', description: 'A stiff whisker.' }],
+          currencyAmount: 2,
+        },
+      }],
+    }],
+  };
+  const parsed = WorldPackDraftSchema.parse(pack);
+  assert.equal(parsed.locations[0].npcs[0].loot.currencyAmount, 2);
+  assert.deepEqual(validateDraftWorldGraph(parsed), []);
+  assert.equal(WorldPackDraftSchema.safeParse({
+    ...pack,
+    locations: [{
+      ...pack.locations[0],
+      npcs: [{
+        ...pack.locations[0].npcs[0],
+        loot: {
+          items: [{
+            id: 'quest-map',
+            label: 'Quest map',
+            description: 'A quest map.',
+            questBound: true,
+          }],
+        },
+      }],
+    }],
+  }).success, false);
+  assert.equal(validateDraftWorldGraph({
+    ...parsed,
+    currency: undefined,
+  }).some((error) => error.includes('requires configured world currency')), true);
+});
+
 test('draft content checks graph references', () => {
   const pack = WorldPackDraftSchema.parse({ formatVersion: 1, packId: 'starter', packVersion: '0.1.0', displayName: 'Starter', locations: [
     { id: 'r1', name: 'Crossroads', description: 'Paths branch', readables: [{ id: 'marker', label: 'Marker', description: 'A painted wooden sign.', text: 'North to the forest' }], takeables: [{ id: 'pebble', label: 'Pebble', description: 'A smooth pebble.', questBound: true }], interactables: [{ id: 'bell', label: 'Bell', description: 'A small brass bell.' }], itemUses: [{ id: 'ring-bell', itemId: 'pebble', targetId: 'bell', requiredVisitedLocationId: 'r1', response: 'A chime rings.' }], exits: [{ id: 'north', fromLocationId: 'r1', toLocationId: 'r2', label: 'North' }] },
