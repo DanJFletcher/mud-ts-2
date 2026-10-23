@@ -1629,6 +1629,28 @@ describe('single-character world session client', () => {
     expect(screen.getByText('You travel north.')).toBeVisible();
   });
 
+  it('keeps refresh errors in the terminal without a duplicate error banner', async () => {
+    const { container } = render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const originalFetch = apiFetch.getMockImplementation()!;
+    const message = 'Choose a character before entering the world.';
+    apiFetch.mockImplementation((path: string, init?: RequestInit) =>
+      path === '/api/game'
+        ? Promise.resolve(json({ message }, 409))
+        : originalFetch(path, init),
+    );
+
+    const input = screen.getByRole('textbox', { name: 'Enter a command' });
+    fireEvent.change(input, { target: { value: 'take all' } });
+    fireEvent.submit(input.closest('form')!);
+
+    const terminal = screen.getByRole('region', { name: 'Terminal output' });
+    await waitFor(() => expect(terminal).toHaveTextContent(message));
+    await waitFor(() => expect(input).toBeEnabled());
+    expect(container.querySelector('.focused-feedback--error')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+  });
+
   it('records typed commands and their results in the terminal history', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });

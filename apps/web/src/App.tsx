@@ -2783,11 +2783,6 @@ export function WorldClient({
               </Panel>
             )}
 
-            {connectionError && snapshot && (
-              <div className="focused-feedback focused-feedback--error" role="status" aria-live="polite">
-                <i aria-hidden="true" /><p>{connectionError} <button type="button" onClick={() => void loadGame()}>Retry</button></p>
-              </div>
-            )}
           </div>
         )}
 
