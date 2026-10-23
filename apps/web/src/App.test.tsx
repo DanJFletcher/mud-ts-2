@@ -87,7 +87,7 @@ let partyActivity: Array<{
 }>;
 let teamCombatEncounter: TeamCombatEncounter | null;
 
-function currentLocation() {
+function currentLocation(includeNpcDescriptions = false) {
   const title = room === 'clearing'
     ? 'Mossgate Clearing'
     : room === 'market'
@@ -103,9 +103,14 @@ function currentLocation() {
     qualifiedName: title,
     locationGroups: [],
     description: room === 'clearing'
-      ? itemTaken
-        ? 'A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east.'
-        : 'A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east. One loose stone bears a pale stripe.'
+      ? [
+        itemTaken
+          ? 'A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east.'
+          : 'A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east. One loose stone bears a pale stripe.',
+        includeNpcDescriptions
+          ? 'Mara is here. A path keeper stands beside the weathered marker, watching the northern trail.\n\nPractice Sentinel is here. A knee-high wooden sentinel waits beside the trail. Its padded arms lift as you approach.'
+          : 'Mara is here, watching the northern trail.\n\nPractice Sentinel is here, lifting its padded arms in a steady rhythm.',
+      ].join('\n\n')
       : room === 'market'
         ? 'Canvas awnings line the riverbank.'
         : room === 'inn'
@@ -194,19 +199,28 @@ function currentLocation() {
     npcs: room === 'clearing' ? [{
       id: 'mara-waykeeper',
       name: 'Mara',
-      description: 'A path keeper stands beside the weathered marker, watching the northern trail.',
+      activityDescription: 'watching the northern trail',
+      ...(includeNpcDescriptions
+        ? { description: 'A path keeper stands beside the weathered marker, watching the northern trail.' }
+        : {}),
       canChallenge: false,
       canShop: false,
     }, {
       id: 'mossgate-training-sentinel',
       name: 'Practice Sentinel',
-      description: 'A knee-high wooden sentinel waits beside the trail. Its padded arms lift as you approach.',
+      activityDescription: 'lifting its padded arms in a steady rhythm',
+      ...(includeNpcDescriptions
+        ? { description: 'A knee-high wooden sentinel waits beside the trail. Its padded arms lift as you approach.' }
+        : {}),
       canChallenge: true,
       canShop: false,
     }] : room === 'market' ? [{
       id: 'sella-reedbank-merchant',
       name: 'Sella',
-      description: 'A careful trader sorts travel goods beneath a green awning.',
+      activityDescription: 'sorting travel goods beneath a green awning',
+      ...(includeNpcDescriptions
+        ? { description: 'A careful trader sorts travel goods beneath a green awning.' }
+        : {}),
       canChallenge: false,
       canShop: true,
     }] : [],
@@ -481,8 +495,17 @@ beforeEach(() => {
     if (path === '/api/queries') {
       const query = JSON.parse(String(init?.body ?? '{}')) as {
         type?: string;
-        payload?: { objectId?: string; npcId?: string; topic?: string; merchantNpcId?: string };
+        payload?: {
+          objectId?: string;
+          npcId?: string;
+          topic?: string;
+          merchantNpcId?: string;
+          includeNpcDescriptions?: boolean;
+        };
       };
+      if (query.type === 'location.describe') {
+        return json({ ok: true, value: currentLocation(query.payload?.includeNpcDescriptions === true) });
+      }
       if (query.type === 'party.info') {
         return json({ ok: true, value: { party: activePartyInfo, revision: partyRevision, activity: partyActivity } });
       }
@@ -826,6 +849,30 @@ beforeEach(() => {
 });
 
 describe('single-character world session client', () => {
+  it('shows NPC activity on room entry and full descriptions only after look', async () => {
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    const terminal = await screen.findByRole('region', { name: 'Terminal output' });
+
+    await waitFor(() => {
+      expect(terminal).toHaveTextContent('Mara is here, watching the northern trail.');
+    });
+    expect(terminal).not.toHaveTextContent('A path keeper stands beside the weathered marker');
+
+    const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
+    fireEvent.change(commandInput, { target: { value: 'look' } });
+    fireEvent.submit(commandInput.closest('form')!);
+
+    await waitFor(() => {
+      expect(terminal).toHaveTextContent(
+        'Mara is here. A path keeper stands beside the weathered marker, watching the northern trail.',
+      );
+    });
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/queries' &&
+      JSON.parse(String(init?.body ?? '{}')).payload?.includeNpcDescriptions === true
+    )).toBe(true);
+  });
+
   it('refreshes and displays the other players in the current room', async () => {
     heartbeatOccupants = [{ id: 'mira-character', displayName: 'Mira' }];
     render(<WorldClient onLeaveWorld={async () => undefined} />);
@@ -980,8 +1027,12 @@ describe('single-character world session client', () => {
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     const history = screen.getByRole('region', { name: 'Terminal output' });
     expect(history).toHaveTextContent('> look');
-    await screen.findByText('A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east. One loose stone bears a pale stripe.');
-    expect(screen.getAllByText('A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east. One loose stone bears a pale stripe.')).toHaveLength(1);
+    await waitFor(() => {
+      expect(history).toHaveTextContent(
+        'A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east. One loose stone bears a pale stripe.',
+      );
+    });
+    expect(history).not.toHaveTextContent('A path keeper stands beside the weathered marker');
     expect(screen.queryByText(/World activity|\b\d+\s+events?\b/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Look around' })).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Enter a command' })).toBeVisible();
@@ -1023,7 +1074,9 @@ describe('single-character world session client', () => {
     await screen.findByRole('heading', { name: 'Field notes' });
     expect(screen.getByText('No current quests.')).toBeVisible();
     expect(screen.getByText('No completed quests yet.')).toBeVisible();
-    expect(screen.getByText('A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east. One loose stone bears a pale stripe.')).toBeVisible();
+    expect(history).toHaveTextContent(
+      'A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east. One loose stone bears a pale stripe.',
+    );
     fireEvent.click(within(infoTabs).getByRole('link', { name: 'Codex' }));
     await screen.findByRole('heading', { name: /A world, carefully remembered/ });
     expect(screen.getByText('Orraveth is separate from the active MUDD world.')).toBeVisible();
@@ -1544,7 +1597,9 @@ describe('single-character world session client', () => {
 
     await waitFor(() => {
       expect(screen.getAllByText('> look')).toHaveLength(2);
-      expect(screen.getAllByText('A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east. One loose stone bears a pale stripe.')).toHaveLength(2);
+      expect(
+        history.textContent?.match(/A circle of pale stones breaks through the moss\./g),
+      ).toHaveLength(2);
     });
     expect(apiFetch.mock.calls.some(([path]) => path === '/api/queries')).toBe(true);
     expect(history).toHaveTextContent('> look');
@@ -2099,7 +2154,11 @@ describe('single-character world session client', () => {
     expect(screen.queryByRole('button', { name: 'Look at Loose stone' })).not.toBeInTheDocument();
     const terminalEntriesBeforeLook = history.querySelectorAll('li').length;
     fireEvent.click(screen.getByRole('button', { name: 'Look around' }));
-    await screen.findByText('A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east.');
+    await waitFor(() => {
+      expect(history).toHaveTextContent(
+        'A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east.',
+      );
+    });
     const lookOutput = Array.from(history.querySelectorAll('li'))
       .slice(terminalEntriesBeforeLook)
       .map((entry) => entry.textContent)

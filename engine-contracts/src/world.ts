@@ -273,6 +273,7 @@ export const NpcDefinitionSchema = z.object({
   id: IdSchema,
   name: z.string().min(1).max(120),
   description: z.string().min(1).max(1000),
+  activityDescription: z.string().min(1).max(240).optional(),
   greeting: z.string().min(1).max(2000),
   topics: z.array(NpcDialogueTopicDefinitionSchema).max(24),
   dialogue: NpcDialogueDefinitionSchema.optional(),
@@ -288,7 +289,8 @@ export const NpcDefinitionSchema = z.object({
 export const NpcPresenceProjectionSchema = z.object({
   id: IdSchema,
   name: z.string().min(1).max(120),
-  description: z.string().min(1).max(1000),
+  activityDescription: z.string().min(1).max(240).optional(),
+  description: z.string().min(1).max(1000).optional(),
   canChallenge: z.boolean().default(false),
   canShop: z.boolean().default(false),
 }).strict();
@@ -588,7 +590,10 @@ export const WorldPackDraftSchema = z.object({
 
 export const LocationDescribeQuerySchema = ClientQueryBaseSchema.extend({
   type: z.literal('location.describe'),
-  payload: z.object({ locationId: IdSchema.optional() }).strict(),
+  payload: z.object({
+    locationId: IdSchema.optional(),
+    includeNpcDescriptions: z.boolean().optional(),
+  }).strict(),
 }).strict();
 
 export const ObjectReadQuerySchema = ClientQueryBaseSchema.extend({

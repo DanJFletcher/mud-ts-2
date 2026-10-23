@@ -258,14 +258,18 @@ export class MuddHttpClient {
     return this.send(command);
   }
 
-  async look(characterId: string, queryId = crypto.randomUUID()): Promise<LocationProjection> {
+  async look(
+    characterId: string,
+    queryId = crypto.randomUUID(),
+    options: Readonly<{ includeNpcDescriptions?: boolean }> = {},
+  ): Promise<LocationProjection> {
     const query = LocationDescribeQuerySchema.parse({
       type: 'location.describe',
       version: 1,
       queryId,
       worldInstanceId: this.options.worldInstanceId,
       characterId,
-      payload: {},
+      payload: options.includeNpcDescriptions ? { includeNpcDescriptions: true } : {},
     });
     const result = await this.request('/api/queries', {
       method: 'POST',

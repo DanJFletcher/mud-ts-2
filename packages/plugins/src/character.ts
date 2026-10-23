@@ -614,8 +614,11 @@ export const characterPlugin: EnginePlugin = {
           ? ` It contains ${contents.map((item) => item.label).join(', ')}.`
           : ' It is empty.'}`,
       );
-      const roomNpcDescriptions = roomNpcs.map(
-        ({ name, description }) => `${name} is here. ${description}`,
+      const includeNpcDescriptions = query.payload.includeNpcDescriptions === true;
+      const roomNpcDescriptions = roomNpcs.map(({ name, description, activityDescription }) =>
+        includeNpcDescriptions
+          ? `${name} is here. ${description}`
+          : `${name} is here${activityDescription ? `, ${activityDescription}` : ''}.`,
       );
       const interactableRoomDescriptions = (location.interactables ?? []).flatMap(({ roomDescription }) =>
         roomDescription ? [roomDescription] : [],
@@ -724,10 +727,11 @@ export const characterPlugin: EnginePlugin = {
         } : {}),
         ...(roomNpcs.length
           ? {
-            npcs: roomNpcs.map(({ id, name, description, combatProfile, shop }) => ({
+            npcs: roomNpcs.map(({ id, name, description, activityDescription, combatProfile, shop }) => ({
               id,
               name,
-              description,
+              ...(activityDescription ? { activityDescription } : {}),
+              ...(includeNpcDescriptions ? { description } : {}),
               canChallenge: Boolean(combatProfile),
               canShop: Boolean(shop),
             })),

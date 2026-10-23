@@ -1701,7 +1701,7 @@ describe('MUDD engine host', () => {
       ok: true,
       value: {
         description: expect.stringContaining(
-          '\n\nMara is here. A path keeper stands beside the weathered marker, watching the northern trail.',
+          '\n\nMara is here, watching the northern trail.',
         ),
       },
     });

@@ -615,7 +615,11 @@ export function WorldClient({
     if (!snapshot?.character || pending) return;
     setPending("look");
     try {
-      const location = await client.look(snapshot.character.characterId);
+      const location = await client.look(
+        snapshot.character.characterId,
+        undefined,
+        { includeNpcDescriptions: true },
+      );
       setSnapshot((current) => current ? { ...current, location } : current);
       if (!target) {
         addEntry("narration", location.description);
@@ -623,7 +627,12 @@ export function WorldClient({
       }
       const npcMatches = findNpcMatches(target, location.npcs ?? []);
       if (npcMatches.length === 1) {
-        addEntry("narration", npcMatches[0]!.description);
+        const description = npcMatches[0]!.description;
+        if (!description) {
+          addEntry("error", `You cannot get a clear look at ${npcMatches[0]!.name} right now.`);
+          return;
+        }
+        addEntry("narration", description);
         return;
       }
       if (npcMatches.length > 1) {

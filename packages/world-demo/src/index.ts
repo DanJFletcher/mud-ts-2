@@ -146,6 +146,7 @@ const draft = {
           id: 'mara-waykeeper',
           name: 'Mara',
           description: 'A path keeper stands beside the weathered marker, watching the northern trail.',
+          activityDescription: 'watching the northern trail',
           greeting: 'The north bridge is open. The marker points east toward the western approach to the Old Bell Tower.',
           dialogue: {
             prompt: 'The old paths still have their stories. What would you like to ask?',
@@ -262,6 +263,7 @@ const draft = {
           id: 'mossgate-training-sentinel',
           name: 'Practice Sentinel',
           description: 'A knee-high wooden sentinel waits beside the trail. Its padded arms lift in a steady, even rhythm.',
+          activityDescription: 'lifting its padded arms in a steady rhythm',
           greeting: 'The practice sentinel clicks into a ready stance.',
           topics: [],
           unknownTopicResponse: 'The sentinel answers with a wooden click.',
@@ -271,6 +273,7 @@ const draft = {
           id: 'mossgate-practice-mauler',
           name: 'Practice Mauler',
           description: 'A weighted wooden sparring dummy pivots slowly, telegraphing each broad, heavy swing.',
+          activityDescription: 'pivoting slowly through a broad sparring swing',
           greeting: 'The practice mauler raises both padded arms, then begins a slow wind-up.',
           topics: [],
           unknownTopicResponse: 'The mauler creaks as its arms begin to swing.',
@@ -280,6 +283,7 @@ const draft = {
           id: 'mossgate-practice-guardian',
           name: 'Practice Guardian',
           description: 'A broad wooden figure keeps a round shield angled toward the trail, guarding its center.',
+          activityDescription: 'holding a round shield over its center',
           greeting: 'The practice guardian settles behind its shield.',
           topics: [],
           unknownTopicResponse: 'The guardian answers with a firm tap of wood against wood.',
@@ -289,6 +293,7 @@ const draft = {
           id: 'mossgate-wandering-villager',
           name: 'Wandering Villager',
           description: 'A villager strolls by, hands clasped behind their back.',
+          activityDescription: 'walking by with hands clasped behind their back',
           greeting: 'The villager offers a quiet nod.',
           topics: [],
           unknownTopicResponse: 'The villager smiles and continues on their way.',
@@ -307,6 +312,7 @@ const draft = {
           id: 'mossgate-patrolling-guard',
           name: 'Patrolling Guard',
           description: 'A town guard marches through, surveying the surroundings.',
+          activityDescription: 'patrolling with eyes on the surroundings',
           greeting: 'The guard gives a brief nod before continuing the patrol.',
           topics: [],
           unknownTopicResponse: 'The guard remains focused on the patrol.',
@@ -398,6 +404,7 @@ const draft = {
           id: 'edda-bellwright',
           name: 'Edda',
           description: 'A bellwright with a grease-stained ledger studies the old tower; she wants to hear whether its cracked bell can still be tuned.',
+          activityDescription: 'studying a grease-stained ledger',
           greeting: 'I repair bells. This one may still know the way below.',
           dialogue: {
             prompt: 'The bell was meant to open a tuning room below. I want to know whether it can still sound its proper note. Ask me for a hint if you want one.',
@@ -1236,6 +1243,7 @@ const draft = {
           id: 'sella-reedbank-merchant',
           name: 'Sella',
           description: 'A careful trader sorts travel goods into a neat row beneath a green awning.',
+          activityDescription: 'sorting travel goods beneath a green awning',
           greeting: 'Welcome to Reedbank. Look over the goods, and ask if you need the price explained.',
           topics: [
             {
@@ -1334,6 +1342,7 @@ const draft = {
           id: 'nim-fernshade',
           name: 'Nim',
           description: 'A basket-maker sorts long fern fronds beside the cottage hearth, setting the sound ones apart from the brittle.',
+          activityDescription: 'sorting fern fronds beside the cottage hearth',
           greeting: 'Mind the drying fronds by the door. They take a full day to soften.',
           dialogue: {
             prompt: 'Nim pauses their work. What would you like to ask?',
@@ -1413,6 +1422,7 @@ const draft = {
           id: 'talla-sedgewatch',
           name: 'Talla',
           description: 'A reed thatcher ties roof bundles beside a small stone gauge, checking each reed for damp.',
+          activityDescription: 'checking a reed bundle for damp',
           greeting: 'The river has been rising. I need to know whether it has reached the high notch beneath the bridge.',
           dialogue: {
             prompt: 'Talla looks up from the reeds. What would you like to ask?',

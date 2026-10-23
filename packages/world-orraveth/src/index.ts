@@ -28,6 +28,7 @@ const draft = {
           id: 'linnet-reed',
           name: 'Linnet Reed',
           description: 'Linnet Reed is a Bellwold villager on foot between the market, the well, and the settlement’s shared spaces.',
+          activityDescription: 'walking between the market and shared spaces',
           greeting: '“I was headed to the well. Or the square. I’ll know when I get there.”',
           topics: [
             { id: 'town', keywords: ['town', 'bellwold', 'neighbors'], response: '“There is always someone to meet between the square and the well. You learn more by walking than by asking for a grand account.”' },
@@ -63,6 +64,7 @@ const draft = {
           id: 'taren-voss',
           name: 'Taren Voss',
           description: 'Taren Voss is a Bellwold watch guard, keeping an eye on the road, the square, and the southern public lanes.',
+          activityDescription: 'watching the square and the road',
           greeting: '“Keep the road clear and let people pass. That is most of the work.”',
           topics: [
             { id: 'patrol', keywords: ['patrol', 'watch', 'guard'], response: '“My circuit runs from the tower road through the square and down to the Common House. I check each crossing as I go.”' },
@@ -112,6 +114,7 @@ const draft = {
           id: 'tomas-innkeeper',
           name: 'Tomas',
           description: 'Tomas keeps the Kindly Roof. He gives each traveler his attention, but weighs a story before passing it on.',
+          activityDescription: 'listening to travelers in the common room',
           greeting: '“Come in and warm yourself. If you want the road news, ask who saw it and when.”',
           topics: [
             { id: 'road', keywords: ['road', 'travel'], response: '“The tower road leaves from the square. The mill is farther along. I can tell you what travelers report, not what waits for you there.”' },
@@ -173,6 +176,7 @@ const draft = {
           id: 'anwen-marr',
           name: 'Anwen Marr',
           description: 'Anwen Marr runs the shop. She checks each measure carefully and keeps her observations close at hand.',
+          activityDescription: 'checking a measure beside her ledger',
           greeting: '“Welcome. If you want to understand a thing, start with what it does—not with what you hope it means.”',
           topics: [
             { id: 'age-of-measures', keywords: ['Age of Measures', 'Glass Collegium', 'natural philosophers'], response: '“People call this the Age of Measures. Scholars are testing the physical world and Resonance with instruments. A repeatable result matters, but it still does not explain itself.”' },
@@ -258,6 +262,7 @@ const draft = {
           id: 'ilya-fen',
           name: 'Ilya Fen',
           description: 'Ilya Fen tends Bellwold’s Green Mortar, sorting local plants and practical care from claims that have not been tested.',
+          activityDescription: 'sorting plants at her workbench',
           greeting: '“Tell me what you noticed and when. A careful account is a better beginning than a guess.”',
           topics: [
             { id: 'care', keywords: ['care', 'healing', 'hurt', 'medicine'], response: '“Rest, clean water, and a clear description of what changed can matter as much as any remedy. I will not promise more than I know.”' },
@@ -282,6 +287,7 @@ const draft = {
           id: 'darric-holt',
           name: 'Darric Holt',
           description: 'Darric Holt works at the forge, repairing tools and fittings used around the settlement.',
+          activityDescription: 'repairing a farm fitting at the forge',
           greeting: '“If something is broken, show me where it failed. If it is only a rumor, I have work to finish.”',
           topics: [
             { id: 'repairs', keywords: ['repair', 'repairs', 'forge', 'smith', 'tools'], response: '“Most days it is hinges, blades, and cart fittings. Keeping a place working is less dramatic than building it from scratch.”' },
@@ -330,6 +336,7 @@ const draft = {
           id: 'rell-soven',
           name: 'Rell Soven',
           description: 'Rell Soven builds and repairs wheels, axles, and wooden fittings for Bellwold’s carts.',
+          activityDescription: 'checking a cart axle',
           greeting: '“A wheel tells you where it is failing if you watch it turn.”',
           topics: [
             { id: 'wheel-work', keywords: ['wheel', 'wheels', 'cart', 'carpentry', 'work'], response: '“I make the parts that keep a cart straight on a rough road. Most repairs begin with listening for a wobble.”' },
@@ -354,6 +361,7 @@ const draft = {
           id: 'seli-tor',
           name: 'Seli Tor',
           description: 'Seli Tor weaves and mends cloth at home, taking on work from neighbors when the loom is free.',
+          activityDescription: 'weaving cloth at her loom',
           greeting: '“Mind the loose thread by the door. It has already caught two sleeves today.”',
           topics: [
             { id: 'weaving', keywords: ['weaving', 'cloth', 'loom', 'mending'], response: '“A torn sack is a small problem until the road is long. Most of my work keeps ordinary things useful a little longer.”' },
@@ -386,6 +394,7 @@ const draft = {
           id: 'aven-rusk',
           name: 'Aven Rusk',
           description: 'Aven Rusk keeps the grain house’s records and checks that the stored sacks remain dry and accounted for.',
+          activityDescription: 'checking the grain tally',
           greeting: '“If you need the store, tell me what you are looking for. I keep the tally, not the harvest.”',
           topics: [
             { id: 'stores', keywords: ['grain', 'store', 'stores', 'harvest', 'sacks'], response: '“The chalk marks show what is stored and when it was checked. They do not tell us what next season will bring.”' },
@@ -411,6 +420,7 @@ const draft = {
           id: 'enna-pell',
           name: 'Enna Pell',
           description: 'Enna Pell keeps the Common House notices and copies agreed decisions into the village record book.',
+          activityDescription: 'copying a notice into the village record book',
           greeting: '“The notes are public. If something is missing, tell me what you saw and when.”',
           topics: [
             { id: 'meetings', keywords: ['meeting', 'meetings', 'common house', 'notices'], response: '“People bring repairs, water use, and market-day concerns here. The notes record what was agreed, not what everyone wished had been agreed.”' },

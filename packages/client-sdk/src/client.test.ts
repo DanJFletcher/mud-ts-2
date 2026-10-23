@@ -350,43 +350,57 @@ describe('MuddHttpClient', () => {
     const firstRoom = await client.look(characterId, 'sdk-look-1');
     expect(firstRoom.title).toBe('Mossgate Clearing');
     expect(firstRoom.description).toContain('One loose stone bears a pale stripe.');
+    expect(firstRoom.description).toContain('Mara is here, watching the northern trail.');
+    expect(firstRoom.description).not.toContain('A path keeper stands beside the weathered marker');
     expect(firstRoom.npcs).toEqual([{
       id: 'mara-waykeeper',
       name: 'Mara',
-      description: 'A path keeper stands beside the weathered marker, watching the northern trail.',
+      activityDescription: 'watching the northern trail',
       canChallenge: false,
       canShop: false,
     }, {
       id: 'mossgate-training-sentinel',
       name: 'Practice Sentinel',
-      description: 'A knee-high wooden sentinel waits beside the trail. Its padded arms lift in a steady, even rhythm.',
+      activityDescription: 'lifting its padded arms in a steady rhythm',
       canChallenge: true,
       canShop: false,
     }, {
       id: 'mossgate-practice-mauler',
       name: 'Practice Mauler',
-      description: 'A weighted wooden sparring dummy pivots slowly, telegraphing each broad, heavy swing.',
+      activityDescription: 'pivoting slowly through a broad sparring swing',
       canChallenge: true,
       canShop: false,
     }, {
       id: 'mossgate-practice-guardian',
       name: 'Practice Guardian',
-      description: 'A broad wooden figure keeps a round shield angled toward the trail, guarding its center.',
+      activityDescription: 'holding a round shield over its center',
       canChallenge: true,
       canShop: false,
     }, {
       id: 'mossgate-wandering-villager',
       name: 'Wandering Villager',
-      description: 'A villager strolls by, hands clasped behind their back.',
+      activityDescription: 'walking by with hands clasped behind their back',
       canChallenge: false,
       canShop: false,
     }, {
       id: 'mossgate-patrolling-guard',
       name: 'Patrolling Guard',
-      description: 'A town guard marches through, surveying the surroundings.',
+      activityDescription: 'patrolling with eyes on the surroundings',
       canChallenge: false,
       canShop: false,
     }]);
+    const explicitlyLookedRoom = await client.look(
+      characterId,
+      'sdk-look-explicit',
+      { includeNpcDescriptions: true },
+    );
+    expect(explicitlyLookedRoom.description).toContain(
+      'Mara is here. A path keeper stands beside the weathered marker, watching the northern trail.',
+    );
+    expect(explicitlyLookedRoom.npcs?.[0]).toMatchObject({
+      id: 'mara-waykeeper',
+      description: 'A path keeper stands beside the weathered marker, watching the northern trail.',
+    });
     expect(firstRoom.objects).toEqual([
       {
         id: 'mossgate-marker',
