@@ -1,0 +1,9 @@
+.pwa-install-action { min-width: 0; }
+.pwa-install-action__nav-button { min-height: 40px; padding: .35rem .5rem; font-size: .8rem; }
+.pwa-install-action__instructions {
+  margin: 0;
+  padding: .5rem .7rem;
+  color: var(--mudd-muted);
+  font-size: .78rem;
+  line-height: 1.45;
+}

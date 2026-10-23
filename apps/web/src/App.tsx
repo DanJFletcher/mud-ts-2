@@ -29,6 +29,7 @@ import { RoomChatPanel, type RoomChatMessage } from "./RoomChatPanel.js";
 import { TerminalPanel } from "./TerminalPanel.js";
 import { WorldMapPanel } from "./WorldMapPanel.js";
 import CodexScreen from "./codex/CodexScreen.js";
+import { PwaInstallAction } from "./lobby/PwaInstallAction.js";
 
 const client = new MuddHttpClient({ worldInstanceId: "mudd-demo-instance", basePath: import.meta.env.BASE_URL });
 type ClassCatalogSummary = { id: string; revision: number; classes: CharacterClassDefinition[] };
@@ -3423,6 +3424,7 @@ export function WorldClient({
                 <span className="focused-brand-mark" aria-hidden="true" />
                 <span>MUDD</span>
               </div>
+              <PwaInstallAction className="focused-nav-menu__action" />
               <Button
                 type="button"
                 variant="quiet"

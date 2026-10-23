@@ -3,6 +3,7 @@ import { useClerk, useUser } from '@clerk/react';
 import { Moon, Sun } from 'lucide-react';
 import { Button } from '@mudd/ui';
 import { appHref, rememberEntryIntent } from './navigation.js';
+import { PwaInstallAction } from './PwaInstallAction.js';
 import './lobby.css';
 
 export function AccountShell({ children }: { children: ReactNode }) {
@@ -20,6 +21,7 @@ export function AccountShell({ children }: { children: ReactNode }) {
       <a className="lobby-brand" href={appHref('/')} aria-label="MUDD worlds"><img src={appHref('/logo.svg')} alt="" />MUDD</a>
       <nav aria-label="Account navigation">
         <a href={appHref('/')}>Worlds</a><a href={appHref('/codex')}>Codex</a>
+        <PwaInstallAction className="pwa-install-action__nav-button" />
         {isSignedIn ? <Button variant="quiet" onClick={() => { void signOut({ redirectUrl: appHref('/') }); }}>Sign out</Button>
           : <a href={appHref('/sign-in')} onClick={rememberCurrent}>Sign in</a>}
         <Button variant="quiet" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
