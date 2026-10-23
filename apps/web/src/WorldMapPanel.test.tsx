@@ -464,4 +464,65 @@ describe('map switching between floors', () => {
       transform: 'translate3d(40px, 50px, 0)',
     });
   });
+
+  it('allows the minimap to be dragged flush to every viewport edge', () => {
+    window.localStorage.removeItem('mudd.mobile-map-minimap-offset.v1');
+    const widthDescriptor = Object.getOwnPropertyDescriptor(window, 'innerWidth');
+    const heightDescriptor = Object.getOwnPropertyDescriptor(window, 'innerHeight');
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 400 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 600 });
+    const bottomNavigation = document.createElement('nav');
+    bottomNavigation.className = 'focused-bottom-nav';
+    vi.spyOn(bottomNavigation, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 550, 400, 50));
+    document.body.append(bottomNavigation);
+    const { container, unmount } = render(
+      <WorldMapPanel map={overworld} fullscreen={false} onFullscreenChange={vi.fn()} />,
+    );
+    const minimap = container.querySelector<HTMLButtonElement>('.focused-world-map__minimap')!;
+    vi.spyOn(minimap, 'getBoundingClientRect')
+      .mockReturnValueOnce(new DOMRect(300, 0, 100, 100))
+      .mockReturnValueOnce(new DOMRect(0, 0, 100, 100));
+
+    try {
+      fireEvent.pointerDown(minimap, {
+        pointerId: 1,
+        pointerType: 'touch',
+        button: 0,
+        clientX: 350,
+        clientY: 50,
+      });
+      fireEvent.pointerMove(minimap, {
+        pointerId: 1,
+        pointerType: 'touch',
+        clientX: 50,
+        clientY: 50,
+      });
+      fireEvent.pointerUp(minimap, { pointerId: 1, pointerType: 'touch' });
+      expect(minimap).toHaveStyle({ transform: 'translate3d(-300px, 0px, 0)' });
+
+      fireEvent.pointerDown(minimap, {
+        pointerId: 2,
+        pointerType: 'touch',
+        button: 0,
+        clientX: 50,
+        clientY: 50,
+      });
+      fireEvent.pointerMove(minimap, {
+        pointerId: 2,
+        pointerType: 'touch',
+        clientX: 350,
+        clientY: 550,
+      });
+      fireEvent.pointerUp(minimap, { pointerId: 2, pointerType: 'touch' });
+
+      expect(minimap).toHaveStyle({ transform: 'translate3d(0px, 500px, 0)' });
+      expect(window.localStorage.getItem('mudd.mobile-map-minimap-offset.v1')).toBe('{"x":0,"y":500}');
+    } finally {
+      unmount();
+      bottomNavigation.remove();
+      window.localStorage.removeItem('mudd.mobile-map-minimap-offset.v1');
+      if (widthDescriptor) Object.defineProperty(window, 'innerWidth', widthDescriptor);
+      if (heightDescriptor) Object.defineProperty(window, 'innerHeight', heightDescriptor);
+    }
+  });
 });

@@ -53,7 +53,6 @@ const MIN_MAP_ZOOM = 0.5;
 const MAX_MAP_ZOOM = 4;
 const MAP_ZOOM_FACTOR = 1.25;
 const MINIMAP_OFFSET_STORAGE_KEY = 'mudd.mobile-map-minimap-offset.v1';
-const MINIMAP_EDGE_GAP = 8;
 
 function orderedVerticalExits(directions: readonly VerticalMapDirection[]): VerticalMapDirection[] {
   return (['up', 'down'] as const).filter((direction) => directions.includes(direction));
@@ -104,23 +103,11 @@ function readMinimapOffset(): MinimapOffset {
 }
 
 function clampMinimapPosition(rect: MinimapRect): Readonly<{ left: number; top: number }> {
-  const roomNavigationTop = document
-    .querySelector<HTMLElement>('.focused-bottom-nav')
-    ?.getBoundingClientRect().top ?? window.innerHeight;
-  const maxLeft = Math.max(
-    MINIMAP_EDGE_GAP,
-    window.innerWidth - rect.width - MINIMAP_EDGE_GAP,
-  );
-  const maxTop = Math.max(
-    MINIMAP_EDGE_GAP,
-    Math.min(
-      window.innerHeight - rect.height - MINIMAP_EDGE_GAP,
-      roomNavigationTop - rect.height - MINIMAP_EDGE_GAP,
-    ),
-  );
+  const maxLeft = Math.max(0, window.innerWidth - rect.width);
+  const maxTop = Math.max(0, window.innerHeight - rect.height);
   return {
-    left: Math.max(MINIMAP_EDGE_GAP, Math.min(maxLeft, rect.left)),
-    top: Math.max(MINIMAP_EDGE_GAP, Math.min(maxTop, rect.top)),
+    left: Math.max(0, Math.min(maxLeft, rect.left)),
+    top: Math.max(0, Math.min(maxTop, rect.top)),
   };
 }
 
