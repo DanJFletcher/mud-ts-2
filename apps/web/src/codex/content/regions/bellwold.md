@@ -7,7 +7,7 @@ summary: A growing frontier settlement near the Heskar border, with a market, wo
 category: geography
 entityType: region
 tags: [Bellwold, village, frontier, trade]
-relatedIds: [orraveth-crown-of-heskar, orraveth-bellwold-market-square, orraveth-kindly-roof-inn, orraveth-blackwater-forge, orraveth-green-mortar, orraveth-bellwold-common-house, orraveth-linnet-reed, orraveth-taren-voss, orraveth-old-bell-tower, orraveth-abandoned-watermill, orraveth-currency-and-commerce]
+relatedIds: [orraveth-crown-of-heskar, orraveth-bellwold-market-square, orraveth-kindly-roof-inn, orraveth-blackwater-forge, orraveth-green-mortar, orraveth-bellwold-common-house, orraveth-linnet-reed, orraveth-taren-voss, orraveth-old-bell-tower, orraveth-abandoned-watermill, orraveth-currency-and-commerce, orraveth-bellwold-roadside-wildlife]
 canonStatus: Established Canon
 sourceRefs: [attached_assets/Pasted-Replit-Agent-Task-Build-the-Orraveth-Codex-Project-Over_1792634102724.txt]
 lastUpdated: "2026-10-22"
@@ -25,7 +25,7 @@ Bellwold has no single established founding date or continuous town chronicle in
 
 The current Bellwold record uses [[currency-and-commerce|gold]] as Orraveth's provisional named currency. Local prices, accounting practices, and any relationship to regional coinage remain unspecified.
 
-Nearby are the [[old-bell-tower|old bell tower]], [[eastern-forest|eastern forest]], and [[abandoned-watermill|abandoned watermill]].
+Nearby are the [[old-bell-tower|old bell tower]], [[eastern-forest|eastern forest]], and [[abandoned-watermill|abandoned watermill]]. The surrounding roads and field edges are home to animals described in the provisional record of [[bellwold-roadside-wildlife|Bellwold roadside wildlife]].
 
 An unfinished road leaves south from the Common House, crosses an unnamed river by a low stone bridge, and continues for several rooms beyond the far bank. It currently ends at a shallow cut in the ground; no settlement is established beyond it. The river's name and the road's eventual destination remain unrecorded.
 
