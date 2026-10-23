@@ -300,6 +300,7 @@ vi.mock('@mudd/world-demo', () => ({
 vi.mock('./db/client.js', async () => {
   const { PgDialect } = await import('drizzle-orm/pg-core');
   const dialect = new PgDialect();
+  const lastPlayed = new Map<string, Date>();
 
   function filtersFor(condition: unknown) {
     if (!condition) return {};
@@ -341,6 +342,7 @@ vi.mock('./db/client.js', async () => {
               playerId: state.charactersByOwner[id as keyof typeof state.charactersByOwner],
               worldInstanceId: instanceId,
               archivedAt: null,
+              lastPlayedAt: lastPlayed.get(id) ?? null,
               ...character,
             }));
           } else if (tableName === 'world_sessions') {
@@ -422,12 +424,23 @@ vi.mock('./db/client.js', async () => {
     };
   }
 
+  const update = () => ({
+    set: () => ({
+      where: async (condition: unknown) => {
+        const filters = filtersFor(condition);
+        const id = filters.id?.value;
+        if (typeof id === 'string') lastPlayed.set(id, new Date());
+      },
+    }),
+  });
   const db = {
     select,
     insert,
+    update,
     transaction: async (callback: (transaction: unknown) => Promise<unknown>) => callback({
       select,
       insert,
+      update,
       execute: async () => undefined,
     }),
   };

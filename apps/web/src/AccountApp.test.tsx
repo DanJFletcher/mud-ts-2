@@ -1,385 +1,251 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CharacterRosterSnapshot } from '@mudd/client-sdk';
+import type { CharacterRosterSnapshot, WorldSummary } from '@mudd/client-sdk';
+import type { ReactNode } from 'react';
 
-const { apiFetch, clerkSignOut, navigate } = vi.hoisted(() => {
-  const apiFetch = vi.fn();
-  const clerkSignOut = vi.fn().mockResolvedValue(undefined);
-  const navigate = vi.fn();
-  vi.stubGlobal('fetch', apiFetch);
-  return { apiFetch, clerkSignOut, navigate };
-});
-
+const mocks = vi.hoisted(() => ({
+  fetch: vi.fn(), signOut: vi.fn(), signedIn: true,
+}));
+vi.stubGlobal('fetch', mocks.fetch);
 vi.mock('@clerk/react', () => ({
-  useUser: () => ({ user: { fullName: 'Rowan Example', primaryEmailAddress: { emailAddress: 'rowan@example.test' } } }),
-  useClerk: () => ({ signOut: clerkSignOut }),
+  useUser: () => ({ isLoaded: true, isSignedIn: mocks.signedIn }),
+  useClerk: () => ({ signOut: mocks.signOut }),
+  ClerkProvider: ({ children }: { children: ReactNode }) => children,
+  SignIn: ({ forceRedirectUrl }: { forceRedirectUrl: string }) => <div>Sign in return: {forceRedirectUrl}</div>,
+  SignUp: ({ forceRedirectUrl }: { forceRedirectUrl: string }) => <div>Sign up return: {forceRedirectUrl}</div>,
 }));
 vi.mock('@clerk/react/internal', () => ({ publishableKeyFromHost: () => 'pk_test_example' }));
 vi.mock('@clerk/themes', () => ({ shadcn: {} }));
-vi.mock('wouter', () => ({ useLocation: () => ['/characters', navigate] }));
-
-import { CharacterRoster, GuestPlayButton, GuestWorldPage } from './AccountApp.js';
-
 vi.mock('./App.js', () => ({
-  WorldClient: () => <div>World play</div>,
+  WorldClient: ({ worldInstanceId, onLeaveWorld }: { worldInstanceId: string; onLeaveWorld: () => void }) =>
+    <div>World play: {worldInstanceId}<button onClick={onLeaveWorld}>Leave world</button></div>,
 }));
+vi.mock('./codex/CodexScreen.js', () => ({ default: () => <h1>Orraveth Codex</h1> }));
+import AccountApp from './AccountApp.js';
 
-const firstCharacter = {
-  worldInstanceId: 'mudd-demo-instance',
-  characterId: '11111111-1111-4111-8111-111111111111',
-  name: 'Rowan',
-  locationId: 'mossgate-clearing',
-  locationTitle: 'Mossgate Clearing',
-  visitedLocationIds: ['mossgate-clearing'],
-  revision: 1,
-  inventory: [],
-  equipment: { weaponItemId: null, armorItemId: null },
-  availableClassActions: [],
-  attributes: { strength: 10, intelligence: 10, constitution: 10, dexterity: 10 },
-  honors: { glory: 0, medals: 0 },
-  resources: {
-    stamina: { current: 100, maximum: 100 },
-    mana: { current: 100, maximum: 100 },
-  },
-  purchasedMerchantListingIds: [],
-  itemLocations: [],
-  claimedContainerItemIds: [],
-  claimedCorpseGoldIds: [],
-  npcProgress: [],
-  readableObservations: [],
-  itemUseObservations: [],
-  questProgress: [],
-  questRewardedIds: [],
-  archived: false,
-};
-const secondCharacter = {
-  ...firstCharacter,
-  characterId: '22222222-2222-4222-8222-222222222222',
-  name: 'Moss',
-  locationId: 'glasswater-bridge',
-  locationTitle: 'Glasswater Bridge',
-  visitedLocationIds: ['mossgate-clearing', 'glasswater-bridge'],
-};
-const availableWorlds = [
-  { worldInstanceId: 'mudd-demo-instance', packId: 'mudd.first-steps', name: 'The Waystone Path', summary: 'Mossgate and the old bell tower.' },
-  {
-    worldInstanceId: 'orraveth-bellwold-instance',
-    packId: 'orraveth.bellwold',
-    name: 'Orraveth: Bellwold',
-    summary: 'A frontier village with an old bell.',
-    classCatalog: {
-      id: 'bellwold-classes',
-      revision: 1,
-      classes: [{
-        id: 'warden',
-        revision: 1,
-        label: 'Warden',
-        description: 'A measured protector.',
-        primaryAttribute: 'strength' as const,
-        attributes: { strength: 14, intelligence: 8, constitution: 13, dexterity: 10 },
-        coreAction: {
-          id: 'shield-break',
-          revision: 1,
-          label: 'Shield break',
-          description: 'A deliberate strike.',
-          cost: { resource: 'stamina' as const, amount: 3 },
-          baseDamage: 6,
-          scalingAttribute: 'strength' as const,
-          weaponBonus: true,
-        },
-      }],
-    },
-  },
+const demo = 'mudd-demo-instance';
+const orra = 'orraveth-bellwold-instance';
+const one = '11111111-1111-4111-8111-111111111111';
+const two = '22222222-2222-4222-8222-222222222222';
+const three = '33333333-3333-4333-8333-333333333333';
+const sessionId = '44444444-4444-4444-8444-444444444444';
+const playerId = '55555555-5555-4555-8555-555555555555';
+const worlds: WorldSummary[] = [
+  { worldInstanceId: demo, packId: 'demo', name: 'The Waystone Path', summary: 'An old bell tower.' },
+  { worldInstanceId: orra, packId: 'orraveth', name: 'Orraveth: Bellwold', summary: 'A frontier village.',
+    classCatalog: { id: 'classes', revision: 1, classes: [{
+      id: 'warden', revision: 1, label: 'Warden', description: 'A measured protector.',
+      primaryAttribute: 'strength', attributes: { strength: 14, intelligence: 8, constitution: 13, dexterity: 10 },
+      coreAction: { id: 'shield-break', revision: 1, label: 'Shield break', description: 'A deliberate strike.',
+        cost: { resource: 'stamina', amount: 3 }, baseDamage: 6, scalingAttribute: 'strength', weaponBonus: true },
+    }] } },
 ];
-
+const fixture: CharacterRosterSnapshot['characters'][number] = {
+  worldInstanceId: demo, characterId: one, name: 'Rowan', worldName: 'The Waystone Path',
+  locationId: 'mossgate-clearing', locationTitle: 'Mossgate Clearing', visitedLocationIds: ['mossgate-clearing'],
+  revision: 1, inventory: [], equipment: { weaponItemId: null, armorItemId: null }, availableClassActions: [],
+  attributes: { strength: 10, intelligence: 10, constitution: 10, dexterity: 10 }, honors: { glory: 0, medals: 0 },
+  resources: { stamina: { current: 100, maximum: 100 }, mana: { current: 100, maximum: 100 } },
+  purchasedMerchantListingIds: [], itemLocations: [], claimedContainerItemIds: [], claimedCorpseGoldIds: [],
+  npcProgress: [], readableObservations: [], itemUseObservations: [], questProgress: [], questRewardedIds: [],
+  archived: false, lastPlayedAt: null,
+};
 let characters: CharacterRosterSnapshot['characters'];
-let active: CharacterRosterSnapshot['activeWorldSession'];
-let activeWorldId: string | null;
-const commandBodies: Array<Record<string, unknown>> = [];
-
-function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+let sessions: NonNullable<CharacterRosterSnapshot['activeWorldSessions']>;
+let guest: boolean;
+let entryFailure: boolean;
+let rosterFailure: boolean;
+const commands: Array<Record<string, unknown>> = [];
+function json(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status }); }
+function roster() { return { player: { id: playerId, displayName: 'Rowan' }, characters, activeWorldSession: null, activeWorldSessions: sessions }; }
+function visit(path: string) {
+  act(() => { history.pushState(null, '', path); window.dispatchEvent(new PopStateEvent('popstate')); });
 }
-
-function commandRequest(body: Record<string, unknown>) {
-  commandBodies.push(body);
-  if (body.type === 'character.create') {
-    characters.unshift({
-      ...firstCharacter,
-      worldInstanceId: String(body.worldInstanceId ?? 'mudd-demo-instance'),
-      characterId: '33333333-3333-4333-8333-333333333333',
-      name: (body.payload as { name: string }).name,
-      revision: 1,
-      archived: false,
-    });
-  } else if (body.type === 'character.rename') {
-    const character = characters.find((item) => item.characterId === body.characterId);
-    if (character) {
-      character.name = (body.payload as { name: string }).name;
-      character.revision += 1;
-    }
-  } else if (body.type === 'character.archive') {
-    const character = characters.find((item) => item.characterId === body.characterId);
-    if (character) {
-      character.archived = true;
-      character.revision += 1;
-    }
-  } else if (body.type === 'character.restore') {
-    const character = characters.find((item) => item.characterId === body.characterId);
-    if (character) {
-      character.archived = false;
-      character.revision += 1;
-    }
-  }
-  return json({
-    receipt: {
-      ok: true,
-      commandId: String(body.commandId),
-      eventIds: [],
-      newAggregateVersion: 2,
-    },
-  });
+function open(path = '/') { history.replaceState(null, '', path); return render(<AccountApp />); }
+function calls(method: string, path: string) {
+  return mocks.fetch.mock.calls.filter(([url, init]) => url === path && (init?.method ?? 'GET') === method);
+}
+async function fillName(value = 'Aster') {
+  fireEvent.click(await screen.findByRole('button', { name: 'Create new character' }));
+  fireEvent.change(await screen.findByLabelText('Character name'), { target: { value } });
 }
 
 beforeEach(() => {
-  window.history.replaceState(null, '', '/');
-  window.localStorage.clear();
-  characters = [{ ...firstCharacter }, { ...secondCharacter }];
-  active = null;
-  activeWorldId = null;
-  commandBodies.length = 0;
-  apiFetch.mockReset();
-  clerkSignOut.mockClear();
-  navigate.mockClear();
-  apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
-    if (path === '/api/characters') {
-      return json({
-        player: { id: 'account-1', displayName: 'Traveler' },
-        characters: characters.map((character) => ({ ...character })),
-        activeWorldSession: active,
-        activeWorldSessions: active && activeWorldId
-          ? [{ ...active, worldInstanceId: activeWorldId }]
-          : [],
-      });
+  mocks.fetch.mockReset(); mocks.signOut.mockReset(); mocks.signedIn = true;
+  characters = [{ ...fixture }, { ...fixture, characterId: two, worldInstanceId: orra, name: 'Moss', worldName: 'Orraveth: Bellwold', lastPlayedAt: '2026-10-23T10:00:00.000Z' }];
+  sessions = []; guest = false; entryFailure = false; rosterFailure = false; commands.length = 0;
+  localStorage.clear(); sessionStorage.clear(); window.location.hash = '';
+  mocks.fetch.mockImplementation(async (url: string, init: RequestInit = {}) => {
+    const method = init.method ?? 'GET';
+    const world = (init.headers as Record<string, string>)?.['x-mudd-world-instance'] ?? demo;
+    if (url === '/api/worlds') return json(worlds);
+    if (url === '/api/characters') {
+      if (rosterFailure) return json({ message: 'Roster unavailable' }, 503);
+      if (!mocks.signedIn && !guest) return json({ message: 'Start a guest session or sign in' }, 401);
+      return json(roster());
     }
-    if (path === '/api/worlds') return json(availableWorlds);
-    if (path === '/api/commands') return commandRequest(JSON.parse(init?.body as string));
-    if (path === '/api/world-session' && init?.method === 'POST') {
-      const body = JSON.parse(init.body as string) as { characterId: string; worldInstanceId?: string };
-      const characterId = body.characterId;
-      if (active && active.characterId !== characterId) return json({ message: 'Leave the current world session before switching characters.' }, 409);
-      active = { id: 'session-1', characterId };
-      activeWorldId = body.worldInstanceId ?? 'mudd-demo-instance';
-      return json({ sessionId: active.id, characterId });
+    if (url === '/api/guest-session') { guest = true; characters = []; return json({ player: { id: playerId, displayName: 'Guest' } }); }
+    if (url === '/api/world-session' && method === 'POST') {
+      const body = JSON.parse(String(init.body));
+      if (entryFailure) return json({ message: 'Entry temporarily unavailable' }, 503);
+      const occupied = sessions.find((item) => item.worldInstanceId === world);
+      if (occupied && occupied.characterId !== body.characterId) return json({ message: 'Leave the current session first' }, 409);
+      if (!occupied) sessions.push({ id: sessionId, characterId: body.characterId, worldInstanceId: world });
+      return json({ sessionId, characterId: body.characterId });
     }
-    if (path === '/api/world-session' && init?.method === 'DELETE') {
-      active = null;
-      activeWorldId = null;
-      return new Response(null, { status: 204 });
+    if (url === '/api/world-session' && method === 'DELETE') { sessions = sessions.filter((item) => item.worldInstanceId !== world); return new Response(null, { status: 204 }); }
+    if (url === '/api/commands') {
+      const body = JSON.parse(String(init.body)); commands.push(body);
+      if (body.type === 'character.create') characters.unshift({ ...fixture, characterId: three, name: body.payload.name, worldInstanceId: world, worldName: worlds.find((item) => item.worldInstanceId === world)!.name,
+        ...(body.payload.classId ? { characterClass: { ...worlds[1].classCatalog!.classes[0], catalogId: 'classes', catalogRevision: 1 } } : {}) });
+      else {
+        const character = characters.find((item) => item.characterId === body.characterId)!;
+        if (body.type === 'character.rename') character.name = body.payload.name;
+        if (body.type === 'character.archive') character.archived = true;
+        if (body.type === 'character.restore') character.archived = false;
+        character.revision++;
+      }
+      return json({ receipt: { ok: true, commandId: body.commandId, eventIds: [], newAggregateVersion: 1 }, streamId: three });
     }
-    return json({ message: 'Not found.' }, 404);
+    throw new Error(`Unexpected request: ${method} ${url}`);
   });
 });
 
-describe('account character roster', () => {
-  it('creates a character in the selected world while preserving characters from the other world', async () => {
-    render(<CharacterRoster />);
-    await screen.findByRole('heading', { name: 'Rowan' });
-    fireEvent.change(screen.getByRole('combobox', { name: 'Select a world' }), {
-      target: { value: 'orraveth-bellwold-instance' },
-    });
-    await screen.findByRole('textbox', { name: 'Character name' });
-    fireEvent.change(screen.getByRole('textbox', { name: 'Character name' }), { target: { value: 'Anwen' } });
-    const warden = screen.getByRole('radio', { name: /Warden/ });
-    expect(warden).not.toBeChecked();
-    expect(screen.getByRole('button', { name: 'Create character' })).toBeDisabled();
-    fireEvent.click(warden);
-    fireEvent.click(screen.getByRole('button', { name: 'Create character' }));
-    await screen.findByRole('heading', { name: 'Anwen' });
-
-    expect(commandBodies[0]).toMatchObject({
-      type: 'character.create',
-      worldInstanceId: 'orraveth-bellwold-instance',
-      payload: { name: 'Anwen', classId: 'warden' },
-    });
-    expect(screen.getByRole('heading', { name: 'Rowan' })).toBeInTheDocument();
-    expect(window.localStorage.getItem('mudd-world-instance-id')).toBe('orraveth-bellwold-instance');
+describe('world lobby and explicit character entry', () => {
+  it('orders real recent history ahead of legacy nulls without auto-entering an active session', async () => {
+    sessions = [{ id: sessionId, characterId: one, worldInstanceId: demo }];
+    open();
+    await screen.findByRole('heading', { name: 'Recent characters' });
+    const recent = screen.getByRole('region', { name: 'Recent characters' });
+    expect(within(recent).getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual(['Moss', 'Rowan']);
+    expect(screen.getByRole('button', { name: 'Continue as Rowan' })).toBeEnabled();
+    expect(calls('POST', '/api/world-session')).toHaveLength(0);
+    expect(screen.getByRole('link', { name: /Orraveth: Bellwold/ })).toHaveAttribute('href', `/worlds/${orra}`);
   });
-
-  it('creates multiple characters on the signed-in account', async () => {
-    render(<CharacterRoster />);
-    await screen.findByRole('heading', { name: 'Rowan' });
-    fireEvent.change(screen.getByRole('textbox', { name: 'Character name' }), { target: { value: 'Willow' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Create character' }));
-    await screen.findByRole('heading', { name: 'Willow' });
-    expect(commandBodies[0]).toMatchObject({
-      type: 'character.create',
-      payload: { name: 'Willow' },
-    });
-    expect(screen.getByRole('button', { name: /Characters/ })).toHaveTextContent('3');
-  });
-
-  it('renames and archives characters through versioned engine commands', async () => {
-    render(<CharacterRoster />);
-    await screen.findByRole('heading', { name: 'Rowan' });
-    fireEvent.click(screen.getByRole('button', { name: 'Rename Rowan' }));
-    fireEvent.change(screen.getAllByRole('textbox', { name: 'Character name' })[0], { target: { value: 'Fern' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save name' }));
-    await screen.findByRole('heading', { name: 'Fern' });
-    fireEvent.click(screen.getByRole('button', { name: 'Archive Moss' }));
-    await screen.findByText('Archive Moss?');
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
-    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Moss' })).not.toBeInTheDocument());
-    expect(commandBodies.map((body) => body.type)).toEqual(['character.rename', 'character.archive']);
-    expect(commandBodies[0]).toMatchObject({ expectedVersion: 1, payload: { name: 'Fern' } });
-    expect(commandBodies[1]).toMatchObject({ expectedVersion: 1, characterId: secondCharacter.characterId });
-  });
-
-  it('keeps archived characters recoverable from the account roster', async () => {
-    render(<CharacterRoster />);
-    await screen.findByRole('heading', { name: 'Rowan' });
-    fireEvent.click(screen.getByRole('button', { name: 'Archive Moss' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
-    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Moss' })).not.toBeInTheDocument());
-
-    fireEvent.click(screen.getByRole('button', { name: /Archived/ }));
-    await screen.findByRole('heading', { name: 'Moss' });
-    fireEvent.click(screen.getByRole('button', { name: 'Restore Moss' }));
-    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Moss' })).not.toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: /Characters/ }));
-    await screen.findByRole('heading', { name: 'Moss' });
-    expect(commandBodies.map((body) => body.type)).toEqual(['character.archive', 'character.restore']);
-  });
-
-  it('marks dead characters as game over, leaves the session, and lets the account start fresh', async () => {
-    characters[0] = {
-      ...firstCharacter,
-      combat: {
-        encounterId: 'dead-encounter',
-        locationId: 'mossgate-clearing',
-        opponentNpcId: 'mossgate-training-sentinel',
-        opponentName: 'Practice Sentinel',
-        opponentStyle: 'steady',
-        round: 2,
-        playerHealth: 0,
-        playerMaxHealth: 6,
-        opponentHealth: 1,
-        opponentMaxHealth: 4,
-        status: 'defeat',
-        lastAction: 'attack',
-        lastNarration: 'You fall beneath the sentinel’s final strike.',
-      },
-    };
-    active = { id: 'dead-session', characterId: firstCharacter.characterId };
-    render(<CharacterRoster />);
-
-    expect(await screen.findByRole('complementary', { name: 'Active world session' })).toHaveTextContent('has died');
-    expect(screen.getByRole('button', { name: 'Leave world to start over' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Game over' })).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', { name: 'Leave world to start over' }));
-    await waitFor(() => expect(active).toBeNull());
-
-    fireEvent.change(screen.getByRole('textbox', { name: 'Character name' }), { target: { value: 'Rowan Again' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Create character' }));
-    await screen.findByRole('heading', { name: 'Rowan Again' });
-    expect(commandBodies.at(-1)).toMatchObject({
-      type: 'character.create',
-      payload: { name: 'Rowan Again' },
-    });
-  });
-
-  it('binds one character to the world session and requires leaving before switching', async () => {
-    render(<CharacterRoster />);
-    await screen.findByRole('heading', { name: 'Rowan' });
-    fireEvent.click(screen.getAllByRole('button', { name: 'Enter world' })[0]);
-    const activeBanner = await screen.findByRole('complementary', { name: 'Active world session' });
-    expect(activeBanner).toHaveTextContent('Playing as Rowan.');
-    expect(active?.characterId).toBe(firstCharacter.characterId);
-    expect(screen.getAllByRole('button', { name: 'Leave world to switch' })[0]).toBeEnabled();
-
-    fireEvent.click(screen.getAllByRole('button', { name: 'Leave world to switch' })[0]);
-    await waitFor(() => expect(active).toBeNull());
-    fireEvent.click(screen.getAllByRole('button', { name: 'Enter world' })[1]);
-    await waitFor(() => expect(active?.characterId).toBe(secondCharacter.characterId));
-    expect(navigate).toHaveBeenCalledWith('/world');
-  });
-});
-
-describe('guest entry', () => {
-  it('starts a guest identity and routes to world selection without creating a character yet', async () => {
-    apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
-      if (path === '/api/guest-session') {
-        expect(init?.method).toBe('POST');
-        return json({ player: { id: 'guest-player', displayName: 'Traveler GUEST' } });
-      }
-      return json({ message: 'Not found.' }, 404);
-    });
-
-    render(<GuestPlayButton />);
+  it('browses anonymously without creating a guest and resolves direct world detail URLs', async () => {
+    mocks.signedIn = false;
+    open(`/worlds/${orra}`);
+    await screen.findByRole('heading', { level: 1, name: 'Orraveth: Bellwold' });
+    expect(calls('POST', '/api/guest-session')).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Create new character' }));
     fireEvent.click(screen.getByRole('button', { name: 'Play as guest' }));
-
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/guest-world'));
-    expect(apiFetch.mock.calls.map(([path]) => path)).toEqual(['/api/guest-session']);
-    expect(screen.queryByRole('textbox', { name: 'Character name' })).not.toBeInTheDocument();
+    await screen.findByLabelText('Character name');
+    expect(calls('POST', '/api/guest-session')).toHaveLength(1);
   });
-
-  it('routes returning guests to world selection so they can resume or choose another world', async () => {
-    apiFetch.mockImplementation(async (path: string, _init?: RequestInit) => {
-      if (path === '/api/guest-session') {
-        return json({ player: { id: 'guest-player', displayName: 'Traveler GUEST' } });
-      }
-      return json({ message: 'Not found.' }, 404);
-    });
-
-    render(<GuestPlayButton />);
-    fireEvent.click(screen.getByRole('button', { name: 'Play as guest' }));
-
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/guest-world'));
-    expect(screen.queryByRole('textbox', { name: 'Character name' })).not.toBeInTheDocument();
-    expect(apiFetch.mock.calls.map(([path]) => path)).toEqual(['/api/guest-session']);
+  it('filters characters by immutable world binding and enters the card’s world despite stale local selection', async () => {
+    localStorage.setItem('mudd-world-instance-id', demo);
+    open(`/worlds/${orra}`);
+    await screen.findByRole('button', { name: 'Play as Moss' });
+    expect(screen.queryByRole('button', { name: 'Play as Rowan' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Play as Moss' }));
+    await screen.findByText(`World play: ${orra}`);
+    expect(JSON.parse(calls('POST', '/api/world-session')[0][1].body).worldInstanceId).toBe(orra);
   });
-
-  it('lets a guest create and enter a character in a selected world', async () => {
-    const guestCommands: Record<string, unknown>[] = [];
-    apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
-      if (path === '/api/guest-session') return json({ player: { id: 'guest-player', displayName: 'Traveler GUEST' } });
-      if (path === '/api/worlds') return json(availableWorlds);
-      if (path === '/api/characters') {
-        return json({
-          player: { id: 'guest-player', displayName: 'Traveler GUEST' },
-          characters: [],
-          activeWorldSession: null,
-          activeWorldSessions: [],
-        });
-      }
-      if (path === '/api/commands') {
-        guestCommands.push(JSON.parse(String(init?.body)));
-        return json({
-          receipt: { ok: true, commandId: 'guest-create', eventIds: [], newAggregateVersion: 1 },
-          streamId: 'guest-orraveth-character',
-        });
-      }
-      if (path === '/api/world-session' && init?.method === 'POST') {
-        return json({ sessionId: 'guest-world-session', characterId: 'guest-orraveth-character' });
-      }
-      return json({ message: 'Not found.' }, 404);
-    });
-
-    render(<GuestWorldPage />);
-    fireEvent.click(await screen.findByRole('button', { name: /Orraveth: Bellwold/ }));
-    fireEvent.change(screen.getByRole('textbox', { name: 'New character name' }), { target: { value: 'Willow' } });
+  it('creates a classless character and enters it with one explicit action', async () => {
+    open(`/worlds/${demo}`); await fillName();
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create & play' }));
+    await screen.findByText(`World play: ${demo}`);
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toMatchObject({ worldInstanceId: demo, payload: { name: 'Aster' } });
+  });
+  it('requires a class only for a world with a class catalog; guests use the same flow', async () => {
+    mocks.signedIn = false; guest = true; characters = [];
+    open(`/worlds/${orra}`); await fillName();
+    expect(screen.getByRole('button', { name: 'Create & play' })).toBeDisabled();
     fireEvent.click(screen.getByRole('radio', { name: /Warden/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Create and enter' }));
-
-    expect(await screen.findByText('World play')).toBeInTheDocument();
-    expect(guestCommands[0]).toMatchObject({
-      type: 'character.create',
-      worldInstanceId: 'orraveth-bellwold-instance',
-      payload: { name: 'Willow', classId: 'warden' },
-    });
-    const sessionRequest = apiFetch.mock.calls.find(([path]) => path === '/api/world-session' && (apiFetch.mock.calls.find(([candidate]) => candidate === path)?.[1] as RequestInit | undefined)?.method === 'POST');
-    expect(JSON.parse(String(sessionRequest?.[1]?.body))).toMatchObject({
-      worldInstanceId: 'orraveth-bellwold-instance',
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create & play' }));
+    await screen.findByText(`World play: ${orra}`);
+    expect(commands[0]).toMatchObject({ worldInstanceId: orra, payload: { classId: 'warden' } });
+  });
+  it('retains a successfully created character when joining fails and retries entry, never creation', async () => {
+    entryFailure = true; open(`/worlds/${demo}`); await fillName();
+    fireEvent.click(screen.getByRole('button', { name: 'Create & play' }));
+    await screen.findByRole('button', { name: 'Retry entering world' });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Entry temporarily unavailable');
+    entryFailure = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Retry entering world' }));
+    await screen.findByText(`World play: ${demo}`);
+    expect(commands).toHaveLength(1);
+  });
+  it('requires explicit leave-and-switch and preserves sessions in unrelated worlds', async () => {
+    characters.push({ ...fixture, characterId: three, name: 'Aster' });
+    sessions = [{ id: sessionId, characterId: one, worldInstanceId: demo }, { id: sessionId, characterId: two, worldInstanceId: orra }];
+    open(`/worlds/${demo}`);
+    fireEvent.click(await screen.findByRole('button', { name: 'Play as Aster' }));
+    await screen.findByRole('region', { name: 'Switch characters' });
+    expect(calls('DELETE', '/api/world-session')).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Leave and play as Aster' }));
+    await screen.findByText(`World play: ${demo}`);
+    expect(sessions.find((item) => item.worldInstanceId === orra)?.characterId).toBe(two);
+    expect(sessions.find((item) => item.worldInstanceId === demo)?.characterId).toBe(three);
+  });
+  it('offers return to the active character without ending the session', async () => {
+    characters.push({ ...fixture, characterId: three, name: 'Aster' });
+    sessions = [{ id: sessionId, characterId: one, worldInstanceId: demo }];
+    open(`/worlds/${demo}`);
+    fireEvent.click(await screen.findByRole('button', { name: 'Play as Aster' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Return to active character' }));
+    await screen.findByText(`World play: ${demo}`);
+    expect(calls('DELETE', '/api/world-session')).toHaveLength(0);
+  });
+  it('leaves gameplay back to that world detail and handles refresh of direct play URLs', async () => {
+    sessions = [{ id: sessionId, characterId: two, worldInstanceId: orra }];
+    open(`/worlds/${orra}/play`);
+    fireEvent.click(await screen.findByRole('button', { name: 'Leave world' }));
+    await screen.findByRole('heading', { level: 1, name: 'Orraveth: Bellwold' });
+    expect(location.pathname).toBe(`/worlds/${orra}`);
+  });
+  it('handles legacy routes and browser back/forward without automatically joining', async () => {
+    open('/characters');
+    await screen.findByRole('heading', { name: 'Recent characters' });
+    visit(`/worlds/${orra}`);
+    await screen.findByRole('heading', { level: 1, name: 'Orraveth: Bellwold' });
+    visit('/');
+    await screen.findByRole('heading', { name: 'Recent characters' });
+    visit('/guest-world');
+    await screen.findByRole('heading', { name: 'Recent characters' });
+    expect(calls('POST', '/api/world-session')).toHaveLength(0);
+  });
+  it('shows a useful unknown world or missing-session screen, not gameplay', async () => {
+    open('/worlds/missing');
+    await screen.findByRole('heading', { name: 'World not found' });
+    visit(`/worlds/${demo}/play`);
+    await screen.findByRole('heading', { name: 'Choose a character to enter' });
+    expect(calls('POST', '/api/world-session')).toHaveLength(0);
+  });
+  it('preserves world/creation intent across authentication', async () => {
+    mocks.signedIn = false; open(`/worlds/${orra}?create=1`);
+    fireEvent.click(await screen.findByRole('link', { name: 'Create account' }));
+    expect(sessionStorage.getItem('mudd-entry-intent')).toBe(`/worlds/${orra}?create=1`);
+    visit('/sign-up');
+    await screen.findByText(`Sign up return: /worlds/${orra}?create=1`);
+  });
+  it('does not disguise a roster server failure as an anonymous guest session', async () => {
+    rosterFailure = true; open(`/worlds/${demo}`);
+    await screen.findByText('Roster unavailable');
+    expect(screen.queryByRole('button', { name: 'Play as guest' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create new character' })).toBeDisabled();
+    rosterFailure = false; fireEvent.click(screen.getByRole('button', { name: 'Retry characters' }));
+    await screen.findByRole('button', { name: 'Play as Rowan' });
+  });
+  it('keeps rename/archive/restore as secondary actions and preserves death eligibility', async () => {
+    characters[0].health = { current: 0, maximum: 10 };
+    open(`/worlds/${demo}`);
+    expect(await screen.findByRole('button', { name: 'Play as Rowan' })).toBeDisabled();
+    fireEvent.click(screen.getByText('Manage'));
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm archive' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Play as Rowan' })).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Show archived' }));
+    fireEvent.click(await screen.findByText('Manage'));
+    fireEvent.click(screen.getByRole('button', { name: 'Restore' }));
+    await waitFor(() => expect(commands.some((body) => body.type === 'character.restore')).toBe(true));
+    fireEvent.click(screen.getByRole('button', { name: 'Show current characters' }));
+    fireEvent.click(await screen.findByText('Manage'));
+    fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+    fireEvent.change(screen.getByLabelText('Character name'), { target: { value: 'Rowan II' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save name' }));
+    await screen.findByRole('button', { name: 'Play as Rowan II' });
   });
 });

@@ -33,6 +33,8 @@ export interface RegisteredWorld {
   readonly worldInstanceId: string;
   readonly world: WorldPackDraft;
   readonly summary: string;
+  readonly introduction?: readonly string[];
+  readonly coverImage?: string;
 }
 
 export interface WorldRuntime extends RegisteredWorld {
@@ -45,11 +47,19 @@ export const registeredWorlds: readonly RegisteredWorld[] = [
     worldInstanceId: DEMO_WORLD_INSTANCE_ID,
     world: demoWorld,
     summary: 'A first journey through Mossgate, Glasswater, and the old bell tower.',
+    introduction: [
+      'Begin in Mossgate Clearing and follow the paths through Glasswater and the old bell tower.',
+      'Meet travelers, uncover local puzzles, and make your way through a shared world. This is the MUDD demonstration world.',
+    ],
   },
   {
     worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
     world: orravethWorld,
     summary: ORRAVETH_WORLD_SUMMARY,
+    introduction: [
+      'Start in Bellwold, a trading settlement near the Crown of Heskar frontier. Its market, homes, and roads hold stories of the people who live here.',
+      'Talk with the townsfolk, explore beyond the village, and discover the wider world of Orraveth. The Orraveth Codex records its people, places, and history.',
+    ],
   },
 ];
 
@@ -115,6 +125,8 @@ export function toWorldSummary(world: RegisteredWorld) {
     packId: world.world.packId,
     name: world.world.displayName,
     summary: world.summary,
+    ...(world.introduction ? { introduction: [...world.introduction] } : {}),
+    ...(world.coverImage ? { coverImage: world.coverImage } : {}),
     ...(world.world.classCatalog ? { classCatalog: world.world.classCatalog } : {}),
   };
 }

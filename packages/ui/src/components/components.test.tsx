@@ -11,6 +11,9 @@ import { TextInput } from './TextInput.js';
 import { ClassChoice } from './ClassChoice.js';
 import { ClassAbilityList } from './ClassAbilityList.js';
 import type { CharacterClassDefinition, AvailableClassAction } from './classTypes.js';
+import { WorldCard } from './WorldCard.js';
+import { WorldHero } from './WorldHero.js';
+import { CharacterEntryCard } from './CharacterEntryCard.js';
 
 const classFixture: CharacterClassDefinition = {
   id: 'warden', revision: 1, label: 'Warden', description: 'A steady protector.',
@@ -24,6 +27,45 @@ const abilityFixture: AvailableClassAction = {
 };
 
 describe('@mudd/ui components', () => {
+  it('renders world navigation as a native link with meaningful text and recovers from failed art', () => {
+    render(<WorldCard name="Orraveth" summary="A salt-road world." href="/worlds/orraveth" imageSrc="/missing.png" />);
+    const link = screen.getByRole('link', { name: /Orraveth.*A salt-road world/i });
+    expect(link).toHaveAttribute('href', '/worlds/orraveth');
+    fireEvent.error(link.querySelector('img')!);
+    expect(link).toHaveClass('is-text-cover');
+    expect(link.querySelector('img')).toBeNull();
+  });
+
+  it('uses heading hierarchy and renders world introduction as text', () => {
+    render(<WorldHero name="The Waystone Path" summary="An old road." introduction={['Listen for the bells.']} />);
+    expect(screen.getByRole('heading', { level: 1, name: 'The Waystone Path' })).toBeInTheDocument();
+    expect(screen.getByText('Listen for the bells.')).toBeInTheDocument();
+  });
+
+  it('exposes character details and calls its explicit entry action', () => {
+    const onPlay = vi.fn();
+    render(<CharacterEntryCard
+      name="Mira" worldName="Orraveth" locationLabel="Salt gate" classLabel="Scout" level={4}
+      statusLabel="Ready" actionLabel="Continue as Mira" onPlay={onPlay}
+      secondaryActions={<button type="button">Manage</button>}
+    />);
+    expect(screen.getByRole('heading', { level: 3, name: 'Mira' })).toBeInTheDocument();
+    expect(screen.getByText('Salt gate')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue as Mira' }));
+    expect(onPlay).toHaveBeenCalledOnce();
+    expect(screen.getByRole('button', { name: 'Manage' })).toBeInTheDocument();
+  });
+
+  it('prevents entry while busy and announces the pending state', () => {
+    const onPlay = vi.fn();
+    render(<CharacterEntryCard name="Mira" locationLabel="Salt gate" statusLabel="Ready" actionLabel="Play" onPlay={onPlay} busy />);
+    const button = screen.getByRole('button', { name: 'Opening world…' });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    fireEvent.click(button);
+    expect(onPlay).not.toHaveBeenCalled();
+  });
+
   it('renders accessible button actions and disabled state', () => {
     const onClick = vi.fn();
     render(<Button onClick={onClick}>Inspect</Button>);

@@ -91,6 +91,7 @@ export const CharacterRosterSnapshotSchema = z.object({
   characters: z.array(CharacterProjectionSchema.extend({
     locationTitle: z.string(),
     worldName: z.string().optional(),
+    lastPlayedAt: z.string().datetime().nullable().optional(),
   })),
   activeWorldSession: z.object({ id: IdSchema, characterId: IdSchema }).nullable(),
   activeWorldSessions: z.array(z.object({
@@ -105,6 +106,8 @@ export const WorldListSchema = z.array(z.object({
   packId: z.string().min(1),
   name: z.string().min(1),
   summary: z.string().min(1),
+  introduction: z.array(z.string()).optional(),
+  coverImage: z.string().optional(),
   classCatalog: CharacterClassCatalogSchema.optional(),
 }));
 export type WorldSummary = z.infer<typeof WorldListSchema>[number];
@@ -130,6 +133,15 @@ const queryResultSchema = <T extends z.ZodType>(value: T) => z.object({
 export interface ClientOptions {
   worldInstanceId: string;
   fetcher?: typeof fetch;
+  /** Same-origin app mount path, e.g. /mudd. Defaults to the origin root. */
+  basePath?: string;
+}
+
+export class MuddHttpError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = 'MuddHttpError';
+  }
 }
 
 export class MuddHttpClient {
@@ -180,7 +192,7 @@ export class MuddHttpClient {
   }
 
   async leaveWorld(): Promise<void> {
-    const response = await this.fetcher('/api/world-session', {
+    const response = await this.fetcher(`${this.options.basePath?.replace(/\/$/, '') ?? ''}/api/world-session`, {
       method: 'DELETE',
       credentials: 'same-origin',
       headers: {
@@ -193,7 +205,7 @@ export class MuddHttpClient {
       const message = body && typeof body === 'object' && 'message' in body && typeof body.message === 'string'
         ? body.message
         : undefined;
-      throw new Error(message ?? `Request failed (${response.status}).`);
+      throw new MuddHttpError(message ?? `Request failed (${response.status}).`, response.status);
     }
   }
 
@@ -786,7 +798,7 @@ export class MuddHttpClient {
     init: RequestInit,
     schema: Schema,
   ): Promise<z.output<Schema>> {
-    const response = await this.fetcher(path, {
+    const response = await this.fetcher(`${this.options.basePath?.replace(/\/$/, '') ?? ''}${path}`, {
       ...init,
       credentials: 'same-origin',
       headers: {
@@ -800,7 +812,7 @@ export class MuddHttpClient {
       const message = body && typeof body === 'object' && 'message' in body && typeof body.message === 'string'
         ? body.message
         : undefined;
-      throw new Error(message ?? `Request failed (${response.status}).`);
+      throw new MuddHttpError(message ?? `Request failed (${response.status}).`, response.status);
     }
     const parsed = schema.safeParse(body);
     if (!parsed.success) throw new Error('The server returned an invalid response.');

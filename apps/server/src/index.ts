@@ -2,7 +2,7 @@ import express, { type Request, type Response } from 'express';
 import cors from 'cors';
 import { getAuth, clerkMiddleware } from '@clerk/express';
 import { publishableKeyFromHost } from '@clerk/shared/keys';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import {
   ArchiveCharacterCommandSchema,
@@ -40,12 +40,12 @@ import {
 } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID } from '@mudd/world-demo';
 import { db, pool } from './db/client.js';
-import { characters, durableEffects, worldSessions } from './db/schema.js';
+import { characters, worldSessions } from './db/schema.js';
 import { PostgresEventStore } from './persistence/postgres-event-store.js';
 import { projectLocationWithGroups } from './location-group-projection.js';
 import { listRoomOccupants, touchWorldSessionPresence } from './room-presence-service.js';
 import { createAutonomousNpcScheduler } from './autonomous-npc-scheduler.js';
-import { LOCATION_ENTERED_EFFECT } from './durable-effect-contracts.js';
+import { enterWorld } from './world-entry.js';
 import { shouldInitializeCharacterWallet } from './world-wallet-policy.js';
 import { projectWorldMap } from './world-map-projection.js';
 import {
@@ -318,6 +318,7 @@ app.get('/api/characters', async (req, res, next) => {
     const rows = await db.select({
       id: characters.id,
       worldInstanceId: characters.worldInstanceId,
+      lastPlayedAt: characters.lastPlayedAt,
     }).from(characters).where(eq(characters.playerId, identity.playerId))
       .orderBy(desc(characters.createdAt));
     const characterList = await Promise.all(rows.map(async (row) => {
@@ -338,6 +339,7 @@ app.get('/api/characters', async (req, res, next) => {
         ...projection,
         locationTitle: locationName.qualifiedName,
         worldName: runtime.world.displayName,
+        lastPlayedAt: row.lastPlayedAt?.toISOString() ?? null,
       };
     }));
     const activeSessions = await db.select().from(worldSessions)
@@ -382,51 +384,9 @@ app.post('/api/world-session', async (req, res, next) => {
       return res.status(409).json({ message: 'Your character has died. Start a new character to begin again.' });
     }
 
-    const result = await db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT id FROM players WHERE id = ${identity.playerId} FOR UPDATE`);
-      await tx.execute(sql`SELECT id FROM characters WHERE id = ${input.data.characterId} FOR UPDATE`);
-      const [character] = await tx.select({ id: characters.id }).from(characters).where(and(
-        eq(characters.id, input.data.characterId),
-        eq(characters.playerId, identity.playerId),
-        eq(characters.worldInstanceId, worldInstanceId),
-        isNull(characters.archivedAt),
-      )).limit(1);
-      if (!character) return { kind: 'missing' as const };
-
-      const [current] = await tx.select().from(worldSessions).where(and(
-        eq(worldSessions.playerId, identity.playerId),
-        eq(worldSessions.worldInstanceId, worldInstanceId),
-      )).limit(1);
-      if (current) {
-        return current.characterId === character.id
-          ? { kind: 'active' as const, session: current }
-          : { kind: 'occupied' as const };
-      }
-
-      const [created] = await tx.insert(worldSessions).values({
-        id: globalThis.crypto.randomUUID(),
-        playerId: identity.playerId,
-        worldInstanceId,
-        characterId: character.id,
-      }).returning();
-      if (!created) throw new Error('Could not start the world session.');
-      if (characterProjection && !characterProjection.archived) {
-        const effectId = globalThis.crypto.randomUUID();
-        await tx.insert(durableEffects).values({
-          id: effectId,
-          worldInstanceId,
-          sourceStreamId: character.id,
-          causationCommandId: created.id,
-          effectType: LOCATION_ENTERED_EFFECT,
-          effectVersion: 1,
-          payload: {
-            characterId: character.id,
-            toLocationId: characterProjection.locationId,
-          },
-          dedupeKey: `world-session:${created.id}`,
-        });
-      }
-      return { kind: 'active' as const, session: created };
+    const result = await enterWorld(db, {
+      playerId: identity.playerId, characterId: input.data.characterId, worldInstanceId,
+      locationId: characterProjection && !characterProjection.archived ? characterProjection.locationId : undefined,
     });
 
     if (result.kind === 'missing') return res.status(404).json({ message: 'That character is unavailable.' });

@@ -30,7 +30,7 @@ import { TerminalPanel } from "./TerminalPanel.js";
 import { WorldMapPanel } from "./WorldMapPanel.js";
 import CodexScreen from "./codex/CodexScreen.js";
 
-const client = new MuddHttpClient({ worldInstanceId: "mudd-demo-instance" });
+const client = new MuddHttpClient({ worldInstanceId: "mudd-demo-instance", basePath: import.meta.env.BASE_URL });
 type ClassCatalogSummary = { id: string; revision: number; classes: CharacterClassDefinition[] };
 type CharacterClassSnapshot = CharacterClassDefinition & { catalogId: string; catalogRevision: number };
 type ClassAwareCharacter = NonNullable<GameSnapshot["character"]> & {

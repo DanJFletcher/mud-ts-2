@@ -1,0 +1,56 @@
+.lobby-shell { min-height: 100dvh; height: auto; overflow: visible; padding-bottom: 3rem; background: var(--mudd-bg); color: var(--mudd-text); }
+.lobby-header { max-width: 1160px; margin: auto; padding: 1.1rem 1.5rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-bottom: 1px solid var(--mudd-border); }
+.lobby-brand { display: inline-flex; align-items: center; gap: .65rem; font-family: "DM Mono", monospace; font-weight: 600; letter-spacing: .14em; text-decoration: none; }
+.lobby-brand img { width: 30px; height: 30px; }
+.lobby-header nav { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; font-size: .88rem; }
+.lobby-header nav a { padding-block: .6rem; text-decoration: none; }
+.lobby-header a:hover, .lobby-back:hover { color: var(--mudd-accent); }
+.lobby-content { width: min(100%, 1080px); box-sizing: border-box; margin: auto; padding: 2.5rem 1.5rem; }
+.lobby-content h1, .lobby-content h2, .lobby-content h3 { font-family: Literata, Georgia, serif; font-weight: 500; line-height: 1.25; }
+.lobby-content h1 { font-size: clamp(1.8rem, 4vw, 2.65rem); }
+.lobby-content h2 { font-size: 1.35rem; margin: 0 0 1.2rem; }
+.lobby-content p { line-height: 1.65; }
+.lobby-content a:focus-visible, .character-options summary:focus-visible { outline: 2px solid var(--mudd-accent); outline-offset: 4px; }
+.lobby-intro { margin-bottom: 2.5rem; }
+.lobby-intro h1 { margin: .5rem 0; }
+.lobby-intro > p:last-child { color: var(--mudd-muted); margin: .75rem 0; }
+.lobby-eyebrow { color: var(--mudd-accent); font: .7rem/1.5 "DM Mono", monospace; letter-spacing: .09em; text-transform: uppercase; }
+.lobby-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 3rem; align-items: start; }
+.lobby-world-list, .lobby-character-list { display: grid; gap: 1rem; }
+.lobby-world-list > :nth-child(2n) { background: radial-gradient(ellipse at 78% 10%, #7e715754, transparent 40%), linear-gradient(125deg, #23383c, #222925); }
+.lobby-small { color: var(--mudd-muted); font-size: .8rem; margin: .25rem 0; }
+.lobby-empty { padding: 1.2rem; border: 1px dashed var(--mudd-border); border-radius: .8rem; color: var(--mudd-muted); }
+.lobby-empty h3 { color: var(--mudd-text); margin-top: 0; }
+.lobby-back { display: inline-block; margin-bottom: 1.2rem; font-size: .85rem; }
+.lobby-world-characters, .lobby-create { margin-top: 2.3rem; }
+.lobby-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.lobby-section-heading h2 { margin: 0; }
+.lobby-world-characters .lobby-character-list { grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr)); }
+.lobby-create { border-top: 1px solid var(--mudd-border); padding-top: 2rem; }
+.lobby-create > p { max-width: 650px; color: var(--mudd-muted); }
+.lobby-form { display: grid; gap: .8rem; max-width: 720px; }
+.lobby-form > label { font-weight: 600; }
+.lobby-form > input { max-width: 440px; }
+.lobby-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }
+.lobby-error { padding: 1rem; margin: 1rem 0; color: var(--mudd-error); border: 1px solid currentColor; border-radius: .75rem; overflow-wrap: anywhere; }
+.lobby-switch { padding: 1.25rem; border: 1px solid var(--mudd-accent); border-radius: .75rem; margin-block: 1rem; background: var(--mudd-surface); }
+.lobby-switch h2 { margin-bottom: .5rem; }
+.character-options { position: relative; font-size: .8rem; }
+.character-options summary { cursor: pointer; padding: .5rem; color: var(--mudd-muted); }
+.character-options[open] > div { position: absolute; z-index: 2; right: 0; background: var(--mudd-surface-raised); border: 1px solid var(--mudd-border); border-radius: .6rem; padding: .4rem; box-shadow: var(--mudd-shadow); display: grid; }
+.lobby-leave-error { position: fixed; inset: 1rem 1rem auto; z-index: 100; background: var(--mudd-surface); color: var(--mudd-error); padding: 1rem; border: 1px solid currentColor; }
+@media (max-width: 700px) {
+  .lobby-header { padding: .7rem 1rem; gap: .5rem; }
+  .lobby-header nav { gap: .7rem; font-size: .8rem; }
+  .lobby-brand { font-size: .85rem; gap: .4rem; }
+  .lobby-brand img { width: 24px; height: 24px; }
+  .lobby-content { padding: 1.5rem 1rem; }
+  .lobby-intro { margin-bottom: 1.6rem; }
+  .lobby-grid { display: flex; flex-direction: column; gap: 2rem; }
+  .lobby-worlds, .lobby-recent { width: 100%; min-width: 0; }
+  .lobby-recent { order: -1; }
+}
+@media (max-width: 360px) {
+  .lobby-header { flex-wrap: wrap; }
+  .lobby-header nav { width: 100%; justify-content: space-between; }
+}

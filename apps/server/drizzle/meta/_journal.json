@@ -50,6 +50,13 @@
       "when": 1792630980160,
       "tag": "0006_bizarre_sumo",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792772095636,
+      "tag": "0007_freezing_stature",
+      "breakpoints": true
     }
   ]
 }

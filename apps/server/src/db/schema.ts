@@ -36,6 +36,7 @@ export const characters = pgTable('characters', {
   worldInstanceId: text('world_instance_id').notNull(),
   name: text('name').notNull(),
   archivedAt: timestamp('archived_at', { withTimezone: true }),
+  lastPlayedAt: timestamp('last_played_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('characters_owner_instance_idx').on(table.playerId, table.worldInstanceId),

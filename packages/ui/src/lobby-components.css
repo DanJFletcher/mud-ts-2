@@ -1,0 +1,77 @@
+.mudd-world-card,
+.mudd-world-hero {
+  --lobby-ink: #f6f2e7;
+  --lobby-soft: #d9ddcf;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  color: var(--lobby-ink);
+  background:
+    radial-gradient(ellipse at 78% 10%, color-mix(in srgb, var(--mudd-warm) 28%, transparent), transparent 35%),
+    linear-gradient(132deg, color-mix(in srgb, var(--mudd-accent-strong) 92%, #17221d), color-mix(in srgb, var(--mudd-surface-raised) 55%, #293832));
+}
+.mudd-world-card {
+  display: flex;
+  min-height: 14.8rem;
+  align-items: flex-end;
+  border: 1px solid color-mix(in srgb, var(--mudd-warm) 38%, transparent);
+  border-radius: 1.05rem;
+  text-decoration: none;
+  box-shadow: var(--mudd-shadow);
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+.mudd-world-card:hover { transform: translateY(-3px); border-color: var(--mudd-warm); box-shadow: 0 18px 40px color-mix(in srgb, var(--mudd-text) 18%, transparent); }
+.mudd-world-card:focus-visible { outline: 3px solid var(--mudd-warm); outline-offset: 4px; }
+.mudd-world-card__image, .mudd-world-hero__image { position: absolute; z-index: -2; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.mudd-world-card__veil, .mudd-world-hero__veil {
+  position: absolute; z-index: -1; inset: 0;
+  background: linear-gradient(180deg, rgb(17 25 22 / 4%) 4%, rgb(17 25 22 / 32%) 36%, rgb(17 25 22 / 94%) 100%);
+}
+.mudd-world-card.is-text-cover::before, .mudd-world-hero.is-text-cover::before {
+  position: absolute; z-index: -1; inset: 0; content: ""; opacity: .45;
+  background: repeating-linear-gradient(118deg, transparent 0 2.7rem, rgb(222 205 159 / 10%) 2.75rem 2.82rem, transparent 2.9rem 5.8rem);
+}
+.mudd-world-card__content { display: grid; width: 100%; gap: .62rem; padding: 1.35rem; }
+.mudd-world-card__kicker, .mudd-world-hero__eyebrow, .mudd-character-entry__eyebrow {
+  margin: 0; color: var(--mudd-warm); font: 500 .68rem/1.4 "DM Mono", monospace; letter-spacing: .14em; text-transform: uppercase;
+}
+.mudd-world-card__title { margin: 0; max-width: 20ch; font: 600 clamp(1.55rem, 3.2vw, 2.15rem)/1.12 "Literata", Georgia, serif; letter-spacing: -.035em; overflow-wrap: anywhere; }
+.mudd-world-card__summary { max-width: 54ch; color: var(--lobby-soft); font-size: .92rem; line-height: 1.55; overflow-wrap: anywhere; }
+.mudd-world-card__link-cue { display: flex; justify-content: space-between; align-items: center; margin-top: .3rem; padding-top: .75rem; border-top: 1px solid rgb(246 242 231 / 22%); color: var(--lobby-ink); font: 500 .72rem/1.4 "DM Mono", monospace; letter-spacing: .07em; text-transform: uppercase; }
+.mudd-world-card__link-cue span { color: var(--mudd-warm); font-size: 1.1rem; transition: transform 180ms ease; }
+.mudd-world-card:hover .mudd-world-card__link-cue span { transform: translate(2px, -2px); }
+.mudd-world-hero { min-height: 19rem; display: flex; align-items: flex-end; border: 1px solid color-mix(in srgb, var(--mudd-warm) 30%, var(--mudd-border)); border-radius: 1.2rem; }
+.mudd-world-hero__veil { background: linear-gradient(90deg, rgb(17 25 22 / 92%) 0%, rgb(17 25 22 / 72%) 57%, rgb(17 25 22 / 12%) 100%), linear-gradient(0deg, rgb(17 25 22 / 56%), transparent 75%); }
+.mudd-world-hero__content { width: min(100%, 66rem); padding: clamp(1.4rem, 5vw, 3.25rem); }
+.mudd-world-hero__title { max-width: 18ch; margin: .3rem 0 .65rem; color: var(--lobby-ink); font: 600 clamp(2.2rem, 7vw, 4.5rem)/1.03 "Literata", Georgia, serif; letter-spacing: -.05em; overflow-wrap: anywhere; }
+.mudd-world-hero__summary { max-width: 58ch; margin: 0; color: var(--lobby-soft); font-size: clamp(1rem, 2vw, 1.12rem); line-height: 1.65; }
+.mudd-world-hero__introduction { max-width: 68ch; display: grid; gap: .75rem; margin-top: 1.1rem; color: var(--lobby-ink); line-height: 1.7; }
+.mudd-world-hero__introduction p { margin: 0; }
+.mudd-character-entry {
+  display: grid; gap: 1rem; min-width: 0; padding: 1.1rem;
+  border: 1px solid var(--mudd-border); border-radius: 1rem;
+  background: linear-gradient(145deg, var(--mudd-surface), color-mix(in srgb, var(--mudd-accent) 4%, var(--mudd-surface)));
+  box-shadow: var(--mudd-shadow);
+}
+.mudd-character-entry__top { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; }
+.mudd-character-entry__identity { min-width: 0; }
+.mudd-character-entry__eyebrow { color: var(--mudd-muted); letter-spacing: .1em; overflow-wrap: anywhere; }
+.mudd-character-entry__name { margin: .28rem 0 0; color: var(--mudd-text); font: 600 1.35rem/1.2 "Literata", Georgia, serif; letter-spacing: -.02em; overflow-wrap: anywhere; }
+.mudd-character-entry__details { margin: .3rem 0 0; color: var(--mudd-muted); font-size: .88rem; line-height: 1.5; overflow-wrap: anywhere; }
+.mudd-character-entry__secondary { flex: 0 0 auto; }
+.mudd-character-entry__facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; margin: 0; padding: .75rem 0; border-top: 1px solid var(--mudd-border); border-bottom: 1px solid var(--mudd-border); }
+.mudd-character-entry__facts div { min-width: 0; }
+.mudd-character-entry__facts dt { color: var(--mudd-muted); font: 500 .65rem/1.4 "DM Mono", monospace; letter-spacing: .1em; text-transform: uppercase; }
+.mudd-character-entry__facts dd { margin: .2rem 0 0; color: var(--mudd-text); line-height: 1.45; overflow-wrap: anywhere; }
+.mudd-character-entry__action { justify-self: start; min-width: min(100%, 12rem); }
+.mudd-character-entry__content { min-width: 0; padding-top: .8rem; border-top: 1px solid var(--mudd-border); }
+@media (max-width: 420px) {
+  .mudd-world-card { min-height: 13rem; }
+  .mudd-world-card__content { padding: 1rem; }
+  .mudd-world-hero { min-height: 17rem; border-radius: .85rem; }
+  .mudd-world-hero__veil { background: linear-gradient(90deg, rgb(17 25 22 / 88%), rgb(17 25 22 / 48%)), linear-gradient(0deg, rgb(17 25 22 / 60%), transparent); }
+  .mudd-character-entry { padding: .9rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mudd-world-card, .mudd-world-card__link-cue span { transition: none; }
+}
