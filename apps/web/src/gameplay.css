@@ -754,13 +754,20 @@
   display: flex;
   min-height: 44px;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  justify-content: flex-start;
+  gap: 8px;
   padding: 0 8px;
   border-bottom: 1px solid var(--mudd-border);
 }
 
 .focused-room-chat__header .focused-kicker { margin: 0; }
+
+.focused-room-chat__controls {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+}
 
 .focused-room-chat__fullscreen-button {
   display: grid;
@@ -830,6 +837,7 @@
 }
 
 .focused-room-chat__status {
+  margin-left: auto;
   color: var(--mudd-muted);
   font: 500 .62rem/1.3 "DM Mono", monospace;
   letter-spacing: .04em;

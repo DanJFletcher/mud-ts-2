@@ -244,31 +244,33 @@ export function RoomChatPanel({
         <span className="focused-room-chat__status" aria-live="polite">
           {loadError ? 'Reconnecting' : loading ? 'Connecting' : 'Room'}
         </span>
-        {!fullscreenPresent && (
-          <DisclosureButton
-            className="focused-room-chat__fullscreen-button focused-room-chat__collapse-button"
-            onClick={() => setCollapsed((current) => !current)}
-            aria-label={collapsed ? 'Expand room chat' : 'Collapse room chat'}
-            title={collapsed ? 'Expand room chat' : 'Collapse room chat'}
-            controls="room-chat-content"
-            expanded={!collapsed}
-            indicator={collapsed ? <ChevronUp size={17} aria-hidden="true" /> : <ChevronDown size={17} aria-hidden="true" />}
+        <div className="focused-room-chat__controls">
+          {!fullscreenPresent && (
+            <DisclosureButton
+              className="focused-room-chat__fullscreen-button focused-room-chat__collapse-button"
+              onClick={() => setCollapsed((current) => !current)}
+              aria-label={collapsed ? 'Expand room chat' : 'Collapse room chat'}
+              title={collapsed ? 'Expand room chat' : 'Collapse room chat'}
+              controls="room-chat-content"
+              expanded={!collapsed}
+              indicator={collapsed ? <ChevronUp size={17} aria-hidden="true" /> : <ChevronDown size={17} aria-hidden="true" />}
+            >
+              <span className="focused-panel-disclosure-label">
+                {collapsed ? 'Expand room chat' : 'Collapse room chat'}
+              </span>
+            </DisclosureButton>
+          )}
+          <button
+            className="focused-room-chat__fullscreen-button"
+            type="button"
+            ref={fullscreenPresent ? closeButtonRef : expandButtonRef}
+            onClick={() => onFullscreenChange(!fullscreenPresent)}
+            aria-label={fullscreenPresent ? 'Close full-screen chat' : 'Open chat full screen'}
+            title={fullscreenPresent ? 'Close chat' : 'Open full-screen chat'}
           >
-            <span className="focused-panel-disclosure-label">
-              {collapsed ? 'Expand room chat' : 'Collapse room chat'}
-            </span>
-          </DisclosureButton>
-        )}
-        <button
-          className="focused-room-chat__fullscreen-button"
-          type="button"
-          ref={fullscreenPresent ? closeButtonRef : expandButtonRef}
-          onClick={() => onFullscreenChange(!fullscreenPresent)}
-          aria-label={fullscreenPresent ? 'Close full-screen chat' : 'Open chat full screen'}
-          title={fullscreenPresent ? 'Close chat' : 'Open full-screen chat'}
-        >
-          {fullscreenPresent ? <X size={17} aria-hidden="true" /> : <Maximize2 size={17} aria-hidden="true" />}
-        </button>
+            {fullscreenPresent ? <X size={17} aria-hidden="true" /> : <Maximize2 size={17} aria-hidden="true" />}
+          </button>
+        </div>
       </div>
       <div
         className="focused-room-chat__messages"

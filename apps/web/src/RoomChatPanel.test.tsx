@@ -68,6 +68,20 @@ describe('RoomChatPanel message polling', () => {
     vi.restoreAllMocks();
   });
 
+  it('groups the room chat controls at the right edge of the header', async () => {
+    const { container } = render(
+      <RoomChatPanel roomId="test-room" fullscreen={false} onFullscreenChange={vi.fn()} />,
+    );
+    const header = container.querySelector('.focused-room-chat__header')!;
+    const controls = header.querySelector('.focused-room-chat__controls')!;
+
+    await screen.findByText('Room');
+    expect(header.lastElementChild).toBe(controls);
+    expect(controls).toContainElement(screen.getByRole('button', { name: 'Collapse room chat' }));
+    expect(controls).toContainElement(screen.getByRole('button', { name: 'Open chat full screen' }));
+    expect(screen.getByText('Room')).toBeInTheDocument();
+  });
+
   it('does not skip another speaker message arriving before the send acknowledgement', async () => {
     storedMessages = [{
       id: 10,
