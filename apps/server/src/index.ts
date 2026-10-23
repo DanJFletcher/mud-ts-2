@@ -1,4 +1,5 @@
 import express, { type Request, type Response } from 'express';
+import { fileURLToPath } from 'node:url';
 import cors from 'cors';
 import { getAuth, clerkMiddleware } from '@clerk/express';
 import { publishableKeyFromHost } from '@clerk/shared/keys';
@@ -89,7 +90,10 @@ const allowedOrigins = parseAllowedOrigins(
     ? undefined
     : [process.env.REPLIT_DEV_DOMAIN, process.env.REPLIT_DOMAINS].filter(Boolean).join(','),
 );
-const trustedHosts = parseTrustedHosts(process.env.TRUSTED_HOSTS);
+const trustedHosts = parseTrustedHosts([
+  process.env.TRUSTED_HOSTS,
+  process.env.NODE_ENV === 'production' ? process.env.REPLIT_DOMAINS : undefined,
+].filter(Boolean).join(','));
 if (process.env.NODE_ENV === 'production' && trustedHosts.size === 0) {
   throw new Error('TRUSTED_HOSTS must be configured before starting the production server.');
 }
@@ -939,6 +943,24 @@ app.post('/api/queries', async (req, res, next) => {
 });
 
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
+if (process.env.NODE_ENV === 'production') {
+  const webDistDirectory = fileURLToPath(new URL('../../web/dist/', import.meta.url));
+  const webIndexFile = fileURLToPath(new URL('../../web/dist/index.html', import.meta.url));
+  app.use(express.static(webDistDirectory));
+  app.use((req, res, next) => {
+    if (
+      req.method !== 'GET' ||
+      req.path === '/api' ||
+      req.path.startsWith('/api/') ||
+      !req.accepts('html')
+    ) {
+      return next();
+    }
+    return res.sendFile(webIndexFile, (error) => {
+      if (error) next(error);
+    });
+  });
+}
 app.use((error: unknown, _req: Request, res: Response, _next: express.NextFunction) => {
   const requestId = String(res.locals.requestId ?? 'unknown');
   console.error(`[${requestId}] Request failed`, error);
@@ -954,7 +976,7 @@ app.use((error: unknown, _req: Request, res: Response, _next: express.NextFuncti
   });
 });
 
-const port = Number(process.env.API_PORT ?? 5001);
+const port = Number(process.env.PORT ?? process.env.API_PORT ?? 5001);
 export const server = app.listen(port, '0.0.0.0', () => {
   console.log(`MUDD server listening on ${port}`);
 });
