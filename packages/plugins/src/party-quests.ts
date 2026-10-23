@@ -21,7 +21,7 @@ import type {
   QueryContext,
   StoredGameEvent,
 } from '@mudd/engine-core';
-import { RuleViolationError } from '@mudd/engine-core';
+import { RuleViolationError, SYSTEM_ACTOR_ID } from '@mudd/engine-core';
 import {
   partyStateCapability,
   type PartyStateCapability,
@@ -160,7 +160,7 @@ async function appendSystemEvents(
   if (!events.length) return;
   const prior = await context.store.lookupCommand(
     context.worldInstanceId,
-    'system:party-quests',
+    SYSTEM_ACTOR_ID,
     commandId,
     commandId,
   );
@@ -169,7 +169,7 @@ async function appendSystemEvents(
   const result = await context.store.append({
     worldInstanceId: context.worldInstanceId,
     streamId,
-    actorId: 'system:party-quests',
+    actorId: SYSTEM_ACTOR_ID,
     commandId,
     payloadHash: commandId,
     expectedVersion: history.at(-1)?.aggregateVersion ?? 0,

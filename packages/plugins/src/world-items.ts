@@ -12,6 +12,10 @@ import {
   type WorldCorpseRecord,
   type WorldItemRecord,
 } from '@mudd/contracts';
+import {
+  SYSTEM_ACTOR_ID,
+  replayCharacter,
+} from '@mudd/engine-core';
 import type {
   EngineCommandContext,
   EnginePlugin,
@@ -19,7 +23,6 @@ import type {
   ProposedEventEffect,
   QueryContext,
 } from '@mudd/engine-core';
-import { replayCharacter } from '@mudd/engine-core';
 import type { CapabilityToken } from '@mudd/contracts';
 import { z } from 'zod';
 
@@ -251,7 +254,7 @@ async function appendWorldDrop(
   const payload = WorldItemDropEffectSchema.parse(raw);
   const commandId = `world-item-drop:${effectId}`;
   const payloadHash = `${payload.worldItemId}:${payload.fromCharacterId}:${payload.locationId}`;
-  if (await store.lookupCommand(worldInstanceId, 'system:world-items', commandId, payloadHash)) return;
+  if (await store.lookupCommand(worldInstanceId, SYSTEM_ACTOR_ID, commandId, payloadHash)) return;
   const streamId = worldItemsStreamId(worldInstanceId);
   const events = await store.readStream(worldInstanceId, streamId);
   const state = projectWorldItems(events);
@@ -270,7 +273,7 @@ async function appendWorldDrop(
   const result = await store.append({
     worldInstanceId,
     streamId,
-    actorId: 'system:world-items',
+    actorId: SYSTEM_ACTOR_ID,
     commandId,
     payloadHash,
     expectedVersion: state.revision,
@@ -288,7 +291,7 @@ async function appendWorldCorpse(
   const payload = WorldCorpseCreateEffectSchema.parse(raw);
   const commandId = `world-corpse-create:${effectId}`;
   const payloadHash = JSON.stringify(payload);
-  if (await store.lookupCommand(worldInstanceId, 'system:world-items', commandId, payloadHash)) return;
+  if (await store.lookupCommand(worldInstanceId, SYSTEM_ACTOR_ID, commandId, payloadHash)) return;
   const streamId = worldItemsStreamId(worldInstanceId);
   const events = await store.readStream(worldInstanceId, streamId);
   const state = projectWorldItems(events);
@@ -302,7 +305,7 @@ async function appendWorldCorpse(
   const result = await store.append({
     worldInstanceId,
     streamId,
-    actorId: 'system:world-items',
+    actorId: SYSTEM_ACTOR_ID,
     commandId,
     payloadHash,
     expectedVersion: state.revision,
@@ -320,7 +323,7 @@ async function appendCharacterReceipt(
   const payload = WorldItemClaimEffectSchema.parse(raw);
   const commandId = `world-item-claim:${effectId}`;
   const payloadHash = `${payload.worldItemId}:${payload.characterId}:${payload.sourceLocationId}`;
-  if (await store.lookupCommand(worldInstanceId, 'system:world-items', commandId, payloadHash)) return;
+  if (await store.lookupCommand(worldInstanceId, SYSTEM_ACTOR_ID, commandId, payloadHash)) return;
   const events = await store.readStream(worldInstanceId, payload.characterId);
   const character = replayCharacter(events);
   if (!character) throw new Error('The shared item claimant has no character stream.');
@@ -341,7 +344,7 @@ async function appendCharacterReceipt(
   const result = await store.append({
     worldInstanceId,
     streamId: payload.characterId,
-    actorId: 'system:world-items',
+    actorId: SYSTEM_ACTOR_ID,
     commandId,
     payloadHash,
     expectedVersion: events.at(-1)?.aggregateVersion ?? 0,
@@ -359,7 +362,7 @@ async function appendCorpseGoldCredit(
   const payload = WorldCorpseGoldCreditEffectSchema.parse(raw);
   const commandId = `world-corpse-gold-credit:${effectId}`;
   const payloadHash = `${payload.characterId}:${payload.corpseId}:${payload.currencyId}:${payload.amount}`;
-  if (await store.lookupCommand(worldInstanceId, 'system:world-items', commandId, payloadHash)) return;
+  if (await store.lookupCommand(worldInstanceId, SYSTEM_ACTOR_ID, commandId, payloadHash)) return;
   const events = await store.readStream(worldInstanceId, payload.characterId);
   const character = replayCharacter(events);
   if (!character) throw new Error('The corpse gold recipient has no character stream.');
@@ -381,7 +384,7 @@ async function appendCorpseGoldCredit(
   const result = await store.append({
     worldInstanceId,
     streamId: payload.characterId,
-    actorId: 'system:world-items',
+    actorId: SYSTEM_ACTOR_ID,
     commandId,
     payloadHash,
     expectedVersion: events.at(-1)?.aggregateVersion ?? 0,

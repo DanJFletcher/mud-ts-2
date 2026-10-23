@@ -11,7 +11,7 @@ import type {
   ProposedDomainEvent,
   ProposedEventEffect,
 } from '@mudd/engine-core';
-import { RuleViolationError, replayCharacter } from '@mudd/engine-core';
+import { RuleViolationError, replayCharacter, SYSTEM_ACTOR_ID } from '@mudd/engine-core';
 import { z } from 'zod';
 import { assertCharacterAlive, type CharacterStateCapability } from './character.js';
 import {
@@ -187,7 +187,7 @@ async function applyPvpOutcome(
       : `pvp-outcome:${raw.encounter.encounterId}:${characterId}`;
     const duplicate = await context.store.lookupCommand(
       context.worldInstanceId,
-      'system:pvp',
+      SYSTEM_ACTOR_ID,
       commandId,
       payloadHash,
     );
@@ -210,7 +210,7 @@ async function applyPvpOutcome(
     const applied = await context.store.append({
       worldInstanceId: context.worldInstanceId,
       streamId: characterId,
-      actorId: 'system:pvp',
+      actorId: SYSTEM_ACTOR_ID,
       commandId,
       payloadHash,
       expectedVersion: priorEvents.at(-1)?.aggregateVersion ?? 0,
@@ -236,11 +236,11 @@ async function applyPvpOutcome(
   };
   const commandId = `${effectIdBase}:complete`;
   const payloadHash = `${effectIdBase}:complete`;
-  if (await context.store.lookupCommand(context.worldInstanceId, 'system:pvp', commandId, payloadHash)) return;
+  if (await context.store.lookupCommand(context.worldInstanceId, SYSTEM_ACTOR_ID, commandId, payloadHash)) return;
   const result = await context.store.append({
     worldInstanceId: context.worldInstanceId,
     streamId,
-    actorId: 'system:pvp',
+    actorId: SYSTEM_ACTOR_ID,
     commandId,
     payloadHash,
     expectedVersion: interactionEvents.at(-1)?.aggregateVersion ?? 0,

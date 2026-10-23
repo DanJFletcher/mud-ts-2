@@ -10,7 +10,7 @@ import type {
   EnginePlugin,
   ProposedDomainEvent,
 } from '@mudd/engine-core';
-import { RuleViolationError } from '@mudd/engine-core';
+import { RuleViolationError, SYSTEM_ACTOR_ID } from '@mudd/engine-core';
 import type { CapabilityToken } from '@mudd/contracts';
 
 const REQUEST_TTL_MS = 60_000;
@@ -78,7 +78,7 @@ export async function updateInteractionRequestStatus(
   const streamId = interactionStreamId(worldInstanceId);
   const commandId = `interaction-${status}:${requestId}`;
   const payloadHash = `${commandId}:v1`;
-  if (await store.lookupCommand(worldInstanceId, 'system:interactions', commandId, payloadHash)) return true;
+  if (await store.lookupCommand(worldInstanceId, SYSTEM_ACTOR_ID, commandId, payloadHash)) return true;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const events = await store.readStream(worldInstanceId, streamId);
     const request = projectInteractionEvents(events).requests.find((candidate) => candidate.requestId === requestId);
@@ -87,7 +87,7 @@ export async function updateInteractionRequestStatus(
     const result = await store.append({
       worldInstanceId,
       streamId,
-      actorId: 'system:interactions',
+      actorId: SYSTEM_ACTOR_ID,
       commandId,
       payloadHash,
       expectedVersion: latestVersion(events),

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { CharacterStaminaSpentEventSchema, FLEE_STAMINA_COST } from '@mudd/contracts';
-import { EngineHost, InMemoryEventStore, replayCharacter, type EnginePlugin } from '@mudd/engine-core';
+import {
+  EngineHost,
+  InMemoryEventStore,
+  replayCharacter,
+  SYSTEM_ACTOR_ID,
+  type EnginePlugin,
+} from '@mudd/engine-core';
 import {
   characterPlugin,
   combatPlugin,
@@ -756,6 +762,7 @@ describe('turn-based PvE combat', () => {
     const corpses = (await store.readStream(DEMO_WORLD_INSTANCE_ID, 'world-items'))
       .filter((event) => event.type === 'world.corpse_created');
     expect(corpses).toHaveLength(1);
+    expect(corpses[0]?.actorId).toBe(SYSTEM_ACTOR_ID);
     expect((await store.readStream(DEMO_WORLD_INSTANCE_ID, 'world-items'))
       .filter((event) => event.type === 'world.corpse_gold_claimed')).toHaveLength(1);
     await engine.stop();

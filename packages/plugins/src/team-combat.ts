@@ -19,7 +19,7 @@ import {
   type CharacterProjection,
 } from '@mudd/contracts';
 import type { CommandPlan, EngineCommandContext, EnginePlugin, EventEffectContext, ProposedDomainEvent, ProposedEventEffect } from '@mudd/engine-core';
-import { replayCharacter, RuleViolationError } from '@mudd/engine-core';
+import { replayCharacter, RuleViolationError, SYSTEM_ACTOR_ID } from '@mudd/engine-core';
 import {
   assertCharacterAlive,
   characterStateCapability,
@@ -205,7 +205,7 @@ async function applyOutcomes(
         payload: {
           eventType: 'character.moved',
           eventVersion: 1,
-          actorId: context.actorId ?? 'system:team-combat',
+          actorId: context.actorId ?? SYSTEM_ACTOR_ID,
           payload: movementPayload,
         },
       });
@@ -215,7 +215,7 @@ async function applyOutcomes(
       streamId: player.characterId,
       expectedVersion: history.length,
       commandId: `team-combat-outcome:${payload.encounterId}:${player.characterId}`,
-      actorId: context.actorId ?? 'system:team-combat',
+      actorId: context.actorId ?? SYSTEM_ACTOR_ID,
       payloadHash: JSON.stringify({
         encounterId: payload.encounterId,
         result: payload.result,

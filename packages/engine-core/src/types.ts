@@ -6,6 +6,13 @@ import type { CharacterProjection } from '@mudd/contracts';
 import type { CapabilityToken, PluginManifestInput } from '@mudd/contracts';
 import type { RngPort } from '@mudd/contracts';
 
+/**
+ * Stable UUID principal for durable system-effect writes.
+ * PostgreSQL stores actor IDs as UUIDs, so internal effects must not use
+ * human-readable pseudo IDs such as "system:world-items".
+ */
+export const SYSTEM_ACTOR_ID = '00000000-0000-4000-8000-000000000001';
+
 export interface ProposedDomainEvent {
   readonly type: string;
   readonly version: number;

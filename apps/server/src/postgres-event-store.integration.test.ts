@@ -211,6 +211,51 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     expect(persistedEffects[0]).toMatchObject({ status: 'completed', attempts: 2 });
   });
 
+  it('persists shared corpse events under the stable UUID system actor', async () => {
+    const { SYSTEM_ACTOR_ID } = await import('@mudd/engine-core');
+    const commandId = `world-corpse-create:${randomUUID()}`;
+    const corpseId = `corpse:${randomUUID()}`;
+    const request: AppendRequest = {
+      worldInstanceId,
+      streamId: 'world-items',
+      actorId: SYSTEM_ACTOR_ID,
+      commandId,
+      payloadHash: randomUUID(),
+      expectedVersion: 0,
+      events: [{
+        type: 'world.corpse_created',
+        version: 1,
+        payload: {
+          corpse: {
+            corpseId,
+            encounterId: randomUUID(),
+            opponentId: 'practice-sentinel',
+            opponentName: 'Practice Sentinel',
+            label: 'Practice Sentinel’s corpse',
+            description: 'The body of Practice Sentinel lies here.',
+            locationId: 'mossgate-clearing',
+            currencyAmount: 0,
+            goldClaimed: false,
+          },
+          items: [],
+        },
+      }],
+    };
+
+    expect((await store.append(request)).kind).toBe('committed');
+    expect((await store.lookupCommand(
+      worldInstanceId,
+      SYSTEM_ACTOR_ID,
+      commandId,
+      request.payloadHash,
+    ))?.kind).toBe('duplicate');
+    expect((await store.readStream(worldInstanceId, 'world-items'))[0]).toMatchObject({
+      type: 'world.corpse_created',
+      actorId: SYSTEM_ACTOR_ID,
+      payload: { corpse: { corpseId } },
+    });
+  });
+
   it('enforces one active character session per account and world', async () => {
     const { characters, worldSessions } = await import('./db/schema.js');
     const firstCharacterId = randomUUID();

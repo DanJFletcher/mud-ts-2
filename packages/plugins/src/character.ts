@@ -39,6 +39,7 @@ import {
 } from '@mudd/contracts';
 import {
   RuleViolationError,
+  SYSTEM_ACTOR_ID,
   type EngineCommandContext,
   type EnginePlugin,
   type EventEffectContext,
@@ -125,7 +126,7 @@ async function spendTeamFleeStamina(
   const payloadHash = `${payload.characterId}:${payload.encounterId}:${FLEE_STAMINA_COST}`;
   const prior = await context.store.lookupCommand(
     context.worldInstanceId,
-    'system:character',
+    SYSTEM_ACTOR_ID,
     commandId,
     payloadHash,
   );
@@ -136,7 +137,7 @@ async function spendTeamFleeStamina(
   const result = await context.store.append({
     worldInstanceId: context.worldInstanceId,
     streamId: payload.characterId,
-    actorId: 'system:character',
+    actorId: SYSTEM_ACTOR_ID,
     commandId,
     payloadHash,
     expectedVersion,
