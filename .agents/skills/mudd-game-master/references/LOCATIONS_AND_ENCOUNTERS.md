@@ -18,9 +18,39 @@ Model each location as:
 
 Use second person present for player-facing room descriptions by default, concise opening followed by optional deeper inspections. Prefer vivid **specific** detail over purple prose. The first entry should be evocative but skimmable; subsequent `look` calls should avoid repeating a cutscene. If a bridge is destroyed in world state, stale descriptions must not continue presenting it intact.
 
+## Room prose and the player's knowledge
+
+Write room descriptions as immediate sensory observations. A `look` description should normally use **one or two** senses from sight, smell, taste, hearing, and touch; do not force all five or add a sensory detail merely to meet a count. Use only details the character could perceive in that moment. Taste and touch are valid when naturally plausible, but never invent an action such as tasting or touching something just to include them. Describe an audible or smelled source as known only when the character can reasonably identify it.
+
+Do not use room prose to state information the author knows but the player has not discovered: a location's purpose, its history, its usual schedule or crowd, ownership, local customs, unseen events, or an NPC's motives. Keep the distinction between **evidence** and **context**:
+
+- Describe perceptible evidence: a row of stalls, a faded painted name, a split bell, worn steps, a trail of flour, or a door standing open.
+- Do not turn that evidence into an undiscovered explanation: who built it, what the room is for, why the bell broke, who owns the stalls, or when the market is busiest.
+- Reveal background facts through a readable source or an NPC who knows them. A visible sign may be mentioned as a sign; its written contents belong in the supported `read` interaction, not automatically in `look`. Make sure the source or conversation is actually authored and accessible.
+
+**Player-facing sensory description:**
+
+> Stalls and handcarts crowd the open area. The smell of baked goods seems to be coming from the East.
+
+This gives the player visible shapes and a smell with direction. It does not assert the square's purpose, the market's schedule, or a history the character has not learned.
+
+**Avoid author-only exposition in `look`:**
+
+> The square is Bellwold's commercial heart. Every fifth day the whole village gathers here, where generations of traders have met since the old tax hall burned.
+
+The schedule, civic role, history, and gathering are not immediate sensory observations.
+
+**Separate evidence from learned context:**
+
+- Room prose: “A rain-softened notice hangs beside the door. Its ink has run into blue-black streaks.”
+- After the player reads the notice: provide the text that is actually written there.
+- In an NPC conversation: the NPC may explain the hall's former use, but only if the NPC has that knowledge and is willing to share it.
+
+The structured location title, engine-generated exit lists, and other interface information may remain separate from the sensory room prose. A location title does not authorize the prose to explain the place's purpose. Keep the prose itself grounded in what the character can perceive. Do not state the character's thoughts, emotions, or interpretation as an objective sensory fact.
+
 ## Environmental storytelling
 
-Let architecture, objects, routes and omissions imply backstory. Example: a moss-covered bell by an abandoned ferry dock, a sanded-off guild insignia and invoices for untold repairs suggest a dispute without an NPC monologue. The player can *inspect* these through explicit interactions. When evidence is pivotal, include multiple corroborating sources.
+Let architecture, objects, routes and omissions provide perceptible evidence without explaining its backstory. For example, a moss-covered bell by a dock, a sanded-off guild insignia, and invoices for repairs can invite questions; do not state what dispute they imply as fact in room prose. Make important background available through an authored, reachable readable source or an NPC who knows it. When evidence is pivotal, provide multiple corroborating sources through those channels.
 
 A discovered object should have consistent persistence/ownership rules. Don't allow a single physical object to be collected simultaneously by every player unless it is instanced or repeatable by design. Keep unique keys stable across content edits.
 

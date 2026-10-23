@@ -23,6 +23,18 @@ For every significant quest, test at least:
 
 Validate all references (location, NPC, item, faction, quest state, conversation node), ensure graph reachability, required exits, no unguarded cycles/trapped dialogues, valid state transitions, localized strings, appropriate content rating and licensing metadata. A room graph's intentional unreachable areas should be documented; an accidental orphan is a defect.
 
+### Room-description knowledge check
+
+For every player-facing room description, including arrival and after-change variants:
+
+- Can each statement be directly seen, smelled, tasted, heard, or felt by the character in this moment?
+- Does it use one or two natural sensory details, without forcing all five or an invented tasting/touching action?
+- Does it avoid asserting purpose, schedules, history, ownership, custom, unseen events, and NPC motives as if the character already knew them?
+- Are visible or audible clues described as evidence rather than explained as undiscovered facts?
+- Is written context revealed only after the supported read interaction, and personal/world context only through dialogue with a suitably knowledgeable NPC?
+- Can the player actually reach the source or conversation that provides each intentionally withheld fact?
+- Are structured exits and interface details kept distinct from the sensory prose?
+
 If content schema is not implemented, tests can target the **draft format** but must not be reported as runtime integration tests. Distinguish unit/static, contract/adapter, end-to-end, simulated playthrough and real user playtest.
 
 ## Narrative quality rubric (score 0–2 each)
@@ -33,6 +45,7 @@ If content schema is not implemented, tests can target the **draft format** but 
 - **Characterization:** NPCs sound distinct and pursue understandable interests.
 - **Pacing:** rhythm of tension, reflection, agency, consequences.
 - **Mechanics fit:** every required verb is actually supported or marked blocked.
+- **Perception and knowledge:** room prose stays sensory and undiscovered context has a reachable read/talk source.
 - **Continuity:** world responds to persistent changes and returns.
 - **Inclusivity:** essential clues work in text, content boundaries respected.
 - **Replay/MP robustness:** no contradictory world state or duplication.
