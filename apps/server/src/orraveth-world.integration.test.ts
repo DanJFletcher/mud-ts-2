@@ -505,18 +505,32 @@ describe('Orraveth Bellwold settlement', () => {
         if (!result.ok) throw new Error(result.message);
         return LocationProjectionSchema.parse(result.value);
       };
-      const talkToAnwen = async (topic?: string) => {
+      const talkToNpc = async (npcId: string, topic?: string) => {
         const character = await h.loadCharacter(characterId);
         const result = await h.engine.query({
           type: 'npc.talk',
           version: 1,
-          queryId: `anwen-${character.revision}-${topic ?? 'default'}`,
+          queryId: `talk-${npcId}-${character.revision}-${topic ?? 'default'}`,
           worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
           characterId,
-          payload: { npcId: 'anwen-marr', ...(topic ? { topic } : {}) },
+          payload: { npcId, ...(topic ? { topic } : {}) },
         }, h.session, { characterProjection: character });
         if (!result.ok) throw new Error(result.message);
         return NpcDialogueProjectionSchema.parse(result.value);
+      };
+      const talkToAnwen = (topic?: string) => talkToNpc('anwen-marr', topic);
+      const readObject = async (objectId: string) => {
+        const character = await h.loadCharacter(characterId);
+        const result = await h.engine.query({
+          type: 'object.read',
+          version: 1,
+          queryId: `read-${objectId}-${character.revision}`,
+          worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+          characterId,
+          payload: { objectId },
+        }, h.session, { characterProjection: character });
+        if (!result.ok) throw new Error(result.message);
+        return result.value;
       };
       const move = async (exitId: string) => {
         const character = await h.loadCharacter(characterId);
@@ -530,7 +544,36 @@ describe('Orraveth Bellwold settlement', () => {
         await h.engine.processPendingEffects();
       };
 
-      expect((await queryLocation()).shortName).toBe('Bellwold Market Square');
+      const market = await queryLocation();
+      expect(market.shortName).toBe('Bellwold Market Square');
+      expect(market.description).toContain('Stalls and handcarts crowd the open ground.');
+      expect(market.description).not.toMatch(/busy mornings|frontier settlement|serve travelers/i);
+      expect((await talkToNpc('linnet-reed', 'market')).text).toContain('busiest early');
+      expect(orravethWorld.locations.find(({ id }) => id === 'bellwold-south-mile-marker')?.readables)
+        .toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            id: 'old-south-mile-marker-inscription',
+            text: expect.stringContaining('distance from Bellwold'),
+          }),
+        ]));
+
+      await move('square-to-south-common');
+      await move('south-common-to-well-court');
+      await move('well-court-to-grain-house');
+      expect((await queryLocation()).description).toContain('Chalk marks cross the faces of several storage bins.');
+      expect((await talkToNpc('aven-rusk', 'stores')).text).toContain('sort the bins by season');
+      await move('grain-house-to-well-court');
+      await move('well-court-to-south-common');
+      await move('south-common-to-square');
+
+      await move('square-to-tower-road');
+      await move('tower-road-to-tower');
+      const tower = await queryLocation();
+      expect(tower.description).not.toMatch(/generations of records|drawn scholars|local stories/i);
+      expect((await readObject('bellwold-tower-inscription')).text).toContain('seventeen villagers disappeared');
+      await move('tower-to-road');
+      await move('tower-road-to-square');
+
       await move('square-to-shop');
       expect((await talkToAnwen('Age of Measures')).text).toContain('Age of Measures');
       const introduction = await talkToAnwen();
@@ -551,6 +594,7 @@ describe('Orraveth Bellwold settlement', () => {
       const mill = await queryLocation();
       expect(mill.shortName).toBe('Abandoned Watermill');
       expect(mill.objects.map(({ id }) => id)).toContain('mill-work-ledger');
+      expect((await readObject('mill-work-ledger')).text).toContain('moving on nights when the channel ran low');
       const atMill = await h.loadCharacter(characterId);
       const readResult = await h.dispatch(characterId, {
         type: 'character.read',
@@ -588,6 +632,7 @@ describe('Orraveth Bellwold settlement', () => {
         'old-bell-tower-approach',
         'abandoned-watermill',
       ]));
+
     } finally {
       await h.engine.stop();
     }
