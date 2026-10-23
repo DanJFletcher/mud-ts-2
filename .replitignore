@@ -1,5 +1,4 @@
-node_modules/
-**/node_modules/
-**/dist/
+# Runtime dependencies and compiled workspace output must be shipped.
+# Keep their Git exclusions in .gitignore, not in this deployment ignore list.
 coverage/
 storybook-static/
