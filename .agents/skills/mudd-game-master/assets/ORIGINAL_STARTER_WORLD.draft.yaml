@@ -65,6 +65,11 @@ facts:
     visibility: gm-only
     revealVia: [example.briarfen.clue.hauling, example.briarfen.clue.wind]
 
+# Drafting guide: arrival/look are player-facing observations available in the
+# moment (normally one or two senses), not explanations of a place's history,
+# purpose, ownership, schedule, or hidden events. Put learned context in a
+# reachable readable source or NPC dialogue, and verify the interaction is
+# supported by the target runtime. See references/LOCATIONS_AND_ENCOUNTERS.md.
 locations:
   - id: example.briarfen.loc.market
     name: Rain Market
@@ -73,7 +78,7 @@ locations:
       tower looms above a knot of arguing villagers. The reed path leads east
       toward the ferry; a steep trail climbs north to the watch ridge.
     look: >-
-      Worn ropes hang from the silent tower. Vendors are shuttering their stalls.
+      Worn ropes hang from the tower. Nearby, canvas snaps in the wind.
     exits:
       - { direction: east, to: example.briarfen.loc.ferry }
       - { direction: north, to: example.briarfen.loc.ridge }
@@ -88,22 +93,22 @@ locations:
       Wet planks knock against stone in the river wind. An old boathook rests
       beside the landing, and a ferry ledger lies under a weighted cloth.
       The market is west and a maintenance path runs south to the sluice.
-    look: "There are tire ruts in the mud where no cart ought to have come."
+    look: "Two parallel ruts cross the wet mud beside the landing."
     exits:
       - { direction: west, to: example.briarfen.loc.market }
       - { direction: south, to: example.briarfen.loc.sluice }
     npcs: [example.briarfen.npc.mirek]
     inspectables:
       - id: example.briarfen.obj.ledger
-        description: "A repair entry records a heavy load carried toward the sluice."
+        description: "The ledger's page edges are swollen from damp; a line of ink stands out on the open page."
         clue: example.briarfen.clue.ledger
   - id: example.briarfen.loc.sluice
     name: Flood Sluice
     arrival: >-
-      At the edge of the works, water beats against a shut iron gate. A great
-      bell lies in a cradle beneath canvas, its rim repaired with bright brass.
+      Water beats against a shut iron gate. A great bell rests in a cradle
+      beneath a folded canvas; bright brass catches along its rim.
       The ferry path runs north; a narrow ladder climbs west to the ridge.
-    look: "The bell is intact, but the river wind carries away its faint echo."
+    look: "A low note reaches you faintly through the river wind."
     exits:
       - { direction: north, to: example.briarfen.loc.ferry }
       - { direction: west, to: example.briarfen.loc.ridge }
@@ -118,7 +123,7 @@ locations:
       Reeds bend silver below the ridge. From here the bends in the river are
       visible, but a low gust buries the distant bell's sound. The market is
       down south and the sluice ladder descends east.
-    look: "Two empty lantern posts stand along the ridge, aimed downstream."
+    look: "Two empty lantern posts stand along the ridge, their brackets facing downstream."
     exits:
       - { direction: south, to: example.briarfen.loc.market }
       - { direction: east, to: example.briarfen.loc.sluice }
@@ -159,7 +164,8 @@ clues:
     supports: example.briarfen.fact.bell-was-moved
   - id: example.briarfen.clue.ledger
     source: example.briarfen.obj.ledger
-    actionConcept: inspect
+    actionConcept: read
+    disclosure: "A repair entry records a heavy load carried toward the sluice."
     supports: example.briarfen.fact.bell-was-moved
   - id: example.briarfen.clue.hauling
     source: example.briarfen.obj.bell

@@ -23,6 +23,14 @@
 | --- | --- | --- | --- | --- |
 | | | | | |
 
+## Location narration and discoverable context
+
+For each location, keep `arrival` and `look` to immediate sensory observations, normally one or two senses. Do not put undiscovered history, purpose, ownership, schedules, or explanations in room prose. Record important context separately and give each fact a reachable source through a supported read interaction or knowledgeable NPC dialogue. See [Places, sensory prose, interactables and encounters](../references/LOCATIONS_AND_ENCOUNTERS.md) for the full guidance.
+
+| Location ID | Sensory arrival / look | Context fact ID | Readable source or NPC dialogue | Supported interaction and reachable? |
+| --- | --- | --- | --- | --- |
+| | | | | |
+
 ## Rules of the world
 
 [Magic/technology, time, power limits, major hazards. Indicate which rules are lore and which require an actual ruleset plugin.]
