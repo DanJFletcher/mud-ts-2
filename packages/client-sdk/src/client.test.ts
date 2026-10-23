@@ -311,6 +311,123 @@ describe('MuddHttpClient', () => {
     await expect(client.getGame()).rejects.toThrow('The server returned an invalid response.');
   });
 
+  it('refreshes and retries once when a passive character update makes a command revision stale', async () => {
+    const commandBodies: Record<string, unknown>[] = [];
+    let gameReads = 0;
+    const fetcher: typeof fetch = async (input, init = {}) => {
+      const path = String(input);
+      if (path === '/api/game') {
+        gameReads += 1;
+        return Response.json({
+          player: { id: 'player-1', displayName: 'Player' },
+          character: {
+            worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+            characterId: 'character-1',
+            name: 'Fern',
+            locationId: 'mossgate-clearing',
+            revision: 4,
+          },
+        });
+      }
+      if (path === '/api/commands') {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        commandBodies.push(body);
+        if (commandBodies.length === 1) {
+          return Response.json({
+            receipt: {
+              ok: false,
+              commandId: body.commandId,
+              code: 'VERSION_CONFLICT',
+              message: 'Expected revision 3; current revision is 4.',
+              retryable: true,
+            },
+            streamId: 'character-1',
+            events: [],
+          });
+        }
+        return Response.json({
+          receipt: {
+            ok: true,
+            commandId: body.commandId,
+            eventIds: ['event-1'],
+            newAggregateVersion: 5,
+          },
+          streamId: 'character-1',
+          events: [],
+        });
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    };
+    const client = new MuddHttpClient({ worldInstanceId: DEMO_WORLD_INSTANCE_ID, fetcher });
+
+    const result = await client.move('character-1', 'clearing-to-street', 3, 'move-command-1');
+
+    expect(result.receipt.ok).toBe(true);
+    expect(gameReads).toBe(1);
+    expect(commandBodies).toHaveLength(2);
+    expect(commandBodies[0]).toMatchObject({
+      commandId: 'move-command-1',
+      expectedVersion: 3,
+      payload: { exitId: 'clearing-to-street' },
+    });
+    expect(commandBodies[1]).toMatchObject({
+      commandId: 'move-command-1',
+      expectedVersion: 4,
+      payload: { exitId: 'clearing-to-street' },
+    });
+  });
+
+  it('does not retry unrelated command failures or retry a stale revision more than once', async () => {
+    let commandCount = 0;
+    let gameReads = 0;
+    const fetcher: typeof fetch = async (input, init = {}) => {
+      const path = String(input);
+      if (path === '/api/game') {
+        gameReads += 1;
+        return Response.json({
+          player: { id: 'player-1', displayName: 'Player' },
+          character: {
+            worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+            characterId: 'character-1',
+            name: 'Fern',
+            locationId: 'mossgate-clearing',
+            revision: 5,
+          },
+        });
+      }
+      if (path === '/api/commands') {
+        commandCount += 1;
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        const message = commandCount === 1
+          ? 'You cannot move there.'
+          : `Expected revision ${String(body.expectedVersion)}; current revision is ${Number(body.expectedVersion) + 1}.`;
+        return Response.json({
+          receipt: {
+            ok: false,
+            commandId: body.commandId,
+            code: commandCount === 1 ? 'RULE_VIOLATION' : 'VERSION_CONFLICT',
+            message,
+            retryable: commandCount > 1,
+          },
+          streamId: 'character-1',
+          events: [],
+        });
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    };
+    const client = new MuddHttpClient({ worldInstanceId: DEMO_WORLD_INSTANCE_ID, fetcher });
+
+    await expect(client.move('character-1', 'invalid-exit', 3, 'move-rule-failure'))
+      .rejects.toThrow('You cannot move there.');
+    expect(commandCount).toBe(1);
+    expect(gameReads).toBe(0);
+
+    await expect(client.move('character-1', 'clearing-to-street', 3, 'move-repeat-conflict'))
+      .rejects.toThrow('The world updated while you were acting. Please try again.');
+    expect(commandCount).toBe(3);
+    expect(gameReads).toBe(1);
+  });
+
   it('sends Zod-validated commands and queries to the authoritative engine', async () => {
     const session = {
       sessionId: 'session-1',
@@ -395,11 +512,11 @@ describe('MuddHttpClient', () => {
       { includeNpcDescriptions: true },
     );
     expect(explicitlyLookedRoom.description).toContain(
-      'Mara is here. A path keeper stands beside the weathered marker, watching the northern trail.',
+      'Mara is here. Mara stands beside the weathered marker, one hand resting on its rain-smoothed edge as she watches the northern trail.',
     );
     expect(explicitlyLookedRoom.npcs?.[0]).toMatchObject({
       id: 'mara-waykeeper',
-      description: 'A path keeper stands beside the weathered marker, watching the northern trail.',
+      description: 'Mara stands beside the weathered marker, one hand resting on its rain-smoothed edge as she watches the northern trail.',
     });
     expect(firstRoom.objects).toEqual([
       {

@@ -123,6 +123,10 @@ export const CommandResponseSchema = z.object({
   events: z.array(z.object({ type: z.string().min(1), payload: z.unknown().optional() })).optional(),
 });
 export type CommandResponse = z.infer<typeof CommandResponseSchema>;
+const VersionedCharacterCommandSchema = z.object({
+  characterId: IdSchema,
+  expectedVersion: z.number().int().nonnegative(),
+}).passthrough();
 
 const WorldSessionResponseSchema = z.object({ sessionId: IdSchema, characterId: IdSchema });
 const queryResultSchema = <T extends z.ZodType>(value: T) => z.object({
@@ -813,12 +817,55 @@ export class MuddHttpClient {
   }
 
   private async send(command: unknown): Promise<CommandResponse> {
-    const result = await this.request('/api/commands', {
+    const result = await this.postCommand(command);
+    if (result.receipt.ok) return result;
+
+    const commandDetails = VersionedCharacterCommandSchema.safeParse(command);
+    const conflict = /^Expected revision (\d+); current revision is (\d+)\.$/.exec(result.receipt.message);
+    if (
+      result.receipt.code !== 'VERSION_CONFLICT' ||
+      !commandDetails.success ||
+      !conflict
+    ) {
+      throw new Error(result.receipt.message);
+    }
+
+    const expectedVersion = Number(conflict[1]);
+    const reportedCurrentVersion = Number(conflict[2]);
+    let latest: GameSnapshot;
+    try {
+      latest = await this.getGame();
+    } catch {
+      throw new Error('The world updated while you were acting. Please try again.');
+    }
+    const character = latest.character;
+    if (
+      !character ||
+      character.characterId !== commandDetails.data.characterId ||
+      character.revision < reportedCurrentVersion ||
+      character.revision <= expectedVersion
+    ) {
+      throw new Error('The world updated while you were acting. Please try again.');
+    }
+
+    const retried = await this.postCommand({
+      ...(command as Record<string, unknown>),
+      expectedVersion: character.revision,
+    });
+    if (!retried.receipt.ok) {
+      if (retried.receipt.code === 'VERSION_CONFLICT') {
+        throw new Error('The world updated while you were acting. Please try again.');
+      }
+      throw new Error(retried.receipt.message);
+    }
+    return retried;
+  }
+
+  private async postCommand(command: unknown): Promise<CommandResponse> {
+    return this.request('/api/commands', {
       method: 'POST',
       body: JSON.stringify(command),
     }, CommandResponseSchema);
-    if (!result.receipt.ok) throw new Error(result.receipt.message);
-    return result;
   }
 
   private async request<Schema extends z.ZodTypeAny>(
