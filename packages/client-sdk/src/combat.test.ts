@@ -125,7 +125,7 @@ function makeClient(world = demoWorld) {
     return Response.json(result);
   };
   const client = new MuddHttpClient({ worldInstanceId: DEMO_WORLD_INSTANCE_ID, fetcher });
-  return { client, store };
+  return { client, store, engine };
 }
 
 async function travelToWillowrestInn(
@@ -570,6 +570,84 @@ describe('turn-based PvE combat', () => {
     });
     expect(thirdEncounter.health).toEqual({ current: 3, maximum: 8 });
     expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))).toEqual(thirdEncounter);
+  });
+
+  it('creates a searchable shared corpse and awards its item and currency loot once', async () => {
+    const lootWorld = {
+      ...demoWorld,
+      locations: demoWorld.locations.map((location) => location.id !== 'mossgate-clearing'
+        ? location
+        : {
+          ...location,
+          npcs: location.npcs?.map((npc) => npc.id !== 'mossgate-training-sentinel'
+            ? npc
+            : {
+              ...npc,
+              loot: {
+                items: [{
+                  id: 'test-sentinel-badge',
+                  label: 'Practice badge',
+                  description: 'A small wooden badge from the training ground.',
+                }],
+                currencyAmount: 3,
+              },
+            }),
+        }),
+    };
+    const { client, store, engine } = makeClient(lootWorld);
+    const created = await client.createCharacter('Briar', 'combat-corpse-create');
+    const characterId = created.streamId!;
+    let character = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    let action = 0;
+    do {
+      await client.performCombatAction(
+        characterId,
+        'attack',
+        character.revision,
+        character.combat?.status === 'active'
+          ? { encounterId: character.combat.encounterId }
+          : { targetNpcId: 'mossgate-training-sentinel' },
+        `combat-corpse-action-${++action}`,
+      );
+      character = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    } while (character.combat?.status !== 'victory');
+    await engine.processPendingEffects();
+
+    const room = await client.look(characterId, 'combat-corpse-look');
+    const corpse = room.objects.find((object) => object.containerKind === 'corpse');
+    expect(corpse).toMatchObject({
+      label: 'Practice Sentinel’s corpse',
+      takeable: false,
+      contents: expect.arrayContaining([
+        expect.objectContaining({ label: 'Practice badge' }),
+        expect.objectContaining({ label: `3 ${demoWorld.currency!.name}` }),
+      ]),
+    });
+    const details = await client.inspect(characterId, corpse!.id, 'combat-corpse-inspect');
+    expect(details.description).toContain('Practice badge');
+    expect(details.description).toContain(`3 ${demoWorld.currency!.name}`);
+
+    const badge = corpse!.contents!.find((content) => content.label === 'Practice badge')!;
+    const gold = corpse!.contents!.find((content) => content.label.startsWith('3 '))!;
+    await client.take(characterId, badge.id, character.revision, 'combat-corpse-take-badge');
+    await engine.processPendingEffects();
+    character = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(character.inventory).toContainEqual(expect.objectContaining({
+      label: 'Practice badge',
+      sharedItemId: badge.id,
+    }));
+
+    const goldClaim = await client.take(characterId, gold.id, character.revision, 'combat-corpse-take-gold');
+    await engine.processPendingEffects();
+    const retry = await client.take(characterId, gold.id, character.revision, 'combat-corpse-take-gold');
+    expect(retry.receipt).toEqual(goldClaim.receipt);
+    character = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(character.wallet?.balance).toBe(demoWorld.currency!.startingBalance + 3);
+    expect(character.claimedCorpseGoldIds).toHaveLength(1);
+    const corpses = (await store.readStream(DEMO_WORLD_INSTANCE_ID, 'world-items'))
+      .filter((event) => event.type === 'world.corpse_created');
+    expect(corpses).toHaveLength(1);
+    await engine.stop();
   });
 
   it('respawns the same character at the fountain after defeat', async () => {

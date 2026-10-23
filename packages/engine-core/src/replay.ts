@@ -16,6 +16,7 @@ import {
   CharacterArchivedEventSchema,
   CharacterRestoredEventSchema,
   CharacterWalletInitializedEventSchema,
+  CharacterCorpseGoldReceivedEventSchema,
   CharacterInnRestCompletedEventSchema,
   CharacterCombatEncounterStartedEventSchema,
   CharacterAdvancementAwardedEventSchema,
@@ -645,6 +646,27 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         questProgress: state.questProgress.map((entry) => entry.questId === completed.payload.questId
           ? { ...entry, status: 'completed' }
           : entry),
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.corpse_gold_received') {
+      if (!state) throw new Error('Corpse gold receipt encountered before character creation.');
+      const received = CharacterCorpseGoldReceivedEventSchema.parse(publicEvent);
+      const { characterId, corpseId, currencyId, amount } = received.payload;
+      const nextBalance = state.wallet ? state.wallet.balance + amount : Number.MAX_SAFE_INTEGER;
+      if (
+        characterId !== state.characterId ||
+        !state.wallet ||
+        state.wallet.currencyId !== currencyId ||
+        state.claimedCorpseGoldIds.includes(corpseId) ||
+        !Number.isSafeInteger(nextBalance) ||
+        nextBalance > 2_147_483_647
+      ) {
+        throw new Error(`Invalid corpse gold receipt at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        wallet: { ...state.wallet, balance: nextBalance },
+        claimedCorpseGoldIds: [...state.claimedCorpseGoldIds, corpseId],
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'character.quest_rewarded') {

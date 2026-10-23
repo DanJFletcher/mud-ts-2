@@ -1,9 +1,15 @@
 import {
+  CharacterCorpseGoldReceivedEventSchema,
   CharacterSharedItemReceivedEventSchema,
   InventoryItemProjectionSchema,
+  WorldCorpseCreatedEventSchema,
+  WorldCorpseGoldClaimedEventSchema,
+  WorldCorpseRecordSchema,
   WorldItemClaimedEventSchema,
   WorldItemDroppedEventSchema,
   WorldItemRecordSchema,
+  type CombatLootDefinition,
+  type WorldCorpseRecord,
   type WorldItemRecord,
 } from '@mudd/contracts';
 import type {
@@ -20,12 +26,15 @@ import { z } from 'zod';
 export const WORLD_ITEMS_STREAM_ID = 'world-items';
 export const WORLD_ITEM_DROP_EFFECT = 'world-item.drop';
 export const WORLD_ITEM_CLAIM_EFFECT = 'world-item.claim';
+export const WORLD_CORPSE_CREATE_EFFECT = 'world-corpse.create';
+export const WORLD_CORPSE_GOLD_CREDIT_EFFECT = 'world-corpse.gold-credit';
 
 export const worldItemsStreamId = (_worldInstanceId: string) => WORLD_ITEMS_STREAM_ID;
 
 export interface WorldItemsState {
   revision: number;
   items: WorldItemRecord[];
+  corpses: WorldCorpseRecord[];
 }
 
 export interface WorldItemsStateCapability {
@@ -51,6 +60,14 @@ const WorldItemClaimEffectSchema = z.object({
   item: InventoryItemProjectionSchema,
 }).strict();
 
+const WorldCorpseCreateEffectSchema = WorldCorpseCreatedEventSchema.shape.payload;
+const WorldCorpseGoldCreditEffectSchema = z.object({
+  characterId: z.string().min(1),
+  corpseId: z.string().min(1),
+  currencyId: z.string().min(1),
+  amount: z.number().int().positive().max(2_147_483_647),
+}).strict();
+
 export function worldItemDropEffect(
   payload: z.infer<typeof WorldItemDropEffectSchema>,
 ): ProposedEventEffect {
@@ -63,10 +80,77 @@ export function worldItemClaimEffect(
   return { type: WORLD_ITEM_CLAIM_EFFECT, version: 1, payload };
 }
 
+export function worldCorpseGoldCreditEffect(
+  payload: z.infer<typeof WorldCorpseGoldCreditEffectSchema>,
+): ProposedEventEffect {
+  return {
+    type: WORLD_CORPSE_GOLD_CREDIT_EFFECT,
+    version: 1,
+    effectId: `world-corpse-gold-credit:${payload.corpseId}:${payload.characterId}`,
+    payload,
+  };
+}
+
+export function createWorldCorpseEffect(
+  makeId: () => string,
+  input: {
+    encounterId: string;
+    opponentId: string;
+    opponentName: string;
+    locationId: string;
+    loot?: CombatLootDefinition;
+    currencyId?: string;
+    currencyName?: string;
+  },
+): ProposedEventEffect {
+  const loot = input.loot;
+  const currencyAmount = loot?.currencyAmount ?? 0;
+  const corpseId = `corpse:${makeId()}`;
+  const goldItemId = currencyAmount > 0 ? `corpse-gold:${makeId()}` : undefined;
+  if (currencyAmount > 0 && (!input.currencyId || !input.currencyName)) {
+    throw new Error('Combatant currency loot requires the world currency definition.');
+  }
+  const corpse = WorldCorpseRecordSchema.parse({
+    corpseId,
+    encounterId: input.encounterId,
+    opponentId: input.opponentId,
+    opponentName: input.opponentName,
+    label: `${input.opponentName}’s corpse`,
+    description: `The body of ${input.opponentName} lies here.`,
+    locationId: input.locationId,
+    ...(currencyAmount > 0 ? { currencyId: input.currencyId } : {}),
+    currencyAmount,
+    ...(goldItemId ? { goldItemId } : {}),
+    goldClaimed: false,
+  });
+  const items = (loot?.items ?? []).map((template) => {
+    const worldItemId = `corpse-item:${makeId()}`;
+    return {
+      worldItemId,
+      item: InventoryItemProjectionSchema.parse({
+        id: worldItemId,
+        sharedItemId: worldItemId,
+        label: template.label,
+        description: template.description,
+        ...(template.consumable ? { consumable: template.consumable } : {}),
+        ...(template.equipment ? { equipment: template.equipment } : {}),
+      }),
+    };
+  });
+  const payload = WorldCorpseCreatedEventSchema.shape.payload.parse({ corpse, items });
+  return {
+    type: WORLD_CORPSE_CREATE_EFFECT,
+    version: 1,
+    effectId: `world-corpse-create:${input.encounterId}`,
+    payload,
+  };
+}
+
 export function projectWorldItems(
   events: readonly { type: string; version: number; aggregateVersion: number; payload: Readonly<Record<string, unknown>>; streamId?: string }[],
 ): WorldItemsState {
   const items = new Map<string, WorldItemRecord>();
+  const corpses = new Map<string, WorldCorpseRecord>();
   let revision = 0;
   for (const stored of events) {
     if (stored.aggregateVersion !== revision + 1) {
@@ -100,6 +184,31 @@ export function projectWorldItems(
         locationId: payload.locationId,
         holderCharacterId: null,
       }));
+    } else if (stored.type === 'world.corpse_created') {
+      const created = WorldCorpseCreatedEventSchema.parse(event);
+      const corpse = created.payload.corpse;
+      if (corpses.has(corpse.corpseId)) {
+        throw new Error(`Duplicate corpse creation at revision ${stored.aggregateVersion}.`);
+      }
+      for (const { worldItemId, item } of created.payload.items) {
+        if (
+          worldItemId !== item.id ||
+          item.sharedItemId !== worldItemId ||
+          item.questBound === true ||
+          items.has(worldItemId) ||
+          created.payload.items.filter((candidate) => candidate.worldItemId === worldItemId).length > 1
+        ) {
+          throw new Error(`Invalid corpse loot item at revision ${stored.aggregateVersion}.`);
+        }
+        items.set(worldItemId, WorldItemRecordSchema.parse({
+          worldItemId,
+          item,
+          locationId: corpse.locationId,
+          holderCharacterId: null,
+          containerId: corpse.corpseId,
+        }));
+      }
+      corpses.set(corpse.corpseId, corpse);
     } else if (stored.type === 'world.item_claimed') {
       const claimed = WorldItemClaimedEventSchema.parse(event);
       const previous = items.get(claimed.payload.worldItemId);
@@ -111,12 +220,28 @@ export function projectWorldItems(
         locationId: null,
         holderCharacterId: claimed.payload.characterId,
       }));
+    } else if (stored.type === 'world.corpse_gold_claimed') {
+      const claimed = WorldCorpseGoldClaimedEventSchema.parse(event);
+      const previous = corpses.get(claimed.payload.corpseId);
+      if (
+        !previous ||
+        previous.locationId !== claimed.payload.locationId ||
+        previous.currencyId !== claimed.payload.currencyId ||
+        previous.currencyAmount !== claimed.payload.amount ||
+        previous.goldClaimed
+      ) {
+        throw new Error(`Invalid corpse gold claim at revision ${stored.aggregateVersion}.`);
+      }
+      corpses.set(previous.corpseId, WorldCorpseRecordSchema.parse({
+        ...previous,
+        goldClaimed: true,
+      }));
     } else {
       throw new Error(`Unsupported world item event "${stored.type}" at revision ${stored.aggregateVersion}.`);
     }
     revision = stored.aggregateVersion;
   }
-  return { revision, items: [...items.values()] };
+  return { revision, items: [...items.values()], corpses: [...corpses.values()] };
 }
 
 async function appendWorldDrop(
@@ -154,6 +279,38 @@ async function appendWorldDrop(
     events: [{ type: 'world.item_dropped', version: 1, payload: eventPayload }],
   });
   if (!result.receipt.ok) throw new Error('Could not commit the shared item drop.');
+}
+
+async function appendWorldCorpse(
+  store: EventStorePort,
+  worldInstanceId: string,
+  effectId: string,
+  raw: unknown,
+) {
+  const payload = WorldCorpseCreateEffectSchema.parse(raw);
+  const commandId = `world-corpse-create:${effectId}`;
+  const payloadHash = JSON.stringify(payload);
+  if (await store.lookupCommand(worldInstanceId, 'system:world-items', commandId, payloadHash)) return;
+  const streamId = worldItemsStreamId(worldInstanceId);
+  const events = await store.readStream(worldInstanceId, streamId);
+  const state = projectWorldItems(events);
+  const existing = state.corpses.find((corpse) => corpse.corpseId === payload.corpse.corpseId);
+  if (existing) {
+    if (JSON.stringify(existing) !== JSON.stringify(payload.corpse)) {
+      throw new Error('The corpse ID already exists with different contents.');
+    }
+    return;
+  }
+  const result = await store.append({
+    worldInstanceId,
+    streamId,
+    actorId: 'system:world-items',
+    commandId,
+    payloadHash,
+    expectedVersion: state.revision,
+    events: [{ type: 'world.corpse_created', version: 1, payload }],
+  });
+  if (!result.receipt.ok) throw new Error('Could not commit the shared corpse.');
 }
 
 async function appendCharacterReceipt(
@@ -195,6 +352,46 @@ async function appendCharacterReceipt(
   if (!result.receipt.ok) throw new Error('Could not add the claimed item to its character.');
 }
 
+async function appendCorpseGoldCredit(
+  store: EventStorePort,
+  worldInstanceId: string,
+  effectId: string,
+  raw: unknown,
+) {
+  const payload = WorldCorpseGoldCreditEffectSchema.parse(raw);
+  const commandId = `world-corpse-gold-credit:${effectId}`;
+  const payloadHash = `${payload.characterId}:${payload.corpseId}:${payload.currencyId}:${payload.amount}`;
+  if (await store.lookupCommand(worldInstanceId, 'system:world-items', commandId, payloadHash)) return;
+  const events = await store.readStream(worldInstanceId, payload.characterId);
+  const character = replayCharacter(events);
+  if (!character) throw new Error('The corpse gold recipient has no character stream.');
+  if (character.claimedCorpseGoldIds.includes(payload.corpseId)) return;
+  if (
+    !character.wallet ||
+    character.wallet.currencyId !== payload.currencyId ||
+    character.wallet.balance > 2_147_483_647 - payload.amount
+  ) {
+    throw new Error('The corpse gold recipient cannot receive this currency amount.');
+  }
+  const eventPayload = {
+    characterId: payload.characterId,
+    corpseId: payload.corpseId,
+    currencyId: payload.currencyId,
+    amount: payload.amount,
+  };
+  CharacterCorpseGoldReceivedEventSchema.shape.payload.parse(eventPayload);
+  const result = await store.append({
+    worldInstanceId,
+    streamId: payload.characterId,
+    actorId: 'system:world-items',
+    commandId,
+    payloadHash,
+    expectedVersion: events.at(-1)?.aggregateVersion ?? 0,
+    events: [{ type: 'character.corpse_gold_received', version: 1, payload: eventPayload }],
+  });
+  if (!result.receipt.ok) throw new Error('Could not add the corpse gold to the character wallet.');
+}
+
 export const worldItemsPlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.world-items',
@@ -205,7 +402,10 @@ export const worldItemsPlugin: EnginePlugin = {
     eventSchemaVersions: {
       'world.item_dropped': 1,
       'world.item_claimed': 1,
+      'world.corpse_created': 1,
+      'world.corpse_gold_claimed': 1,
       'character.shared_item_received': 1,
+      'character.corpse_gold_received': 1,
     },
   },
   register({ provideCapability, registerEffect }) {
@@ -224,6 +424,12 @@ export const worldItemsPlugin: EnginePlugin = {
     });
     registerEffect(WORLD_ITEM_CLAIM_EFFECT, 1, WorldItemClaimEffectSchema, async (payload, context) => {
       await appendCharacterReceipt(context.store, context.worldInstanceId, context.effectId, payload);
+    });
+    registerEffect(WORLD_CORPSE_CREATE_EFFECT, 1, WorldCorpseCreateEffectSchema, async (payload, context) => {
+      await appendWorldCorpse(context.store, context.worldInstanceId, context.effectId, payload);
+    });
+    registerEffect(WORLD_CORPSE_GOLD_CREDIT_EFFECT, 1, WorldCorpseGoldCreditEffectSchema, async (payload, context) => {
+      await appendCorpseGoldCredit(context.store, context.worldInstanceId, context.effectId, payload);
     });
   },
 };

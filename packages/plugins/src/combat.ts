@@ -11,6 +11,7 @@ import {
 } from '@mudd/contracts';
 import type { EnginePlugin, ProposedDomainEvent, ProposedEventEffect } from '@mudd/engine-core';
 import type {
+  CombatLootDefinition,
   CharacterProjection,
   NpcCombatProfile,
   RoadEncounterDefinition,
@@ -23,6 +24,7 @@ import { prepareCharacterRespawn } from './respawn.js';
 import { registerPvpCombat } from './pvp-combat.js';
 import { interactionPolicyRegistry } from './interactions.js';
 import { calculateCharacterStats, characterAttackDamage, maximumHealthForLevel } from './character-stats.js';
+import { createWorldCorpseEffect } from './world-items.js';
 
 const VICTORY_EXPERIENCE_REWARD = 10;
 const MAX_LEVEL = 10;
@@ -62,16 +64,28 @@ function findCombatOpponent(
   world: WorldPackDraft,
   locationId: string,
   opponentId: string,
-): { id: string; name: string; combatProfile: NpcCombatProfile } | undefined {
+): { id: string; name: string; combatProfile: NpcCombatProfile; loot?: CombatLootDefinition } | undefined {
   const localNpc = world.locations
     .find((location) => location.id === locationId)
     ?.npcs?.find((candidate) => candidate.id === opponentId && candidate.combatProfile);
   if (localNpc?.combatProfile) {
-    return { id: localNpc.id, name: localNpc.name, combatProfile: localNpc.combatProfile };
+    return {
+      id: localNpc.id,
+      name: localNpc.name,
+      combatProfile: localNpc.combatProfile,
+      loot: localNpc.loot,
+    };
   }
   for (const road of world.roads) {
     const encounter = road.encounters.find((candidate) => candidate.id === opponentId);
-    if (encounter) return { id: encounter.id, name: encounter.name, combatProfile: encounter.combatProfile };
+    if (encounter) {
+      return {
+        id: encounter.id,
+        name: encounter.name,
+        combatProfile: encounter.combatProfile,
+        loot: encounter.loot,
+      };
+    }
   }
   return undefined;
 }
@@ -342,6 +356,19 @@ export const combatPlugin: EnginePlugin = {
         }
       }
       if (status === 'victory') {
+        effects.push(createWorldCorpseEffect(context.makeId, {
+          encounterId: resolvedEncounter.encounterId,
+          opponentId: npc.id,
+          opponentName: npc.name,
+          locationId: resolvedEncounter.locationId,
+          loot: npc.loot,
+          ...(context.world.currency
+            ? {
+              currencyId: context.world.currency.id,
+              currencyName: context.world.currency.name,
+            }
+            : {}),
+        }));
         const currentAdvancement = character.advancement ?? { experience: 0, level: 1 };
         const totalExperience = currentAdvancement.experience + VICTORY_EXPERIENCE_REWARD;
         let level = currentAdvancement.level;

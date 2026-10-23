@@ -174,6 +174,17 @@ export const CharacterWalletInitializedEventSchema = DomainEventBaseSchema.exten
   }).strict(),
 }).strict();
 
+export const CharacterCorpseGoldReceivedEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('character.corpse_gold_received'),
+  version: z.literal(1),
+  payload: z.object({
+    characterId: IdSchema,
+    corpseId: IdSchema,
+    currencyId: IdSchema,
+    amount: PositiveIntSchema.max(2_147_483_647),
+  }).strict(),
+}).strict();
+
 export const TakeCharacterItemCommandSchema = ClientCommandBaseSchema.extend({
   type: z.literal('character.take'),
   expectedVersion: NonNegativeIntSchema,
@@ -338,6 +349,7 @@ export const CharacterProjectionSchema = z.object({
     locationId: IdSchema.nullable(),
   }).strict()).default([]),
   claimedContainerItemIds: z.array(IdSchema).default([]),
+  claimedCorpseGoldIds: z.array(IdSchema).default([]),
   npcProgress: z.array(z.object({
     npcId: IdSchema,
     progressFlagIds: z.array(IdSchema).default([]),

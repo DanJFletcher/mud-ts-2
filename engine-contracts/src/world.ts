@@ -38,21 +38,6 @@ export const LocationStateDefinitionSchema = z.object({
   description: z.string().min(1).max(1000).optional(),
 }).strict();
 
-export const RoadEncounterDefinitionSchema = z.object({
-  id: IdSchema,
-  name: z.string().min(1).max(120),
-  combatProfile: NpcCombatProfileSchema,
-}).strict();
-
-export const RoadDefinitionSchema = z.object({
-  id: IdSchema,
-  name: z.string().min(1).max(160),
-  /** Ordered endpoints and traversable road-segment locations. */
-  locationIds: z.array(IdSchema).min(3).max(100),
-  encounterChancePercent: z.number().int().min(0).max(100),
-  encounters: z.array(RoadEncounterDefinitionSchema).min(1).max(24),
-}).strict();
-
 export const MapTerrainSchema = z.string()
   .trim()
   .min(1)
@@ -106,6 +91,30 @@ export const TakeableObjectDefinitionSchema = z.object({
   }
 });
 
+export const CombatLootDefinitionSchema = z.object({
+  items: z.array(TakeableObjectDefinitionSchema).max(24).default([]),
+  currencyAmount: NonNegativeIntSchema.max(2_147_483_647).optional(),
+}).strict().superRefine((loot, context) => {
+  const itemIds = new Set<string>();
+  for (const [index, item] of loot.items.entries()) {
+    if (itemIds.has(item.id)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['items', index, 'id'],
+        message: 'Combat loot item IDs must be unique within the loot definition.',
+      });
+    }
+    if (item.questBound) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['items', index, 'questBound'],
+        message: 'Combat loot cannot contain quest-bound items.',
+      });
+    }
+    itemIds.add(item.id);
+  }
+});
+
 export const ContainerKindSchema = z.enum(['sack', 'chest', 'corpse', 'other']);
 
 export const ContainerDefinitionSchema = z.object({
@@ -115,6 +124,22 @@ export const ContainerDefinitionSchema = z.object({
   description: z.string().min(1).max(1000),
   roomDescription: z.string().min(1).max(1000).optional(),
   contents: z.array(TakeableObjectDefinitionSchema).max(100),
+}).strict();
+
+export const RoadEncounterDefinitionSchema = z.object({
+  id: IdSchema,
+  name: z.string().min(1).max(120),
+  combatProfile: NpcCombatProfileSchema,
+  loot: CombatLootDefinitionSchema.optional(),
+}).strict();
+
+export const RoadDefinitionSchema = z.object({
+  id: IdSchema,
+  name: z.string().min(1).max(160),
+  /** Ordered endpoints and traversable road-segment locations. */
+  locationIds: z.array(IdSchema).min(3).max(100),
+  encounterChancePercent: z.number().int().min(0).max(100),
+  encounters: z.array(RoadEncounterDefinitionSchema).min(1).max(24),
 }).strict();
 
 export const InteractableObjectDefinitionSchema = z.object({
@@ -256,6 +281,7 @@ export const NpcDefinitionSchema = z.object({
   roomChatReactions: z.array(NpcRoomChatReactionDefinitionSchema).max(24).optional(),
   movement: NpcMovementBehaviorSchema.optional(),
   combatProfile: NpcCombatProfileSchema.optional(),
+  loot: CombatLootDefinitionSchema.optional(),
   shop: MerchantCatalogDefinitionSchema.optional(),
 }).strict();
 
@@ -715,6 +741,7 @@ export type LocationDefinition = z.infer<typeof LocationDefinitionSchema>;
 export type WorldPackDraft = z.infer<typeof WorldPackDraftSchema>;
 export type WorldPackDraftInput = z.input<typeof WorldPackDraftSchema>;
 export type RoadDefinition = z.infer<typeof RoadDefinitionSchema>;
+export type CombatLootDefinition = z.infer<typeof CombatLootDefinitionSchema>;
 export type RoadEncounterDefinition = z.infer<typeof RoadEncounterDefinitionSchema>;
 export type LocationDescribeQuery = z.infer<typeof LocationDescribeQuerySchema>;
 export type ObjectReadQuery = z.infer<typeof ObjectReadQuerySchema>;
@@ -782,6 +809,21 @@ export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
       if (location.npcs?.filter((candidate) => candidate.id === npc.id).length !== 1) {
         errors.push(`Merchant NPC ID ${npc.id} must be unique within its location`);
       }
+    }
+  }
+  const combatLootSources = [
+    ...pack.locations.flatMap((location) =>
+      (location.npcs ?? []).flatMap((npc) => npc.loot ? [{ id: npc.id, loot: npc.loot }] : []),
+    ),
+    ...pack.roads.flatMap((road) =>
+      road.encounters.flatMap((encounter) =>
+        encounter.loot ? [{ id: encounter.id, loot: encounter.loot }] : [],
+      ),
+    ),
+  ];
+  for (const { id, loot } of combatLootSources) {
+    if (loot.currencyAmount && !pack.currency) {
+      errors.push(`Combat loot for ${id} requires configured world currency`);
     }
   }
   const allItemUseIds = new Set(pack.locations.flatMap((room) => (room.itemUses ?? []).map((interaction) => interaction.id)));

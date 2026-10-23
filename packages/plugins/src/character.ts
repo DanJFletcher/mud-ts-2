@@ -30,6 +30,7 @@ import {
   locationGroupMembershipsForLocation,
   resolveLocationDisplayName,
   type CapabilityToken,
+  WorldCorpseGoldClaimedEventSchema,
   WorldItemClaimedEventSchema,
 } from '@mudd/contracts';
 import { RuleViolationError, type EngineCommandContext, type EnginePlugin, type QueryContext } from '@mudd/engine-core';
@@ -38,6 +39,7 @@ import type { CharacterProjection } from '@mudd/contracts';
 import {
   worldItemClaimEffect,
   worldItemDropEffect,
+  worldCorpseGoldCreditEffect,
   worldItemsStateCapability,
   worldItemsStreamId,
   type WorldItemsStateCapability,
@@ -75,6 +77,7 @@ export const characterPlugin: EnginePlugin = {
       'character.equipment_changed': 1,
       'character.shared_item_received': 1,
       'character.shared_item_relinquished': 1,
+      'character.corpse_gold_received': 1,
       'character.respawned': 1,
     },
   },
@@ -152,6 +155,44 @@ export const characterPlugin: EnginePlugin = {
             characterId: character.characterId,
             sourceLocationId: character.locationId,
             item: sharedItem.item,
+          })],
+        };
+      }
+      const corpseWithGold = sharedState.corpses.find((corpse) =>
+        corpse.goldItemId === command.payload.itemId &&
+        corpse.locationId === character.locationId &&
+        !corpse.goldClaimed,
+      );
+      if (corpseWithGold) {
+        const currency = context.world.currency;
+        if (
+          !currency ||
+          currency.id !== corpseWithGold.currencyId ||
+          !character.wallet ||
+          character.wallet.currencyId !== currency.id
+        ) {
+          throw new RuleViolationError('This character’s wallet is not ready to collect that currency.');
+        }
+        if (character.wallet.balance > 2_147_483_647 - corpseWithGold.currencyAmount) {
+          throw new RuleViolationError('Your wallet cannot hold that much currency.');
+        }
+        const eventPayload = {
+          corpseId: corpseWithGold.corpseId,
+          characterId: character.characterId,
+          locationId: character.locationId,
+          currencyId: currency.id,
+          amount: corpseWithGold.currencyAmount,
+        };
+        WorldCorpseGoldClaimedEventSchema.shape.payload.parse(eventPayload);
+        return {
+          streamId: worldItemsStreamId(context.worldInstanceId),
+          expectedVersion: sharedState.revision,
+          events: [{ type: 'world.corpse_gold_claimed', version: 1, payload: eventPayload }],
+          effects: [worldCorpseGoldCreditEffect({
+            characterId: character.characterId,
+            corpseId: corpseWithGold.corpseId,
+            currencyId: currency.id,
+            amount: corpseWithGold.currencyAmount,
           })],
         };
       }
@@ -418,8 +459,29 @@ export const characterPlugin: EnginePlugin = {
         : location.npcs ?? [];
       const locationState = resolveLocationState(location, character.locationStateId);
       const availableExits = exitsForLocationState(location, locationState?.id);
-      const sharedItems = (await worldItems.load(context)).items
+      const sharedState = await worldItems.load(context);
+      const sharedItems = sharedState.items
         .filter((item) => item.locationId === character.locationId);
+      const roomCorpses = sharedState.corpses
+        .filter((corpse) => corpse.locationId === character.locationId)
+        .map((corpse) => {
+          const contents = sharedItems
+            .filter((item) => item.containerId === corpse.corpseId)
+            .map(({ worldItemId, item }) => ({
+              id: worldItemId,
+              label: item.label,
+              description: item.description,
+            }));
+          if (!corpse.goldClaimed && corpse.goldItemId && corpse.currencyAmount > 0) {
+            const currencyName = context.world.currency?.name ?? 'coins';
+            contents.push({
+              id: corpse.goldItemId,
+              label: `${corpse.currencyAmount} ${currencyName}`,
+              description: `${corpse.currencyAmount} ${currencyName} left by ${corpse.opponentName}.`,
+            });
+          }
+          return { corpse, contents };
+        });
       const trackedItemIds = new Set(character.itemLocations.map((entry) => entry.item.id));
       const visibleContainers = (location.containers ?? []).map((container) => ({
         ...container,
@@ -442,7 +504,9 @@ export const characterPlugin: EnginePlugin = {
         const roomDescription = roomDescriptionByItemId.get(item.id);
         return roomDescription ? [roomDescription] : [];
       });
-      const sharedItemDescriptions = sharedItems.map(({ item }) => `${item.label} lies here.`);
+      const sharedItemDescriptions = sharedItems
+        .filter((item) => !item.containerId)
+        .map(({ item }) => `${item.label} lies here.`);
       const containerDescriptions = visibleContainers.map((container) => {
         const roomDescription = container.roomDescription ?? `${container.label} is here.`;
         const contents = container.contents.length
@@ -450,6 +514,11 @@ export const characterPlugin: EnginePlugin = {
           : ' It is empty.';
         return `${roomDescription}${contents}`;
       });
+      const corpseDescriptions = roomCorpses.map(({ corpse, contents }) =>
+        `${corpse.description}${contents.length
+          ? ` It contains ${contents.map((item) => item.label).join(', ')}.`
+          : ' It is empty.'}`,
+      );
       const roomNpcDescriptions = roomNpcs.map(
         ({ name, description }) => `${name} is here. ${description}`,
       );
@@ -480,6 +549,7 @@ export const characterPlugin: EnginePlugin = {
           ...roomItemDescriptions,
           ...sharedItemDescriptions,
           ...containerDescriptions,
+          ...corpseDescriptions,
           ...interactableRoomDescriptions,
           ...roomNpcDescriptions,
         ].join('\n\n'),
@@ -518,13 +588,30 @@ export const characterPlugin: EnginePlugin = {
               containerId: container.id,
             })),
           ]),
-          ...sharedItems.map(({ worldItemId, item }) => ({
+          ...sharedItems.filter((item) => !item.containerId).map(({ worldItemId, item }) => ({
             id: worldItemId,
             label: item.label,
             description: item.description,
             readable: false,
             takeable: true,
           })),
+          ...roomCorpses.flatMap(({ corpse, contents }) => [
+            {
+              id: corpse.corpseId,
+              label: corpse.label,
+              description: corpse.description,
+              readable: false,
+              takeable: false,
+              containerKind: 'corpse' as const,
+              contents,
+            },
+            ...contents.map((content) => ({
+              ...content,
+              readable: false,
+              takeable: true,
+              containerId: corpse.corpseId,
+            })),
+          ]),
           ...(location.interactables ?? []).map(({ id, label, description }) => ({
             id, label, description, readable: false, takeable: false,
           })),
@@ -590,18 +677,55 @@ export const characterPlugin: EnginePlugin = {
             : 'It is empty.',
         ].join(' '),
       }));
-      const sharedItems = (await worldItems.load(context)).items
+      const sharedState = await worldItems.load(context);
+      const sharedItems = sharedState.items
         .filter((item) => item.locationId === character.locationId);
+      const roomCorpses = sharedState.corpses
+        .filter((corpse) => corpse.locationId === character.locationId)
+        .map(({ corpseId, label, description, opponentName, currencyAmount, currencyId, goldItemId, goldClaimed }) => {
+          const contents = sharedItems
+            .filter((item) => item.containerId === corpseId)
+            .map(({ worldItemId, item }) => ({
+              id: worldItemId,
+              label: item.label,
+              description: item.description,
+            }));
+          if (!goldClaimed && goldItemId && currencyAmount > 0) {
+            const currencyName = context.world.currency?.name ?? 'coins';
+            contents.push({
+              id: goldItemId,
+              label: `${currencyAmount} ${currencyName}`,
+              description: `${currencyAmount} ${currencyName} left by ${opponentName}.`,
+            });
+          }
+          return {
+            id: corpseId,
+            label,
+            description: [
+              description,
+              contents.length
+                ? `It contains ${contents.map((item) => item.label).join(', ')}.`
+                : 'It is empty.',
+            ].join(' '),
+            contents,
+            currencyId,
+          };
+        });
+      const roomCorpseObjects = roomCorpses.map(({ id, label, description }) => ({ id, label, description }));
       const objectInRoom = [
         ...(location.readables ?? []),
         ...(location.takeables ?? []).filter((item) => !trackedItemIds.has(item.id)),
         ...(location.interactables ?? []),
         ...roomContainers,
+        ...roomCorpseObjects,
         ...visibleContainers.flatMap((container) => container.contents),
         ...character.itemLocations
           .filter((entry) => entry.locationId === location.id)
           .map(({ item }) => item),
-        ...sharedItems.map(({ item }) => item),
+        ...sharedItems.map(({ worldItemId, item }) => ({
+          ...item,
+          id: worldItemId,
+        })),
       ].find((item) => item.id === query.payload.objectId);
       const objectInPack = character.inventory.find((item) => item.id === query.payload.objectId);
       const object = objectInRoom ?? objectInPack;

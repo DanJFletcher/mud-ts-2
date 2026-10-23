@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { DomainEventBaseSchema } from './protocol.js';
-import { IdSchema } from './ids.js';
+import { IdSchema, NonNegativeIntSchema, PositiveIntSchema } from './ids.js';
 import { InventoryItemProjectionSchema } from './character.js';
 
 export const WorldItemRecordSchema = z.object({
@@ -8,6 +8,7 @@ export const WorldItemRecordSchema = z.object({
   item: InventoryItemProjectionSchema,
   locationId: IdSchema.nullable(),
   holderCharacterId: IdSchema.nullable(),
+  containerId: IdSchema.optional(),
 }).strict().superRefine((record, context) => {
   if (
     record.item.id !== record.worldItemId ||
@@ -49,4 +50,51 @@ export const WorldItemClaimedEventSchema = DomainEventBaseSchema.extend({
   }).strict(),
 }).strict();
 
+export const WorldCorpseRecordSchema = z.object({
+  corpseId: IdSchema,
+  encounterId: IdSchema,
+  opponentId: IdSchema,
+  opponentName: z.string().min(1).max(120),
+  label: z.string().min(1).max(120),
+  description: z.string().min(1).max(1000),
+  locationId: IdSchema,
+  currencyId: IdSchema.optional(),
+  currencyAmount: NonNegativeIntSchema.max(2_147_483_647),
+  goldItemId: IdSchema.optional(),
+  goldClaimed: z.boolean(),
+}).strict().superRefine((corpse, context) => {
+  if ((corpse.currencyAmount > 0) !== Boolean(corpse.currencyId && corpse.goldItemId)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['currencyAmount'],
+      message: 'A corpse with currency must identify its currency and takeable gold entry.',
+    });
+  }
+});
+
+export const WorldCorpseCreatedEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('world.corpse_created'),
+  version: z.literal(1),
+  payload: z.object({
+    corpse: WorldCorpseRecordSchema,
+    items: z.array(z.object({
+      worldItemId: IdSchema,
+      item: InventoryItemProjectionSchema,
+    }).strict()).max(24),
+  }).strict(),
+}).strict();
+
+export const WorldCorpseGoldClaimedEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('world.corpse_gold_claimed'),
+  version: z.literal(1),
+  payload: z.object({
+    corpseId: IdSchema,
+    characterId: IdSchema,
+    locationId: IdSchema,
+    currencyId: IdSchema,
+    amount: PositiveIntSchema.max(2_147_483_647),
+  }).strict(),
+}).strict();
+
 export type WorldItemRecord = z.infer<typeof WorldItemRecordSchema>;
+export type WorldCorpseRecord = z.infer<typeof WorldCorpseRecordSchema>;

@@ -28,6 +28,7 @@ import {
   type TeamCombatRosterPolicy,
   type TeamRoadEncounterCapability,
 } from './team-combat-policy.js';
+import { createWorldCorpseEffect } from './world-items.js';
 
 const STREAM_ID = 'world-team-combat';
 const PLAYER_TEAM = 'allies';
@@ -633,6 +634,30 @@ export const teamCombatPlugin: EnginePlugin = {
               })),
           },
         });
+        if (status === 'victory') {
+          const defeatedNpc = findCombatNpc(
+            context,
+            encounter.locationId,
+            opponent.npcId!,
+            state.roadTravelByEncounter.get(encounter.encounterId)?.roadId,
+          );
+          if (!defeatedNpc?.combatProfile) {
+            throw new RuleViolationError('The defeated opponent is no longer available.');
+          }
+          effects.push(createWorldCorpseEffect(context.makeId, {
+            encounterId: encounter.encounterId,
+            opponentId: opponent.npcId!,
+            opponentName: opponent.displayName,
+            locationId: encounter.locationId,
+            loot: defeatedNpc.loot,
+            ...(context.world.currency
+              ? {
+                currencyId: context.world.currency.id,
+                currencyName: context.world.currency.name,
+              }
+              : {}),
+          }));
+        }
       }
       return { streamId: STREAM_ID, expectedVersion: state.revision, events, effects };
     });
