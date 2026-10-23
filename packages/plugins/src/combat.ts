@@ -2,11 +2,13 @@ import {
   CharacterAdvancementAwardedEventV2Schema,
   CharacterCombatEncounterStartedEventSchema,
   CharacterCombatItemUsedEventSchema,
-  CharacterInnRestCompletedEventSchema,
+  CharacterInnRestCompletedEventV2Schema,
+  CharacterStaminaSpentEventSchema,
   CharacterStatsProjectionSchema,
   CharacterStatsQuerySchema,
   CombatActionCommandSchema,
   CombatActionResolvedEventV3Schema,
+  FLEE_STAMINA_COST,
   InnRestCommandSchema,
 } from '@mudd/contracts';
 import type { EnginePlugin, ProposedDomainEvent, ProposedEventEffect } from '@mudd/engine-core';
@@ -107,7 +109,8 @@ export const combatPlugin: EnginePlugin = {
       'character.combat_encounter_started': 1,
       'character.advancement_awarded': 2,
       'character.combat_item_used': 1,
-      'character.inn_rest_completed': 1,
+      'character.inn_rest_completed': 2,
+      'character.stamina_spent': 1,
       'character.respawned': 1,
     },
   },
@@ -151,8 +154,16 @@ export const combatPlugin: EnginePlugin = {
         character.attributes.constitution,
       );
       const current = Math.min(character.health?.current ?? maximum, maximum);
-      if (current >= maximum) throw new RuleViolationError('You are already at full health.');
+      const staminaRestored = character.resources.stamina.maximum - character.resources.stamina.current;
+      const manaRestored = character.resources.mana.maximum - character.resources.mana.current;
+      if (current >= maximum && staminaRestored === 0 && manaRestored === 0) {
+        throw new RuleViolationError('Your health, stamina, and mana are already full.');
+      }
       const healthRestored = maximum - current;
+      const resources = {
+        stamina: { ...character.resources.stamina, current: character.resources.stamina.maximum },
+        mana: { ...character.resources.mana, current: character.resources.mana.maximum },
+      };
       const payload = {
         characterId: character.characterId,
         locationId: character.locationId,
@@ -160,13 +171,16 @@ export const combatPlugin: EnginePlugin = {
         currencyId: currency.id,
         price: inn.restPrice,
         healthRestored,
+        staminaRestored,
+        manaRestored,
         health: { current: maximum, maximum },
+        resources,
       };
-      CharacterInnRestCompletedEventSchema.shape.payload.parse(payload);
+      CharacterInnRestCompletedEventV2Schema.shape.payload.parse(payload);
       return {
         streamId: character.characterId,
         expectedVersion: command.expectedVersion,
-        events: [{ type: 'character.inn_rest_completed', version: 1, payload }],
+        events: [{ type: 'character.inn_rest_completed', version: 2, payload }],
       };
     });
 
@@ -251,6 +265,9 @@ export const combatPlugin: EnginePlugin = {
       if (!npc?.combatProfile) throw new RuleViolationError('That opponent is no longer available.');
 
       const action = command.payload.action;
+      if (action === 'flee' && character.resources.stamina.current < FLEE_STAMINA_COST) {
+        throw new RuleViolationError(`You need ${FLEE_STAMINA_COST} stamina to flee.`);
+      }
       const opponentStyle = encounter.opponentStyle ?? npc.combatProfile.style ?? 'steady';
       const armor = character.inventory.find((item) => item.id === character.equipment.armorItemId);
       const attackDamage = characterAttackDamage(character);
@@ -336,9 +353,27 @@ export const combatPlugin: EnginePlugin = {
         encounter: resolvedEncounter,
       };
       CombatActionResolvedEventV3Schema.shape.payload.parse(payload);
-      const events: ProposedDomainEvent[] = [
-        { type: 'character.combat_action_resolved', version: 3, payload },
-      ];
+      const events: ProposedDomainEvent[] = [{
+        type: 'character.combat_action_resolved',
+        version: 3,
+        payload,
+      }];
+      if (action === 'flee') {
+        const staminaPayload = CharacterStaminaSpentEventSchema.shape.payload.parse({
+          characterId: character.characterId,
+          cause: 'solo-flee',
+          causeId: resolvedEncounter.encounterId,
+          staminaSpent: FLEE_STAMINA_COST,
+          resources: {
+            ...character.resources,
+            stamina: {
+              ...character.resources.stamina,
+              current: character.resources.stamina.current - FLEE_STAMINA_COST,
+            },
+          },
+        });
+        events.push({ type: 'character.stamina_spent', version: 1, payload: staminaPayload });
+      }
       let effects: ProposedEventEffect[] = [];
       if (status === 'defeat' && playerHealth === 0) {
         const respawn = prepareCharacterRespawn(

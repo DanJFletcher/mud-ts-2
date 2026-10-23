@@ -11,6 +11,9 @@ import {
   CharacterQuestRewardedEventSchema,
   CharacterProjectionSchema,
   CharacterCreatedEventSchema,
+  CharacterCreatedEventV2Schema,
+  CharacterStaminaSpentEventSchema,
+  DEFAULT_CHARACTER_RESOURCES,
   CharacterMovedEventSchema,
   CharacterRenamedEventSchema,
   CharacterArchivedEventSchema,
@@ -42,7 +45,9 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
       throw new Error(`Non-contiguous aggregate revision at ${event.aggregateVersion}.`);
     }
     if (event.type === 'character.created') {
-      const created = CharacterCreatedEventSchema.parse(publicEvent);
+      const created = event.version === 2
+        ? CharacterCreatedEventV2Schema.parse(publicEvent)
+        : CharacterCreatedEventSchema.parse(publicEvent);
       state = CharacterProjectionSchema.parse({
         worldInstanceId: event.worldInstanceId,
         characterId: created.payload.characterId,
@@ -53,6 +58,9 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         revision: event.aggregateVersion,
         ...(created.payload.attributes ? { attributes: created.payload.attributes } : {}),
         ...(created.payload.honors ? { honors: created.payload.honors } : {}),
+        resources: 'resources' in created.payload
+          ? created.payload.resources
+          : DEFAULT_CHARACTER_RESOURCES,
         ...(created.payload.wallet ? { wallet: created.payload.wallet } : {}),
       });
     } else if (event.type === 'character.wallet_initialized') {
@@ -94,19 +102,29 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
       const rested = CharacterInnRestCompletedEventSchema.parse(publicEvent);
       const { characterId, locationId, currencyId, price, healthRestored, health } = rested.payload;
       const previousHealth = state.health;
+      const previousHealthCurrent = previousHealth?.current ?? health.maximum;
+      const previousHealthMaximum = previousHealth?.maximum ?? health.maximum;
+      const resourcesV2 = rested.version === 2 ? rested.payload.resources : state.resources;
+      const staminaRestoredV2 = rested.version === 2 ? rested.payload.staminaRestored : 0;
+      const manaRestoredV2 = rested.version === 2 ? rested.payload.manaRestored : 0;
       if (
         characterId !== state.characterId ||
         locationId !== state.locationId ||
         state.combat?.status === 'active' ||
-        !previousHealth ||
-        previousHealth.current <= 0 ||
+        previousHealthCurrent <= 0 ||
         !state.wallet ||
         state.wallet.currencyId !== currencyId ||
         state.wallet.balance < price ||
-        health.maximum !== previousHealth.maximum ||
+        health.maximum !== previousHealthMaximum ||
         health.current !== health.maximum ||
-        healthRestored !== health.maximum - previousHealth.current ||
-        healthRestored <= 0
+        healthRestored !== health.maximum - previousHealthCurrent ||
+        (rested.version === 1 && healthRestored <= 0) ||
+        resourcesV2.stamina.maximum !== state.resources.stamina.maximum ||
+        resourcesV2.mana.maximum !== state.resources.mana.maximum ||
+        resourcesV2.stamina.current !== resourcesV2.stamina.maximum ||
+        resourcesV2.mana.current !== resourcesV2.mana.maximum ||
+        staminaRestoredV2 !== resourcesV2.stamina.maximum - state.resources.stamina.current ||
+        manaRestoredV2 !== resourcesV2.mana.maximum - state.resources.mana.current
       ) {
         throw new Error(`Invalid inn rest event at revision ${event.aggregateVersion}.`);
       }
@@ -114,6 +132,33 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         ...state,
         wallet: { ...state.wallet, balance: state.wallet.balance - price },
         health,
+        resources: resourcesV2,
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.stamina_spent') {
+      if (!state) throw new Error('Stamina expenditure encountered before character creation.');
+      const spent = CharacterStaminaSpentEventSchema.parse(publicEvent);
+      const previousStamina = state.resources.stamina;
+      const nextStamina = spent.payload.resources.stamina;
+      const encounter = state.combat;
+      if (
+        spent.payload.characterId !== state.characterId ||
+        spent.payload.staminaSpent > previousStamina.current ||
+        nextStamina.maximum !== previousStamina.maximum ||
+        nextStamina.current !== previousStamina.current - spent.payload.staminaSpent ||
+        spent.payload.resources.mana.current !== state.resources.mana.current ||
+        spent.payload.resources.mana.maximum !== state.resources.mana.maximum ||
+        (spent.payload.cause === 'solo-flee' && (
+          encounter?.status !== 'fled' ||
+          encounter.encounterId !== spent.payload.causeId ||
+          encounter.lastAction !== 'flee'
+        ))
+      ) {
+        throw new Error(`Invalid stamina expenditure at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        resources: spent.payload.resources,
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'character.combat_encounter_started') {

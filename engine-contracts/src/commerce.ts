@@ -3,6 +3,7 @@ import { ClientCommandBaseSchema, ClientQueryBaseSchema, DomainEventBaseSchema }
 import { IdSchema, NonNegativeIntSchema, PositiveIntSchema } from './ids.js';
 import { CharacterWalletSchema, InventoryItemProjectionSchema } from './character.js';
 import { CharacterHealthSchema } from './health.js';
+import { CharacterResourcesSchema } from './character.js';
 
 const MAX_CURRENCY_AMOUNT = 2_147_483_647;
 
@@ -99,19 +100,43 @@ export const InnRestCommandSchema = ClientCommandBaseSchema.extend({
   payload: z.object({ innId: IdSchema }).strict(),
 }).strict();
 
-export const CharacterInnRestCompletedEventSchema = DomainEventBaseSchema.extend({
+const InnRestCompletedPayloadV1Schema = z.object({
+  characterId: IdSchema,
+  locationId: IdSchema,
+  innId: IdSchema,
+  currencyId: IdSchema,
+  price: PositiveIntSchema.max(MAX_CURRENCY_AMOUNT),
+  healthRestored: PositiveIntSchema.max(1000),
+  health: CharacterHealthSchema,
+}).strict();
+
+export const CharacterInnRestCompletedEventV1Schema = DomainEventBaseSchema.extend({
   type: z.literal('character.inn_rest_completed'),
   version: z.literal(1),
+  payload: InnRestCompletedPayloadV1Schema,
+}).strict();
+
+export const CharacterInnRestCompletedEventV2Schema = DomainEventBaseSchema.extend({
+  type: z.literal('character.inn_rest_completed'),
+  version: z.literal(2),
   payload: z.object({
     characterId: IdSchema,
     locationId: IdSchema,
     innId: IdSchema,
     currencyId: IdSchema,
     price: PositiveIntSchema.max(MAX_CURRENCY_AMOUNT),
-    healthRestored: PositiveIntSchema.max(1000),
+    healthRestored: NonNegativeIntSchema.max(1000),
+    staminaRestored: NonNegativeIntSchema.max(1000),
+    manaRestored: NonNegativeIntSchema.max(1000),
     health: CharacterHealthSchema,
+    resources: CharacterResourcesSchema,
   }).strict(),
 }).strict();
+
+export const CharacterInnRestCompletedEventSchema = z.discriminatedUnion('version', [
+  CharacterInnRestCompletedEventV1Schema,
+  CharacterInnRestCompletedEventV2Schema,
+]);
 
 export type WorldCurrencyDefinition = z.infer<typeof WorldCurrencyDefinitionSchema>;
 export type InnDefinition = z.infer<typeof InnDefinitionSchema>;

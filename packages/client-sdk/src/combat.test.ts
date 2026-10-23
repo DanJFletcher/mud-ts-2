@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CharacterStaminaSpentEventSchema, FLEE_STAMINA_COST } from '@mudd/contracts';
 import { EngineHost, InMemoryEventStore, replayCharacter, type EnginePlugin } from '@mudd/engine-core';
 import {
   characterPlugin,
@@ -168,7 +169,103 @@ async function travelToWillowrestInn(
   return state;
 }
 
+async function spendStaminaForTest(
+  store: InMemoryEventStore,
+  characterId: string,
+  causeId: string,
+  staminaSpent = FLEE_STAMINA_COST,
+) {
+  const state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+  const payload = CharacterStaminaSpentEventSchema.shape.payload.parse({
+    characterId,
+    cause: 'team-flee',
+    causeId,
+    staminaSpent,
+    resources: {
+      ...state.resources,
+      stamina: {
+        ...state.resources.stamina,
+        current: state.resources.stamina.current - staminaSpent,
+      },
+    },
+  });
+  const result = await store.append({
+    worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+    streamId: characterId,
+    actorId: 'test:resource-setup',
+    commandId: `test-stamina-${causeId}`,
+    payloadHash: `${characterId}:${causeId}:${staminaSpent}`,
+    expectedVersion: state.revision,
+    events: [{ type: 'character.stamina_spent', version: 1, payload }],
+  });
+  if (!result.receipt.ok) throw new Error('Could not prepare stamina test state.');
+  return replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+}
+
 describe('turn-based PvE combat', () => {
+  it('spends 20 stamina once when fleeing solo combat and rejects an unaffordable flee', async () => {
+    const { client, store } = makeClient();
+    const created = await client.createCharacter('Briar', 'stamina-flee-create');
+    const characterId = created.streamId!;
+    const room = await client.look(characterId, 'stamina-flee-look');
+    await client.performCombatAction(
+      characterId,
+      'attack',
+      room.revision,
+      { targetNpcId: 'mossgate-training-sentinel' },
+      'stamina-flee-start',
+    );
+    const active = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    const flee = await client.performCombatAction(
+      characterId,
+      'flee',
+      active.revision,
+      { encounterId: active.combat!.encounterId },
+      'stamina-flee-once',
+    );
+    const fled = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(fled).toMatchObject({
+      combat: { status: 'fled' },
+      resources: { stamina: { current: 80, maximum: 100 } },
+    });
+    const retry = await client.performCombatAction(
+      characterId,
+      'flee',
+      active.revision,
+      { encounterId: active.combat!.encounterId },
+      'stamina-flee-once',
+    );
+    expect(retry.receipt).toEqual(flee.receipt);
+    expect((await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))
+      .filter((event) => event.type === 'character.stamina_spent')).toHaveLength(1);
+
+    for (let index = 0; index < 4; index += 1) {
+      await spendStaminaForTest(store, characterId, `exhaust-${index}`);
+    }
+    const exhausted = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(exhausted.resources.stamina.current).toBe(0);
+    const newRoom = await client.look(characterId, 'stamina-flee-look-again');
+    await client.performCombatAction(
+      characterId,
+      'attack',
+      newRoom.revision,
+      { targetNpcId: 'mossgate-training-sentinel' },
+      'stamina-flee-start-again',
+    );
+    const activeWithoutStamina = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    const eventCount = (await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).length;
+    await expect(client.performCombatAction(
+      characterId,
+      'flee',
+      activeWithoutStamina.revision,
+      { encounterId: activeWithoutStamina.combat!.encounterId },
+      'stamina-flee-unaffordable',
+    )).rejects.toThrow(`You need ${FLEE_STAMINA_COST} stamina to flee.`);
+    expect(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).toHaveLength(eventCount);
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))?.combat?.status)
+      .toBe('active');
+  });
+
   it('resolves character-scoped actions, retries idempotently, and locks movement only while active', async () => {
     const { client, store } = makeClient();
     const first = await client.createCharacter('Briar', 'combat-create-first');
@@ -761,6 +858,10 @@ describe('paid inn rest', () => {
     expect(injuredAtInn).toMatchObject({
       locationId: 'willowrest-inn',
       health: { current: 5, maximum: 6 },
+      resources: {
+        stamina: { current: 80, maximum: 100 },
+        mana: { current: 100, maximum: 100 },
+      },
       wallet: { currencyId: 'moss-mark', balance: 12 },
       visitedLocationIds: expect.arrayContaining(['willowrest-inn']),
     });
@@ -784,13 +885,17 @@ describe('paid inn rest', () => {
     expect(rested).toMatchObject({
       locationId: 'willowrest-inn',
       health: { current: 6, maximum: 6 },
+      resources: {
+        stamina: { current: 100, maximum: 100 },
+        mana: { current: 100, maximum: 100 },
+      },
       wallet: { currencyId: 'moss-mark', balance: 7 },
     });
     const restEvent = (await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))
       .find((event) => event.type === 'character.inn_rest_completed');
     expect(restEvent).toMatchObject({
       type: 'character.inn_rest_completed',
-      version: 1,
+      version: 2,
       payload: {
         characterId,
         locationId: 'willowrest-inn',
@@ -798,7 +903,13 @@ describe('paid inn rest', () => {
         currencyId: 'moss-mark',
         price: 5,
         healthRestored: 1,
+        staminaRestored: 20,
+        manaRestored: 0,
         health: { current: 6, maximum: 6 },
+        resources: {
+          stamina: { current: 100, maximum: 100 },
+          mana: { current: 100, maximum: 100 },
+        },
       },
     });
 
@@ -811,6 +922,31 @@ describe('paid inn rest', () => {
     );
     expect(retry.receipt).toEqual(rest.receipt);
     expect(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).toHaveLength(eventCount);
+  });
+
+  it('restores stamina at an inn even when health is already full', async () => {
+    const { client, store } = makeClient();
+    const created = await client.createCharacter('Rowan', 'inn-rest-stamina-only-create');
+    const characterId = created.streamId!;
+    await spendStaminaForTest(store, characterId, 'inn-rest-stamina-only-flee');
+    const atInn = await travelToWillowrestInn(client, store, characterId, 'inn-rest-stamina-only', false);
+    expect(atInn.health).toBeUndefined();
+    expect(atInn.resources.stamina.current).toBe(80);
+
+    const rest = await client.restAtInn(
+      characterId,
+      'willowrest-inn-service',
+      atInn.revision,
+      'inn-rest-stamina-only',
+    );
+    expect(rest.receipt.ok).toBe(true);
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))).toMatchObject({
+      health: { current: 6, maximum: 6 },
+      resources: {
+        stamina: { current: 100, maximum: 100 },
+        mana: { current: 100, maximum: 100 },
+      },
+    });
   });
 
   it('prevents concurrent rest requests from spending the same balance twice', async () => {
@@ -846,7 +982,7 @@ describe('paid inn rest', () => {
     state = await travelToWillowrestInn(client, store, characterId, 'inn-rest-full', false);
     const fullHealthEventCount = (await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).length;
     await expect(client.restAtInn(characterId, 'willowrest-inn-service', state.revision, 'inn-rest-full'))
-      .rejects.toThrow('You are already at full health.');
+      .rejects.toThrow('Your health, stamina, and mana are already full.');
     expect(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).toHaveLength(fullHealthEventCount);
 
     const poorWorld = {

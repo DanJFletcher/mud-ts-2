@@ -515,8 +515,12 @@ describe('stepwise road travel', () => {
 
     for (const characterId of [firstCharacterId, secondCharacterId]) {
       const history = await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId);
-      expect(replayCharacter(history)?.locationId).toBe('road-start');
+      expect(replayCharacter(history)).toMatchObject({
+        locationId: 'road-start',
+        resources: { stamina: { current: 80, maximum: 100 } },
+      });
       expect(history.some((event) => event.type === 'character.moved')).toBe(false);
+      expect(history.filter((event) => event.type === 'character.stamina_spent')).toHaveLength(1);
     }
     activeRoadPartyRoster = undefined;
     await engine.stop();

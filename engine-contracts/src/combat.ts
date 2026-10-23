@@ -3,6 +3,7 @@ import { ClientCommandBaseSchema, DomainEventBaseSchema } from './protocol.js';
 import { IdSchema, NonNegativeIntSchema, PositiveIntSchema } from './ids.js';
 import { CharacterHealthSchema } from './health.js';
 
+export const FLEE_STAMINA_COST = 20;
 export const CombatActionIdSchema = z.enum(['attack', 'defend', 'flee', 'use-item']);
 const CombatLastActionSchema = z.enum(['attack', 'defend', 'flee', 'use-item', 'encounter']);
 export const CombatOutcomeSchema = z.enum(['active', 'victory', 'defeat', 'fled']);

@@ -12,6 +12,7 @@ import {
   TeamCombatStartedEventSchema,
   TeamCombatEncounterSchema,
   TeamRoadEncounterStartedEventSchema,
+  FLEE_STAMINA_COST,
   type TeamCombatEncounter,
   type TeamRoadTravelSnapshot,
   type RoadEncounterDefinition,
@@ -19,7 +20,12 @@ import {
 } from '@mudd/contracts';
 import type { CommandPlan, EngineCommandContext, EnginePlugin, EventEffectContext, ProposedDomainEvent, ProposedEventEffect } from '@mudd/engine-core';
 import { replayCharacter, RuleViolationError } from '@mudd/engine-core';
-import { assertCharacterAlive, characterStateCapability, type CharacterStateCapability } from './character.js';
+import {
+  assertCharacterAlive,
+  characterStateCapability,
+  teamFleeStaminaEffect,
+  type CharacterStateCapability,
+} from './character.js';
 import { prepareCharacterRespawn } from './respawn.js';
 import { characterAttackDamage, maximumHealthForLevel } from './character-stats.js';
 import {
@@ -471,6 +477,7 @@ export const teamCombatPlugin: EnginePlugin = {
       let healingDone = 0;
       let narration: string;
       const consumed = { ...encounter.consumedItemIdsByCharacter };
+      const effects: ProposedEventEffect[] = [];
 
       if (command.payload.action === 'attack') {
         const target = enemies.find((enemy) =>
@@ -493,8 +500,12 @@ export const teamCombatPlugin: EnginePlugin = {
         activeActor.defending = true;
         narration = `${character.name} braces for an incoming attack.`;
       } else if (command.payload.action === 'flee') {
+        if (character.resources.stamina.current < FLEE_STAMINA_COST) {
+          throw new RuleViolationError(`You need ${FLEE_STAMINA_COST} stamina to flee.`);
+        }
         activeActor.status = 'escaped';
-        narration = `${character.name} retreats from the encounter.`;
+        narration = `${character.name} retreats from the encounter and spends ${FLEE_STAMINA_COST} stamina.`;
+        effects.push(teamFleeStaminaEffect(character.characterId, encounter.encounterId));
       } else {
         const item = character.inventory.find((candidate) => candidate.id === command.payload.itemId);
         const alreadyConsumed = consumed[character.characterId] ?? [];
@@ -597,7 +608,6 @@ export const teamCombatPlugin: EnginePlugin = {
           narration: updated.lastNarration,
         }),
       }];
-      const effects = [];
       if (status !== 'active') {
         const opponent = participants.find((participant) => participant.teamId !== PLAYER_TEAM)!;
         const result = status;
@@ -616,7 +626,6 @@ export const teamCombatPlugin: EnginePlugin = {
         effects.push({
           type: 'team-combat.apply-outcomes',
           version: 1,
-          effectId: `team-combat-outcome:${encounter.encounterId}`,
           payload: {
             encounterId: encounter.encounterId,
             locationId: encounter.locationId,

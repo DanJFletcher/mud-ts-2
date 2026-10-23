@@ -1,7 +1,11 @@
+import { z } from 'zod';
 import {
-  CharacterCreatedEventSchema,
+  CharacterCreatedEventV2Schema,
+  CharacterStaminaSpentEventSchema,
+  DEFAULT_CHARACTER_RESOURCES,
   DEFAULT_CHARACTER_ATTRIBUTES,
   DEFAULT_CHARACTER_HONORS,
+  FLEE_STAMINA_COST,
   CharacterSharedItemRelinquishedEventSchema,
   CharacterItemTakenEventSchema,
   CharacterItemDroppedEventSchema,
@@ -33,7 +37,13 @@ import {
   WorldCorpseGoldClaimedEventSchema,
   WorldItemClaimedEventSchema,
 } from '@mudd/contracts';
-import { RuleViolationError, type EngineCommandContext, type EnginePlugin, type QueryContext } from '@mudd/engine-core';
+import {
+  RuleViolationError,
+  type EngineCommandContext,
+  type EnginePlugin,
+  type EventEffectContext,
+  type QueryContext,
+} from '@mudd/engine-core';
 import { replayCharacter } from '@mudd/engine-core';
 import type { CharacterProjection } from '@mudd/contracts';
 import {
@@ -65,6 +75,82 @@ export const characterStateCapability = Object.freeze({
   version: '1',
 }) satisfies CapabilityToken<CharacterStateCapability>;
 
+const TEAM_FLEE_STAMINA_EFFECT = 'mudd.character.team-flee-stamina';
+const TeamFleeStaminaEffectSchema = z.object({
+  characterId: z.string().min(1).max(128),
+  encounterId: z.string().min(1).max(128),
+}).strict();
+
+export function teamFleeStaminaEffect(characterId: string, encounterId: string) {
+  return {
+    type: TEAM_FLEE_STAMINA_EFFECT,
+    version: 1,
+    payload: { characterId, encounterId },
+  };
+}
+
+async function spendTeamFleeStamina(
+  payload: z.infer<typeof TeamFleeStaminaEffectSchema>,
+  context: EventEffectContext,
+): Promise<void> {
+  const history = await context.store.readStream(context.worldInstanceId, payload.characterId);
+  const character = replayCharacter(history);
+  if (!character || character.archived) {
+    throw new Error('The party combat participant is no longer available.');
+  }
+  if (history.some((event) =>
+    event.type === 'character.stamina_spent' &&
+    (event.payload as { cause?: string; causeId?: string }).cause === 'team-flee' &&
+    (event.payload as { causeId?: string }).causeId === payload.encounterId,
+  )) return;
+  const current = character.resources.stamina.current;
+  if (current < FLEE_STAMINA_COST) {
+    throw new Error('The party flee stamina cost cannot be applied to the current character resources.');
+  }
+  const eventPayload = CharacterStaminaSpentEventSchema.shape.payload.parse({
+    characterId: payload.characterId,
+    cause: 'team-flee',
+    causeId: payload.encounterId,
+    staminaSpent: FLEE_STAMINA_COST,
+    resources: {
+      ...character.resources,
+      stamina: {
+        ...character.resources.stamina,
+        current: current - FLEE_STAMINA_COST,
+      },
+    },
+  });
+  const expectedVersion = history.at(-1)?.aggregateVersion ?? 0;
+  const commandId = `team-flee-stamina:${context.effectId}:${expectedVersion}`;
+  const payloadHash = `${payload.characterId}:${payload.encounterId}:${FLEE_STAMINA_COST}`;
+  const prior = await context.store.lookupCommand(
+    context.worldInstanceId,
+    'system:character',
+    commandId,
+    payloadHash,
+  );
+  if (prior?.receipt.ok) return;
+  if (prior && !prior.receipt.ok && prior.receipt.code !== 'VERSION_CONFLICT') {
+    throw new Error('The party flee stamina command could not be applied.');
+  }
+  const result = await context.store.append({
+    worldInstanceId: context.worldInstanceId,
+    streamId: payload.characterId,
+    actorId: 'system:character',
+    commandId,
+    payloadHash,
+    expectedVersion,
+    events: [{
+      type: 'character.stamina_spent',
+      version: 1,
+      payload: eventPayload,
+    }],
+  });
+  if (!result.receipt.ok) {
+    throw new Error('Could not apply stamina spending for the party flee.');
+  }
+}
+
 export const characterPlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.character',
@@ -74,6 +160,8 @@ export const characterPlugin: EnginePlugin = {
     provides: ['mudd.character.state.v1'],
     requiredPlugins: { 'mudd.world-items': '^1.0.0' },
     eventSchemaVersions: {
+      'character.created': 2,
+      'character.stamina_spent': 1,
       'character.equipment_changed': 1,
       'character.shared_item_received': 1,
       'character.shared_item_relinquished': 1,
@@ -81,7 +169,7 @@ export const characterPlugin: EnginePlugin = {
       'character.respawned': 1,
     },
   },
-  register({ registerCommand, registerQuery, provideCapability, requireCapability, optionalCapability }) {
+  register({ registerCommand, registerQuery, registerEffect, provideCapability, requireCapability, optionalCapability }) {
     const worldItems = requireCapability<WorldItemsStateCapability>(worldItemsStateCapability);
     const autonomousNpcs = optionalCapability<AutonomousNpcStateCapability>(autonomousNpcStateCapability);
     const state: CharacterStateCapability = {
@@ -93,6 +181,12 @@ export const characterPlugin: EnginePlugin = {
       },
     };
     provideCapability(characterStateCapability, state);
+    registerEffect(
+      TEAM_FLEE_STAMINA_EFFECT,
+      1,
+      TeamFleeStaminaEffectSchema,
+      spendTeamFleeStamina,
+    );
 
     registerCommand('character.create', CreateCharacterCommandSchema, async (command, context) => {
       const name = command.payload.name.trim();
@@ -108,6 +202,7 @@ export const characterPlugin: EnginePlugin = {
         ...(startingLocation.defaultStateId ? { startingStateId: startingLocation.defaultStateId } : {}),
         attributes: DEFAULT_CHARACTER_ATTRIBUTES,
         honors: DEFAULT_CHARACTER_HONORS,
+        resources: DEFAULT_CHARACTER_RESOURCES,
         ...(context.world.currency
           ? {
             wallet: {
@@ -117,11 +212,11 @@ export const characterPlugin: EnginePlugin = {
           }
           : {}),
       };
-      CharacterCreatedEventSchema.shape.payload.parse(payload);
+      CharacterCreatedEventV2Schema.shape.payload.parse(payload);
       return {
         streamId: characterId,
         expectedVersion: 0,
-        events: [{ type: 'character.created', version: 1, payload }],
+        events: [{ type: 'character.created', version: 2, payload }],
       };
     });
 

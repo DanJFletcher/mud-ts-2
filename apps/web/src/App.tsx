@@ -9,7 +9,7 @@ import {
   type TouchEvent as ReactTouchEvent,
 } from "react";
 import { MuddHttpClient, type CommandResponse, type GameSnapshot } from "@mudd/client-sdk";
-import type { InteractionInbox } from "@mudd/contracts";
+import { FLEE_STAMINA_COST, type InteractionInbox } from "@mudd/contracts";
 import {
   ActivityLog,
   Button,
@@ -129,7 +129,7 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
   ],
   rest: [
     "Usage: rest",
-    "Restore your health for the inn’s listed price when you are below full health.",
+    "Restore missing health, stamina, and mana for the inn’s listed price.",
   ],
   drop: [
     "Usage: drop <item>",
@@ -145,7 +145,7 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
   ],
   flee: [
     "Usage: flee",
-    "End an active encounter and return to the room with your current health.",
+    `End an active PvE encounter and return to the room. Costs ${FLEE_STAMINA_COST} stamina.`,
   ],
   inspect: [
     "There is no separate inspect command.",
@@ -167,11 +167,11 @@ const GENERAL_HELP = [
   "equip <item> — Equip a carried weapon or armor item.",
   "unequip <weapon|armor> — Remove equipped gear from a slot.",
   "use <item> on <target> | use <healing item> — Use a room item or restore health during or between encounters.",
-  "rest — Restore your health at an inn for its listed price.",
+  "rest — Restore missing health, stamina, and mana at an inn for its listed price.",
   "drop <item> — Put down an item you carry.",
   "attack <opponent> — Begin an encounter or attack during combat.",
   "defend — Guard against the opponent’s next strike.",
-  "flee — End the current encounter.",
+  `flee — End an active PvE encounter; costs ${FLEE_STAMINA_COST} stamina.`,
   "Quick actions include available movement, item, equipment, merchant, dialogue, and combat actions.",
 ];
 
@@ -1106,6 +1106,7 @@ export function WorldClient({
     if (!snapshot?.character || !snapshot.location?.inn || pending) return;
     const inn = snapshot.location.inn;
     const previousHealth = snapshot.character.health;
+    const previousResources = snapshot.character.resources;
     setPending("rest");
     try {
       await client.restAtInn(snapshot.character.characterId, inn.id, snapshot.character.revision);
@@ -1113,13 +1114,20 @@ export function WorldClient({
       setSnapshot(nextSnapshot);
       setConnectionError("");
       const nextHealth = nextSnapshot.character?.health;
+      const nextResources = nextSnapshot.character?.resources;
       const nextWallet = nextSnapshot.character?.wallet;
       const healthRestored = nextHealth
         ? nextHealth.current - (previousHealth?.current ?? nextHealth.maximum)
         : 0;
+      const staminaRestored = nextResources
+        ? nextResources.stamina.current - previousResources.stamina.current
+        : 0;
+      const manaRestored = nextResources
+        ? nextResources.mana.current - previousResources.mana.current
+        : 0;
       addEntry(
         "narration",
-        `You rest at ${inn.name}, restore ${healthRestored} health, and pay ${inn.restPrice} ${inn.currency.name}${inn.restPrice === 1 ? "" : "s"}. Health: ${nextHealth?.current ?? "—"}/${nextHealth?.maximum ?? "—"}. Balance: ${nextWallet?.balance ?? "—"}.`,
+        `You rest at ${inn.name}, restore ${healthRestored} health, ${staminaRestored} stamina, and ${manaRestored} mana, and pay ${inn.restPrice} ${inn.currency.name}${inn.restPrice === 1 ? "" : "s"}. Health: ${nextHealth?.current ?? "—"}/${nextHealth?.maximum ?? "—"}. Balance: ${nextWallet?.balance ?? "—"}.`,
       );
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "You could not rest at this inn.");
@@ -1704,6 +1712,7 @@ export function WorldClient({
   }, [visibleCombat?.encounterId, visibleCombat?.status, visibleTeamCombat?.encounterId, visibleTeamCombat?.status]);
   const quickInventory = snapshot?.character?.inventory ?? [];
   const outsideCombatHealth = snapshot?.character?.health;
+  const canFlee = (snapshot?.character?.resources.stamina.current ?? 0) >= FLEE_STAMINA_COST;
   const canHealOutsideCombat = Boolean(
     outsideCombatHealth && outsideCombatHealth.current < outsideCombatHealth.maximum,
   );
@@ -1774,18 +1783,27 @@ export function WorldClient({
         opensMenu: false,
         onSelect: () => submitQuickCommand("defend"),
       });
-      actions.push({
-        id: "flee",
-        label: "flee",
-        ariaLabel: "Flee",
-        opensMenu: false,
-        onSelect: () => submitQuickCommand("flee"),
-      });
+      if (canFlee) {
+        actions.push({
+          id: "flee",
+          label: "flee",
+          ariaLabel: "Flee",
+          opensMenu: false,
+          onSelect: () => submitQuickCommand("flee"),
+        });
+      }
     } else if (challengeableNpcs.length > 0) {
       addMode("attack", "attack", "Show opponents to attack");
     }
     const health = snapshot?.character?.health;
-    const needsRest = Boolean(health && health.current < health.maximum);
+    const resources = snapshot?.character?.resources;
+    const needsRest = Boolean(
+      (health && health.current < health.maximum) ||
+      (resources && (
+        resources.stamina.current < resources.stamina.maximum ||
+        resources.mana.current < resources.mana.maximum
+      )),
+    );
     if (
       visibleCombat?.status !== "active" &&
       snapshot?.location?.inn &&
@@ -2129,7 +2147,7 @@ export function WorldClient({
                           {quickUseItems.some((item) => item.consumable?.effect === "heal") ? (
                             <button type="button" className="focused-quick-command focused-combat-action" aria-expanded={combatUseMenuOpen} onClick={() => setCombatUseMenuOpen((open) => !open)} disabled={pending !== null}>use</button>
                           ) : null}
-                          <button type="button" className="focused-quick-command focused-combat-action" onClick={() => void performCombatAction("flee", undefined, true)} disabled={pending !== null}>flee</button>
+                          <button type="button" className="focused-quick-command focused-combat-action" onClick={() => void performCombatAction("flee", undefined, true)} disabled={pending !== null || !canFlee} title={canFlee ? undefined : `Need ${FLEE_STAMINA_COST} stamina to flee`}>flee</button>
                         </div>
                       ) : <span role="status">Waiting for your party’s turn.</span>}
                       {combatUseMenuOpen && isTeamCombatTurn ? (
@@ -2187,7 +2205,8 @@ export function WorldClient({
                           className="focused-quick-command focused-combat-action"
                           aria-label="Flee from combat"
                           onClick={() => void performCombatAction("flee", undefined, true)}
-                          disabled={pending !== null}
+                          disabled={pending !== null || !canFlee}
+                          title={canFlee ? undefined : `Need ${FLEE_STAMINA_COST} stamina to flee`}
                         >
                           flee
                         </button>
@@ -2739,26 +2758,32 @@ export function WorldClient({
                   </div>
                 </div>
                 <div className="focused-vitals">
-                  <div className="focused-vital">
-                    <div className="focused-vital-heading">
-                      <span>Health</span>
-                      <strong>{snapshot.character?.health ? `${snapshot.character.health.current}/${snapshot.character.health.maximum}` : "Unavailable"}</strong>
-                    </div>
-                    {snapshot.character?.health && (
-                      <div
-                        className="focused-vital-meter"
-                        role="meter"
-                        aria-label="Character health"
-                        aria-valuemin={0}
-                        aria-valuemax={snapshot.character.health.maximum}
-                        aria-valuenow={snapshot.character.health.current}
-                      >
-                        <span style={{
-                          width: `${Math.max(0, Math.min(100, (snapshot.character.health.current / snapshot.character.health.maximum) * 100))}%`,
-                        }} />
+                  {[
+                    { label: "Health", resource: snapshot.character?.health },
+                    { label: "Stamina", resource: snapshot.character?.resources.stamina },
+                    { label: "Mana", resource: snapshot.character?.resources.mana },
+                  ].map(({ label, resource }) => (
+                    <div className="focused-vital" key={label}>
+                      <div className="focused-vital-heading">
+                        <span>{label}</span>
+                        <strong>{resource ? `${resource.current}/${resource.maximum}` : "Unavailable"}</strong>
                       </div>
-                    )}
-                  </div>
+                      {resource && (
+                        <div
+                          className="focused-vital-meter"
+                          role="meter"
+                          aria-label={`Character ${label.toLocaleLowerCase()}`}
+                          aria-valuemin={0}
+                          aria-valuemax={resource.maximum}
+                          aria-valuenow={resource.current}
+                        >
+                          <span style={{
+                            width: `${Math.max(0, Math.min(100, (resource.current / resource.maximum) * 100))}%`,
+                          }} />
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
                 <div className="focused-details">
                   <div className="focused-detail"><span>Standing</span><strong>{snapshot.character?.health?.current === 0 ? "Down" : snapshot.character ? "Alive" : "Not started"}</strong></div>

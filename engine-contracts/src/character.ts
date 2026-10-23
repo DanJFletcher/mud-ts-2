@@ -84,6 +84,29 @@ export const CharacterHonorsSchema = z.object({
   medals: NonNegativeIntSchema.max(2_147_483_647),
 }).strict();
 
+export const CharacterResourcePoolSchema = z.object({
+  current: NonNegativeIntSchema.max(1000),
+  maximum: PositiveIntSchema.max(1000),
+}).strict().superRefine((resource, context) => {
+  if (resource.current > resource.maximum) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['current'],
+      message: 'Current resource exceeds its maximum.',
+    });
+  }
+});
+
+export const CharacterResourcesSchema = z.object({
+  stamina: CharacterResourcePoolSchema,
+  mana: CharacterResourcePoolSchema,
+}).strict();
+
+export const DEFAULT_CHARACTER_RESOURCES = Object.freeze({
+  stamina: Object.freeze({ current: 100, maximum: 100 }),
+  mana: Object.freeze({ current: 100, maximum: 100 }),
+});
+
 export const CharacterStatsQuerySchema = ClientQueryBaseSchema.extend({
   type: z.literal('character.stats'),
   characterId: IdSchema,
@@ -146,17 +169,40 @@ export const CreateCharacterCommandSchema = z.object({
   payload: z.object({ name: NonEmptyNameSchema }).strict(),
 }).strict();
 
+const CharacterCreatedPayloadSchema = z.object({
+  characterId: IdSchema,
+  playerId: IdSchema,
+  name: NonEmptyNameSchema,
+  startingLocationId: IdSchema,
+  startingStateId: IdSchema.optional(),
+  wallet: CharacterWalletSchema.optional(),
+  attributes: CharacterAttributesSchema.optional(),
+  honors: CharacterHonorsSchema.optional(),
+}).strict();
+
 export const CharacterCreatedEventSchema = DomainEventBaseSchema.extend({
   type: z.literal('character.created'),
+  version: z.literal(1),
+  payload: CharacterCreatedPayloadSchema,
+}).strict();
+
+export const CharacterCreatedEventV2Schema = DomainEventBaseSchema.extend({
+  type: z.literal('character.created'),
+  version: z.literal(2),
+  payload: CharacterCreatedPayloadSchema.extend({
+    resources: CharacterResourcesSchema,
+  }).strict(),
+}).strict();
+
+export const CharacterStaminaSpentEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('character.stamina_spent'),
+  version: z.literal(1),
   payload: z.object({
     characterId: IdSchema,
-    playerId: IdSchema,
-    name: NonEmptyNameSchema,
-    startingLocationId: IdSchema,
-    startingStateId: IdSchema.optional(),
-    wallet: CharacterWalletSchema.optional(),
-    attributes: CharacterAttributesSchema.optional(),
-    honors: CharacterHonorsSchema.optional(),
+    cause: z.enum(['solo-flee', 'team-flee']),
+    causeId: IdSchema,
+    staminaSpent: PositiveIntSchema.max(1000),
+    resources: CharacterResourcesSchema,
   }).strict(),
 }).strict();
 
@@ -339,6 +385,7 @@ export const CharacterProjectionSchema = z.object({
   equipment: CharacterEquipmentSchema.default({ weaponItemId: null, armorItemId: null }),
   attributes: CharacterAttributesSchema.default(DEFAULT_CHARACTER_ATTRIBUTES),
   honors: CharacterHonorsSchema.default(DEFAULT_CHARACTER_HONORS),
+  resources: CharacterResourcesSchema.default(DEFAULT_CHARACTER_RESOURCES),
   wallet: CharacterWalletSchema.optional(),
   advancement: CharacterAdvancementProjectionSchema.optional(),
   health: CharacterHealthSchema.optional(),
@@ -423,7 +470,8 @@ export const CharacterRespawnedEventSchema = DomainEventBaseSchema.extend({
 }).strict();
 
 export type CreateCharacterCommand = z.infer<typeof CreateCharacterCommandSchema>;
-export type CharacterCreatedEvent = z.infer<typeof CharacterCreatedEventSchema>;
+export type CharacterCreatedEvent = z.infer<typeof CharacterCreatedEventSchema>
+  | z.infer<typeof CharacterCreatedEventV2Schema>;
 export type TakeCharacterItemCommand = z.infer<typeof TakeCharacterItemCommandSchema>;
 export type CharacterItemTakenEvent = z.infer<typeof CharacterItemTakenEventSchema>;
 export type DropCharacterItemCommand = z.infer<typeof DropCharacterItemCommandSchema>;
