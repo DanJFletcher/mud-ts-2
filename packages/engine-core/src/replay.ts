@@ -12,6 +12,9 @@ import {
   CharacterProjectionSchema,
   CharacterCreatedEventSchema,
   CharacterCreatedEventV2Schema,
+  CharacterCreatedEventV3Schema,
+  CharacterClassSelectedEventSchema,
+  CharacterAbilityResourceSpentEventSchema,
   CharacterStaminaSpentEventSchema,
   DEFAULT_CHARACTER_RESOURCES,
   CharacterMovedEventSchema,
@@ -38,6 +41,7 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
   const pvpOutcomeEncounterIds = new Set<string>();
   const teamCombatOutcomeEncounterIds = new Set<string>();
   const teamCombatVictoryEncounterIds = new Set<string>();
+  const abilityActionIds = new Set<string>();
 
   for (const event of events) {
     const { streamId: _streamId, ...publicEvent } = event;
@@ -45,9 +49,13 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
       throw new Error(`Non-contiguous aggregate revision at ${event.aggregateVersion}.`);
     }
     if (event.type === 'character.created') {
-      const created = event.version === 2
+      const created = event.version === 3 ? CharacterCreatedEventV3Schema.parse(publicEvent) : event.version === 2
         ? CharacterCreatedEventV2Schema.parse(publicEvent)
         : CharacterCreatedEventSchema.parse(publicEvent);
+      if ('characterClass' in created.payload &&
+          JSON.stringify(created.payload.attributes) !== JSON.stringify(created.payload.characterClass.attributes)) {
+        throw new Error('Class creation attributes must match its recorded snapshot.');
+      }
       state = CharacterProjectionSchema.parse({
         worldInstanceId: event.worldInstanceId,
         characterId: created.payload.characterId,
@@ -58,11 +66,38 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         revision: event.aggregateVersion,
         ...(created.payload.attributes ? { attributes: created.payload.attributes } : {}),
         ...(created.payload.honors ? { honors: created.payload.honors } : {}),
+        ...('characterClass' in created.payload ? {
+          characterClass: created.payload.characterClass, health: created.payload.health,
+        } : {}),
         resources: 'resources' in created.payload
           ? created.payload.resources
           : DEFAULT_CHARACTER_RESOURCES,
         ...(created.payload.wallet ? { wallet: created.payload.wallet } : {}),
       });
+    } else if (event.type === 'character.class_selected') {
+      if (!state) throw new Error('Class selection before creation.');
+      const selected = CharacterClassSelectedEventSchema.parse(publicEvent).payload;
+      if (state.characterClass || selected.characterId !== state.characterId ||
+          state.combat?.status === 'active' ||
+          JSON.stringify(selected.attributes) !== JSON.stringify(selected.characterClass.attributes) ||
+          (state.health !== undefined && selected.health.current > state.health.current) ||
+          selected.health.current > selected.health.maximum) {
+        throw new Error('Invalid class selection event.');
+      }
+      state = CharacterProjectionSchema.parse({ ...state, characterClass: selected.characterClass,
+        attributes: selected.attributes, health: selected.health, revision: event.aggregateVersion });
+    } else if (event.type === 'character.ability_resource_spent') {
+      if (!state) throw new Error('Ability resource spending before creation.');
+      const spent = CharacterAbilityResourceSpentEventSchema.parse(publicEvent).payload;
+      const ability = state.characterClass?.coreAction;
+      const pool = state.resources[spent.cost.resource];
+      if (abilityActionIds.has(spent.actionId) || spent.characterId !== state.characterId || ability?.id !== spent.abilityId ||
+          ability.revision !== spent.abilityRevision ||
+          JSON.stringify(ability.cost) !== JSON.stringify(spent.cost) ||
+          spent.remaining !== pool.current - spent.cost.amount) throw new Error('Invalid ability resource spending.');
+      abilityActionIds.add(spent.actionId);
+      state = CharacterProjectionSchema.parse({ ...state, resources: { ...state.resources,
+        [spent.cost.resource]: { ...pool, current: spent.remaining } }, revision: event.aggregateVersion });
     } else if (event.type === 'character.wallet_initialized') {
       if (!state) throw new Error('Wallet initialization encountered before character creation.');
       const initialized = CharacterWalletInitializedEventSchema.parse(publicEvent);
@@ -168,7 +203,9 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         ...started.payload.encounter,
         opponentStyle: started.payload.encounter.opponentStyle ?? 'steady',
       };
-      const maximumHealth = 6 + ((state.advancement?.level ?? 1) - 1) * 2;
+      // Class events snapshot health. Historical classless starts retain their original policy.
+      const maximumHealth = state.characterClass && state.health
+        ? state.health.maximum : 6 + ((state.advancement?.level ?? 1) - 1) * 2;
       const expectedHealth = Math.min(state.health?.current ?? maximumHealth, maximumHealth);
       if (
         started.payload.characterId !== state.characterId ||
@@ -778,6 +815,13 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
     } else {
       throw new Error(`Unsupported event type "${event.type}" at revision ${event.aggregateVersion}.`);
     }
+  }
+  if (state?.characterClass) {
+    const ability = state.characterClass.coreAction;
+    const available = state.resources[ability.cost.resource].current >= ability.cost.amount;
+    state = { ...state, availableClassActions: [{ ...ability, available,
+      ...(!available ? { unavailableReason: `You need ${ability.cost.amount} ${ability.cost.resource}.` } : {}),
+    }] };
   }
   return state;
 }

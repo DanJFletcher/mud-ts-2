@@ -9,6 +9,7 @@ import type {
   EventStorePort,
   EnginePlugin,
   ProposedDomainEvent,
+  StreamGuard,
 } from '@mudd/engine-core';
 import { RuleViolationError, SYSTEM_ACTOR_ID } from '@mudd/engine-core';
 import type { CapabilityToken } from '@mudd/contracts';
@@ -32,7 +33,7 @@ export interface InteractionRequestPolicy {
   prepareAcceptance(
     request: InteractionRequestProjection,
     context: EngineCommandContext,
-  ): Promise<readonly ProposedDomainEvent[]>;
+  ): Promise<readonly ProposedDomainEvent[] | { events: readonly ProposedDomainEvent[]; guards: readonly StreamGuard[] }>;
 }
 
 export interface InteractionPolicyRegistry {
@@ -217,15 +218,21 @@ export const interactionPlugin: EnginePlugin = {
       const responseEvents: ProposedDomainEvent[] = [
         requestEvent('interaction.request.updated', resolved),
       ];
+      let guards: readonly StreamGuard[] | undefined;
       if (command.payload.response === 'accept') {
         const policy = policies.get(request.kind);
         if (!policy) throw new RuleViolationError('That interaction is no longer supported.');
-        responseEvents.push(...await policy.prepareAcceptance(request, context));
+        const acceptance = await policy.prepareAcceptance(request, context);
+        if ('events' in acceptance) {
+          responseEvents.push(...acceptance.events);
+          guards = acceptance.guards;
+        } else responseEvents.push(...acceptance);
       }
       return {
         streamId,
         expectedVersion: latestVersion(events),
         events: responseEvents,
+        guards,
       };
     });
   },

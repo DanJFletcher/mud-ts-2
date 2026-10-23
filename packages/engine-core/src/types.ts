@@ -55,6 +55,17 @@ export interface AppendRequest {
   readonly expectedVersion: number;
   readonly events: readonly ProposedDomainEvent[];
   readonly effects?: readonly ProposedEventEffect[];
+  /** Atomic companion writes and optimistic read guards, never independent commits. */
+  readonly companions?: readonly StreamWrite[];
+  readonly guards?: readonly StreamGuard[];
+}
+
+export interface StreamGuard {
+  readonly streamId: string;
+  readonly expectedVersion: number;
+}
+export interface StreamWrite extends StreamGuard {
+  readonly events: readonly ProposedDomainEvent[];
 }
 
 export type AppendOutcome =
@@ -98,6 +109,8 @@ export interface CommandPlan {
   readonly expectedVersion: number;
   readonly events: readonly ProposedDomainEvent[];
   readonly effects?: readonly ProposedEventEffect[];
+  readonly companions?: readonly StreamWrite[];
+  readonly guards?: readonly StreamGuard[];
 }
 
 export interface EventEffectContext {
@@ -177,6 +190,7 @@ export interface PluginContext {
 export interface EnginePlugin {
   readonly manifest: PluginManifestInput;
   register(context: PluginContext): void;
+  validateWorld?(world: WorldPackDraft, context: PluginContext): void;
   initialize?(): Promise<void>;
   start?(): Promise<void>;
   stop?(): Promise<void>;

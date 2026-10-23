@@ -152,6 +152,7 @@ vi.mock('@mudd/contracts', async () => {
     RestoreCharacterCommandSchema: unusedSchema,
     RenameCharacterCommandSchema: unusedSchema,
     WorldPackDraftSchema: { parse: (value: unknown) => value },
+    CharacterClassCatalogSchema: { parse: (value: unknown) => value },
     validateDraftWorldGraph: () => [],
   };
 });
@@ -166,6 +167,7 @@ vi.mock('@mudd/core-plugins', () => ({
   mobileNpcDefinitions: () => [],
   autonomousNpcsPlugin: {},
   characterPlugin: {},
+  createClassRulesetPlugin: () => ({}),
   combatPlugin: {},
   groupsPlugin: {},
   partyPlugin: {},

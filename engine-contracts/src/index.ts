@@ -1,3 +1,4 @@
+export * from './classes.js';
 /** MUDD CONTRACTS PROPOSED. Design reference, not a verified shipped API. */
 export * from './ids.js';
 export * from './protocol.js';

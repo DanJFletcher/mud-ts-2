@@ -19,7 +19,10 @@ export function maximumHealthForLevel(level: number, constitution = 10): number 
 
 export function characterAttackDamage(character: CharacterProjection): number {
   const weapon = character.inventory.find((item) => item.id === character.equipment.weaponItemId);
-  const strengthBonus = Math.floor((character.attributes.strength - 10) / 5);
+  const primary = character.characterClass?.primaryAttribute;
+  // Intelligence applies only to directed abilities, never to basic physical Attack.
+  const attribute = primary === 'dexterity' ? character.attributes.dexterity : character.attributes.strength;
+  const strengthBonus = Math.floor((attribute - 10) / 5);
   return Math.max(1, BASE_PLAYER_DAMAGE + strengthBonus + (weapon?.equipment?.attackBonus ?? 0));
 }
 

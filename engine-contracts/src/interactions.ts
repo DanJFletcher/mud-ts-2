@@ -48,9 +48,13 @@ export const PvpCombatActionCommandSchema = InteractionCommandBaseSchema.extend(
   type: z.literal('pvp.action'),
   payload: z.object({
     encounterId: IdSchema,
-    action: z.enum(['attack', 'defend', 'flee', 'use-item']),
+    action: z.enum(['attack', 'defend', 'flee', 'use-item', 'ability']),
     itemId: IdSchema.optional(),
+    abilityId: IdSchema.optional(),
   }).strict().superRefine((payload, context) => {
+    if ((payload.action === 'ability') !== Boolean(payload.abilityId)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['abilityId'], message: 'Only an ability action requires an ability ID.' });
+    }
     if (payload.action === 'use-item' && !payload.itemId) {
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['itemId'], message: 'An item is required.' });
     }

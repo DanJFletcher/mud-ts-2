@@ -27,6 +27,7 @@ import { registerPvpCombat } from './pvp-combat.js';
 import { interactionPolicyRegistry } from './interactions.js';
 import { calculateCharacterStats, characterAttackDamage, maximumHealthForLevel } from './character-stats.js';
 import { createWorldCorpseEffect } from './world-items.js';
+import { classAdoptionGuards, classCombatPolicyCapability, type ClassCombatPolicy } from './classes.js';
 
 const VICTORY_EXPERIENCE_REWARD = 10;
 const MAX_LEVEL = 10;
@@ -115,7 +116,7 @@ export const combatPlugin: EnginePlugin = {
     },
   },
   register(pluginContext) {
-    const { registerCommand, registerQuery, requireCapability } = pluginContext;
+    const { registerCommand, registerQuery, requireCapability, optionalCapability } = pluginContext;
     const characterState = requireCapability<CharacterStateCapability>(characterStateCapability);
     requireCapability(interactionPolicyRegistry);
     registerPvpCombat(pluginContext, characterState);
@@ -127,6 +128,7 @@ export const combatPlugin: EnginePlugin = {
     });
 
     registerCommand('inn.rest', InnRestCommandSchema, async (command, context) => {
+      const guards = context.world.classCatalog ? await classAdoptionGuards(context, command.characterId) : undefined;
       const character = await characterState.load(context, command.characterId);
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
       assertCharacterAlive(character);
@@ -181,10 +183,12 @@ export const combatPlugin: EnginePlugin = {
         streamId: character.characterId,
         expectedVersion: command.expectedVersion,
         events: [{ type: 'character.inn_rest_completed', version: 2, payload }],
+        guards,
       };
     });
 
     registerCommand('combat.action', CombatActionCommandSchema, async (command, context) => {
+      const guards = context.world.classCatalog ? await classAdoptionGuards(context, command.characterId) : undefined;
       const character = await characterState.load(context, command.characterId);
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
       assertCharacterAlive(character);
@@ -265,12 +269,18 @@ export const combatPlugin: EnginePlugin = {
       if (!npc?.combatProfile) throw new RuleViolationError('That opponent is no longer available.');
 
       const action = command.payload.action;
+      const ability = action === 'ability'
+        ? (() => {
+          const policy = optionalCapability<ClassCombatPolicy>(classCombatPolicyCapability);
+          if (!policy) throw new RuleViolationError('ABILITY_UNSUPPORTED: This world has no class actions.');
+          return policy.resolve(character, command.payload.abilityId, encounter.encounterId, context.commandId);
+        })() : undefined;
       if (action === 'flee' && character.resources.stamina.current < FLEE_STAMINA_COST) {
         throw new RuleViolationError(`You need ${FLEE_STAMINA_COST} stamina to flee.`);
       }
       const opponentStyle = encounter.opponentStyle ?? npc.combatProfile.style ?? 'steady';
       const armor = character.inventory.find((item) => item.id === character.equipment.armorItemId);
-      const attackDamage = characterAttackDamage(character);
+      const attackDamage = ability?.damage ?? characterAttackDamage(character);
       const damageReduction = armor?.equipment?.defenseBonus ?? 0;
       let damageDealt = 0;
       let damageTaken = 0;
@@ -301,7 +311,7 @@ export const combatPlugin: EnginePlugin = {
           healingNarration = `You use the ${item.label.toLocaleLowerCase()} and recover ${healingDone} health.`;
         }
 
-        if (action === 'attack') {
+        if (action === 'attack' || action === 'ability') {
           const guard = opponentStyle === 'guardian' ? npc.combatProfile.defense ?? 1 : 0;
           damageDealt = Math.min(Math.max(0, attackDamage - guard), opponentHealth);
           opponentHealth -= damageDealt;
@@ -342,7 +352,7 @@ export const combatPlugin: EnginePlugin = {
         opponentHealth,
         status,
         lastAction: action,
-        lastNarration: narration,
+        lastNarration: ability ? `${character.characterClass!.coreAction.label}: ${narration}` : narration,
       };
       const payload = {
         characterId: character.characterId,
@@ -358,6 +368,7 @@ export const combatPlugin: EnginePlugin = {
         version: 3,
         payload,
       }];
+      if (ability) events.push(ability.event);
       if (action === 'flee') {
         const staminaPayload = CharacterStaminaSpentEventSchema.shape.payload.parse({
           characterId: character.characterId,
@@ -433,6 +444,7 @@ export const combatPlugin: EnginePlugin = {
         expectedVersion: command.expectedVersion,
         events,
         ...(effects.length ? { effects } : {}),
+        guards,
       };
     });
   },

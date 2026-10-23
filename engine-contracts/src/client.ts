@@ -23,6 +23,8 @@ import type { SayCommand } from './chat.js';
 import type { CreateCharacterCommand } from './character.js';
 import type { CombatActionCommand } from './combat.js';
 import type { StreamNotification, SubscriptionRequest } from './stream.js';
+import type { z } from 'zod';
+import type { ChooseCharacterClassCommandSchema } from './classes.js';
 
 export type ClientCommand =
   | MoveCharacterCommand
@@ -34,7 +36,9 @@ export type ClientCommand =
   | ReadCharacterObjectCommand
   | SayCommand
   | CreateCharacterCommand
-  | CombatActionCommand;
+  | CombatActionCommand
+  | ClassSelectionCommand;
+export type ClassSelectionCommand = z.infer<typeof ChooseCharacterClassCommandSchema>;
 export type ClientQuery = LocationDescribeQuery | ObjectReadQuery;
 export type ConnectionMode = 'local' | 'remote';
 

@@ -712,7 +712,7 @@ app.post('/api/commands', createRateLimiter({ windowMs: 60_000, maxRequests: 120
       }
     }
 
-    const characterCommand = ['character.create', 'character.rename', 'character.archive', 'character.restore']
+    const characterCommand = ['character.create', 'character.rename', 'character.archive', 'character.restore', 'character.class.choose']
       .includes(command?.type ?? '');
     if (characterCommand && command?.type !== 'character.create' && typeof command.characterId === 'string') {
       const [ownedCharacter] = await db.select({ id: characters.id }).from(characters).where(and(

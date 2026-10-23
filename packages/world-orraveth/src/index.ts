@@ -3,6 +3,8 @@ import {
   validateDraftWorldGraph,
   type WorldPackDraft,
 } from '@mudd/contracts';
+import { orravethClassCatalog } from './classes.js';
+export { orravethClassCatalog } from './classes.js';
 
 export const ORRAVETH_WORLD_INSTANCE_ID = 'orraveth-bellwold-instance';
 
@@ -11,6 +13,7 @@ const draft = {
   packId: 'orraveth.bellwold',
   packVersion: '1.6.0',
   displayName: 'Orraveth: Bellwold',
+  classCatalog: orravethClassCatalog,
   currency: {
     id: 'gold',
     name: 'gold piece',

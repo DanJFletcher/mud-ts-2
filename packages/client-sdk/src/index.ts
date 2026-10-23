@@ -1,3 +1,4 @@
+import { CharacterClassCatalogSchema, ChooseCharacterClassCommandSchema } from '@mudd/contracts';
 import {
   CharacterProjectionSchema,
   CharacterStatsProjectionSchema,
@@ -104,6 +105,7 @@ export const WorldListSchema = z.array(z.object({
   packId: z.string().min(1),
   name: z.string().min(1),
   summary: z.string().min(1),
+  classCatalog: CharacterClassCatalogSchema.optional(),
 }));
 export type WorldSummary = z.infer<typeof WorldListSchema>[number];
 const GuestSessionResponseSchema = z.object({
@@ -195,15 +197,22 @@ export class MuddHttpClient {
     }
   }
 
-  async createCharacter(name: string, commandId = crypto.randomUUID()): Promise<CommandResponse> {
+  async createCharacter(name: string, commandId = crypto.randomUUID(), classId?: string): Promise<CommandResponse> {
     const command = CreateCharacterCommandSchema.parse({
       type: 'character.create',
       version: 1,
       commandId,
       worldInstanceId: this.options.worldInstanceId,
-      payload: { name },
+      payload: { name, ...(classId ? { classId } : {}) },
     });
     return this.send(command);
+  }
+
+  async chooseCharacterClass(characterId: string, expectedVersion: number, classId: string, commandId = crypto.randomUUID()): Promise<CommandResponse> {
+    return this.send(ChooseCharacterClassCommandSchema.parse({
+      type: 'character.class.choose', version: 1, commandId,
+      worldInstanceId: this.options.worldInstanceId, characterId, expectedVersion, payload: { classId },
+    }));
   }
 
   async renameCharacter(
@@ -422,7 +431,7 @@ export class MuddHttpClient {
     characterId: string,
     action: CombatActionId,
     expectedVersion: number,
-    target: { encounterId?: string; targetNpcId?: string; itemId?: string },
+    target: { encounterId?: string; targetNpcId?: string; itemId?: string; abilityId?: string },
     commandId = crypto.randomUUID(),
   ): Promise<CommandResponse> {
     const command = CombatActionCommandSchema.parse({
@@ -474,8 +483,9 @@ export class MuddHttpClient {
   async performPvpAction(
     characterId: string,
     encounterId: string,
-    action: 'attack' | 'defend' | 'flee' | 'use-item',
+    action: 'attack' | 'defend' | 'flee' | 'use-item' | 'ability',
     itemId?: string,
+    abilityId?: string,
   ): Promise<CommandResponse> {
     return this.send(PvpCombatActionCommandSchema.parse({
       type: 'pvp.action',
@@ -483,7 +493,7 @@ export class MuddHttpClient {
       commandId: crypto.randomUUID(),
       worldInstanceId: this.options.worldInstanceId,
       characterId,
-      payload: { encounterId, action, ...(itemId ? { itemId } : {}) },
+      payload: { encounterId, action, ...(itemId ? { itemId } : {}), ...(abilityId ? { abilityId } : {}) },
     }));
   }
 
@@ -613,7 +623,7 @@ export class MuddHttpClient {
     characterId: string,
     encounterId: string,
     action: z.infer<typeof TeamCombatActionSchema>,
-    options: { itemId?: string; targetParticipantId?: string } = {},
+    options: { itemId?: string; targetParticipantId?: string; abilityId?: string } = {},
   ): Promise<CommandResponse> {
     return this.send(TeamCombatActionCommandSchema.parse({
       type: 'team.combat.action',

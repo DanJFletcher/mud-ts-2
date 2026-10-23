@@ -11,6 +11,7 @@ import {
   WorldCurrencyDefinitionSchema,
 } from './commerce.js';
 import { NpcCombatProfileSchema } from './combat.js';
+import { CharacterClassCatalogSchema } from './classes.js';
 import {
   LocationGroupDefinitionSchema,
   LocationGroupMembershipProjectionSchema,
@@ -323,6 +324,7 @@ export const WorldPackDraftSchema = z.object({
   packId: IdSchema,
   packVersion: z.string().min(1),
   displayName: z.string().min(1),
+  classCatalog: CharacterClassCatalogSchema.optional(),
   currency: WorldCurrencyDefinitionSchema.optional(),
   respawn: z.object({ locationId: IdSchema }).strict().optional(),
   locations: z.array(LocationDefinitionSchema),

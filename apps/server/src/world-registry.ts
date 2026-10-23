@@ -2,6 +2,7 @@ import type { WorldPackDraft } from '@mudd/contracts';
 import { EngineHost } from '@mudd/engine-core';
 import {
   characterPlugin,
+  createClassRulesetPlugin,
   createLocationGroupsPlugin,
   autonomousNpcsPlugin,
   combatPlugin,
@@ -63,6 +64,7 @@ export function createWorldRuntimes(
       new PostgresLocationGroupCatalogStore(),
     );
     const plugins = [
+      ...(definition.world.classCatalog ? [createClassRulesetPlugin(definition.world.classCatalog)] : []),
       worldItemsPlugin,
       locationGroupsFeature.plugin,
       autonomousNpcsPlugin,
@@ -113,5 +115,6 @@ export function toWorldSummary(world: RegisteredWorld) {
     packId: world.world.packId,
     name: world.world.displayName,
     summary: world.summary,
+    ...(world.world.classCatalog ? { classCatalog: world.world.classCatalog } : {}),
   };
 }

@@ -115,8 +115,24 @@ export class PostgresEventStore implements EventStorePort {
         };
       }
 
-      await tx.execute(sql`
-        SELECT pg_advisory_xact_lock(hashtext(${request.worldInstanceId}), hashtext(${request.streamId}))`);
+      const companions = request.companions ?? [];
+      const writeIds = [request.streamId, ...companions.map((write) => write.streamId)];
+      if (new Set(writeIds).size !== writeIds.length) throw new Error('Duplicate atomic write stream.');
+      const checks = [...companions, ...(request.guards ?? [])];
+      // A deterministic lock order avoids deadlocks across encounter/character writers.
+      for (const streamId of [...new Set([...writeIds, ...checks.map((check) => check.streamId)])].sort()) {
+        await tx.execute(sql`
+          SELECT pg_advisory_xact_lock(hashtext(${request.worldInstanceId}), hashtext(${streamId}))`);
+      }
+      for (const check of checks) {
+        const [observed] = await tx.select({ revision: gameEvents.streamVersion }).from(gameEvents)
+          .where(and(eq(gameEvents.worldInstanceId, request.worldInstanceId), eq(gameEvents.streamId, check.streamId)))
+          .orderBy(desc(gameEvents.streamVersion)).limit(1);
+        if ((observed?.revision ?? 0) !== check.expectedVersion) {
+          return { kind: 'conflict', streamId: request.streamId, events: [],
+            receipt: conflict(request.commandId, 'An observed stream changed. Refresh and try again.') };
+        }
+      }
       const [last] = await tx.select({ revision: gameEvents.streamVersion }).from(gameEvents)
         .where(and(eq(gameEvents.worldInstanceId, request.worldInstanceId), eq(gameEvents.streamId, request.streamId)))
         .orderBy(desc(gameEvents.streamVersion)).limit(1);
@@ -145,6 +161,16 @@ export class PostgresEventStore implements EventStorePort {
       }));
 
       if (appended.length === 0) throw new Error('A command must append at least one event.');
+      for (const write of companions) {
+        if (!write.events.length) throw new Error('An atomic companion write must contain events.');
+        await tx.insert(gameEvents).values(write.events.map((event, index) => ({
+          eventId: globalThis.crypto.randomUUID(), worldInstanceId: request.worldInstanceId,
+          streamId: write.streamId, streamVersion: write.expectedVersion + index + 1,
+          type: event.type, contractVersion: event.version, payload: event.payload,
+          causationCommandId: request.commandId, actorId: request.actorId,
+          occurredAt: committedAt, tick: write.expectedVersion + index + 1,
+        })));
+      }
       await tx.insert(gameEvents).values(appended.map((event) => ({
         eventId: event.eventId,
         worldInstanceId: event.worldInstanceId,

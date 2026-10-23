@@ -2,6 +2,7 @@ import {
   CharacterAdvancementAwardedEventV2Schema,
   CharacterMovedEventSchema,
   CharacterTeamCombatOutcomeAppliedEventSchema,
+  CharacterStaminaSpentEventSchema,
   TeamCombatActionCommandSchema,
   TeamCombatActionResolvedEventSchema,
   TeamCombatEndedEventSchema,
@@ -18,7 +19,7 @@ import {
   type RoadEncounterDefinition,
   type CharacterProjection,
 } from '@mudd/contracts';
-import type { CommandPlan, EngineCommandContext, EnginePlugin, EventEffectContext, ProposedDomainEvent, ProposedEventEffect } from '@mudd/engine-core';
+import type { CommandPlan, EngineCommandContext, EnginePlugin, EventEffectContext, ProposedDomainEvent, ProposedEventEffect, StreamGuard } from '@mudd/engine-core';
 import { replayCharacter, RuleViolationError, SYSTEM_ACTOR_ID } from '@mudd/engine-core';
 import {
   assertCharacterAlive,
@@ -35,6 +36,7 @@ import {
   type TeamRoadEncounterCapability,
 } from './team-combat-policy.js';
 import { createWorldCorpseEffect } from './world-items.js';
+import { classAdoptionGuards, classCombatPolicyCapability, type ClassCombatPolicy } from './classes.js';
 
 const STREAM_ID = 'world-team-combat';
 const PLAYER_TEAM = 'allies';
@@ -250,7 +252,7 @@ export const teamCombatPlugin: EnginePlugin = {
       'character.respawned': 1,
     },
   },
-  register({ registerCommand, registerQuery, registerEffect, requireCapability, provideCapability }) {
+  register({ registerCommand, registerQuery, registerEffect, requireCapability, provideCapability, optionalCapability }) {
     const characters = requireCapability<CharacterStateCapability>(characterStateCapability);
     const rosterPolicy = requireCapability<TeamCombatRosterPolicy>(teamCombatRosterPolicyCapability);
 
@@ -292,12 +294,18 @@ export const teamCombatPlugin: EnginePlugin = {
           throw new RuleViolationError('A party member is already participating in another encounter.');
         }
 
+        const guards: StreamGuard[] = [];
         const players = await Promise.all(orderedPlayers.map(async (player) => {
           const projection = await characters.load(context, player.characterId);
           if (!projection || projection.locationId !== initiator.locationId) {
             throw new RuleViolationError('A party member is no longer in this room.');
           }
           assertCharacterAlive(projection);
+          if (context.world.classCatalog) {
+            if (projection.combat?.status === 'active') throw new RuleViolationError('A party member is already in combat.');
+            guards.push({ streamId: projection.characterId, expectedVersion: projection.revision },
+              ...await classAdoptionGuards(context, projection.characterId));
+          }
           const maximum = maximumHealth(projection);
           return {
             participantId: projection.characterId,
@@ -353,6 +361,7 @@ export const teamCombatPlugin: EnginePlugin = {
             version: 1,
             payload: TeamRoadEncounterStartedEventSchema.shape.payload.parse({ encounter, roadTravel }),
           }],
+          guards,
         };
       },
     };
@@ -391,12 +400,18 @@ export const teamCombatPlugin: EnginePlugin = {
       }
 
       const now = context.now().toISOString();
+      const guards: StreamGuard[] = [];
       const players = await Promise.all(orderedPlayers.map(async (player) => {
         const projection = await characters.load(context, player.characterId);
         if (!projection || projection.locationId !== character.locationId) {
           throw new RuleViolationError('A party member is no longer in this room.');
         }
         assertCharacterAlive(projection);
+        if (context.world.classCatalog) {
+          if (projection.combat?.status === 'active') throw new RuleViolationError('A party member is already in combat.');
+          guards.push({ streamId: projection.characterId, expectedVersion: projection.revision },
+            ...await classAdoptionGuards(context, projection.characterId));
+        }
         const maximum = maximumHealth(projection);
         return {
           participantId: projection.characterId,
@@ -446,6 +461,7 @@ export const teamCombatPlugin: EnginePlugin = {
           version: 1,
           payload: TeamCombatStartedEventSchema.shape.payload.parse({ encounter }),
         }],
+        guards,
       };
     });
 
@@ -468,6 +484,9 @@ export const teamCombatPlugin: EnginePlugin = {
       assertCharacterAlive(character);
 
       const participants = encounter.participants.map((participant) => ({ ...participant }));
+      const guards = context.world.classCatalog
+        ? await classAdoptionGuards(context, command.characterId, STREAM_ID) : undefined;
+      if (context.world.classCatalog && character.combat?.status === 'active') throw new RuleViolationError('Another combat encounter is active.');
       const activeActor = participants.find((participant) => participant.participantId === actor.participantId)!;
       const enemies = participants.filter((participant) =>
         participant.teamId !== PLAYER_TEAM && participant.status === 'active',
@@ -478,8 +497,14 @@ export const teamCombatPlugin: EnginePlugin = {
       let narration: string;
       const consumed = { ...encounter.consumedItemIdsByCharacter };
       const effects: ProposedEventEffect[] = [];
+      let fleeResourceEvent: ProposedDomainEvent | undefined;
+      const ability = command.payload.action === 'ability' ? (() => {
+        const policy = optionalCapability<ClassCombatPolicy>(classCombatPolicyCapability);
+        if (!policy) throw new RuleViolationError('ABILITY_UNSUPPORTED: This world has no class actions.');
+        return policy.resolve(character, command.payload.abilityId, encounter.encounterId, context.commandId);
+      })() : undefined;
 
-      if (command.payload.action === 'attack') {
+      if (command.payload.action === 'attack' || command.payload.action === 'ability') {
         const target = enemies.find((enemy) =>
           !command.payload.targetParticipantId || enemy.participantId === command.payload.targetParticipantId,
         );
@@ -492,7 +517,9 @@ export const teamCombatPlugin: EnginePlugin = {
         );
         if (!npc?.combatProfile) throw new RuleViolationError('The opponent is no longer available.');
         const defense = npc.combatProfile.style === 'guardian' ? npc.combatProfile.defense ?? 1 : 0;
-        damageDealt = Math.max(1, characterAttackDamage(character) - defense);
+        damageDealt = ability
+          ? Math.min(target.health, Math.max(0, ability.damage - defense))
+          : Math.max(1, characterAttackDamage(character) - defense);
         target.health = Math.max(0, target.health - damageDealt);
         if (target.health === 0) target.status = 'defeated';
         narration = `${character.name} hits ${target.displayName} for ${damageDealt} damage.`;
@@ -505,7 +532,17 @@ export const teamCombatPlugin: EnginePlugin = {
         }
         activeActor.status = 'escaped';
         narration = `${character.name} retreats from the encounter and spends ${FLEE_STAMINA_COST} stamina.`;
-        effects.push(teamFleeStaminaEffect(character.characterId, encounter.encounterId));
+        if (context.world.classCatalog) {
+          fleeResourceEvent = {
+            type: 'character.stamina_spent', version: 1,
+            payload: CharacterStaminaSpentEventSchema.shape.payload.parse({
+              characterId: character.characterId, cause: 'team-flee', causeId: encounter.encounterId,
+              staminaSpent: FLEE_STAMINA_COST,
+              resources: { ...character.resources, stamina: { ...character.resources.stamina,
+                current: character.resources.stamina.current - FLEE_STAMINA_COST } },
+            }),
+          };
+        } else effects.push(teamFleeStaminaEffect(character.characterId, encounter.encounterId));
       } else {
         const item = character.inventory.find((candidate) => candidate.id === command.payload.itemId);
         const alreadyConsumed = consumed[character.characterId] ?? [];
@@ -668,7 +705,11 @@ export const teamCombatPlugin: EnginePlugin = {
           }));
         }
       }
-      return { streamId: STREAM_ID, expectedVersion: state.revision, events, effects };
+      return { streamId: STREAM_ID, expectedVersion: state.revision, events, effects,
+        guards,
+        ...(ability || fleeResourceEvent ? { companions: [{ streamId: character.characterId, expectedVersion: character.revision,
+          events: [ability?.event ?? fleeResourceEvent!] }] } : {}),
+      };
     });
 
     registerQuery('team.combat.info', TeamCombatInfoQuerySchema, async (query, context) => {

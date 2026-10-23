@@ -1,3 +1,4 @@
+export * from './classes.js';
 export { characterPlugin } from './character.js';
 export { movementPlugin } from './movement.js';
 export { autonomousNpcsPlugin, autonomousNpcStateCapability } from './autonomous-npcs.js';

@@ -14,3 +14,8 @@ export { RoomDescription } from './components/RoomDescription.js';
 export type { RoomDescriptionProps, RoomExit } from './components/RoomDescription.js';
 export { NavigationControls } from './components/NavigationControls.js';
 export type { NavigationControlsProps, NavigationDirection } from './components/NavigationControls.js';
+export { ClassChoice } from './components/ClassChoice.js';
+export type { ClassChoiceProps } from './components/ClassChoice.js';
+export { ClassAbilityList } from './components/ClassAbilityList.js';
+export type { ClassAbilityListProps } from './components/ClassAbilityList.js';
+export type { AvailableClassAction, CharacterClassDefinition, ClassResource } from './components/classTypes.js';

@@ -148,6 +148,29 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     expect(results.map((result) => result.kind).sort()).toEqual(['committed', 'conflict']);
   });
 
+  it('atomically commits shared turns and character debits, including duplicate retries and racing resources', async () => {
+    const resourceStream = `resource-${randomUUID()}`;
+    const firstTurn = `turn-${randomUUID()}`;
+    const secondTurn = `turn-${randomUUID()}`;
+    const request = (streamId: string): AppendRequest => ({
+      worldInstanceId, actorId: playerId, commandId: `ability-${randomUUID()}`, payloadHash: randomUUID(),
+      streamId, expectedVersion: 0,
+      events: [{ type: 'audit.turn', version: 1, payload: { damage: 4 } }],
+      companions: [{ streamId: resourceStream, expectedVersion: 0,
+        events: [{ type: 'audit.resource', version: 1, payload: { remaining: 80 } }] }],
+    });
+    const a = request(firstTurn);
+    const b = request(secondTurn);
+    const outcomes = await Promise.all([store.append(a), store.append(b)]);
+    expect(outcomes.map((outcome) => outcome.kind).sort()).toEqual(['committed', 'conflict']);
+    expect(await store.readStream(worldInstanceId, resourceStream)).toHaveLength(1);
+    const winner = outcomes[0]!.kind === 'committed' ? a : b;
+    const loser = winner === a ? b : a;
+    expect(await store.readStream(worldInstanceId, loser.streamId)).toHaveLength(0);
+    expect((await store.append(winner)).kind).toBe('duplicate');
+    expect(await store.readStream(worldInstanceId, resourceStream)).toHaveLength(1);
+  });
+
   it('commits event effects atomically, retries them after restart, and deduplicates their output', async () => {
     const { durableEffects } = await import('./db/schema.js');
     const commandId = `effect-command-${randomUUID()}`;
@@ -174,10 +197,13 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
       payloadHash,
       expectedVersion: 0,
       events: [{ type: 'audit.effect_source', version: 1, payload: { committed: true } }],
+      companions: [{ streamId: `companion-${streamId}`, expectedVersion: 0,
+        events: [{ type: 'audit.resource_debit', version: 1, payload: { remaining: 80 } }] }],
       effects: [{ type: 'audit.test', version: 1, payload: { message: 'deliver once' } }],
     };
     await expect(store.append(appendRequest)).rejects.toThrow();
     expect(await store.readStream(worldInstanceId, streamId)).toHaveLength(0);
+    expect(await store.readStream(worldInstanceId, `companion-${streamId}`)).toHaveLength(0);
     expect(await store.lookupCommand(worldInstanceId, playerId, commandId, payloadHash)).toBeUndefined();
     await db.delete(durableEffects).where((await import('drizzle-orm')).eq(durableEffects.id, blockerId));
 

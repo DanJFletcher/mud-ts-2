@@ -1,0 +1,10 @@
+import { Meta, Story, Canvas } from '@storybook/blocks';
+import * as ClassChoiceStories from './ClassChoice.stories';
+
+<Meta of={ClassChoiceStories} />
+
+# ClassChoice
+
+An explicit, keyboard-operable class selection group. It never supplies a default class. `onChange` returns the selected class ID; the host owns persistence and error handling. Each option displays the class role, server-defined attributes, and starting action/cost as descriptive content.
+
+<Canvas><Story of={ClassChoiceStories.Unselected} /></Canvas>

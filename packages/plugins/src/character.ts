@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   CharacterCreatedEventV2Schema,
+  CharacterCreatedEventV3Schema,
   CharacterStaminaSpentEventSchema,
   DEFAULT_CHARACTER_RESOURCES,
   DEFAULT_CHARACTER_ATTRIBUTES,
@@ -60,6 +61,8 @@ import {
   autonomousNpcStateCapability,
   type AutonomousNpcStateCapability,
 } from './autonomous-npcs.js';
+import { classCombatPolicyCapability, type ClassCombatPolicy } from './classes.js';
+import { maximumHealthForLevel } from './character-stats.js';
 
 export interface CharacterStateCapability {
   load(context: EngineCommandContext | QueryContext, characterId: string): Promise<CharacterProjection | undefined>;
@@ -153,6 +156,12 @@ async function spendTeamFleeStamina(
 }
 
 export const characterPlugin: EnginePlugin = {
+  validateWorld(world, context) {
+    const policy = context.optionalCapability<ClassCombatPolicy>(classCombatPolicyCapability);
+    if (Boolean(world.classCatalog) !== Boolean(policy)) {
+      throw new Error('A world class catalog requires its class ruleset capability, and vice versa.');
+    }
+  },
   manifest: {
     id: 'mudd.character',
     version: '1.0.0',
@@ -161,7 +170,7 @@ export const characterPlugin: EnginePlugin = {
     provides: ['mudd.character.state.v1'],
     requiredPlugins: { 'mudd.world-items': '^1.0.0' },
     eventSchemaVersions: {
-      'character.created': 2,
+      'character.created': 3,
       'character.stamina_spent': 1,
       'character.equipment_changed': 1,
       'character.shared_item_received': 1,
@@ -195,13 +204,18 @@ export const characterPlugin: EnginePlugin = {
       const startingLocation = context.world.locations[0];
       if (!startingLocation) throw new Error('This world has no starting location.');
       const characterId = context.makeId();
+      const classes = optionalCapability<ClassCombatPolicy>(classCombatPolicyCapability);
+      if (!classes && command.payload.classId) throw new RuleViolationError('CLASS_UNSUPPORTED: This world does not use classes.');
+      const snapshot = classes?.select(command.payload.classId);
+      const maximum = snapshot ? maximumHealthForLevel(1, snapshot.attributes.constitution) : undefined;
       const payload = {
         characterId,
         playerId: context.session.playerId,
         name,
         startingLocationId: startingLocation.id,
         ...(startingLocation.defaultStateId ? { startingStateId: startingLocation.defaultStateId } : {}),
-        attributes: DEFAULT_CHARACTER_ATTRIBUTES,
+        attributes: snapshot?.attributes ?? DEFAULT_CHARACTER_ATTRIBUTES,
+        ...(snapshot ? { characterClass: snapshot, health: { current: maximum!, maximum: maximum! } } : {}),
         honors: DEFAULT_CHARACTER_HONORS,
         resources: DEFAULT_CHARACTER_RESOURCES,
         ...(context.world.currency
@@ -213,11 +227,11 @@ export const characterPlugin: EnginePlugin = {
           }
           : {}),
       };
-      CharacterCreatedEventV2Schema.shape.payload.parse(payload);
+      (snapshot ? CharacterCreatedEventV3Schema : CharacterCreatedEventV2Schema).shape.payload.parse(payload);
       return {
         streamId: characterId,
         expectedVersion: 0,
-        events: [{ type: 'character.created', version: 2, payload }],
+        events: [{ type: 'character.created', version: snapshot ? 3 : 2, payload }],
       };
     });
 

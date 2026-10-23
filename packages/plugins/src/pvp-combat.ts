@@ -22,6 +22,7 @@ import {
 import { prepareCharacterRespawn } from './respawn.js';
 import { worldItemDropEffect } from './world-items.js';
 import { characterAttackDamage, maximumHealthForLevel } from './character-stats.js';
+import { classAdoptionGuards, classCombatPolicyCapability, type ClassCombatPolicy } from './classes.js';
 
 const PVP_CHALLENGE_KIND = 'pvp.challenge';
 const PVP_OUTCOME_EFFECT = 'pvp.apply_outcome';
@@ -253,7 +254,7 @@ export function registerPvpCombat(
   pluginContext: PluginContext,
   characterState: CharacterStateCapability,
 ) {
-  const { registerCommand, registerEffect, requireCapability } = pluginContext;
+  const { registerCommand, registerEffect, requireCapability, optionalCapability } = pluginContext;
   const policies = requireCapability<InteractionPolicyRegistry>(interactionPolicyRegistry);
   policies.register(PVP_CHALLENGE_KIND, {
     async prepareRequest({ initiatorCharacterId, recipientCharacterId }, context) {
@@ -316,7 +317,14 @@ export function registerPvpCombat(
         context.now(),
         context.makeId,
       );
-      return [event('pvp.encounter.started', state as unknown as Record<string, unknown>)];
+      const started = [event('pvp.encounter.started', state as unknown as Record<string, unknown>)];
+      if (!context.world.classCatalog) return started;
+      return { events: started, guards: [
+        { streamId: initiator.characterId, expectedVersion: initiator.revision },
+        { streamId: recipient.characterId, expectedVersion: recipient.revision },
+        ...await classAdoptionGuards(context, initiator.characterId),
+        ...await classAdoptionGuards(context, recipient.characterId),
+      ] };
     },
   });
 
@@ -344,12 +352,25 @@ export function registerPvpCombat(
     let turnCharacterId: string | null = opponent.characterId;
     const round = state.encounter.round + 1;
     let narration: string;
+    const character = command.payload.action === 'ability'
+      ? await characterState.load(context, command.characterId) : undefined;
+    const guards = context.world.classCatalog
+      ? await classAdoptionGuards(context, command.characterId, streamId) : undefined;
+    const ability = command.payload.action === 'ability' ? (() => {
+      const policy = optionalCapability<ClassCombatPolicy>(classCombatPolicyCapability);
+      if (!policy || !character || character.archived || character.combat?.status === 'active' ||
+          character.locationId !== state.encounter.locationId) {
+        throw new RuleViolationError('ABILITY_UNAVAILABLE: This character cannot use a class action here.');
+      }
+      assertCharacterAlive(character);
+      return policy.resolve(character, command.payload.abilityId, state.encounter.encounterId, context.commandId);
+    })() : undefined;
 
-    if (command.payload.action === 'attack') {
+    if (command.payload.action === 'attack' || command.payload.action === 'ability') {
       const guarded = guardingCharacterId === opponent.characterId ? 2 : 0;
       const damage = Math.min(
         opponent.health,
-        Math.max(0, privateActor.attackDamage - privateOpponent.defenseReduction - guarded),
+        Math.max(0, (ability?.damage ?? privateActor.attackDamage) - privateOpponent.defenseReduction - guarded),
       );
       participants[opponentIndex] = { ...opponent, health: opponent.health - damage };
       guardingCharacterId = null;
@@ -424,6 +445,9 @@ export function registerPvpCombat(
       expectedVersion: version,
       events: [event('pvp.action.resolved', nextState as unknown as Record<string, unknown>)],
       ...(effects ? { effects } : {}),
+      guards,
+      ...(ability && character ? { companions: [{ streamId: character.characterId,
+        expectedVersion: character.revision, events: [ability.event] }] } : {}),
     };
   });
 

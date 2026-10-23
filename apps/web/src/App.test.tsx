@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TeamCombatEncounter } from '@mudd/contracts';
+import type { InteractionInbox, TeamCombatEncounter } from '@mudd/contracts';
 
 const { apiFetch } = vi.hoisted(() => {
   const apiFetch = vi.fn();
@@ -10,12 +10,64 @@ const { apiFetch } = vi.hoisted(() => {
 
 import { WorldClient } from './App.js';
 
+const classDefinition = {
+  id: 'fixture.vanguard', revision: 1, label: 'Vanguard',
+  description: 'Strength-led martial combatant.', primaryAttribute: 'strength' as const,
+  attributes: { strength: 15, intelligence: 10, constitution: 15, dexterity: 10 },
+  coreAction: { id: 'fixture.heavy-strike', revision: 1, label: 'Heavy Strike',
+    description: 'A single forceful strike.', cost: { resource: 'stamina' as const, amount: 20 },
+    baseDamage: 3, scalingAttribute: 'strength' as const, weaponBonus: true },
+};
+const classCatalog = { id: 'fixture.classes', revision: 1, classes: [classDefinition] };
+
 async function openInfoSection(section: 'Vitals' | 'Items' | 'Equipment' | 'Stats' | 'Field notes' | 'Codex') {
   fireEvent.click(screen.getByRole('link', { name: 'Info' }));
   const tabs = await screen.findByRole('navigation', { name: 'Info sections' });
   fireEvent.click(within(tabs).getByRole('link', { name: section }));
-  await screen.findByRole('heading', { name: section === 'Codex' ? /A world, carefully remembered/ : section });
+  await screen.findAllByRole('heading', { name: section === 'Codex' ? /A world, carefully remembered/ : section });
   return tabs;
+}
+
+function classApiFixture(initiallySelected = false, completedDuel = false) {
+  const original = apiFetch.getMockImplementation()!;
+  const commands: Array<{ type: string; payload: Record<string, unknown> }> = [];
+  let selected = initiallySelected;
+  apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
+    if (path === '/api/interactions' && completedDuel) return json({
+      requests: [], encounter: {
+        encounterId: 'completed-duel', requestId: 'accepted-challenge',
+        locationId: 'mossgate-clearing', status: 'completed',
+        participants: [
+          { characterId, name: 'Rowan', health: 6, maximumHealth: 6 },
+          { characterId: 'other', name: 'Mira', health: 0, maximumHealth: 6 },
+        ],
+        round: 2, turnCharacterId: characterId, lastNarration: 'The earlier duel is finished.',
+        updatedAt: '2026-10-19T12:00:00.000Z',
+      },
+    } satisfies InteractionInbox);
+    if (path === '/api/worlds') return json([{
+      worldInstanceId: 'mudd-demo-instance', packId: 'fixture', name: 'Class fixture',
+      summary: 'Class fixture.', classCatalog,
+    }]);
+    if (path === '/api/commands' && init?.body) {
+      const command = JSON.parse(String(init.body));
+      if (command.type === 'character.class.choose' || command.payload?.action === 'ability') {
+        commands.push(command);
+        if (command.type === 'character.class.choose') selected = true;
+        revision += 1;
+        return json({ receipt: { ok: true, commandId: command.commandId, eventIds: [], newAggregateVersion: revision }, events: [] });
+      }
+    }
+    const response = await original(path, init);
+    if (path === '/api/game' && selected) {
+      const snapshot = await response.json();
+      snapshot.character.characterClass = { ...classDefinition, catalogId: classCatalog.id, catalogRevision: 1 };
+      snapshot.character.availableClassActions = [{ ...classDefinition.coreAction, available: true }];
+      return json(snapshot);
+    }
+    return response;
+  });
+  return commands;
 }
 
 const characterId = '11111111-1111-4111-8111-111111111111';
@@ -392,6 +444,9 @@ beforeEach(() => {
   teamCombatEncounter = null;
   apiFetch.mockReset();
   apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
+    if (path === '/api/worlds') return json([{
+      worldInstanceId: 'mudd-demo-instance', packId: 'demo', name: 'Waystone', summary: 'A first journey.',
+    }]);
     if (path === '/api/world-session/heartbeat') {
       return json({
         worldInstanceId: currentLocation().worldInstanceId,
@@ -2349,6 +2404,48 @@ describe('single-character world session client', () => {
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     });
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+  });
+
+  it('requires explicit confirmation for one-time class adoption and renders the recorded identity', async () => {
+    const commands = classApiFixture();
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    await openInfoSection('Stats');
+    expect(await screen.findByRole('heading', { name: 'Choose your class' })).toBeVisible();
+    const choose = screen.getByRole('button', { name: 'Adopt this class' });
+    expect(choose).toBeDisabled();
+    fireEvent.click(screen.getByRole('radio'));
+    fireEvent.click(choose);
+    expect(commands).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm permanent choice' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Adopt this class' })).not.toBeInTheDocument());
+    expect(commands[0]).toMatchObject({ type: 'character.class.choose', payload: { classId: 'fixture.vanguard' } });
+    expect(await screen.findByRole('heading', { name: 'Class · Vanguard' })).toBeVisible();
+  });
+
+  it.each(['solo', 'team'] as const)('routes %s class actions correctly after a completed PvP duel, keeping the terminal hidden', async (mode) => {
+    const commands = classApiFixture(true, true);
+    combatEncounter = {
+      encounterId: 'class-encounter', locationId: 'mossgate-clearing',
+      opponentNpcId: 'mossgate-training-sentinel', opponentName: 'Practice Sentinel',
+      round: 1, playerHealth: 6, playerMaxHealth: 6, opponentHealth: 6, opponentMaxHealth: 6,
+      status: 'active', lastAction: 'attack', lastNarration: 'The practice continues.',
+    };
+    if (mode === 'team') {
+      combatEncounter = null;
+      await apiFetch('/api/commands', { method: 'POST', body: JSON.stringify({
+        type: 'team.combat.start', payload: { targetNpcId: 'mossgate-training-sentinel' },
+      }) });
+    }
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByText('The earlier duel is finished.');
+    const use = await screen.findByRole('button', { name: 'Use Heavy Strike' });
+    expect(screen.queryByRole('textbox', { name: /command/i })).not.toBeInTheDocument();
+    fireEvent.click(use);
+    await waitFor(() => expect(commands).toHaveLength(1));
+    expect(commands[0]).toMatchObject({ type: mode === 'solo' ? 'combat.action' : 'team.combat.action', payload: {
+      action: 'ability', encounterId: mode === 'solo' ? 'class-encounter' : 'team-combat-ui-encounter', abilityId: 'fixture.heavy-strike',
+    } });
   });
 
   it('browses and buys merchant goods from the terminal catalog', async () => {

@@ -4,8 +4,8 @@ import { IdSchema, NonNegativeIntSchema, PositiveIntSchema } from './ids.js';
 import { CharacterHealthSchema } from './health.js';
 
 export const FLEE_STAMINA_COST = 20;
-export const CombatActionIdSchema = z.enum(['attack', 'defend', 'flee', 'use-item']);
-const CombatLastActionSchema = z.enum(['attack', 'defend', 'flee', 'use-item', 'encounter']);
+export const CombatActionIdSchema = z.enum(['attack', 'defend', 'flee', 'use-item', 'ability']);
+const CombatLastActionSchema = z.enum(['attack', 'defend', 'flee', 'use-item', 'encounter', 'ability']);
 export const CombatOutcomeSchema = z.enum(['active', 'victory', 'defeat', 'fled']);
 export const CombatStyleSchema = z.enum(['steady', 'heavy', 'guardian']);
 
@@ -76,7 +76,11 @@ export const CombatActionCommandSchema = ClientCommandBaseSchema.extend({
     encounterId: IdSchema.optional(),
     targetNpcId: IdSchema.optional(),
     itemId: IdSchema.optional(),
+    abilityId: IdSchema.optional(),
   }).strict().superRefine((payload, context) => {
+    if ((payload.action === 'ability') !== Boolean(payload.abilityId)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['abilityId'], message: 'Only an ability action requires an ability ID.' });
+    }
     if (payload.action === 'attack' && !payload.encounterId && !payload.targetNpcId) {
       context.addIssue({
         code: z.ZodIssueCode.custom,

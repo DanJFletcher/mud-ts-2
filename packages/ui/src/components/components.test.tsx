@@ -8,6 +8,20 @@ import { Panel } from './Panel.js';
 import { RoomDescription } from './RoomDescription.js';
 import { Text } from './Text.js';
 import { TextInput } from './TextInput.js';
+import { ClassChoice } from './ClassChoice.js';
+import { ClassAbilityList } from './ClassAbilityList.js';
+import type { CharacterClassDefinition, AvailableClassAction } from './classTypes.js';
+
+const classFixture: CharacterClassDefinition = {
+  id: 'warden', revision: 1, label: 'Warden', description: 'A steady protector.',
+  primaryAttribute: 'strength',
+  attributes: { strength: 14, intelligence: 8, constitution: 13, dexterity: 10 },
+  coreAction: { id: 'shield-break', revision: 1, label: 'Shield break', description: 'A measured strike.', cost: { resource: 'stamina', amount: 3 }, baseDamage: 6, scalingAttribute: 'strength', weaponBonus: true },
+};
+const abilityFixture: AvailableClassAction = {
+  id: 'shield-break', label: 'Shield break', description: 'A measured strike.',
+  cost: { resource: 'stamina', amount: 3 }, available: true,
+};
 
 describe('@mudd/ui components', () => {
   it('renders accessible button actions and disabled state', () => {
@@ -102,5 +116,41 @@ describe('@mudd/ui components', () => {
     fireEvent.click(screen.getByRole('button', { name: 'North, choose a destination' }));
     expect(onAmbiguousDirection).toHaveBeenCalledWith('north');
     expect(onMove).not.toHaveBeenCalled();
+  });
+
+  it('requires an explicit class selection and returns only the chosen class ID', () => {
+    const onChange = vi.fn();
+    render(<ClassChoice classes={[classFixture]} onChange={onChange} />);
+    const choice = screen.getByRole('radio', { name: /Warden/ });
+    expect(choice).not.toBeChecked();
+    fireEvent.click(choice);
+    expect(onChange).toHaveBeenCalledWith('warden');
+    expect(screen.getByText('Shield break')).toBeInTheDocument();
+    expect(screen.getByText('3 stamina')).toBeInTheDocument();
+  });
+
+  it('announces class catalog loading and error states', () => {
+    const { rerender } = render(<ClassChoice classes={[]} onChange={vi.fn()} loading />);
+    expect(screen.getByRole('status')).toHaveTextContent('Loading class choices');
+    rerender(<ClassChoice classes={[]} onChange={vi.fn()} error="Catalog unavailable." />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Catalog unavailable.');
+  });
+
+  it('uses server availability and exposes the reason for unavailable actions', () => {
+    const onUse = vi.fn();
+    render(<ClassAbilityList actions={[
+      abilityFixture,
+      { ...abilityFixture, id: 'ward', label: 'Ward', available: false, unavailableReason: 'Not enough mana.' },
+    ]} onUse={onUse} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Use Shield break' }));
+    expect(onUse).toHaveBeenCalledWith('shield-break');
+    const unavailable = screen.getByRole('button', { name: 'Use Ward' });
+    expect(unavailable).toBeDisabled();
+    expect(screen.getByText('Not enough mana.')).toBeInTheDocument();
+  });
+
+  it('announces a loading state for projected actions', () => {
+    render(<ClassAbilityList actions={[]} onUse={vi.fn()} loading />);
+    expect(screen.getByRole('status')).toHaveTextContent('Loading class actions');
   });
 });

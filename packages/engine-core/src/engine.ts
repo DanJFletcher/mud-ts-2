@@ -203,6 +203,7 @@ export class EngineHost {
       },
     };
     for (const plugin of this.orderedPlugins) plugin.register(context);
+    for (const plugin of this.orderedPlugins) plugin.validateWorld?.(world, context);
     for (const plugin of this.orderedPlugins) {
       for (const required of plugin.manifest.requires ?? []) {
         if (!this.capabilities.has(required)) {
@@ -403,6 +404,8 @@ export class EngineHost {
         expectedVersion: plan.expectedVersion,
         events: plan.events,
         effects: [...(plan.effects ?? []), ...eventEffects],
+        companions: plan.companions,
+        guards: plan.guards,
       });
       return {
         receipt: CommandReceiptSchema.parse(outcome.receipt),
@@ -500,6 +503,8 @@ export class EngineHost {
         expectedVersion: plan.expectedVersion,
         events: plan.events,
         effects: [...(plan.effects ?? []), ...eventEffects],
+        companions: plan.companions,
+        guards: plan.guards,
       });
       return {
         receipt: CommandReceiptSchema.parse(outcome.receipt),

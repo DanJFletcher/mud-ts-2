@@ -10,6 +10,7 @@ import {
   autonomousNpcsPlugin,
   autonomousNpcStreamId,
   characterPlugin,
+  createClassRulesetPlugin,
   movementPlugin,
   npcDialoguePlugin,
   projectAutonomousNpcPosition,
@@ -31,6 +32,7 @@ function makeHarness(options: Readonly<{
   const store = new InMemoryEventStore();
   const engine = new EngineHost(
     [
+      createClassRulesetPlugin(orravethWorld.classCatalog!),
       worldItemsPlugin,
       autonomousNpcsPlugin,
       characterPlugin,
@@ -306,7 +308,7 @@ describe('Orraveth Bellwold settlement', () => {
         type: 'character.create',
         version: 1,
         commandId: 'orraveth-create-mobile-npc-test-character',
-        payload: { name: 'Lena' },
+        payload: { name: 'Lena', classId: 'orraveth.scout' },
       });
       const createdEvent = created.events.find((event) => event.type === 'character.created');
       const characterId = (createdEvent?.payload as { characterId?: string } | undefined)?.characterId;
@@ -377,7 +379,7 @@ describe('Orraveth Bellwold settlement', () => {
         type: 'character.create',
         version: 1,
         commandId: 'orraveth-create-character',
-        payload: { name: 'Mira' },
+        payload: { name: 'Mira', classId: 'orraveth.scout' },
       });
       const createdEvent = created.events.find((event) => event.type === 'character.created');
       const characterId = (createdEvent?.payload as { characterId?: string } | undefined)?.characterId;
@@ -523,7 +525,7 @@ describe('Orraveth Bellwold settlement', () => {
         type: 'character.create',
         version: 1,
         commandId: 'orraveth-create-expanded-settlement-character',
-        payload: { name: 'Tamsin' },
+        payload: { name: 'Tamsin', classId: 'orraveth.scout' },
       });
       const createdEvent = created.events.find((event) => event.type === 'character.created');
       const characterId = (createdEvent?.payload as { characterId?: string } | undefined)?.characterId;

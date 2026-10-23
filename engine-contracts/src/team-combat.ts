@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { ClientCommandBaseSchema, ClientQueryBaseSchema, DomainEventBaseSchema } from './protocol.js';
 import { IdSchema } from './ids.js';
 
-export const TeamCombatActionSchema = z.enum(['attack', 'defend', 'flee', 'use-item']);
+export const TeamCombatActionSchema = z.enum(['attack', 'defend', 'flee', 'use-item', 'ability']);
 
 export const TeamCombatantSchema = z.object({
   participantId: IdSchema,
@@ -105,7 +105,18 @@ export const TeamCombatActionCommandSchema = ClientCommandBaseSchema.extend({
     action: TeamCombatActionSchema,
     targetParticipantId: IdSchema.optional(),
     itemId: IdSchema.optional(),
-  }).strict(),
+    abilityId: IdSchema.optional(),
+  }).strict().superRefine((payload, context) => {
+    if ((payload.action === 'ability') !== Boolean(payload.abilityId)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['abilityId'], message: 'Only an ability action requires an ability ID.' });
+    }
+    if ((payload.action === 'use-item') !== Boolean(payload.itemId)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['itemId'], message: 'Only item use requires an item ID.' });
+    }
+    if (payload.action !== 'attack' && payload.action !== 'ability' && payload.targetParticipantId) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['targetParticipantId'], message: 'This action does not accept a target.' });
+    }
+  }),
 }).strict();
 
 export const TeamCombatInfoQuerySchema = ClientQueryBaseSchema.extend({

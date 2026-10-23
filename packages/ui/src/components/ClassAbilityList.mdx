@@ -1,0 +1,10 @@
+import { Meta, Story, Canvas } from '@storybook/blocks';
+import * as ClassAbilityStories from './ClassAbilityList.stories';
+
+<Meta of={ClassAbilityStories} />
+
+# ClassAbilityList
+
+Displays actions projected by the server. The component does not calculate costs, damage, or eligibility; unavailable actions remain visible with the provided reason. `onUse` emits only the action ID.
+
+<Canvas><Story of={ClassAbilityStories.AvailableAndUnavailable} /></Canvas>

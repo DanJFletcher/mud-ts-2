@@ -15,6 +15,12 @@ The south road outside Bellwold currently ends at unfinished roadwork. A small s
 
 Town NPC dialogue should gradually reveal Bellwold's history and people, as well as wider Orraveth lore. Keep each account grounded in the speaker's experience, and attribute rumors or secondhand reports.
 
+Vanguard, Scout, and Kindler are provisional original gameplay labels, not established lore or a replacement taxonomy for Resonance disciplines. Enabling classes does not authorize hostile encounters or changes to residents and unresolved mysteries.
+
+**Why:** The user explicitly separated the starter class design from Orraveth canon and deferred authored combat encounters.
+
+**How to apply:** Keep future class balance and skill expansion distinct from lore claims; author encounters only as a separate requested content change.
+
 **Why:** the user clarified that Orraveth is a new world, named gold as its current currency, asked to expand Bellwold and its NPC conversations, and requested autonomous village movement; further economic and settlement details remain open.
 
 **How to apply:** Keep Orraveth articles and its world pack standalone. Use gold only in Orraveth; do not invent prices, denominations, or exchange rules. Keep Bellwold additions connected, NPC knowledge local, and autonomous movement in shared world state. Mark new lore provisional and do not turn unresolved mysteries into established explanations.

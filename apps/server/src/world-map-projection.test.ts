@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { EngineHost, InMemoryEventStore, replayCharacter, type EnginePlugin } from '@mudd/engine-core';
 import {
   characterPlugin,
+  createClassRulesetPlugin,
   combatPlugin,
   combatRoomPresenceCapability,
   groupsPlugin,
@@ -339,6 +340,7 @@ describe('visited world map projection', () => {
     for (const road of testWorld.roads ?? []) road.encounterChancePercent = 0;
     const engine = new EngineHost(
       [
+        ...(testWorld.classCatalog ? [createClassRulesetPlugin(testWorld.classCatalog)] : []),
         worldItemsPlugin,
         characterPlugin,
         groupsPlugin,
@@ -533,6 +535,7 @@ describe('Orraveth Bellwold road travel', () => {
     } as const;
     const engine = new EngineHost(
       [
+        createClassRulesetPlugin(testWorld.classCatalog!),
         worldItemsPlugin,
         characterPlugin,
         groupsPlugin,
@@ -564,7 +567,7 @@ describe('Orraveth Bellwold road travel', () => {
     const client = new MuddHttpClient({ worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID, fetcher });
 
     try {
-      const created = await client.createCharacter('Southbound Traveler', 'orraveth-south-road-create');
+      const created = await client.createCharacter('Southbound Traveler', 'orraveth-south-road-create', 'orraveth.scout');
       const characterId = created.streamId!;
       const statsResult = await engine.query(CharacterStatsQuerySchema.parse({
         type: 'character.stats',
@@ -576,7 +579,7 @@ describe('Orraveth Bellwold road travel', () => {
       }), session);
       expect(statsResult.ok).toBe(true);
       if (!statsResult.ok) throw new Error(statsResult.message);
-      expect(statsResult.value.damage).toBe(2);
+      expect(statsResult.value.damage).toBe(3);
       const loadCharacter = async () => {
         const character = replayCharacter(await store.readStream(ORRAVETH_WORLD_INSTANCE_ID, characterId));
         if (!character) throw new Error('The south road test character is missing.');

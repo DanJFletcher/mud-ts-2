@@ -34,6 +34,7 @@ const firstCharacter = {
   revision: 1,
   inventory: [],
   equipment: { weaponItemId: null, armorItemId: null },
+  availableClassActions: [],
   attributes: { strength: 10, intelligence: 10, constitution: 10, dexterity: 10 },
   honors: { glory: 0, medals: 0 },
   resources: {
@@ -61,7 +62,34 @@ const secondCharacter = {
 };
 const availableWorlds = [
   { worldInstanceId: 'mudd-demo-instance', packId: 'mudd.first-steps', name: 'The Waystone Path', summary: 'Mossgate and the old bell tower.' },
-  { worldInstanceId: 'orraveth-bellwold-instance', packId: 'orraveth.bellwold', name: 'Orraveth: Bellwold', summary: 'A frontier village with an old bell.' },
+  {
+    worldInstanceId: 'orraveth-bellwold-instance',
+    packId: 'orraveth.bellwold',
+    name: 'Orraveth: Bellwold',
+    summary: 'A frontier village with an old bell.',
+    classCatalog: {
+      id: 'bellwold-classes',
+      revision: 1,
+      classes: [{
+        id: 'warden',
+        revision: 1,
+        label: 'Warden',
+        description: 'A measured protector.',
+        primaryAttribute: 'strength' as const,
+        attributes: { strength: 14, intelligence: 8, constitution: 13, dexterity: 10 },
+        coreAction: {
+          id: 'shield-break',
+          revision: 1,
+          label: 'Shield break',
+          description: 'A deliberate strike.',
+          cost: { resource: 'stamina' as const, amount: 3 },
+          baseDamage: 6,
+          scalingAttribute: 'strength' as const,
+          weaponBonus: true,
+        },
+      }],
+    },
+  },
 ];
 
 let characters: CharacterRosterSnapshot['characters'];
@@ -162,13 +190,17 @@ describe('account character roster', () => {
     });
     await screen.findByRole('textbox', { name: 'Character name' });
     fireEvent.change(screen.getByRole('textbox', { name: 'Character name' }), { target: { value: 'Anwen' } });
+    const warden = screen.getByRole('radio', { name: /Warden/ });
+    expect(warden).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'Create character' })).toBeDisabled();
+    fireEvent.click(warden);
     fireEvent.click(screen.getByRole('button', { name: 'Create character' }));
     await screen.findByRole('heading', { name: 'Anwen' });
 
     expect(commandBodies[0]).toMatchObject({
       type: 'character.create',
       worldInstanceId: 'orraveth-bellwold-instance',
-      payload: { name: 'Anwen' },
+      payload: { name: 'Anwen', classId: 'warden' },
     });
     expect(screen.getByRole('heading', { name: 'Rowan' })).toBeInTheDocument();
     expect(window.localStorage.getItem('mudd-world-instance-id')).toBe('orraveth-bellwold-instance');
@@ -336,13 +368,14 @@ describe('guest entry', () => {
     render(<GuestWorldPage />);
     fireEvent.click(await screen.findByRole('button', { name: /Orraveth: Bellwold/ }));
     fireEvent.change(screen.getByRole('textbox', { name: 'New character name' }), { target: { value: 'Willow' } });
+    fireEvent.click(screen.getByRole('radio', { name: /Warden/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Create and enter' }));
 
     expect(await screen.findByText('World play')).toBeInTheDocument();
     expect(guestCommands[0]).toMatchObject({
       type: 'character.create',
       worldInstanceId: 'orraveth-bellwold-instance',
-      payload: { name: 'Willow' },
+      payload: { name: 'Willow', classId: 'warden' },
     });
     const sessionRequest = apiFetch.mock.calls.find(([path]) => path === '/api/world-session' && (apiFetch.mock.calls.find(([candidate]) => candidate === path)?.[1] as RequestInit | undefined)?.method === 'POST');
     expect(JSON.parse(String(sessionRequest?.[1]?.body))).toMatchObject({

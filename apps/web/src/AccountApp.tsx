@@ -11,12 +11,20 @@ import { publishableKeyFromHost } from '@clerk/react/internal';
 import { shadcn } from '@clerk/themes';
 import { Redirect, Route, Router as WouterRouter, Switch, useLocation } from 'wouter';
 import { Moon, Sun, UserRoundPlus, LogIn, Archive, Pencil, X, Check, RotateCcw } from 'lucide-react';
-import { Button, TextInput } from '@mudd/ui';
+import { Button, ClassChoice, TextInput, type CharacterClassDefinition } from '@mudd/ui';
 import { MuddHttpClient, type CharacterRosterSnapshot, type WorldSummary } from '@mudd/client-sdk';
 import { WorldClient } from './App.js';
 import './account.css';
 
 const client = new MuddHttpClient({ worldInstanceId: 'mudd-demo-instance' });
+type ClassCatalogSummary = { id: string; revision: number; classes: CharacterClassDefinition[] };
+type CharacterClassView = { id: string; revision: number; label: string };
+function getClassCatalog(world: WorldSummary | undefined): ClassCatalogSummary | undefined {
+  return world?.classCatalog;
+}
+function getCharacterClass(character: unknown): CharacterClassView | undefined {
+  return (character as { characterClass?: CharacterClassView } | undefined)?.characterClass;
+}
 const selectedWorldStorageKey = 'mudd-world-instance-id';
 function selectWorld(worldInstanceId: string) {
   window.localStorage.setItem(selectedWorldStorageKey, worldInstanceId);
@@ -210,6 +218,7 @@ export function CharacterRoster() {
   const [pending, setPending] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => window.localStorage.getItem('mudd-theme') === 'dark' ? 'dark' : 'light');
   const [name, setName] = useState('');
+  const [classId, setClassId] = useState('');
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [archiveId, setArchiveId] = useState<string | null>(null);
@@ -243,6 +252,7 @@ export function CharacterRoster() {
   const chooseWorld = (worldInstanceId: string) => {
     selectWorld(worldInstanceId);
     setSelectedWorldId(worldInstanceId);
+    setClassId('');
     void loadRoster();
   };
 
@@ -254,8 +264,11 @@ export function CharacterRoster() {
     setError('');
     try {
       selectWorld(selectedWorldId);
-      await client.createCharacter(trimmed);
+      const catalog = getClassCatalog(selectedWorld);
+      if (catalog && !classId) throw new Error('Choose a class before creating this character.');
+      await client.createCharacter(trimmed, undefined, catalog ? classId : undefined);
       setName('');
+      setClassId('');
       await refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not create the character.');
@@ -368,6 +381,7 @@ export function CharacterRoster() {
 
   const displayName = user?.fullName || user?.primaryEmailAddress?.emailAddress || roster?.player.displayName || 'Traveler';
   const selectedWorld = worlds.find((world) => world.worldInstanceId === selectedWorldId);
+  const classCatalog = getClassCatalog(selectedWorld);
   const activeWorldSession = roster?.activeWorldSessions?.find((session) =>
     session.worldInstanceId === selectedWorldId,
   ) ?? (roster?.activeWorldSession ? {
@@ -457,7 +471,7 @@ export function CharacterRoster() {
                         ) : (
                           <>
                             <h2>{character.name}</h2>
-                            <p>{character.worldName ?? worlds.find((world) => world.worldInstanceId === character.worldInstanceId)?.name ?? 'Unknown world'} · {character.locationTitle} · {character.combat?.status === 'defeat' || character.health?.current === 0
+                            <p>{getCharacterClass(character)?.label ? `${getCharacterClass(character)?.label} · ` : ''}{character.worldName ?? worlds.find((world) => world.worldInstanceId === character.worldInstanceId)?.name ?? 'Unknown world'} · {character.locationTitle} · {character.combat?.status === 'defeat' || character.health?.current === 0
                               ? 'Dead · Game over'
                               : character.archived ? 'Archived' : isActive ? 'In this world' : 'Ready'}</p>
                           </>
@@ -504,7 +518,10 @@ export function CharacterRoster() {
               <div><div className="focused-kicker">NEW CHARACTER</div><h2>Create a character</h2></div>
               <form className="account-create__form" onSubmit={createCharacter}>
                 <TextInput id="new-character-name" label="Character name" placeholder="Choose a name" maxLength={48} value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" />
-                <Button type="submit" disabled={!name.trim() || pending}>{pending ? 'Saving…' : 'Create character'}</Button>
+                {classCatalog?.classes?.length ? (
+                  <ClassChoice classes={classCatalog.classes} value={classId || undefined} onChange={setClassId} disabled={pending} />
+                ) : null}
+                <Button type="submit" disabled={!name.trim() || pending || Boolean(classCatalog?.classes.length && !classId)}>{pending ? 'Saving…' : 'Create character'}</Button>
               </form>
             </section>}
           </>
@@ -538,6 +555,7 @@ export function GuestWorldPage() {
     () => window.localStorage.getItem(selectedWorldStorageKey) ?? 'mudd-demo-instance',
   );
   const [name, setName] = useState('');
+  const [classId, setClassId] = useState('');
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [inWorld, setInWorld] = useState(false);
@@ -587,6 +605,7 @@ export function GuestWorldPage() {
   }, [selectedWorldId]);
 
   const selectedWorld = worlds.find((world) => world.worldInstanceId === selectedWorldId);
+  const classCatalog = getClassCatalog(selectedWorld);
   const worldCharacters = roster?.characters.filter((character) =>
     character.worldInstanceId === selectedWorldId && !character.archived,
   ) ?? [];
@@ -600,6 +619,7 @@ export function GuestWorldPage() {
   const chooseWorld = (worldInstanceId: string) => {
     setSelectedWorldId(worldInstanceId);
     selectWorld(worldInstanceId);
+    setClassId('');
     setError('');
   };
 
@@ -627,10 +647,12 @@ export function GuestWorldPage() {
     setError('');
     selectWorld(selectedWorldId);
     try {
-      const created = await client.createCharacter(trimmedName);
+      if (classCatalog && !classId) throw new Error('Choose a class before creating this character.');
+      const created = await client.createCharacter(trimmedName, undefined, classCatalog ? classId : undefined);
       if (!created.streamId) throw new Error('The new character was created without an ID.');
       await client.joinWorld(created.streamId, selectedWorldId);
       setName('');
+      setClassId('');
       setInWorld(true);
       await refresh();
     } catch (cause) {
@@ -703,7 +725,7 @@ export function GuestWorldPage() {
                 )}
                 {worldCharacters.filter((character) => character.characterId !== worldSession?.characterId).map((character) => (
                   <article className="account-character-card" key={character.characterId}>
-                    <div><h2>{character.name}</h2><p>{character.locationTitle}</p></div>
+                    <div><h2>{character.name}</h2><p>{getCharacterClass(character)?.label ? `${getCharacterClass(character)?.label} · ` : ''}{character.locationTitle}</p></div>
                     <Button
                       type="button"
                       onClick={() => void join(character.characterId)}
@@ -715,7 +737,10 @@ export function GuestWorldPage() {
                 ))}
                 <form className="account-create__form" onSubmit={(event) => void createCharacter(event)}>
                   <TextInput id="guest-new-character-name" label="New character name" placeholder="Choose a name" maxLength={48} value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" />
-                  <Button type="submit" disabled={!name.trim() || pending || Boolean(worldSession)}>{pending ? 'Saving…' : 'Create and enter'}</Button>
+                  {classCatalog?.classes?.length ? (
+                    <ClassChoice classes={classCatalog.classes} value={classId || undefined} onChange={setClassId} disabled={pending || Boolean(worldSession)} />
+                  ) : null}
+                  <Button type="submit" disabled={!name.trim() || pending || Boolean(worldSession) || Boolean(classCatalog?.classes.length && !classId)}>{pending ? 'Saving…' : 'Create and enter'}</Button>
                 </form>
                 {worldSession && <p className="account-world-note">Leave this world before entering with a different character. Characters in other worlds are unaffected.</p>}
               </section>

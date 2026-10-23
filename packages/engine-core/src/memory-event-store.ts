@@ -60,6 +60,21 @@ export class InMemoryEventStore implements EventStorePort {
     if (prior) return prior;
     const receiptKey = `${request.worldInstanceId}:${request.actorId}:${request.commandId}`;
 
+    const checks = [...(request.companions ?? []), ...(request.guards ?? [])];
+    const writeIds = [request.streamId, ...(request.companions ?? []).map((write) => write.streamId)];
+    if (new Set(writeIds).size !== writeIds.length) throw new Error('Duplicate atomic write stream.');
+    if (request.companions?.some((write) => !write.events.length) ||
+        (request.companions?.length && !request.events.length)) {
+      throw new Error('Atomic writes must contain events.');
+    }
+    for (const check of checks) {
+      const actual = this.streams.get(`${request.worldInstanceId}:${check.streamId}`)?.at(-1)?.aggregateVersion ?? 0;
+      if (actual !== check.expectedVersion) {
+        return { kind: 'conflict', streamId: request.streamId, events: [],
+          receipt: failure(request.commandId, 'VERSION_CONFLICT', 'An observed stream changed. Refresh and try again.') };
+      }
+    }
+
     const streamKey = `${request.worldInstanceId}:${request.streamId}`;
     const current = this.streams.get(streamKey) ?? [];
     const revision = current.at(-1)?.aggregateVersion ?? 0;
@@ -86,6 +101,18 @@ export class InMemoryEventStore implements EventStorePort {
       tick: revision + index + 1,
     }));
     const next = [...current, ...appended];
+    // No await between validation and all mutations: the memory adapter is atomic.
+    for (const write of request.companions ?? []) {
+      const key = `${request.worldInstanceId}:${write.streamId}`;
+      const previous = this.streams.get(key) ?? [];
+      const events = write.events.map((event, index): StoredGameEvent => ({
+        ...event, eventId: globalThis.crypto.randomUUID(), worldInstanceId: request.worldInstanceId,
+        streamId: write.streamId, aggregateId: write.streamId,
+        aggregateVersion: write.expectedVersion + index + 1, causationCommandId: request.commandId,
+        actorId: request.actorId, occurredAt: now, tick: write.expectedVersion + index + 1,
+      }));
+      this.streams.set(key, [...previous, ...events]);
+    }
     this.streams.set(streamKey, next);
     const receipt: Extract<CommandReceipt, { ok: true }> = {
       ok: true,

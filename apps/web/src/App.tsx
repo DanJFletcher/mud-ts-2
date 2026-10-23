@@ -13,12 +13,16 @@ import { FLEE_STAMINA_COST, type InteractionInbox } from "@mudd/contracts";
 import {
   ActivityLog,
   Button,
+  ClassAbilityList,
+  ClassChoice,
   DisclosureButton,
   NavigationControls,
   Panel,
   Text,
   TextInput,
   type ActivityEntry,
+  type AvailableClassAction,
+  type CharacterClassDefinition,
 } from "@mudd/ui";
 import { ChevronDown, Compass, Info as InfoIcon, Keyboard, Menu, Moon, Sun, Users, X } from "lucide-react";
 import { RoomChatPanel, type RoomChatMessage } from "./RoomChatPanel.js";
@@ -27,6 +31,14 @@ import { WorldMapPanel } from "./WorldMapPanel.js";
 import CodexScreen from "./codex/CodexScreen.js";
 
 const client = new MuddHttpClient({ worldInstanceId: "mudd-demo-instance" });
+type ClassCatalogSummary = { id: string; revision: number; classes: CharacterClassDefinition[] };
+type CharacterClassSnapshot = CharacterClassDefinition & { catalogId: string; catalogRevision: number };
+type ClassAwareCharacter = NonNullable<GameSnapshot["character"]> & {
+  characterClass?: CharacterClassSnapshot;
+  availableClassActions?: AvailableClassAction[];
+};
+const classCharacter = (character: GameSnapshot["character"]): ClassAwareCharacter | undefined =>
+  character as ClassAwareCharacter | undefined;
 type DialogueProjection = Awaited<ReturnType<MuddHttpClient["talk"]>>;
 type MerchantCatalog = Awaited<ReturnType<MuddHttpClient["getMerchantCatalog"]>>;
 type Screen = "play" | "vitals" | "items" | "equipment" | "stats" | "notes" | "codex";
@@ -213,6 +225,10 @@ export function WorldClient({
   worldInstanceId = window.localStorage.getItem("mudd-world-instance-id") ?? "mudd-demo-instance",
 }: WorldClientProps) {
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
+  const [classCatalog, setClassCatalog] = useState<ClassCatalogSummary | undefined>();
+  const [classCatalogError, setClassCatalogError] = useState<string>();
+  const [classChoiceId, setClassChoiceId] = useState("");
+  const [confirmClassAdoption, setConfirmClassAdoption] = useState(false);
   const [interactionInbox, setInteractionInbox] = useState<InteractionInbox | null>(null);
   const [partyInfo, setPartyInfo] = useState<Awaited<ReturnType<MuddHttpClient["getPartyInfo"]>> | null>(null);
   const [teamCombatInfo, setTeamCombatInfo] = useState<Awaited<ReturnType<MuddHttpClient["getTeamCombatInfo"]>> | null>(null);
@@ -261,6 +277,27 @@ export function WorldClient({
   const knownPvpUpdateRef = useRef<string | null>(null);
   const knownPartyRevisionRef = useRef<number | null>(null);
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setClassCatalogError(undefined);
+    void client.getWorlds().then((worlds) => {
+      if (!active) return;
+      const world = worlds.find((candidate) => candidate.worldInstanceId === worldInstanceId);
+      setClassCatalog(world?.classCatalog);
+    }).catch(() => {
+      if (active) {
+        setClassCatalog(undefined);
+        setClassCatalogError("Class choices could not be loaded. Reconnect or reload to try again.");
+      }
+    });
+    return () => { active = false; };
+  }, [worldInstanceId]);
+
+  useEffect(() => {
+    setClassChoiceId("");
+    setConfirmClassAdoption(false);
+  }, [snapshot?.character?.characterId]);
 
   useEffect(() => {
     setMenuOpen(false);
@@ -1052,6 +1089,85 @@ export function WorldClient({
     }
   }, [addEntry, partyInfo?.party, pending, refreshTeamCombat, snapshot, teamCombatInfo]);
 
+  const performClassAbility = useCallback(async (abilityId: string) => {
+    const game = snapshot;
+    const character = classCharacter(game?.character);
+    if (!game?.character || !character || !game.location || pending) return;
+    const teamEncounter = teamCombatInfo?.encounter?.status === "active" ? teamCombatInfo.encounter : undefined;
+    const soloEncounter = game.character.combat?.status === "active" ? game.character.combat : undefined;
+    const pvpEncounter = interactionInbox?.encounter?.status === "active" &&
+      interactionInbox.encounter.participants.some((participant) => participant.characterId === game.character!.characterId)
+      ? interactionInbox.encounter : undefined;
+    if (!teamEncounter && !soloEncounter && !pvpEncounter) return;
+    setPending("combat");
+    try {
+      const result = pvpEncounter
+        ? await client.performPvpAction(game.character.characterId, pvpEncounter.encounterId, "ability", undefined, abilityId)
+        : teamEncounter
+          ? await client.performTeamCombatAction(game.character.characterId, teamEncounter.encounterId, "ability", { abilityId })
+          : await client.performCombatAction(
+            game.character.characterId,
+            "ability",
+            game.character.revision,
+            { encounterId: soloEncounter?.encounterId, abilityId },
+          );
+      if (!result.receipt.ok) throw new Error(result.receipt.message);
+      const [nextSnapshot, nextTeamInfo, nextInbox] = await Promise.all([
+        client.getGame(),
+        refreshTeamCombat(),
+        pvpEncounter ? client.getInteractionInbox() : Promise.resolve(interactionInbox),
+      ]);
+      setSnapshot(nextSnapshot);
+      if (nextTeamInfo) setTeamCombatInfo(nextTeamInfo);
+      if (nextInbox) setInteractionInbox(nextInbox);
+      const refreshedPvp = nextInbox?.encounter;
+      const refreshedTeam = nextTeamInfo?.encounter;
+      const refreshedSolo = nextSnapshot.character?.combat;
+      const narration = pvpEncounter
+        ? refreshedPvp?.lastNarration
+        : teamEncounter
+          ? refreshedTeam?.lastNarration
+          : refreshedSolo?.lastNarration;
+      if (narration) addEntry("narration", narration);
+      setConnectionError("");
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "The class action could not be completed.");
+    } finally {
+      setPending(null);
+    }
+  }, [addEntry, interactionInbox, pending, refreshTeamCombat, snapshot, teamCombatInfo]);
+
+  const adoptCharacterClass = useCallback(async () => {
+    const game = snapshot;
+    const character = classCharacter(game?.character);
+    if (!game?.character || !character || character.characterClass || !classChoiceId || pending) return;
+    if (snapshot?.character?.combat?.status === "active" || teamCombatInfo?.encounter?.status === "active" || interactionInbox?.encounter?.status === "active") {
+      addEntry("error", "Class adoption is available only outside combat.");
+      return;
+    }
+    if (!confirmClassAdoption) {
+      setConfirmClassAdoption(true);
+      return;
+    }
+    setPending("combat");
+    try {
+      await client.chooseCharacterClass(
+        game.character.characterId,
+        game.character.revision,
+        classChoiceId,
+      );
+      const nextSnapshot = await client.getGame();
+      setSnapshot(nextSnapshot);
+      setConfirmClassAdoption(false);
+      setClassChoiceId("");
+      addEntry("system", "Your class has been adopted. This choice cannot be changed.");
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "Class adoption could not be completed.");
+    } finally {
+      setPending(null);
+    }
+  }, [addEntry, classChoiceId, confirmClassAdoption, interactionInbox?.encounter?.status, pending, snapshot, teamCombatInfo?.encounter?.status]);
+
   const challengePlayer = useCallback(async (recipientCharacterId: string, recipientName: string) => {
     if (!snapshot?.character || pending) return;
     addEntry("system", `> attack ${recipientName}`);
@@ -1709,6 +1825,8 @@ export function WorldClient({
     : undefined;
   const hasVisiblePvp = Boolean(visiblePvp);
   const isPvpTurn = visiblePvp?.turnCharacterId === snapshot?.character?.characterId;
+  const availableClassActions = classCharacter(snapshot?.character)?.availableClassActions ?? [];
+  const currentCharacterClass = classCharacter(snapshot?.character)?.characterClass;
   useEffect(() => {
     if (screen !== "play") return;
 
@@ -2158,6 +2276,7 @@ export function WorldClient({
                       </div>
                       {visiblePvp.status === "active" ? (
                         isPvpTurn ? (
+                          <>
                           <div className="focused-terminal-combat__actions" role="group" aria-label="Player combat actions">
                             <button type="button" className="focused-quick-command focused-combat-action" onClick={() => void performPvpAction("attack")} disabled={pending !== null}>attack</button>
                             <button type="button" className="focused-quick-command focused-combat-action" onClick={() => void performPvpAction("defend")} disabled={pending !== null}>defend</button>
@@ -2177,6 +2296,8 @@ export function WorldClient({
                             )}
                             <button type="button" className="focused-quick-command focused-combat-action" onClick={() => void performPvpAction("flee")} disabled={pending !== null}>flee</button>
                           </div>
+                          <ClassAbilityList actions={availableClassActions} onUse={(abilityId) => void performClassAbility(abilityId)} disabled={pending !== null} label="Duel class abilities" />
+                          </>
                         ) : <span role="status">Waiting for the other player’s turn.</span>
                       ) : <span role="status">Saving combat outcomes…</span>}
                     </section>
@@ -2190,6 +2311,7 @@ export function WorldClient({
                         <span>{activeTeamCombat.lastNarration}</span>
                       </div>
                       {isTeamCombatTurn ? (
+                        <>
                         <div className="focused-terminal-combat__actions" role="group" aria-label="Cooperative combat actions">
                           <button type="button" className="focused-quick-command focused-combat-action" onClick={() => void performCombatAction("attack", undefined, true)} disabled={pending !== null}>attack</button>
                           <button type="button" className="focused-quick-command focused-combat-action" onClick={() => void performCombatAction("defend", undefined, true)} disabled={pending !== null}>defend</button>
@@ -2198,6 +2320,8 @@ export function WorldClient({
                           ) : null}
                           <button type="button" className="focused-quick-command focused-combat-action" onClick={() => void performCombatAction("flee", undefined, true)} disabled={pending !== null || !canFlee} title={canFlee ? undefined : `Need ${FLEE_STAMINA_COST} stamina to flee`}>flee</button>
                         </div>
+                        <ClassAbilityList actions={availableClassActions} onUse={(abilityId) => void performClassAbility(abilityId)} disabled={pending !== null} label="Cooperative class abilities" />
+                        </>
                       ) : <span role="status">Waiting for your party’s turn.</span>}
                       {combatUseMenuOpen && isTeamCombatTurn ? (
                         <div className="focused-terminal-combat__items" role="group" aria-label="Items available during cooperative combat">
@@ -2260,6 +2384,7 @@ export function WorldClient({
                           flee
                         </button>
                       </div>
+                      <ClassAbilityList actions={availableClassActions} onUse={(abilityId) => void performClassAbility(abilityId)} disabled={pending !== null} label="Combat class abilities" />
                       {combatUseMenuOpen ? (
                         <div
                           id="combat-usable-items"
@@ -2974,6 +3099,44 @@ export function WorldClient({
                     </p>
                   </div>
                 </div>
+                {currentCharacterClass ? (
+                  <section className="focused-stat-section" aria-labelledby="character-class-title">
+                    <h2 id="character-class-title">Class · {currentCharacterClass.label}</h2>
+                    <p className="focused-note">{currentCharacterClass.description}</p>
+                    <div className="focused-detail focused-detail--wide">
+                      <span>Starting action</span>
+                      <strong>{currentCharacterClass.coreAction.label}</strong>
+                      <p>{currentCharacterClass.coreAction.description}</p>
+                    </div>
+                  </section>
+                ) : classCatalogError ? <p role="alert" className="focused-note">{classCatalogError}</p> : !isAnyCombatActive && !visiblePvp && classCatalog?.classes.length ? (
+                  <section className="focused-stat-section" aria-labelledby="class-adoption-title">
+                    <h2 id="class-adoption-title">Choose your class</h2>
+                    <p className="focused-note">This character predates class choices. You may adopt one class once, while outside combat. This choice is permanent.</p>
+                    <ClassChoice
+                      classes={classCatalog.classes}
+                      value={classChoiceId || undefined}
+                      onChange={(nextClassId) => {
+                        setClassChoiceId(nextClassId);
+                        setConfirmClassAdoption(false);
+                      }}
+                      disabled={pending !== null}
+                      name="legacy-class-adoption"
+                    />
+                    {confirmClassAdoption && (
+                      <p className="focused-note" role="status">
+                        Confirm this class for {snapshot.character?.name ?? "your character"}. It cannot be changed later.
+                      </p>
+                    )}
+                    <Button
+                      type="button"
+                      disabled={!classChoiceId || pending !== null}
+                      onClick={() => void adoptCharacterClass()}
+                    >
+                      {pending === "combat" ? "Saving…" : confirmClassAdoption ? "Confirm permanent choice" : "Adopt this class"}
+                    </Button>
+                  </section>
+                ) : null}
                 <section className="focused-stat-section" aria-labelledby="primary-stats-title">
                   <h2 id="primary-stats-title">Stats</h2>
                   <div className="focused-stat-grid">

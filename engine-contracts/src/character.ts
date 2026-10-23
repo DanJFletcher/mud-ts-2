@@ -4,6 +4,7 @@ import { ClientCommandBaseSchema, ClientQueryBaseSchema, DomainEventBaseSchema }
 import { IdSchema, NonEmptyNameSchema, NonNegativeIntSchema, PositiveIntSchema, ContractVersionSchema } from './ids.js';
 import { CombatEncounterProjectionSchema } from './combat.js';
 import { CharacterHealthSchema } from './health.js';
+import { CharacterClassSnapshotSchema, AvailableClassActionSchema } from './classes.js';
 
 export const ConsumableItemSchema = z.object({
   effect: z.literal('heal'),
@@ -166,7 +167,7 @@ export const CreateCharacterCommandSchema = z.object({
   version: ContractVersionSchema,
   commandId: IdSchema,
   worldInstanceId: IdSchema,
-  payload: z.object({ name: NonEmptyNameSchema }).strict(),
+  payload: z.object({ name: NonEmptyNameSchema, classId: IdSchema.optional() }).strict(),
 }).strict();
 
 const CharacterCreatedPayloadSchema = z.object({
@@ -191,6 +192,16 @@ export const CharacterCreatedEventV2Schema = DomainEventBaseSchema.extend({
   version: z.literal(2),
   payload: CharacterCreatedPayloadSchema.extend({
     resources: CharacterResourcesSchema,
+  }).strict(),
+}).strict();
+
+export const CharacterCreatedEventV3Schema = DomainEventBaseSchema.extend({
+  type: z.literal('character.created'),
+  version: z.literal(3),
+  payload: CharacterCreatedPayloadSchema.extend({
+    resources: CharacterResourcesSchema,
+    characterClass: CharacterClassSnapshotSchema,
+    health: CharacterHealthSchema,
   }).strict(),
 }).strict();
 
@@ -384,6 +395,8 @@ export const CharacterProjectionSchema = z.object({
   inventory: z.array(InventoryItemProjectionSchema).default([]),
   equipment: CharacterEquipmentSchema.default({ weaponItemId: null, armorItemId: null }),
   attributes: CharacterAttributesSchema.default(DEFAULT_CHARACTER_ATTRIBUTES),
+  characterClass: CharacterClassSnapshotSchema.optional(),
+  availableClassActions: z.array(AvailableClassActionSchema).default([]),
   honors: CharacterHonorsSchema.default(DEFAULT_CHARACTER_HONORS),
   resources: CharacterResourcesSchema.default(DEFAULT_CHARACTER_RESOURCES),
   wallet: CharacterWalletSchema.optional(),
@@ -471,7 +484,8 @@ export const CharacterRespawnedEventSchema = DomainEventBaseSchema.extend({
 
 export type CreateCharacterCommand = z.infer<typeof CreateCharacterCommandSchema>;
 export type CharacterCreatedEvent = z.infer<typeof CharacterCreatedEventSchema>
-  | z.infer<typeof CharacterCreatedEventV2Schema>;
+  | z.infer<typeof CharacterCreatedEventV2Schema>
+  | z.infer<typeof CharacterCreatedEventV3Schema>;
 export type TakeCharacterItemCommand = z.infer<typeof TakeCharacterItemCommandSchema>;
 export type CharacterItemTakenEvent = z.infer<typeof CharacterItemTakenEventSchema>;
 export type DropCharacterItemCommand = z.infer<typeof DropCharacterItemCommandSchema>;
