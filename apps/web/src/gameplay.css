@@ -1334,7 +1334,7 @@
     right: 10px;
     display: grid;
     width: clamp(88px, 28vw, 112px);
-    aspect-ratio: 4 / 5;
+    aspect-ratio: 1 / 1;
     place-items: center;
     overflow: hidden;
     padding: 4px;
