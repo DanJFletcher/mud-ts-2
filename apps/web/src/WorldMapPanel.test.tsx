@@ -128,6 +128,40 @@ describe('map switching between floors', () => {
     expect(tileY('Bell Tower')).toBeLessThan(tileY('Tower Road'));
   });
 
+  it('draws exit stubs without rendering or naming the undiscovered room', () => {
+    const map: WorldMapProjection = {
+      worldInstanceId: 'world',
+      packId: 'pack',
+      packVersion: '1.0.0',
+      currentLocationId: 'market',
+      locationGroups: [],
+      locations: [{
+        id: 'market',
+        name: 'Market',
+        shortName: 'Market',
+        qualifiedName: 'Market',
+        locationGroupIds: [],
+        x: 0,
+        y: 0,
+      }],
+      connections: [],
+      exitStubs: [{ locationId: 'market', direction: 'north', oneWay: true }],
+    };
+    const { container } = render(
+      <WorldMapPanel map={map} fullscreen={false} onFullscreenChange={vi.fn()} />,
+    );
+    const svg = screen.getByRole('group', { name: 'Directional map of visited locations' });
+    const stub = svg.querySelector<SVGPathElement>('.focused-world-map__path--stub');
+
+    expect(svg.querySelectorAll('.focused-world-map__tile')).toHaveLength(1);
+    expect(within(svg).queryByRole('button', { name: /undiscovered/i })).not.toBeInTheDocument();
+    expect(stub).toHaveAttribute('d', 'M 27 18 V 6');
+    expect(stub).toHaveAttribute('marker-end', 'url(#world-map-one-way-arrow)');
+    expect(stub).toHaveTextContent('One-way exit leading north from Market');
+    expect(container.querySelector('.focused-world-map__minimap-svg .focused-world-map__path--stub'))
+      .not.toBeNull();
+  });
+
   for (const fullscreen of [false, true]) {
     it(`replaces visual and accessible locations in ${fullscreen ? 'full-screen' : 'compact'} mode`, () => {
       const onFullscreenChange = vi.fn();

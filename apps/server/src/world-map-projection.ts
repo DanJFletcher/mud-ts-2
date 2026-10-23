@@ -50,6 +50,21 @@ export function projectWorldMap(
     };
   });
   const visibleLocationIds = new Set(locations.map((location) => location.id));
+  const seenExitStubs = new Set<string>();
+  const exitStubs = visibleLocations.flatMap((location) => location.exits.flatMap((exit) => {
+    const direction = exit.direction;
+    if (
+      exit.toLocationId === location.id ||
+      visibleLocationIds.has(exit.toLocationId) ||
+      direction !== 'north' && direction !== 'east' && direction !== 'south' && direction !== 'west'
+    ) return [];
+    const stubKey = `${location.id}:${direction}`;
+    if (seenExitStubs.has(stubKey)) return [];
+    seenExitStubs.add(stubKey);
+    const destination = world.locations.find((candidate) => candidate.id === exit.toLocationId);
+    const hasReverseExit = destination?.exits.some((candidate) => candidate.toLocationId === location.id) ?? false;
+    return [{ locationId: location.id, direction, oneWay: !hasReverseExit }];
+  }));
   const seenPaths = new Set<string>();
   const connections = visibleLocations.flatMap((location) => location.exits.flatMap((exit) => {
     if (exit.toLocationId === location.id) return [];
@@ -80,5 +95,6 @@ export function projectWorldMap(
     locations,
     locationGroups: projectVisibleLocationGroups(locationGroups, visibleLocationIds),
     connections,
+    exitStubs,
   });
 }

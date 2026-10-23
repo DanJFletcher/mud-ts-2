@@ -40,7 +40,27 @@ test('map terrain is open-ended and developer colors are validated', () => {
     }],
     locationGroups: [],
     connections: [],
+    exitStubs: [{ locationId: 'field', direction: 'north', oneWay: false }],
   }).success, true);
+
+  assert.equal(WorldMapProjectionSchema.safeParse({
+    worldInstanceId: 'world',
+    packId: 'pack',
+    packVersion: '1.0.0',
+    currentLocationId: 'field',
+    locations: [{
+      id: 'field',
+      name: 'Wheat Field',
+      shortName: 'Wheat Field',
+      qualifiedName: 'Wheat Field',
+      locationGroupIds: [],
+      x: 4,
+      y: 2,
+    }],
+    locationGroups: [],
+    connections: [],
+    exitStubs: [{ locationId: 'field', direction: 'north', oneWay: false, toLocationId: 'hidden-room' }],
+  }).success, false);
 });
 
 test('quest currency rewards are positive and limited to character-scoped quests', () => {

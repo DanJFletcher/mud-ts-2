@@ -22,6 +22,7 @@ type MapPoint = WorldMapProjection['locations'][number] & { screenX: number; scr
 type MapLayout = Readonly<{ points: MapPoint[]; width: number; height: number }>;
 type MapViewBox = Readonly<{ x: number; y: number; width: number; height: number }>;
 type MapPanOffset = Readonly<{ x: number; y: number }>;
+type CardinalMapDirection = 'north' | 'east' | 'south' | 'west';
 type MapPanDrag = {
   pointerId: number;
   pointerX: number;
@@ -70,6 +71,21 @@ function verticalArrowPath(
   return direction === 'up'
     ? `M ${leftX} ${centerY + 1.5} l 3.5 -3.5 3.5 3.5 Z`
     : `M ${leftX} ${centerY - 1.5} l 3.5 3.5 3.5 -3.5 Z`;
+}
+
+function exitStubPath(point: MapPoint, direction: CardinalMapDirection): string {
+  const halfTile = MAP_TILE_SIZE / 2;
+  const stubEnd = MAP_GRID_STEP - halfTile;
+  if (direction === 'north') {
+    return `M ${point.screenX} ${point.screenY - halfTile} V ${point.screenY - stubEnd}`;
+  }
+  if (direction === 'south') {
+    return `M ${point.screenX} ${point.screenY + halfTile} V ${point.screenY + stubEnd}`;
+  }
+  if (direction === 'east') {
+    return `M ${point.screenX + halfTile} ${point.screenY} H ${point.screenX + stubEnd}`;
+  }
+  return `M ${point.screenX - halfTile} ${point.screenY} H ${point.screenX - stubEnd}`;
 }
 
 function readMinimapOffset(): MinimapOffset {
@@ -568,7 +584,7 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
               <title>Directional map of visited locations</title>
               <desc>
                 North is up. Water and building tiles have labeled colors; other terrain colors are authored by the world developer.
-                White lines connect exits, arrows mark one-way exits, and black triangles mark up or down passages.
+                White lines show exits, including stubs for undiscovered destinations; arrows mark one-way exits, and black triangles mark up or down passages.
                 {focusedLocation ? ` ${focusedLocation.name} is selected.` : ''}
               </desc>
               <defs>
@@ -608,6 +624,28 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
                       {connection.oneWay
                         ? `One-way exit from ${from.name} to ${to.name}`
                         : `Exit between ${from.name} and ${to.name}`}
+                    </title>
+                  </path>
+                );
+              })}
+              {(map?.exitStubs ?? []).map((stub) => {
+                const from = pointById.get(stub.locationId);
+                if (!from) return null;
+                return (
+                  <path
+                    key={`${stub.locationId}-${stub.direction}`}
+                    className={[
+                      'focused-world-map__path',
+                      'focused-world-map__path--stub',
+                      stub.oneWay ? 'focused-world-map__path--one-way' : '',
+                    ].filter(Boolean).join(' ')}
+                    d={exitStubPath(from, stub.direction)}
+                    markerEnd={stub.oneWay ? 'url(#world-map-one-way-arrow)' : undefined}
+                  >
+                    <title>
+                      {stub.oneWay
+                        ? `One-way exit leading ${stub.direction} from ${from.name}`
+                        : `Exit leading ${stub.direction} from ${from.name}; destination not discovered`}
                     </title>
                   </path>
                 );
@@ -730,6 +768,21 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
                     connection.direction,
                     connection.mapLineGapAtLocationId,
                   )}
+              />
+            );
+          })}
+          {(map?.exitStubs ?? []).map((stub) => {
+            const from = pointById.get(stub.locationId);
+            if (!from) return null;
+            return (
+              <path
+                key={`${stub.locationId}-${stub.direction}`}
+                className={[
+                  'focused-world-map__path',
+                  'focused-world-map__path--stub',
+                  stub.oneWay ? 'focused-world-map__path--one-way' : '',
+                ].filter(Boolean).join(' ')}
+                d={exitStubPath(from, stub.direction)}
               />
             );
           })}

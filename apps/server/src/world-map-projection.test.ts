@@ -67,6 +67,45 @@ async function moveAlongRoad(
 }
 
 describe('visited world map projection', () => {
+  it('shows a directional exit stub without exposing its undiscovered destination', () => {
+    const source = demoWorld.locations.find(({ id }) => id === 'mossgate-clearing')!;
+    const exit = source.exits.find(({ direction }) =>
+      direction === 'north' || direction === 'east' || direction === 'south' || direction === 'west',
+    );
+    if (!exit) throw new Error('Expected Mossgate Clearing to have a cardinal exit.');
+    const destination = demoWorld.locations.find(({ id }) => id === exit.toLocationId);
+    if (!destination) throw new Error('Expected the authored exit destination to exist.');
+    const customWorld = {
+      ...demoWorld,
+      locations: demoWorld.locations.map((location) =>
+        location.id === destination.id
+          ? {
+            ...location,
+            mapPosition: {
+              ...(location.mapPosition ?? { x: 0, y: 0 }),
+              visibleWhenUnvisited: false,
+            },
+          }
+          : location,
+      ),
+    };
+    const map = projectWorldMap(CharacterProjectionSchema.parse({
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: 'map-exit-stub-character',
+      name: 'Map Exit Stub',
+      locationId: source.id,
+      visitedLocationIds: [source.id],
+      revision: 1,
+    }), customWorld);
+
+    expect(map.locations.some(({ id }) => id === destination.id)).toBe(false);
+    expect(map.exitStubs).toContainEqual({
+      locationId: source.id,
+      direction: exit.direction,
+      oneWay: !destination.exits.some((candidate) => candidate.toLocationId === source.id),
+    });
+  });
+
   it('projects developer-authored terrain colors', () => {
     const firstLocation = demoWorld.locations[0]!;
     const customWorld = {

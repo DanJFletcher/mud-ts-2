@@ -738,6 +738,11 @@ export const WorldMapProjectionSchema = z.object({
     oneWay: z.boolean().optional(),
     mapLineGapAtLocationId: IdSchema.optional(),
   }).strict()).max(2000),
+  exitStubs: z.array(z.object({
+    locationId: IdSchema,
+    direction: z.enum(['north', 'east', 'south', 'west']),
+    oneWay: z.boolean(),
+  }).strict()).max(2000).optional(),
 }).strict();
 
 export type ExitDefinition = z.infer<typeof ExitDefinitionSchema>;
