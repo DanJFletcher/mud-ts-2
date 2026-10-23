@@ -18,7 +18,6 @@ import {
   DisclosureButton,
   NavigationControls,
   Panel,
-  StaminaStatus,
   Text,
   TextInput,
   type ActivityEntry,
@@ -2231,17 +2230,6 @@ export function WorldClient({
                       <div className="focused-terminal-health" aria-label="Character health">
                         Health {snapshot.character.health.current}/{snapshot.character.health.maximum}
                       </div>
-                    )}
-                    {snapshot.character && !isAnyCombatActive && !visiblePvp && (
-                      <StaminaStatus
-                        current={snapshot.character.resources.stamina.current}
-                        maximum={snapshot.character.resources.stamina.maximum}
-                        posture={snapshot.character.staminaRecovery.posture}
-                        safeToRest={Boolean(snapshot.location.safeResting)}
-                        disabled={pending !== null}
-                        onRest={() => void performStaminaPostureChange("rest")}
-                        onStand={() => void performStaminaPostureChange("stand")}
-                      />
                     )}
                     <div className="focused-terminal-history-shell">
                       <div

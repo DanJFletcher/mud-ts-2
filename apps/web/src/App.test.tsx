@@ -1941,18 +1941,22 @@ describe('single-character world session client', () => {
     characterHealth = { current: 6, maximum: 6 };
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Willowrest Inn' });
-    expect(screen.getByRole('progressbar', { name: 'Stamina 40 of 100' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Rest here for free' }));
+    expect(screen.queryByRole('progressbar', { name: 'Stamina 40 of 100' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Rest here for free' })).not.toBeInTheDocument();
+    const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
+    fireEvent.change(commandInput, { target: { value: 'rest' } });
+    fireEvent.submit(commandInput.closest('form')!);
 
-    await screen.findByText(/Resting · recovers 3% of maximum stamina per second while connected/i);
+    await screen.findByText(/You settle into a free resting posture/i);
     expect(apiFetch.mock.calls.some(([path, init]) => {
       if (path !== '/api/commands') return false;
       return JSON.parse(String(init?.body ?? '{}')).type === 'character.rest';
     })).toBe(true);
     expect(walletBalance).toBe(12);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Stand' }));
-    await screen.findByText(/Standing · recovers 1% of maximum stamina per second while connected/i);
+    fireEvent.change(commandInput, { target: { value: 'stand' } });
+    fireEvent.submit(commandInput.closest('form')!);
+    await screen.findByText(/You stand\. Stamina now recovers/i);
     expect(apiFetch.mock.calls.some(([path, init]) => {
       if (path !== '/api/commands') return false;
       return JSON.parse(String(init?.body ?? '{}')).type === 'character.stand';
@@ -1972,14 +1976,14 @@ describe('single-character world session client', () => {
       onLeaveWorld={vi.fn().mockResolvedValue(undefined)}
     />);
     await screen.findByRole('heading', { name: 'The Kindly Roof' });
-    expect(screen.getByRole('progressbar', { name: 'Stamina 40 of 100' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Rest here for free' })).toBeInTheDocument();
+    expect(screen.queryByRole('progressbar', { name: 'Stamina 40 of 100' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Rest here for free' })).not.toBeInTheDocument();
     expect(screen.queryByText(/moss marks|gold/)).not.toBeInTheDocument();
 
     const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
     fireEvent.change(commandInput, { target: { value: 'rest' } });
     fireEvent.submit(commandInput.closest('form')!);
-    await screen.findByText(/Resting · recovers 3% of maximum stamina per second while connected/i);
+    await screen.findByText(/You settle into a free resting posture/i);
     expect(apiFetch.mock.calls.some(([path, init]) =>
       path === '/api/commands' &&
       JSON.parse(String(init?.body ?? '{}')).type === 'character.rest' &&
@@ -1988,7 +1992,7 @@ describe('single-character world session client', () => {
 
     fireEvent.change(commandInput, { target: { value: 'stand' } });
     fireEvent.submit(commandInput.closest('form')!);
-    await screen.findByText(/Standing · recovers 1% of maximum stamina per second while connected/i);
+    await screen.findByText(/You stand\. Stamina now recovers/i);
     expect(apiFetch.mock.calls.some(([path, init]) =>
       path === '/api/commands' &&
       JSON.parse(String(init?.body ?? '{}')).type === 'character.stand' &&
