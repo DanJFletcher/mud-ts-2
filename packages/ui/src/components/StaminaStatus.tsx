@@ -4,7 +4,6 @@ export interface StaminaStatusProps {
   current: number;
   maximum: number;
   posture: 'standing' | 'resting';
-  safeToRest: boolean;
   disabled?: boolean;
   onRest: () => void;
   onStand: () => void;
@@ -15,7 +14,6 @@ export function StaminaStatus({
   current,
   maximum,
   posture,
-  safeToRest,
   disabled = false,
   onRest,
   onStand,
@@ -34,23 +32,20 @@ export function StaminaStatus({
       />
       <p className="mudd-stamina-status__posture" role="status">
         {resting
-          ? 'Resting · recovers 3% of maximum stamina per second while connected.'
-          : 'Standing · recovers 1% of maximum stamina per second while connected.'}
+          ? 'Resting · health, stamina, and mana recover by 6% of maximum every two seconds while connected.'
+          : 'Standing · health, stamina, and mana recover by 2% of maximum every two seconds while connected.'}
       </p>
       <p className="mudd-stamina-status__note">
-        Free rest changes posture and restores stamina over time. Paid inn recovery immediately restores health,
-        stamina, and mana for the inn’s listed price.
+        Free rest works in any room outside combat. Paid inn recovery immediately restores all three vitals for the inn’s listed price.
       </p>
       {resting ? (
         <Button type="button" variant="secondary" disabled={disabled} onClick={onStand}>
           Stand
         </Button>
-      ) : safeToRest ? (
-        <Button type="button" variant="secondary" disabled={disabled} onClick={onRest}>
-          Rest here for free
-        </Button>
       ) : (
-        <p className="mudd-stamina-status__note">Free rest is only available at safe places.</p>
+        <Button type="button" variant="secondary" disabled={disabled} onClick={onRest}>
+          Rest for free
+        </Button>
       )}
     </section>
   );

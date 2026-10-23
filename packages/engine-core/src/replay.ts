@@ -17,9 +17,11 @@ import {
   CharacterAbilityResourceSpentEventSchema,
   CharacterStaminaSpentEventSchema,
   CharacterStaminaRecoverySettledEventSchema,
+  CharacterVitalRecoverySettledEventSchema,
   CharacterPostureChangedEventSchema,
   DEFAULT_CHARACTER_RESOURCES,
   resolveStaminaRecovery,
+  resolveVitalRecovery,
   MOVEMENT_STAMINA_COST,
   CharacterMovedEventSchema,
   CharacterRenamedEventSchema,
@@ -234,6 +236,58 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
         ...state,
         resources: settled.resources,
         staminaRecovery: settled.recovery,
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.vital_recovery_settled') {
+      if (!state) throw new Error('Vital recovery encountered before character creation.');
+      const settled = CharacterVitalRecoverySettledEventSchema.parse(publicEvent).payload;
+      const at = settled.recovery.lastSettledAt;
+      const maximum = state.health?.maximum ?? settled.health.maximum;
+      const baseHealth = state.health ?? { current: maximum, maximum };
+      const expected = at ? settled.resetAnchor
+        ? {
+          health: baseHealth,
+          stamina: state.resources.stamina,
+          mana: state.resources.mana,
+          recovery: {
+            ...state.staminaRecovery,
+            lastSettledAt: new Date(Math.max(
+              state.staminaRecovery.lastSettledAt ? Date.parse(state.staminaRecovery.lastSettledAt) : 0,
+              Date.parse(at),
+            )).toISOString(),
+            fractionalCarry: 0,
+            healthFractionalCarry: 0,
+            manaFractionalCarry: 0,
+          },
+        }
+        : resolveVitalRecovery({
+          health: baseHealth,
+          stamina: state.resources.stamina,
+          mana: state.resources.mana,
+        }, state.staminaRecovery, new Date(at))
+        : undefined;
+      if (
+        settled.characterId !== state.characterId ||
+        !at ||
+        Date.parse(at) > Date.parse(event.occurredAt) ||
+        !expected ||
+        settled.health.maximum !== maximum ||
+        (state.health?.current === 0) ||
+        JSON.stringify(settled.health) !== JSON.stringify(expected.health) ||
+        JSON.stringify(settled.resources.stamina) !== JSON.stringify(expected.stamina) ||
+        JSON.stringify(settled.resources.mana) !== JSON.stringify(expected.mana) ||
+        JSON.stringify(settled.recovery) !== JSON.stringify(expected.recovery)
+      ) {
+        throw new Error(`Invalid vital recovery event at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        health: settled.health,
+        resources: settled.resources,
+        staminaRecovery: settled.recovery,
+        ...(state.combat?.status === 'active' ? {
+          combat: { ...state.combat, playerHealth: settled.health.current },
+        } : {}),
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'character.posture_changed') {

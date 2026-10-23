@@ -1,6 +1,7 @@
 import {
   CharacterRespawnedEventSchema,
   CharacterPvpOutcomeAppliedEventSchema,
+  CharacterPostureChangedEventSchema,
   PvpCombatActionCommandSchema,
   PvpEncounterProjectionSchema,
 } from '@mudd/contracts';
@@ -31,6 +32,7 @@ const MAX_LEVEL = 10;
 
 const PrivateParticipantSchema = z.object({
   characterId: z.string(),
+  characterHealthAnchor: z.number().int().nonnegative().optional(),
   attackDamage: z.number().int().nonnegative(),
   defenseReduction: z.number().int().nonnegative(),
   consumables: z.array(z.object({
@@ -50,6 +52,7 @@ const OutcomeEffectSchema = z.object({
   interactionStreamId: z.string(),
   encounter: PvpEncounterProjectionSchema,
   consumedItemIdsByCharacter: z.record(z.string(), z.array(z.string())),
+  healthDeltaByCharacter: z.record(z.string(), z.number().int()).optional(),
   respawnsByCharacter: z.record(z.string(), z.unknown()),
 }).strict();
 
@@ -120,6 +123,7 @@ function createEncounter(
       },
       private: {
         characterId: character.characterId,
+        characterHealthAnchor: Math.min(character.health?.current ?? max, max),
         attackDamage: characterAttackDamage(character),
         defenseReduction: armor?.equipment?.defenseBonus ?? 0,
         consumables: character.inventory
@@ -158,13 +162,6 @@ async function applyPvpOutcome(
     const characterId = participant.characterId;
     const baseCommandId = `${effectIdBase}:${characterId}`;
     const consumedItemIds = raw.consumedItemIdsByCharacter[characterId] ?? [];
-    const eventPayload = {
-      characterId,
-      encounterId: raw.encounter.encounterId,
-      health: { current: participant.health, maximum: participant.maximumHealth },
-      consumedItemIds,
-    };
-    CharacterPvpOutcomeAppliedEventSchema.shape.payload.parse(eventPayload);
     const priorEvents = await context.store.readStream(context.worldInstanceId, characterId);
     const outcomeAlreadyApplied = priorEvents.some((stored) =>
       stored.type === 'character.pvp_outcome_applied' &&
@@ -181,6 +178,22 @@ async function applyPvpOutcome(
     if (!character || (character.health?.maximum ?? participant.maximumHealth) !== participant.maximumHealth) {
       throw new Error('PvP participant state changed before the outcome could be applied.');
     }
+    const healthDelta = raw.healthDeltaByCharacter?.[characterId];
+    const healthCurrent = participant.health === 0 || respawnCandidate !== undefined
+      ? 0
+      : healthDelta === undefined
+        ? participant.health
+        : Math.max(0, Math.min(
+          participant.maximumHealth,
+          (character.health?.current ?? participant.maximumHealth) + healthDelta,
+        ));
+    const eventPayload = {
+      characterId,
+      encounterId: raw.encounter.encounterId,
+      health: { current: healthCurrent, maximum: participant.maximumHealth },
+      consumedItemIds,
+    };
+    CharacterPvpOutcomeAppliedEventSchema.shape.payload.parse(eventPayload);
     const commandId = outcomeAlreadyApplied
       ? `pvp-respawn:${raw.encounter.encounterId}:${characterId}`
       : baseCommandId;
@@ -342,7 +355,10 @@ export function registerPvpCombat(
     const actorIndex = state.encounter.participants.findIndex((participant) =>
       participant.characterId === command.characterId);
     if (actorIndex < 0) throw new RuleViolationError('You are not part of that encounter.');
-    const actingCharacter = await characterState.load(context, command.characterId);
+    const participantCharacters = await Promise.all(state.encounter.participants.map((participant) =>
+      characterState.load(context, participant.characterId),
+    ));
+    const actingCharacter = participantCharacters[actorIndex];
     if (!actingCharacter || actingCharacter.archived) {
       throw new RuleViolationError('That character is no longer available.');
     }
@@ -350,22 +366,45 @@ export function registerPvpCombat(
     if (state.encounter.turnCharacterId !== command.characterId) {
       throw new RuleViolationError('Wait for your turn.');
     }
-    const opponentIndex = actorIndex === 0 ? 1 : 0;
-    const actor = state.encounter.participants[actorIndex]!;
-    const opponent = state.encounter.participants[opponentIndex]!;
-    const privateActor = state.participants[actorIndex]!;
-    const privateOpponent = state.participants[opponentIndex]!;
     const participants = [...state.encounter.participants] as unknown as typeof state.encounter.participants;
     const privateParticipants = [...state.participants] as unknown as typeof state.participants;
+    for (let index = 0; index < participants.length; index += 1) {
+      const participant = participants[index]!;
+      const privateParticipant = privateParticipants[index]!;
+      const projection = participantCharacters[index];
+      if (!projection || projection.archived) throw new RuleViolationError('A PvP participant is no longer available.');
+      const currentHealth = Math.min(projection.health?.current ?? participant.maximumHealth, participant.maximumHealth);
+      const anchor = privateParticipant.characterHealthAnchor ?? currentHealth;
+      if (privateParticipant.characterHealthAnchor !== undefined) {
+        participant.health = Math.max(0, Math.min(
+          participant.maximumHealth,
+          participant.health + currentHealth - anchor,
+        ));
+      }
+      privateParticipants[index] = {
+        ...privateParticipant,
+        characterHealthAnchor: currentHealth,
+      };
+    }
+    const opponentIndex = actorIndex === 0 ? 1 : 0;
+    const actor = participants[actorIndex]!;
+    const opponent = participants[opponentIndex]!;
+    const privateActor = privateParticipants[actorIndex]!;
+    const privateOpponent = privateParticipants[opponentIndex]!;
     let guardingCharacterId = state.guardingCharacterId;
     let status: 'active' | 'resolving' = 'active';
     let turnCharacterId: string | null = opponent.characterId;
     const round = state.encounter.round + 1;
     let narration: string;
+    let restingTarget: Awaited<ReturnType<CharacterStateCapability['load']>> | undefined;
     const character = command.payload.action === 'ability'
       ? await characterState.load(context, command.characterId) : undefined;
-    const guards = context.world.classCatalog
-      ? await classAdoptionGuards(context, command.characterId, streamId) : undefined;
+    const guards = participantCharacters.flatMap((projection) => projection
+      ? [{ streamId: projection.characterId, expectedVersion: projection.revision }]
+      : []);
+    if (context.world.classCatalog) {
+      guards.push(...await classAdoptionGuards(context, command.characterId, streamId));
+    }
     const ability = command.payload.action === 'ability' ? (() => {
       const policy = optionalCapability<ClassCombatPolicy>(classCombatPolicyCapability);
       if (!policy || !character || character.archived || character.combat?.status === 'active' ||
@@ -378,13 +417,16 @@ export function registerPvpCombat(
 
     if (command.payload.action === 'attack' || command.payload.action === 'ability') {
       const guarded = guardingCharacterId === opponent.characterId ? 2 : 0;
+      restingTarget = await characterState.load(context, opponent.characterId);
+      const incomingMultiplier = restingTarget?.staminaRecovery.posture === 'resting' ? 2 : 1;
       const damage = Math.min(
         opponent.health,
-        Math.max(0, (ability?.damage ?? privateActor.attackDamage) - privateOpponent.defenseReduction - guarded),
+        Math.max(0, (ability?.damage ?? privateActor.attackDamage) - privateOpponent.defenseReduction - guarded) *
+          incomingMultiplier,
       );
       participants[opponentIndex] = { ...opponent, health: opponent.health - damage };
       guardingCharacterId = null;
-      narration = `${actor.name} strikes ${opponent.name} for ${damage} damage.`;
+      narration = `${actor.name} strikes ${opponent.name} for ${damage} damage.${incomingMultiplier === 2 ? ' The blow catches them resting.' : ''}`;
       if (participants[opponentIndex]!.health === 0) {
         status = 'resolving';
         turnCharacterId = null;
@@ -441,6 +483,12 @@ export function registerPvpCombat(
           consumedItemIdsByCharacter: Object.fromEntries(
             privateParticipants.map((participant) => [participant.characterId, participant.consumedItemIds]),
           ),
+          healthDeltaByCharacter: Object.fromEntries(
+            participants.map((participant, index) => [
+              participant.characterId,
+              participant.health - (privateParticipants[index]?.characterHealthAnchor ?? participant.health),
+            ]),
+          ),
           respawnsByCharacter: await preparePvpRespawns(
             encounter,
             privateParticipants,
@@ -450,14 +498,39 @@ export function registerPvpCombat(
         }),
       }]
       : undefined;
+    const restingTargetStandEvent = restingTarget?.staminaRecovery.posture === 'resting'
+      ? {
+        type: 'character.posture_changed',
+        version: 1,
+        payload: CharacterPostureChangedEventSchema.shape.payload.parse({
+          characterId: restingTarget.characterId,
+          posture: 'standing',
+          locationId: restingTarget.locationId,
+        }),
+      }
+      : undefined;
+    const companions = [];
+    if (ability && character) {
+      companions.push({
+        streamId: character.characterId,
+        expectedVersion: character.revision,
+        events: [ability.event],
+      });
+    }
+    if (restingTargetStandEvent && restingTarget) {
+      companions.push({
+        streamId: restingTarget.characterId,
+        expectedVersion: restingTarget.revision,
+        events: [restingTargetStandEvent],
+      });
+    }
     return {
       streamId,
       expectedVersion: version,
       events: [event('pvp.action.resolved', nextState as unknown as Record<string, unknown>)],
       ...(effects ? { effects } : {}),
       guards,
-      ...(ability && character ? { companions: [{ streamId: character.characterId,
-        expectedVersion: character.revision, events: [ability.event] }] } : {}),
+      ...(companions.length ? { companions } : {}),
     };
   });
 

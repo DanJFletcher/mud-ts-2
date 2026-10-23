@@ -3,10 +3,36 @@ import type { EngineHost, EventStorePort, StoredGameEvent } from '@mudd/engine-c
 import { resolveStaminaRecovery } from '@mudd/contracts';
 import { createStaminaRecoveryScheduler } from './stamina-recovery-scheduler.js';
 
-function characterEvents(anchorAt: string | null): StoredGameEvent[] {
+function characterEvents(
+  anchorAt: string | null,
+  lowHealthWithFullResources = false,
+  healthCurrent = 1,
+  manaCurrent = 100,
+): StoredGameEvent[] {
+  const attributes = { strength: 10, intelligence: 10, constitution: 10, dexterity: 10 };
+  const characterClass = {
+    id: 'test-scout',
+    revision: 1,
+    catalogId: 'test-catalog',
+    catalogRevision: 1,
+    label: 'Scout',
+    description: 'A test class.',
+    primaryAttribute: 'dexterity',
+    attributes,
+    coreAction: {
+      id: 'test-action',
+      revision: 1,
+      label: 'Quick strike',
+      description: 'A test action.',
+      cost: { resource: 'stamina' as const, amount: 1 },
+      baseDamage: 1,
+      scalingAttribute: 'dexterity' as const,
+      weaponBonus: false,
+    },
+  };
   const created: StoredGameEvent = {
     type: 'character.created',
-    version: 2,
+    version: lowHealthWithFullResources ? 3 : 2,
     eventId: 'created',
     worldInstanceId: 'world',
     streamId: 'character',
@@ -22,9 +48,14 @@ function characterEvents(anchorAt: string | null): StoredGameEvent[] {
       name: 'Mira',
       startingLocationId: 'room',
       resources: {
-        stamina: { current: 0, maximum: 100 },
-        mana: { current: 100, maximum: 100 },
+        stamina: { current: lowHealthWithFullResources ? 100 : 0, maximum: 100 },
+        mana: { current: manaCurrent, maximum: 100 },
       },
+      ...(lowHealthWithFullResources ? {
+        attributes,
+        characterClass,
+        health: { current: healthCurrent, maximum: 6 },
+      } : {}),
     },
   };
   if (!anchorAt) return [created];
@@ -99,6 +130,72 @@ describe('online stamina recovery scheduler', () => {
         lastSeenAt: new Date('2026-10-23T11:00:00.000Z'),
       }],
       now: () => new Date('2026-10-23T12:00:00.000Z'),
+    });
+    expect(await scheduler.tick()).toBe(0);
+    expect(dispatchSystem).not.toHaveBeenCalled();
+  });
+
+  it('settles low health even when stamina and mana are already full', async () => {
+    const now = new Date('2026-10-23T12:00:00.000Z');
+    const dispatchSystem = vi.fn(async () => ({
+      receipt: { ok: true, commandId: 'recovery', eventIds: [], newAggregateVersion: 2 },
+      events: [],
+    }));
+    const scheduler = createStaminaRecoveryScheduler({
+      engine: { dispatchSystem } as unknown as EngineHost,
+      store: {
+        readStream: async () => characterEvents(null, true),
+      } as Pick<EventStorePort, 'readStream'>,
+      worldInstanceId: 'world',
+      listSessions: async () => [{
+        characterId: 'character',
+        lastSeenAt: now,
+      }],
+      now: () => now,
+    });
+    expect(await scheduler.tick()).toBe(1);
+    expect(dispatchSystem).toHaveBeenCalledWith(expect.objectContaining({
+      expectedVersion: 1,
+      payload: { settleAt: now.toISOString(), resetAnchor: false },
+    }), expect.any(String));
+  });
+
+  it('settles low mana even when health and stamina are already full', async () => {
+    const now = new Date('2026-10-23T12:00:00.000Z');
+    const dispatchSystem = vi.fn();
+    const scheduler = createStaminaRecoveryScheduler({
+      engine: { dispatchSystem } as unknown as EngineHost,
+      store: {
+        readStream: async () => characterEvents(null, true, 6, 50),
+      } as Pick<EventStorePort, 'readStream'>,
+      worldInstanceId: 'world',
+      listSessions: async () => [{
+        characterId: 'character',
+        lastSeenAt: now,
+      }],
+      now: () => now,
+    });
+    expect(await scheduler.tick()).toBe(1);
+    expect(dispatchSystem).toHaveBeenCalledWith(expect.objectContaining({
+      characterId: 'character',
+      payload: { settleAt: now.toISOString(), resetAnchor: false },
+    }), expect.any(String));
+  });
+
+  it('does not dispatch recovery for a dead character', async () => {
+    const now = new Date('2026-10-23T12:00:00.000Z');
+    const dispatchSystem = vi.fn();
+    const scheduler = createStaminaRecoveryScheduler({
+      engine: { dispatchSystem } as unknown as EngineHost,
+      store: {
+        readStream: async () => characterEvents(null, true, 0),
+      } as Pick<EventStorePort, 'readStream'>,
+      worldInstanceId: 'world',
+      listSessions: async () => [{
+        characterId: 'character',
+        lastSeenAt: now,
+      }],
+      now: () => now,
     });
     expect(await scheduler.tick()).toBe(0);
     expect(dispatchSystem).not.toHaveBeenCalled();

@@ -27,13 +27,15 @@ import { MuddHttpClient } from '@mudd/client-sdk';
 function makeHarness(options: Readonly<{
   now?: () => Date;
   rng?: Readonly<{ roll: (sides: number) => number }>;
+  world?: typeof orravethWorld;
 }> = {}) {
   let id = 0;
   const owners = new Map<string, string>();
   const store = new InMemoryEventStore();
+  const world = options.world ?? orravethWorld;
   const engine = new EngineHost(
     [
-      createClassRulesetPlugin(orravethWorld.classCatalog!),
+      createClassRulesetPlugin(world.classCatalog!),
       worldItemsPlugin,
       autonomousNpcsPlugin,
       characterPlugin,
@@ -46,7 +48,7 @@ function makeHarness(options: Readonly<{
       canAccessInstance: async (_session, worldInstanceId) => worldInstanceId === ORRAVETH_WORLD_INSTANCE_ID,
       ownsCharacter: async (session, characterId) => owners.get(characterId) === session.playerId,
     },
-    orravethWorld,
+    world,
     () => `orraveth-test-id-${++id}`,
     options.now,
     options.rng,
@@ -88,6 +90,49 @@ function makeHarness(options: Readonly<{
 }
 
 describe('Orraveth Bellwold settlement', () => {
+  it('allows resting in an ordinary square, on a road, and in the undercrypt', async () => {
+    const startAt = async (locationId: string, expectedArea?: string) => {
+      const world = structuredClone(orravethWorld);
+      const index = world.locations.findIndex((location) => location.id === locationId);
+      if (index < 0) throw new Error(`Missing rest test location ${locationId}.`);
+      const [startingLocation] = world.locations.splice(index, 1);
+      world.locations.unshift(startingLocation!);
+      if (expectedArea) expect(startingLocation?.mapAreaId).toBe(expectedArea);
+      const h = makeHarness({ world });
+      await h.engine.start();
+      const client = new MuddHttpClient({
+        worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+        fetcher: async (input, init = {}) => {
+          const body = JSON.parse(String(init.body ?? '{}')) as unknown;
+          const path = String(input);
+          const result = path.endsWith('/commands')
+            ? await h.engine.dispatch(body, h.session)
+            : await h.engine.query(body, h.session);
+          return Response.json(result);
+        },
+      });
+      try {
+        const created = await client.createCharacter(
+          `Rest Test ${locationId}`,
+          `rest-anywhere-${locationId}`,
+          'orraveth.scout',
+        );
+        const characterId = created.streamId!;
+        h.owners.set(characterId, h.session.playerId);
+        const room = await client.look(characterId, `look-rest-${locationId}`);
+        expect(room.safeResting).toBe(false);
+        await client.rest(characterId, created.receipt.newAggregateVersion!, `rest-${locationId}`);
+        expect((await h.loadCharacter(characterId)).staminaRecovery.posture).toBe('resting');
+      } finally {
+        await h.engine.stop();
+      }
+    };
+
+    await startAt('bellwold-market-square');
+    await startAt('bellwold-southbound-track');
+    await startAt('bellwold-church-crypt-entry', 'bellwold-church-undercrypt');
+  });
+
   it('supports free safe resting and stamina-funded travel through the host and client SDK without an inn price', async () => {
     let now = new Date('2026-10-23T12:00:00.000Z');
     const h = makeHarness({ now: () => now });

@@ -30,36 +30,34 @@ const abilityFixture: AvailableClassAction = {
 };
 
 describe('@mudd/ui components', () => {
-  it('announces projected stamina and offers a free rest action at safe places', () => {
+  it('announces vital recovery and offers free rest anywhere', () => {
     const onRest = vi.fn();
     render(
       <StaminaStatus
         current={60}
         maximum={100}
         posture="standing"
-        safeToRest
         onRest={onRest}
         onStand={vi.fn()}
       />,
     );
     expect(screen.getByRole('progressbar', { name: 'Stamina 60 of 100' })).toHaveValue(60);
-    expect(screen.getByRole('status')).toHaveTextContent('1% of maximum stamina per second');
-    fireEvent.click(screen.getByRole('button', { name: 'Rest here for free' }));
+    expect(screen.getByRole('status')).toHaveTextContent('health, stamina, and mana recover by 2%');
+    fireEvent.click(screen.getByRole('button', { name: 'Rest for free' }));
     expect(onRest).toHaveBeenCalledOnce();
   });
 
-  it('offers stand while resting and hides free rest at unsafe places', () => {
+  it('offers stand while resting and still offers free rest without a safe-location flag', () => {
     const onStand = vi.fn();
     const { rerender } = render(
-      <StaminaStatus current={80} maximum={100} posture="resting" safeToRest onRest={vi.fn()} onStand={onStand} />,
+      <StaminaStatus current={80} maximum={100} posture="resting" onRest={vi.fn()} onStand={onStand} />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Stand' }));
     expect(onStand).toHaveBeenCalledOnce();
     rerender(
-      <StaminaStatus current={80} maximum={100} posture="standing" safeToRest={false} onRest={vi.fn()} onStand={onStand} />,
+      <StaminaStatus current={80} maximum={100} posture="standing" onRest={vi.fn()} onStand={onStand} />,
     );
-    expect(screen.queryByRole('button', { name: 'Rest here for free' })).not.toBeInTheDocument();
-    expect(screen.getByText('Free rest is only available at safe places.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Rest for free' })).toBeInTheDocument();
   });
 
   it('renders world navigation as a native link with meaningful text and recovers from failed art', () => {

@@ -1,6 +1,6 @@
 # ADR 0028: Online stamina recovery and safe resting
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR 0029: Online vital recovery and unrestricted free rest](0029-online-vital-recovery-and-unrestricted-rest.md)
 - **Date:** 2026-10-23
 - **Owners:** Engine and game client
 - **Related:** [ADR 0027: Character-owned stamina and mana](0027-character-stamina-and-mana.md), [ADR 0007: Character-scoped paid inn rest](0007-character-scoped-paid-inn-rest.md)
@@ -49,3 +49,5 @@ ADR 0027 established persistent character-owned stamina and deferred timed recov
 ## Revisit trigger
 
 Revisit if the presence heartbeat cadence changes, if multiple server writers are introduced, or if resting characters become valid targets of an existing combat action.
+
+This decision is retained as the historical policy for existing event semantics. Its location restriction and stamina-only recovery rates are superseded by ADR 0029.

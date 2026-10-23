@@ -144,7 +144,7 @@ const staminaRecoverySchedulers = [...worldRuntimes.values()].map((runtime) =>
       return sessions;
     },
     onError(error, characterId) {
-      console.error(`Could not settle stamina for character ${characterId} in ${runtime.worldInstanceId}.`, error);
+      console.error(`Could not settle vitals for character ${characterId} in ${runtime.worldInstanceId}.`, error);
     },
   }),
 );

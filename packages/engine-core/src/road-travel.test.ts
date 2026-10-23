@@ -238,7 +238,7 @@ describe('stepwise road travel', () => {
     }, session);
     expect(stepped.receipt).toMatchObject({ ok: true, newAggregateVersion: 3 });
     expect(stepped.events.map(({ type }) => type)).toEqual([
-      'character.stamina_recovery_settled',
+      'character.vital_recovery_settled',
       'character.moved',
     ]);
     const projection = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId));
@@ -400,7 +400,7 @@ describe('stepwise road travel', () => {
     const ambush = await engine.dispatch(command, session);
     expect(ambush.receipt).toMatchObject({ ok: true, newAggregateVersion: 4 });
     expect(ambush.events.map(({ type }) => type)).toEqual([
-      'character.stamina_recovery_settled',
+      'character.vital_recovery_settled',
       'character.moved',
       'character.combat_encounter_started',
     ]);

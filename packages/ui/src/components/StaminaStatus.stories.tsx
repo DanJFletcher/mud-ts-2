@@ -8,7 +8,6 @@ const meta = {
     current: 72,
     maximum: 100,
     posture: 'standing',
-    safeToRest: true,
     onRest: () => undefined,
     onStand: () => undefined,
   },
@@ -17,6 +16,5 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const SafeAndStanding: Story = {};
-export const Resting: Story = { args: { posture: 'resting', safeToRest: true, current: 84 } };
-export const UnsafeLocation: Story = { args: { safeToRest: false } };
+export const Resting: Story = { args: { posture: 'resting', current: 84 } };
 export const Busy: Story = { args: { disabled: true } };

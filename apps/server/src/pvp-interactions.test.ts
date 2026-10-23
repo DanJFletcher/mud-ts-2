@@ -229,4 +229,76 @@ describe('consent-based PvP interaction requests', () => {
     )).toBe(true);
     await h.engine.stop();
   });
+
+  it('blocks rest during consented PvP and doubles an already-legal hit against a resting target', async () => {
+    const h = makeHarness();
+    const challenger = h.identity('resting-target-challenger');
+    const recipient = h.identity('resting-target-recipient');
+    await h.engine.start();
+    const challengerId = await h.createCharacter(challenger, 'Rill');
+    const recipientId = await h.createCharacter(recipient, 'Mara');
+    await h.challenge(challenger, challengerId, recipientId);
+    const request = (await h.requests())[0]!;
+    const requestId = (request.payload as { request: { requestId: string } }).request.requestId;
+    const accepted = await h.respond(recipient, recipientId, requestId, 'accept');
+    const encounterId = (accepted.events.find((event) => event.type === 'pvp.encounter.started')
+      ?.payload as { encounter: { encounterId: string } }).encounter.encounterId;
+
+    const refusedRest = await h.engine.dispatch({
+      type: 'character.rest',
+      version: 1,
+      commandId: 'pvp-rest-refused',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: recipientId,
+      expectedVersion: 1,
+      payload: {},
+    }, {
+      ...recipient,
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      grantedPermissions: [],
+      authenticated: true,
+    });
+    expect(refusedRest.receipt).toMatchObject({ ok: false, code: 'RULE_VIOLATION' });
+
+    const targetState = replayCharacter(await h.store.readStream(DEMO_WORLD_INSTANCE_ID, recipientId))!;
+    const seededPosture = await h.store.append({
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      streamId: recipientId,
+      actorId: recipient.playerId,
+      commandId: 'legacy-resting-pvp-target',
+      payloadHash: recipientId,
+      expectedVersion: targetState.revision,
+      events: [{
+        type: 'character.posture_changed',
+        version: 1,
+        payload: {
+          characterId: recipientId,
+          posture: 'resting',
+          locationId: targetState.locationId,
+        },
+      }],
+    });
+    expect(seededPosture.receipt.ok).toBe(true);
+    const attack = await h.engine.dispatch({
+      type: 'pvp.action',
+      version: 1,
+      commandId: 'pvp-attack-resting-target',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: challengerId,
+      payload: { encounterId, action: 'attack' },
+    }, {
+      ...challenger,
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      grantedPermissions: [],
+      authenticated: true,
+    });
+    expect(attack.receipt.ok).toBe(true);
+    const resolvedEncounter = attack.events.find((event) => event.type === 'pvp.action.resolved')
+      ?.payload.encounter as { participants: { characterId: string; health: number }[] };
+    expect(resolvedEncounter.participants.find((participant) => participant.characterId === recipientId)?.health)
+      .toBe(2);
+    expect(replayCharacter(await h.store.readStream(DEMO_WORLD_INSTANCE_ID, recipientId))?.staminaRecovery.posture)
+      .toBe('standing');
+    await h.engine.stop();
+  });
 });

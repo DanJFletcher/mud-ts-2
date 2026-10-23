@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { CharacterStaminaSpentEventSchema, FLEE_STAMINA_COST } from '@mudd/contracts';
+import {
+  CharacterCreatedEventV3Schema,
+  CharacterStaminaSpentEventSchema,
+  FLEE_STAMINA_COST,
+} from '@mudd/contracts';
 import {
   EngineHost,
   InMemoryEventStore,
@@ -20,6 +24,7 @@ import {
   partyQuestPlugin,
   roadTravelPlugin,
   teamCombatPlugin,
+  interactionStreamId,
   worldItemsPlugin,
 } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
@@ -211,6 +216,49 @@ async function spendStaminaForTest(
 }
 
 describe('turn-based PvE combat', () => {
+  it('keeps standing health recovery synchronized with an active solo encounter', async () => {
+    let now = new Date('2026-10-23T12:00:00.000Z');
+    const { client, store, engine } = makeClient(demoWorld, () => now);
+    const created = await client.createCharacter('Standing Recovery', 'solo-recovery-create');
+    const characterId = created.streamId!;
+    const room = await client.look(characterId, 'solo-recovery-look');
+    await client.performCombatAction(
+      characterId,
+      'attack',
+      room.revision,
+      { targetNpcId: 'mossgate-training-sentinel' },
+      'solo-recovery-start',
+    );
+    let state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(state.combat?.status).toBe('active');
+    expect(state.health?.current).toBe(5);
+
+    now = new Date(now.getTime() + 20_000);
+    const settled = await engine.dispatchSystem({
+      type: 'character.stamina.recover',
+      version: 1,
+      commandId: 'solo-recovery-settle',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: state.revision,
+      payload: { settleAt: now.toISOString(), resetAnchor: false },
+    }, SYSTEM_ACTOR_ID);
+    expect(settled.receipt.ok).toBe(true);
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(state.health?.current).toBe(6);
+    expect(state.combat?.playerHealth).toBe(6);
+
+    await client.performCombatAction(
+      characterId,
+      'defend',
+      state.revision,
+      { encounterId: state.combat!.encounterId },
+      'solo-recovery-next-action',
+    );
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(state.health?.current).toBe(state.combat?.playerHealth);
+  });
+
   it('spends 20 stamina once when fleeing solo combat and rejects an unaffordable flee', async () => {
     const { client, store } = makeClient();
     const created = await client.createCharacter('Briar', 'stamina-flee-create');
@@ -859,6 +907,128 @@ describe('turn-based PvE combat', () => {
 });
 
 describe('paid inn rest', () => {
+  it('recovers all three vitals in a normal room with independent fractional health carry', async () => {
+    let now = new Date('2026-10-23T12:00:00.000Z');
+    const { client, store, engine } = makeClient(demoWorld, () => now);
+    const characterId = 'vital-recovery-character';
+    const characterClass = {
+      id: 'recovery-scout',
+      revision: 1,
+      catalogId: 'recovery-catalog',
+      catalogRevision: 1,
+      label: 'Scout',
+      description: 'A recovery test character.',
+      primaryAttribute: 'dexterity',
+      attributes: { strength: 10, intelligence: 10, constitution: 10, dexterity: 10 },
+      coreAction: {
+        id: 'recovery-action',
+        revision: 1,
+        label: 'Quick strike',
+        description: 'A test action.',
+        cost: { resource: 'stamina', amount: 1 },
+        baseDamage: 1,
+        scalingAttribute: 'dexterity',
+        weaponBonus: false,
+      },
+    };
+    const payload = CharacterCreatedEventV3Schema.shape.payload.parse({
+      characterId,
+      playerId: session.playerId,
+      name: 'Mira',
+      startingLocationId: 'mossgate-clearing',
+      resources: {
+        stamina: { current: 50, maximum: 100 },
+        mana: { current: 40, maximum: 100 },
+      },
+      characterClass,
+      health: { current: 1, maximum: 6 },
+      attributes: characterClass.attributes,
+    });
+    const seeded = await store.append({
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      streamId: characterId,
+      actorId: session.playerId,
+      commandId: 'seed-vital-recovery-character',
+      payloadHash: characterId,
+      expectedVersion: 0,
+      events: [{ type: 'character.created', version: 3, payload }],
+    });
+    expect(seeded.receipt.ok).toBe(true);
+
+    const room = await client.look(characterId, 'vital-recovery-look');
+    expect(room.safeResting).toBe(false);
+    await client.rest(characterId, 1, 'vital-recovery-rest');
+    let state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(state.staminaRecovery.posture).toBe('resting');
+    now = new Date(now.getTime() + 6_000);
+    const settled = await engine.dispatchSystem({
+      type: 'character.stamina.recover',
+      version: 1,
+      commandId: 'vital-recovery-settle',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: state.revision,
+      payload: { settleAt: now.toISOString(), resetAnchor: false },
+    }, SYSTEM_ACTOR_ID);
+    expect(settled.receipt.ok).toBe(true);
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(state).toMatchObject({
+      health: { current: 2, maximum: 6 },
+      resources: {
+        stamina: { current: 68, maximum: 100 },
+        mana: { current: 58, maximum: 100 },
+      },
+      staminaRecovery: { healthFractionalCarry: 8_000 },
+    });
+    const eventCount = (await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).length;
+    const duplicate = await engine.dispatchSystem({
+      type: 'character.stamina.recover',
+      version: 1,
+      commandId: 'vital-recovery-settle',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: state.revision - 1,
+      payload: { settleAt: now.toISOString(), resetAnchor: false },
+    }, SYSTEM_ACTOR_ID);
+    expect(duplicate.commitOutcome).toBe('duplicate');
+    expect(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).toHaveLength(eventCount);
+  });
+
+  it('allows free rest on a road segment and in the demo undercrypt', async () => {
+    const roadHarness = makeClient();
+    const roadCreated = await roadHarness.client.createCharacter('Road Rest', 'road-rest-create');
+    const roadCharacterId = roadCreated.streamId!;
+    let roadState = replayCharacter(await roadHarness.store.readStream(DEMO_WORLD_INSTANCE_ID, roadCharacterId))!;
+    await roadHarness.client.roadStep(
+      roadCharacterId,
+      'clearing-to-glasswater-road',
+      roadState.revision,
+      'road-rest-step',
+    );
+    roadState = replayCharacter(await roadHarness.store.readStream(DEMO_WORLD_INSTANCE_ID, roadCharacterId))!;
+    expect(roadState.locationId).toBe('glasswater-approach');
+    const roadRoom = await roadHarness.client.look(roadCharacterId, 'road-rest-look');
+    expect(roadRoom.safeResting).toBe(false);
+    await roadHarness.client.rest(roadCharacterId, roadState.revision, 'road-rest-anywhere');
+    expect(replayCharacter(await roadHarness.store.readStream(DEMO_WORLD_INSTANCE_ID, roadCharacterId))?.staminaRecovery.posture)
+      .toBe('resting');
+
+    const dungeonWorld = structuredClone(demoWorld);
+    const dungeonIndex = dungeonWorld.locations.findIndex((location) => location.id === 'undercrypt-entry-passage');
+    const [dungeonStart] = dungeonWorld.locations.splice(dungeonIndex, 1);
+    expect(dungeonStart?.mapAreaId).toBe('bell-tower-undercrypt');
+    dungeonWorld.locations.unshift(dungeonStart!);
+    const dungeonHarness = makeClient(dungeonWorld);
+    const dungeonCreated = await dungeonHarness.client.createCharacter('Undercrypt Rest', 'dungeon-rest-create');
+    const dungeonCharacterId = dungeonCreated.streamId!;
+    const dungeonState = replayCharacter(await dungeonHarness.store.readStream(DEMO_WORLD_INSTANCE_ID, dungeonCharacterId))!;
+    const dungeonRoom = await dungeonHarness.client.look(dungeonCharacterId, 'dungeon-rest-look');
+    expect(dungeonRoom.safeResting).toBe(false);
+    await dungeonHarness.client.rest(dungeonCharacterId, dungeonState.revision, 'dungeon-rest-anywhere');
+    expect(replayCharacter(await dungeonHarness.store.readStream(DEMO_WORLD_INSTANCE_ID, dungeonCharacterId))?.staminaRecovery.posture)
+      .toBe('resting');
+  });
+
   it('recovers while resting at Willowrest, then charges exactly five for a road step after standing', async () => {
     let now = new Date('2026-10-23T12:00:00.000Z');
     const { client, store, engine } = makeClient(demoWorld, () => now);
@@ -993,7 +1163,7 @@ describe('paid inn rest', () => {
     const characterId = created.streamId!;
     await spendStaminaForTest(store, characterId, 'inn-rest-stamina-only-flee');
     const atInn = await travelToWillowrestInn(client, store, characterId, 'inn-rest-stamina-only', false);
-    expect(atInn.health).toBeUndefined();
+    expect(atInn.health).toEqual({ current: 6, maximum: 6 });
     expect(atInn.resources.stamina.current).toBe(50);
 
     const rest = await client.restAtInn(
@@ -1103,12 +1273,264 @@ describe('paid inn rest', () => {
     );
     const state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
     const eventCount = (await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).length;
+    await expect(client.rest(
+      characterId,
+      state.revision,
+      'inn-free-rest-during-combat',
+    )).rejects.toThrow('You cannot rest while combat is active.');
     await expect(client.restAtInn(
       characterId,
       'willowrest-inn-service',
       state.revision,
       'inn-rest-during-combat',
     )).rejects.toThrow('You cannot rest while combat is active. Flee first.');
+    expect(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).toHaveLength(eventCount);
+  });
+
+  it.each(['team', 'pvp'] as const)('refuses free rest during active %s combat', async (combatKind) => {
+    const { client, store } = makeClient();
+    const created = await client.createCharacter(`${combatKind} rest guard`, `${combatKind}-rest-guard-create`);
+    const characterId = created.streamId!;
+    const streamId = combatKind === 'team'
+      ? 'world-team-combat'
+      : interactionStreamId(DEMO_WORLD_INSTANCE_ID);
+    const type = combatKind === 'team' ? 'team.combat_started' : 'pvp.encounter.started';
+    const payload = {
+      encounter: {
+        encounterId: `${combatKind}-active-rest-guard`,
+        status: 'active',
+        participants: [{ characterId, status: 'active' }],
+      },
+    };
+    const seeded = await store.append({
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      streamId,
+      actorId: 'test:combat-setup',
+      commandId: `${combatKind}-active-rest-guard`,
+      payloadHash: characterId,
+      expectedVersion: 0,
+      events: [{ type, version: 1, payload }],
+    });
+    expect(seeded.receipt.ok).toBe(true);
+    await expect(client.rest(
+      characterId,
+      1,
+      `${combatKind}-rest-during-combat`,
+    )).rejects.toThrow('You cannot rest while combat is active.');
+  });
+
+  it('doubles an existing team-combat hit against a resting target and stands them', async () => {
+    const { client, store } = makeClient();
+    const actorCreated = await client.createCharacter('Team Actor', 'team-rest-target-actor-create');
+    const targetCreated = await client.createCharacter('Team Target', 'team-rest-target-target-create');
+    const actorId = actorCreated.streamId!;
+    const targetId = targetCreated.streamId!;
+    const actor = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, actorId))!;
+    const target = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, targetId))!;
+    const resting = await store.append({
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      streamId: targetId,
+      actorId: session.playerId,
+      commandId: 'team-rest-target-posture',
+      payloadHash: targetId,
+      expectedVersion: target.revision,
+      events: [{
+        type: 'character.posture_changed',
+        version: 1,
+        payload: {
+          characterId: targetId,
+          posture: 'resting',
+          locationId: target.locationId,
+        },
+      }],
+    });
+    expect(resting.receipt.ok).toBe(true);
+    const encounterId = 'team-rest-vulnerability';
+    const encounter = {
+      encounterId,
+      locationId: actor.locationId,
+      participants: [
+        {
+          participantId: targetId,
+          teamId: 'allies',
+          kind: 'player',
+          characterId: targetId,
+          playerId: session.playerId,
+          displayName: target.name,
+          health: 6,
+          maximumHealth: 6,
+          characterHealthAnchor: 6,
+          defending: false,
+          status: 'active',
+        },
+        {
+          participantId: actorId,
+          teamId: 'allies',
+          kind: 'player',
+          characterId: actorId,
+          playerId: session.playerId,
+          displayName: actor.name,
+          health: 6,
+          maximumHealth: 6,
+          characterHealthAnchor: 6,
+          defending: false,
+          status: 'active',
+        },
+        {
+          participantId: 'practice-sentinel',
+          teamId: 'enemies',
+          kind: 'npc',
+          npcId: 'mossgate-training-sentinel',
+          displayName: 'Practice Sentinel',
+          health: 4,
+          maximumHealth: 4,
+          defending: false,
+          status: 'active',
+        },
+      ],
+      contributingPlayerIds: [],
+      currentParticipantId: actorId,
+      round: 1,
+      status: 'active',
+      lastNarration: 'The practice sentinel waits.',
+      consumedItemIdsByCharacter: {},
+      createdAt: '2026-10-23T12:00:00.000Z',
+      updatedAt: '2026-10-23T12:00:00.000Z',
+    };
+    const started = await store.append({
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      streamId: 'world-team-combat',
+      actorId: session.playerId,
+      commandId: 'team-rest-target-encounter',
+      payloadHash: encounterId,
+      expectedVersion: 0,
+      events: [{
+        type: 'team.combat_started',
+        version: 1,
+        payload: { encounter },
+      }],
+    });
+    expect(started.receipt.ok).toBe(true);
+
+    await expect(client.rest(actorId, actor.revision, 'team-rest-actor-refused'))
+      .rejects.toThrow('You cannot rest while combat is active.');
+    await client.performTeamCombatAction(actorId, encounterId, 'attack');
+    const resolved = (await store.readStream(DEMO_WORLD_INSTANCE_ID, 'world-team-combat'))
+      .filter((event) => event.type === 'team.combat_action_resolved').at(-1);
+    const resolvedPayload = resolved?.payload as {
+      damageTaken: number;
+      encounter: { participants: { characterId?: string; health: number }[] };
+    };
+    expect(resolvedPayload.damageTaken).toBe(2);
+    expect(resolvedPayload.encounter.participants.find((participant) => participant.characterId === targetId)?.health)
+      .toBe(4);
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, targetId))?.staminaRecovery.posture)
+      .toBe('standing');
+  });
+
+  it('applies delayed team outcomes to the latest recovered character health exactly once', async () => {
+    const now = new Date('2026-10-23T12:00:00.000Z');
+    const { client, engine, store } = makeClient(demoWorld, () => now);
+    const created = await client.createCharacter('Outcome Guard', 'team-outcome-recovery-create');
+    const characterId = created.streamId!;
+    const initial = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    const seededHealth = await store.append({
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      streamId: characterId,
+      actorId: session.playerId,
+      commandId: 'team-outcome-health-seed',
+      payloadHash: characterId,
+      expectedVersion: initial.revision,
+      events: [{
+        type: 'character.team_combat_outcome_applied',
+        version: 1,
+        payload: {
+          characterId,
+          encounterId: 'prior-team-outcome',
+          result: 'victory',
+          health: { current: 5, maximum: 6 },
+          consumedItemIds: [],
+        },
+      }],
+    });
+    expect(seededHealth.receipt.ok).toBe(true);
+    const encounterId = 'team-outcome-recovery';
+    const started = await store.append({
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      streamId: 'world-team-combat',
+      actorId: session.playerId,
+      commandId: 'team-outcome-recovery-encounter',
+      payloadHash: encounterId,
+      expectedVersion: 0,
+      events: [{
+        type: 'team.combat_started',
+        version: 1,
+        payload: {
+          encounter: {
+            encounterId,
+            locationId: initial.locationId,
+            participants: [
+              {
+                participantId: characterId,
+                teamId: 'allies',
+                kind: 'player',
+                characterId,
+                playerId: session.playerId,
+                displayName: initial.name,
+                health: 5,
+                maximumHealth: 6,
+                characterHealthAnchor: 5,
+                defending: false,
+                status: 'active',
+              },
+              {
+                participantId: 'outcome-sentinel',
+                teamId: 'enemies',
+                kind: 'npc',
+                npcId: 'mossgate-training-sentinel',
+                displayName: 'Practice Sentinel',
+                health: 4,
+                maximumHealth: 4,
+                defending: false,
+                status: 'active',
+              },
+            ],
+            contributingPlayerIds: [],
+            currentParticipantId: characterId,
+            round: 1,
+            status: 'active',
+            lastNarration: 'The practice sentinel waits.',
+            consumedItemIdsByCharacter: {},
+            createdAt: now.toISOString(),
+            updatedAt: now.toISOString(),
+          },
+        },
+      }],
+    });
+    expect(started.receipt.ok).toBe(true);
+
+    await client.performTeamCombatAction(characterId, encounterId, 'attack');
+    const victory = await client.performTeamCombatAction(characterId, encounterId, 'attack');
+    expect(victory.receipt.ok).toBe(true);
+    const characterAfterFight = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    const recovery = await engine.dispatchSystem({
+      type: 'character.stamina.recover',
+      version: 1,
+      commandId: 'team-outcome-concurrent-recovery',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: characterAfterFight.revision,
+      payload: { settleAt: new Date(now.getTime() + 20_000).toISOString(), resetAnchor: false },
+    }, SYSTEM_ACTOR_ID);
+    expect(recovery.receipt.ok).toBe(true);
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))?.health?.current)
+      .toBe(6);
+
+    await engine.processPendingEffects();
+    const afterOutcome = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(afterOutcome.health).toEqual({ current: 5, maximum: 6 });
+    const eventCount = (await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).length;
+    await engine.processPendingEffects();
     expect(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).toHaveLength(eventCount);
   });
 });

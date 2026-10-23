@@ -41,9 +41,16 @@ export function createStaminaRecoveryScheduler(input: Readonly<{
           const previousAt = character.staminaRecovery.lastSettledAt
             ? Date.parse(character.staminaRecovery.lastSettledAt)
             : undefined;
+          const hasMissingVital =
+            character.health === undefined ||
+            character.health.current < character.health.maximum ||
+            character.resources.stamina.current < character.resources.stamina.maximum ||
+            character.resources.mana.current < character.resources.mana.maximum;
           if (
-            character.resources.stamina.current === character.resources.stamina.maximum &&
-            character.staminaRecovery.fractionalCarry === 0
+            !hasMissingVital &&
+            character.staminaRecovery.fractionalCarry === 0 &&
+            character.staminaRecovery.healthFractionalCarry === 0 &&
+            character.staminaRecovery.manaFractionalCarry === 0
           ) continue;
           if (online && previousAt !== undefined && settleAt.getTime() - previousAt < 1_000) continue;
           if (!online && previousAt !== undefined && previousAt >= seenAt) continue;

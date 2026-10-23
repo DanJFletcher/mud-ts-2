@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { StoredGameEvent } from './types.js';
 import { replayCharacter } from './replay.js';
-import { resolveStaminaRecovery } from '@mudd/contracts';
+import { resolveStaminaRecovery, resolveVitalRecovery } from '@mudd/contracts';
 
 function event(
   type: string,
@@ -51,6 +51,8 @@ describe('character event replay validation', () => {
       posture: 'standing',
       lastSettledAt: null,
       fractionalCarry: 0,
+      healthFractionalCarry: 0,
+      manaFractionalCarry: 0,
     });
 
     const initial = replayCharacter([createdV2])!;
@@ -111,6 +113,80 @@ describe('character event replay validation', () => {
         movementCost: 5,
       }),
     ])).toThrow(/invalid movement event/i);
+  });
+
+  it('replays new all-vital recovery without reinterpreting historical stamina-only events', () => {
+    const start = new Date('2026-10-18T12:00:00.000Z');
+    const attributes = { strength: 10, intelligence: 10, constitution: 10, dexterity: 10 };
+    const characterClass = {
+      id: 'replay-scout',
+      revision: 1,
+      catalogId: 'replay-catalog',
+      catalogRevision: 1,
+      label: 'Scout',
+      description: 'A replay fixture.',
+      primaryAttribute: 'dexterity',
+      attributes,
+      coreAction: {
+        id: 'replay-action',
+        revision: 1,
+        label: 'Quick strike',
+        description: 'A test action.',
+        cost: { resource: 'stamina', amount: 1 },
+        baseDamage: 1,
+        scalingAttribute: 'dexterity',
+        weaponBonus: false,
+      },
+    };
+    const createdWithVitals = event('character.created', 1, {
+      characterId: 'character-test',
+      playerId: 'player-test',
+      name: 'Rowan',
+      startingLocationId: 'mossgate-clearing',
+      attributes,
+      characterClass,
+      health: { current: 1, maximum: 6 },
+      resources: {
+        stamina: { current: 50, maximum: 100 },
+        mana: { current: 40, maximum: 100 },
+      },
+    }, 3);
+    const initial = replayCharacter([createdWithVitals])!;
+    const oldStaminaOnly = resolveStaminaRecovery(
+      initial.resources.stamina,
+      initial.staminaRecovery,
+      start,
+    );
+    const historicalEvent = event('character.stamina_recovery_settled', 2, {
+      characterId: initial.characterId,
+      resources: { ...initial.resources, stamina: oldStaminaOnly.stamina },
+      recovery: oldStaminaOnly.recovery,
+    }, 1, start.toISOString());
+    const historicalProjection = replayCharacter([createdWithVitals, historicalEvent])!;
+    expect(historicalProjection.health).toEqual({ current: 1, maximum: 6 });
+    expect(historicalProjection.resources.mana).toEqual({ current: 40, maximum: 100 });
+
+    const vitalRecovery = resolveVitalRecovery({
+      health: historicalProjection.health!,
+      stamina: historicalProjection.resources.stamina,
+      mana: historicalProjection.resources.mana,
+    }, historicalProjection.staminaRecovery, new Date(start.getTime() + 20_000));
+    const vitalEvent = event('character.vital_recovery_settled', 3, {
+      characterId: initial.characterId,
+      health: vitalRecovery.health,
+      resources: {
+        stamina: vitalRecovery.stamina,
+        mana: vitalRecovery.mana,
+      },
+      recovery: vitalRecovery.recovery,
+    }, 1, new Date(start.getTime() + 20_000).toISOString());
+    expect(replayCharacter([createdWithVitals, historicalEvent, vitalEvent])).toMatchObject({
+      health: { current: 2, maximum: 6 },
+      resources: {
+        stamina: { current: 70, maximum: 100 },
+        mana: { current: 60, maximum: 100 },
+      },
+    });
   });
 
   it('keeps legacy character streams valid without progression and rejects duplicate victory rewards', () => {

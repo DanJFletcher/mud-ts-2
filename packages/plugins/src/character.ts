@@ -3,12 +3,12 @@ import {
   CharacterCreatedEventV2Schema,
   CharacterCreatedEventV3Schema,
   CharacterStaminaSpentEventSchema,
-  CharacterStaminaRecoverySettledEventSchema,
+  CharacterVitalRecoverySettledEventSchema,
   CharacterPostureChangedEventSchema,
   CharacterRestCommandSchema,
   CharacterStandCommandSchema,
   CharacterStaminaRecoverySchema,
-  resolveStaminaRecovery,
+  resolveVitalRecovery,
   IsoDateTimeSchema,
   DEFAULT_CHARACTER_RESOURCES,
   DEFAULT_CHARACTER_ATTRIBUTES,
@@ -70,6 +70,7 @@ import {
 } from './autonomous-npcs.js';
 import { classCombatPolicyCapability, type ClassCombatPolicy } from './classes.js';
 import { maximumHealthForLevel } from './character-stats.js';
+import { interactionStreamId } from './interactions.js';
 
 export interface CharacterStateCapability {
   load(context: EngineCommandContext | QueryContext, characterId: string): Promise<CharacterProjection | undefined>;
@@ -91,21 +92,79 @@ export function staminaRecoveryEvent(
   character: CharacterProjection,
   settledAt: Date,
 ) {
-  const result = resolveStaminaRecovery(
-    character.resources.stamina,
+  const health = character.health ?? {
+    current: maximumHealthForLevel(
+      character.advancement?.level ?? 1,
+      character.attributes.constitution,
+    ),
+    maximum: maximumHealthForLevel(
+      character.advancement?.level ?? 1,
+      character.attributes.constitution,
+    ),
+  };
+  const result = resolveVitalRecovery({
+    health,
+    stamina: character.resources.stamina,
+    mana: character.resources.mana,
+  },
     character.staminaRecovery,
     settledAt,
   );
-  const payload = CharacterStaminaRecoverySettledEventSchema.shape.payload.parse({
+  const payload = CharacterVitalRecoverySettledEventSchema.shape.payload.parse({
     characterId: character.characterId,
-    resources: { ...character.resources, stamina: result.stamina },
+    health: result.health,
+    resources: {
+      stamina: result.stamina,
+      mana: result.mana,
+    },
     recovery: result.recovery,
   });
   return {
-    type: 'character.stamina_recovery_settled',
+    type: 'character.vital_recovery_settled',
     version: 1,
     payload,
   };
+}
+
+async function isInSharedCombat(
+  context: EngineCommandContext,
+  characterId: string,
+): Promise<boolean> {
+  const teamEvents = await context.store.readStream(context.worldInstanceId, 'world-team-combat');
+  const teamEncounters = new Map<string, { status: string; participants: { characterId?: string; status?: string }[] }>();
+  for (const event of teamEvents) {
+    if (!['team.combat_started', 'team.road_encounter_started', 'team.combat_action_resolved'].includes(event.type)) continue;
+    const encounter = (event.payload as { encounter?: { encounterId?: string; status?: string; participants?: { characterId?: string; status?: string }[] } }).encounter;
+    if (encounter?.encounterId && encounter.status && encounter.participants) {
+      teamEncounters.set(encounter.encounterId, {
+        status: encounter.status,
+        participants: encounter.participants,
+      });
+    }
+  }
+  if ([...teamEncounters.values()].some((encounter) =>
+    encounter.status === 'active' &&
+    encounter.participants.some((participant) =>
+      participant.characterId === characterId && participant.status === 'active',
+    ),
+  )) return true;
+
+  const pvpEvents = await context.store.readStream(
+    context.worldInstanceId,
+    interactionStreamId(context.worldInstanceId),
+  );
+  let latestPvp: { status?: string; participants?: { characterId?: string }[] } | undefined;
+  for (const event of pvpEvents) {
+    if (!['pvp.encounter.started', 'pvp.action.resolved', 'pvp.outcome.applied'].includes(event.type)) continue;
+    const raw = event.payload as {
+      encounter?: { status?: string; participants?: { characterId?: string }[] };
+    };
+    const encounter = raw.encounter;
+    if (encounter?.status && encounter.participants) latestPvp = encounter;
+  }
+  return latestPvp?.status !== undefined &&
+    latestPvp.status !== 'completed' &&
+    Boolean(latestPvp.participants?.some((participant) => participant.characterId === characterId));
 }
 
 export const characterStateCapability = Object.freeze({
@@ -207,6 +266,7 @@ export const characterPlugin: EnginePlugin = {
       'character.created': 3,
       'character.stamina_spent': 1,
       'character.stamina_recovery_settled': 1,
+      'character.vital_recovery_settled': 1,
       'character.posture_changed': 1,
       'character.equipment_changed': 1,
       'character.shared_item_received': 1,
@@ -265,24 +325,22 @@ export const characterPlugin: EnginePlugin = {
             ...character.staminaRecovery,
             lastSettledAt: settledAt.toISOString(),
             fractionalCarry: 0,
+            healthFractionalCarry: 0,
+            manaFractionalCarry: 0,
           })
-          : resolveStaminaRecovery(
-            character.resources.stamina,
-            character.staminaRecovery,
-            settledAt,
-          ).recovery;
+          : staminaRecoveryEvent(character, settledAt).payload.recovery;
         const resources = command.payload.resetAnchor
           ? character.resources
-          : {
-            ...character.resources,
-            stamina: resolveStaminaRecovery(
-              character.resources.stamina,
-              character.staminaRecovery,
-              settledAt,
-            ).stamina,
-          };
-        const payload = CharacterStaminaRecoverySettledEventSchema.shape.payload.parse({
+          : staminaRecoveryEvent(character, settledAt).payload.resources;
+        const health = command.payload.resetAnchor
+          ? character.health ?? {
+            current: maximumHealthForLevel(character.advancement?.level ?? 1, character.attributes.constitution),
+            maximum: maximumHealthForLevel(character.advancement?.level ?? 1, character.attributes.constitution),
+          }
+          : staminaRecoveryEvent(character, settledAt).payload.health;
+        const payload = CharacterVitalRecoverySettledEventSchema.shape.payload.parse({
           characterId: character.characterId,
+          health,
           resources,
           recovery,
           resetAnchor: command.payload.resetAnchor,
@@ -290,7 +348,7 @@ export const characterPlugin: EnginePlugin = {
         return {
           streamId: character.characterId,
           expectedVersion: command.expectedVersion,
-          events: [{ type: 'character.stamina_recovery_settled', version: 1, payload }],
+          events: [{ type: 'character.vital_recovery_settled', version: 1, payload }],
         };
       },
     );
@@ -305,9 +363,11 @@ export const characterPlugin: EnginePlugin = {
       if (character.staminaRecovery.posture === 'resting') {
         throw new RuleViolationError('You are already resting.');
       }
-      const location = context.world.locations.find((candidate) => candidate.id === character.locationId);
-      if (!location?.safeResting) {
-        throw new RuleViolationError('This is not a safe place to rest.');
+      if (await isInSharedCombat(context, character.characterId)) {
+        throw new RuleViolationError('You cannot rest while combat is active.');
+      }
+      if (!context.world.locations.some((candidate) => candidate.id === character.locationId)) {
+        throw new RuleViolationError('Your current location is not available.');
       }
       const settled = staminaRecoveryEvent(character, context.now());
       const posture = CharacterPostureChangedEventSchema.shape.payload.parse({

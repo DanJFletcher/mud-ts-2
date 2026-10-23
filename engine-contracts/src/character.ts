@@ -114,6 +114,10 @@ export const CharacterStaminaRecoverySchema = z.object({
   lastSettledAt: IsoDateTimeSchema.nullable().default(null),
   /** Hundred-thousandths of a stamina point, carried between settlements. */
   fractionalCarry: NonNegativeIntSchema.max(99_999).default(0),
+  /** Independent hundred-thousandths of a health point. */
+  healthFractionalCarry: NonNegativeIntSchema.max(99_999).default(0),
+  /** Independent hundred-thousandths of a mana point. */
+  manaFractionalCarry: NonNegativeIntSchema.max(99_999).default(0),
 }).strict();
 export type CharacterStaminaRecovery = z.infer<typeof CharacterStaminaRecoverySchema>;
 
@@ -236,6 +240,18 @@ export const CharacterStaminaRecoverySettledEventSchema = DomainEventBaseSchema.
   version: z.literal(1),
   payload: z.object({
     characterId: IdSchema,
+    resources: CharacterResourcesSchema,
+    recovery: CharacterStaminaRecoverySchema,
+    resetAnchor: z.boolean().default(false),
+  }).strict(),
+}).strict();
+
+export const CharacterVitalRecoverySettledEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('character.vital_recovery_settled'),
+  version: z.literal(1),
+  payload: z.object({
+    characterId: IdSchema,
+    health: CharacterHealthSchema,
     resources: CharacterResourcesSchema,
     recovery: CharacterStaminaRecoverySchema,
     resetAnchor: z.boolean().default(false),

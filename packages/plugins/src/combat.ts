@@ -203,8 +203,12 @@ export const combatPlugin: EnginePlugin = {
       const recoveryEvent = staminaRecoveryEvent(loadedCharacter, context.now());
       const character: CharacterProjection = {
         ...loadedCharacter,
+        health: recoveryEvent.payload.health,
         resources: recoveryEvent.payload.resources,
         staminaRecovery: recoveryEvent.payload.recovery,
+        ...(loadedCharacter.combat?.status === 'active' ? {
+          combat: { ...loadedCharacter.combat, playerHealth: recoveryEvent.payload.health.current },
+        } : {}),
       };
 
       if (command.payload.action === 'use-item' && character.combat?.status !== 'active') {

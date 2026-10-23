@@ -689,8 +689,8 @@ beforeEach(() => {
         };
       };
       if (command.type === 'character.rest' || command.type === 'character.stand') {
-        if (command.type === 'character.rest' && ((!orravethWorld && room !== 'inn') || staminaPosture === 'resting')) {
-          return json({ receipt: { ok: false, commandId: command.commandId ?? 'mock-command', code: 'RULE_VIOLATION', message: 'This is not a safe place to rest.' } });
+        if (command.type === 'character.rest' && staminaPosture === 'resting') {
+          return json({ receipt: { ok: false, commandId: command.commandId ?? 'mock-command', code: 'RULE_VIOLATION', message: 'You are already resting.' } });
         }
         staminaPosture = command.type === 'character.rest' ? 'resting' : 'standing';
         revision += 2;
@@ -990,12 +990,14 @@ describe('single-character world session client', () => {
       'Show items to take',
       'Show people to talk to',
       'Show opponents to attack',
+      'Rest and recover health, stamina, and mana',
       'Show command help',
     ]);
     expect(pages).toHaveLength(2);
+    expect(pages.every((page) => page.length <= 4)).toBe(true);
   });
 
-  it('shows up to six quick actions per page at the desktop breakpoint', async () => {
+  it('shows up to six quick actions per desktop page when rest is available', async () => {
     const originalDescriptor = Object.getOwnPropertyDescriptor(window, 'matchMedia');
     const desktopMediaQuery = {
       matches: true,
@@ -1022,7 +1024,7 @@ describe('single-character world session client', () => {
         );
       expect(firstPageActions).toHaveLength(6);
       expect(desktopMediaQuery.addEventListener).toHaveBeenCalledWith('change', expect.any(Function));
-      expect(within(firstPage).queryByRole('button', { name: 'Show quick actions page 2' })).not.toBeInTheDocument();
+      expect(within(firstPage).getByRole('button', { name: 'Show quick actions page 2' })).toBeInTheDocument();
     } finally {
       if (originalDescriptor) Object.defineProperty(window, 'matchMedia', originalDescriptor);
       else Reflect.deleteProperty(window, 'matchMedia');
@@ -1286,6 +1288,21 @@ describe('single-character world session client', () => {
       if (originalDescriptor) Object.defineProperty(window, 'matchMedia', originalDescriptor);
       else Reflect.deleteProperty(window, 'matchMedia');
     }
+  });
+
+  it('refreshes Info vitals from server projections without adding recovery terminal messages', async () => {
+    characterHealth = { current: 5, maximum: 6 };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    await openInfoSection('Vitals');
+    expect(screen.getByLabelText('Character health')).toHaveAttribute('aria-valuenow', '5');
+
+    characterHealth = { current: 4, maximum: 6 };
+    fireEvent(document, new Event('visibilitychange'));
+
+    await screen.findByText('4/6');
+    expect(screen.getByLabelText('Character health')).toHaveAttribute('aria-valuenow', '4');
+    expect(screen.queryByText(/You recover/i)).not.toBeInTheDocument();
   });
 
   it('shows active and completed quest objectives on Field notes', async () => {
@@ -1956,7 +1973,7 @@ describe('single-character world session client', () => {
 
     fireEvent.change(commandInput, { target: { value: 'stand' } });
     fireEvent.submit(commandInput.closest('form')!);
-    await screen.findByText(/You stand\. Stamina now recovers/i);
+    await screen.findByText(/You stand\. Health, stamina, and mana each recover/i);
     expect(apiFetch.mock.calls.some(([path, init]) => {
       if (path !== '/api/commands') return false;
       return JSON.parse(String(init?.body ?? '{}')).type === 'character.stand';
@@ -1992,7 +2009,7 @@ describe('single-character world session client', () => {
 
     fireEvent.change(commandInput, { target: { value: 'stand' } });
     fireEvent.submit(commandInput.closest('form')!);
-    await screen.findByText(/You stand\. Stamina now recovers/i);
+    await screen.findByText(/You stand\. Health, stamina, and mana each recover/i);
     expect(apiFetch.mock.calls.some(([path, init]) =>
       path === '/api/commands' &&
       JSON.parse(String(init?.body ?? '{}')).type === 'character.stand' &&

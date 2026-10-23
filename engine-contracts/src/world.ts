@@ -309,7 +309,7 @@ export const LocationDefinitionSchema = z.object({
   states: z.array(LocationStateDefinitionSchema).min(1).max(16).optional(),
   /** This location cannot be entered until the character has visited the named location. */
   requiredVisitedLocationId: IdSchema.optional(),
-  /** Characters may adopt the free resting posture only at explicitly safe locations. */
+  /** Legacy authoring hint retained for compatibility; it does not gate free character rest. */
   safeResting: z.boolean().optional(),
   exits: z.array(ExitDefinitionSchema),
   readables: z.array(ReadableObjectDefinitionSchema).optional(),

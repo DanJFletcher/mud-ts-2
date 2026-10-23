@@ -141,7 +141,7 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
   ],
   rest: [
     "Usage: rest",
-    "Begin free stamina recovery at a safe resting place. Standing restores 1% and resting restores 3% of maximum stamina per connected second.",
+    "Rest for free in any room while out of combat. Standing restores each vital by 2% of its maximum every two seconds; resting restores 6%.",
   ],
   stand: [
     "Usage: stand",
@@ -187,7 +187,7 @@ const GENERAL_HELP = [
   "equip <item> — Equip a carried weapon or armor item.",
   "unequip <weapon|armor> — Remove equipped gear from a slot.",
   "use <item> on <target> | use <healing item> — Use a room item or restore health during or between encounters.",
-  "rest — Begin free stamina recovery at a safe place.",
+  "rest — Rest for free in any room while out of combat; recover health, stamina, and mana.",
   "stand — Leave the free resting posture.",
   "inn rest — Immediately restore missing health, stamina, and mana for the inn’s listed price.",
   "drop <item> — Put down an item you carry.",
@@ -1250,8 +1250,8 @@ export function WorldClient({
       setSnapshot(nextSnapshot);
       setConnectionError("");
       addEntry("narration", posture === "rest"
-        ? "You settle into a free resting posture. Stamina recovers at 3% of its maximum per connected second."
-        : "You stand. Stamina now recovers at 1% of its maximum per connected second, and you can travel again.");
+        ? "You settle into a free resting posture. Health, stamina, and mana each recover by 6% of their maximum every two seconds."
+        : "You stand. Health, stamina, and mana each recover by 2% of their maximum every two seconds, and you can travel again.");
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "You could not change your resting posture.");
     } finally {
@@ -1970,6 +1970,13 @@ export function WorldClient({
     const readableObjects = (snapshot?.location?.objects ?? []).filter((object) => object.readable);
     if (snapshot?.character?.staminaRecovery.posture === "resting") {
       actions.push({
+        id: "stand",
+        label: "stand",
+        ariaLabel: "Stand and leave the resting posture",
+        opensMenu: false,
+        onSelect: () => submitQuickCommand("stand"),
+      });
+      actions.push({
         id: "help",
         label: "help",
         ariaLabel: "Show command help",
@@ -2021,6 +2028,15 @@ export function WorldClient({
     } else if (challengeableNpcs.length > 0) {
       addMode("attack", "attack", "Show opponents to attack");
     }
+    if (!isAnyCombatActive && !hasVisiblePvp) {
+      actions.push({
+        id: "rest",
+        label: "rest",
+        ariaLabel: "Rest and recover health, stamina, and mana",
+        opensMenu: false,
+        onSelect: () => submitQuickCommand("rest"),
+      });
+    }
     const health = snapshot?.character?.health;
     const resources = snapshot?.character?.resources;
     const needsRest = Boolean(
@@ -2054,6 +2070,8 @@ export function WorldClient({
     return actions;
   }, [
     challengeableNpcs.length,
+    hasVisiblePvp,
+    isAnyCombatActive,
     quickBuyListings.length,
     quickShopNpcs.length,
     quickTakeableObjects.length,
@@ -3017,7 +3035,7 @@ export function WorldClient({
                   ))}
                 </div>
                 <div className="focused-details">
-                  <div className="focused-detail"><span>Posture</span><strong>{snapshot.character?.staminaRecovery.posture === "resting" ? "Resting · 3% per connected second" : "Standing · 1% per connected second"}</strong></div>
+                  <div className="focused-detail"><span>Posture</span><strong>{snapshot.character?.staminaRecovery.posture === "resting" ? "Resting · 6% of each vital every two seconds" : "Standing · 2% of each vital every two seconds"}</strong></div>
                   <div className="focused-detail"><span>Standing</span><strong>{snapshot.character?.health?.current === 0 ? "Down" : snapshot.character ? "Alive" : "Not started"}</strong></div>
                   <div className="focused-detail"><span>Wallet</span><strong>
                     {snapshot.character?.wallet && snapshot.currency

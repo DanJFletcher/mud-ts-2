@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-10-22
 - **Owners:** Engine and game client
-- **Related:** [ADR 0028: Online stamina recovery and safe resting](0028-online-stamina-recovery-and-safe-resting.md)
+- **Related:** [ADR 0028: Online stamina recovery and safe resting](0028-online-stamina-recovery-and-safe-resting.md), [ADR 0029: Online vital recovery and unrestricted free rest](0029-online-vital-recovery-and-unrestricted-rest.md)
 
 ## Context
 
@@ -16,7 +16,7 @@ The game already projects stamina and mana regeneration ratings, but characters 
 - Party PvE flee has the same cost and precondition. Because party turns are stored in a shared encounter stream, the party action commits first and queues an idempotent effect that records the stamina expenditure in the character stream.
 - Inn rest retains its authored price and atomically restores health, stamina, and mana to their current maxima. Rest is available when any of those pools is below maximum; it remains unavailable during active solo combat and after character death.
 - The Vitals screen displays server-projected current/max values for health, stamina, and mana. Clients do not calculate or mutate resource state.
-- Mana is tracked and restored but is not spent until magical actions exist. Passive health/mana regeneration, skills, spells, cooldowns, and resource-stat formulas remain deferred. Online stamina recovery and a safe-place resting posture are specified by ADR 0028.
+- Mana is tracked and restored but is not spent until magical actions exist. Skills, spells, cooldowns, and resource-stat formulas remain deferred. Online recovery for health, stamina, and mana is specified by ADR 0029.
 - Resource pools and changes are versioned character events. No database migration or new aggregate is introduced; existing one-active-character-per-world-session behavior is unchanged.
 
 ## Alternatives considered
@@ -45,4 +45,4 @@ The game already projects stamina and mana regeneration ratings, but characters 
 
 ## Follow-up / revisit trigger
 
-Revisit before adding active spell/skill costs, passive health/mana regeneration, PvP resource spending, or resource maximum formulas. Online stamina recovery and safe resting are no longer deferred; see ADR 0028.
+Revisit before adding active spell/skill costs, PvP resource spending, or resource maximum formulas. Online vital recovery and unrestricted free rest are specified by ADR 0029.

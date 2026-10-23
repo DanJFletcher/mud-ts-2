@@ -3,6 +3,7 @@ import {
   CharacterMovedEventSchema,
   CharacterTeamCombatOutcomeAppliedEventSchema,
   CharacterStaminaSpentEventSchema,
+  CharacterPostureChangedEventSchema,
   MOVEMENT_STAMINA_COST,
   TeamCombatActionCommandSchema,
   TeamCombatActionResolvedEventSchema,
@@ -128,11 +129,20 @@ async function applyOutcomes(
     const recoveryEvent = staminaRecoveryEvent(character, context.now());
     const settledCharacter: CharacterProjection = {
       ...character,
+      health: recoveryEvent.payload.health,
       resources: recoveryEvent.payload.resources,
       staminaRecovery: recoveryEvent.payload.recovery,
     };
     const previousMaximum = character.health?.maximum ?? player.maximumHealth;
-    const health = { current: Math.min(player.health, previousMaximum), maximum: previousMaximum };
+    const latestHealth = settledCharacter.health?.current ?? previousMaximum;
+    const health = {
+      current: player.health === 0
+        ? 0
+        : player.healthDelta === undefined
+          ? Math.min(player.health, previousMaximum)
+          : Math.max(0, Math.min(previousMaximum, latestHealth + player.healthDelta)),
+      maximum: previousMaximum,
+    };
     const consumedItemIds = payload.players.find((entry) =>
       entry.characterId === player.characterId,
     )?.consumedItemIds ?? [];
@@ -346,6 +356,7 @@ export const teamCombatPlugin: EnginePlugin = {
             displayName: projection.name,
             health: Math.min(projection.health?.current ?? maximum, maximum),
             maximumHealth: maximum,
+            characterHealthAnchor: Math.min(projection.health?.current ?? maximum, maximum),
             defending: false,
             status: 'active' as const,
           };
@@ -461,6 +472,7 @@ export const teamCombatPlugin: EnginePlugin = {
           displayName: projection.name,
           health: Math.min(projection.health?.current ?? maximum, maximum),
           maximumHealth: maximum,
+          characterHealthAnchor: Math.min(projection.health?.current ?? maximum, maximum),
           defending: false,
           status: 'active' as const,
         };
@@ -530,13 +542,39 @@ export const teamCombatPlugin: EnginePlugin = {
       const recoveryEvent = staminaRecoveryEvent(loadedCharacter, context.now());
       const character: CharacterProjection = {
         ...loadedCharacter,
+        health: recoveryEvent.payload.health,
         resources: recoveryEvent.payload.resources,
         staminaRecovery: recoveryEvent.payload.recovery,
       };
 
       const participants = encounter.participants.map((participant) => ({ ...participant }));
-      const guards = context.world.classCatalog
-        ? await classAdoptionGuards(context, command.characterId, STREAM_ID) : undefined;
+      const guards: StreamGuard[] = [];
+      const participantCharacters = new Map<string, CharacterProjection>();
+      for (const participant of participants) {
+        if (participant.kind !== 'player' || !participant.characterId) continue;
+        const projection = participant.characterId === character.characterId
+          ? character
+          : await characters.load(context, participant.characterId);
+        if (!projection) throw new RuleViolationError('A party member is no longer available.');
+        participantCharacters.set(projection.characterId, projection);
+        const latestHealth = Math.min(
+          projection.health?.current ?? participant.maximumHealth,
+          participant.maximumHealth,
+        );
+        const anchor = participant.characterHealthAnchor ?? latestHealth;
+        if (participant.characterHealthAnchor !== undefined) {
+          participant.health = Math.max(0, Math.min(
+            participant.maximumHealth,
+            participant.health + latestHealth - anchor,
+          ));
+          if (participant.health === 0) participant.status = 'defeated';
+        }
+        participant.characterHealthAnchor = latestHealth;
+        guards.push({ streamId: participant.characterId, expectedVersion: projection.revision });
+      }
+      if (context.world.classCatalog) {
+        guards.push(...await classAdoptionGuards(context, command.characterId, STREAM_ID));
+      }
       if (context.world.classCatalog && character.combat?.status === 'active') throw new RuleViolationError('Another combat encounter is active.');
       const activeActor = participants.find((participant) => participant.participantId === actor.participantId)!;
       const enemies = participants.filter((participant) =>
@@ -546,6 +584,7 @@ export const teamCombatPlugin: EnginePlugin = {
       let damageTaken = 0;
       let healingDone = 0;
       let narration: string;
+      let restingTargetCharacter: CharacterProjection | undefined;
       const consumed = { ...encounter.consumedItemIdsByCharacter };
       const effects: ProposedEventEffect[] = [];
       let fleeResourceEvent: ProposedDomainEvent | undefined;
@@ -642,22 +681,24 @@ export const teamCombatPlugin: EnginePlugin = {
               )
             : undefined;
           if (enemy && enemyDefinition?.combatProfile && target) {
-            const armor = await characters.load(context, target.characterId!);
+            const armor = participantCharacters.get(target.characterId!);
             const equippedArmor = armor?.inventory.find((item) =>
               item.id === armor.equipment.armorItemId,
             );
             const armorDefense = equippedArmor?.equipment?.defenseBonus ?? 0;
-            const attack = enemyDefinition.combatProfile.style === 'heavy' && encounter.round % 2 === 1
+          const baseAttack = enemyDefinition.combatProfile.style === 'heavy' && encounter.round % 2 === 1
               ? 0
               : Math.max(0, enemyDefinition.combatProfile.attackDamage - armorDefense -
                 (target.defending ? 2 : 0));
+          restingTargetCharacter = armor?.staminaRecovery.posture === 'resting' ? armor : undefined;
+          const attack = baseAttack * (restingTargetCharacter ? 2 : 1);
             damageTaken = Math.min(target.health, attack);
             target.health -= damageTaken;
             target.defending = false;
             if (target.health === 0) target.status = 'defeated';
             narration += attack === 0
               ? ` ${enemy.displayName} circles, preparing a heavy strike.`
-              : ` ${enemy.displayName} hits ${target.displayName} for ${damageTaken} damage.`;
+            : ` ${enemy.displayName} hits ${target.displayName} for ${damageTaken} damage.${restingTargetCharacter ? ' The blow catches them resting.' : ''}`;
           }
           const survivors = participants.filter((participant) =>
             participant.teamId === PLAYER_TEAM && participant.status === 'active',
@@ -725,6 +766,9 @@ export const teamCombatPlugin: EnginePlugin = {
                 characterId: participant.characterId!,
                 health: participant.health,
                 maximumHealth: participant.maximumHealth,
+                ...(participant.characterHealthAnchor !== undefined
+                  ? { healthDelta: participant.health - participant.characterHealthAnchor }
+                  : {}),
                 consumedItemIds: consumed[participant.characterId!] ?? [],
               })),
           },
@@ -754,16 +798,48 @@ export const teamCombatPlugin: EnginePlugin = {
           }));
         }
       }
+      const companions = [{
+        streamId: character.characterId,
+        expectedVersion: character.revision,
+        events: [
+          recoveryEvent,
+          ...(ability ? [ability.event] : fleeResourceEvent ? [fleeResourceEvent] : []),
+        ],
+      }];
+      if (
+        restingTargetCharacter &&
+        restingTargetCharacter.characterId !== character.characterId
+      ) {
+        companions.push({
+          streamId: restingTargetCharacter.characterId,
+          expectedVersion: restingTargetCharacter.revision,
+          events: [{
+            type: 'character.posture_changed',
+            version: 1,
+            payload: CharacterPostureChangedEventSchema.shape.payload.parse({
+              characterId: restingTargetCharacter.characterId,
+              posture: 'standing',
+              locationId: restingTargetCharacter.locationId,
+            }),
+          }],
+        });
+      } else if (restingTargetCharacter) {
+        companions[0]!.events = [
+          ...companions[0]!.events,
+          {
+            type: 'character.posture_changed',
+            version: 1,
+            payload: CharacterPostureChangedEventSchema.shape.payload.parse({
+              characterId: restingTargetCharacter.characterId,
+              posture: 'standing',
+              locationId: restingTargetCharacter.locationId,
+            }),
+          },
+        ];
+      }
       return { streamId: STREAM_ID, expectedVersion: state.revision, events, effects,
         guards,
-        companions: [{
-          streamId: character.characterId,
-          expectedVersion: character.revision,
-          events: [
-            recoveryEvent,
-            ...(ability ? [ability.event] : fleeResourceEvent ? [fleeResourceEvent] : []),
-          ],
-        }],
+        companions,
       };
     });
 

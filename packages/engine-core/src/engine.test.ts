@@ -1012,7 +1012,7 @@ describe('MUDD engine host', () => {
     const moved = await engine.dispatch(command, session);
     expect(moved.receipt).toMatchObject({ ok: true, newAggregateVersion: 3 });
     expect(moved.events.map((event) => event.type)).toEqual([
-      'character.stamina_recovery_settled',
+      'character.vital_recovery_settled',
       'character.moved',
     ]);
     expect(moved.events[1]?.payload.movementCost).toBe(5);

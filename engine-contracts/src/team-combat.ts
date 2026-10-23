@@ -14,6 +14,7 @@ export const TeamCombatantSchema = z.object({
   displayName: z.string().trim().min(1).max(80),
   health: z.number().int().nonnegative(),
   maximumHealth: z.number().int().positive(),
+  characterHealthAnchor: z.number().int().nonnegative().optional(),
   defending: z.boolean(),
   status: z.enum(['active', 'defeated', 'escaped']),
 }).strict().superRefine((participant, context) => {
@@ -154,6 +155,7 @@ export const TeamCombatOutcomeEffectSchema = z.object({
     characterId: IdSchema,
     health: z.number().int().nonnegative(),
     maximumHealth: z.number().int().positive(),
+    healthDelta: z.number().int().optional(),
     consumedItemIds: z.array(IdSchema),
   }).strict()).max(8),
 }).strict();
