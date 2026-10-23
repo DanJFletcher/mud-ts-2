@@ -6,6 +6,7 @@ import {
   projectAutonomousNpcPosition,
 } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
+import { ORRAVETH_WORLD_INSTANCE_ID, orravethWorld } from '@mudd/world-orraveth';
 import { worldEventEffectsPlugin } from './demo-event-effects-plugin.js';
 import {
   AUTONOMOUS_NPC_SYSTEM_ACTOR_ID,
@@ -110,5 +111,47 @@ describe('autonomous NPC scheduler and room movement messages', () => {
       sourceEffectId: expect.stringMatching(/:arrival$/),
     }));
     await engine.stop();
+  });
+
+  it('publishes Orraveth NPC movement announcements from the authored world narratives', async () => {
+    const now = new Date('2026-10-23T12:00:00.000Z');
+    const store = new InMemoryEventStore();
+    const engine = new EngineHost(
+      [autonomousNpcsPlugin, worldEventEffectsPlugin],
+      store,
+      authorization,
+      orravethWorld,
+      () => globalThis.crypto.randomUUID(),
+      () => now,
+      { roll: (sides) => sides },
+    );
+    await engine.start();
+    try {
+      const scheduler = createAutonomousNpcScheduler({
+        engine,
+        store,
+        world: orravethWorld,
+        worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+        now: () => now,
+      });
+
+      expect(await scheduler.tick()).toBe(2);
+      expect(await engine.processPendingEffects()).toBe(2);
+      expect(publishNpcMessage).toHaveBeenCalledTimes(4);
+      expect(publishNpcMessage).toHaveBeenCalledWith(expect.objectContaining({
+        worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+        roomId: 'bellwold-market-square',
+        npcName: 'Taren Voss',
+        text: 'The guard leaves toward the south, continuing the patrol.',
+      }));
+      expect(publishNpcMessage).toHaveBeenCalledWith(expect.objectContaining({
+        worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+        roomId: 'bellwold-south-common',
+        npcName: 'Taren Voss',
+        text: 'The guard enters from the north, eyes alert.',
+      }));
+    } finally {
+      await engine.stop();
+    }
   });
 });
