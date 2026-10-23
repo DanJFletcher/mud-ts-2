@@ -1691,7 +1691,7 @@ describe('single-character world session client', () => {
     })).toBe(true);
   });
 
-  it('restores health at Willowrest Inn for the listed fee through a contextual quick action', async () => {
+  it('restores health and resources at Willowrest Inn for the listed fee through a contextual quick action', async () => {
     room = 'inn';
     visitedLocationIds = ['mossgate-clearing', 'glasswater-bridge', 'reedbank-stalls', 'willowrest-inn'];
     characterHealth = { current: 4, maximum: 6 };
@@ -1702,7 +1702,7 @@ describe('single-character world session client', () => {
 
     clickQuickAction('Rest at Willowrest Inn for 5 moss marks');
 
-    await screen.findByText(/You rest at Willowrest Inn, restore 2 health, and pay 5 moss marks/);
+    await screen.findByText(/You rest at Willowrest Inn, restore 2 health, \d+ stamina, and \d+ mana, and pay 5 moss marks/);
     expect(screen.getByLabelText('Character health')).toHaveTextContent('Health 6/6');
     expect(walletBalance).toBe(7);
     expect(apiFetch.mock.calls.some(([path, init]) => {

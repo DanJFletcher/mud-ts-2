@@ -1839,6 +1839,8 @@ export function WorldClient({
     snapshot?.location?.objects,
     snapshot?.location?.inn,
     snapshot?.character?.health,
+    snapshot?.character?.resources,
+    canFlee,
     submitQuickCommand,
     visibleCombat,
   ]);

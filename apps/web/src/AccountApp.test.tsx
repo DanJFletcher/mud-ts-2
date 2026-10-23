@@ -36,6 +36,10 @@ const firstCharacter = {
   equipment: { weaponItemId: null, armorItemId: null },
   attributes: { strength: 10, intelligence: 10, constitution: 10, dexterity: 10 },
   honors: { glory: 0, medals: 0 },
+  resources: {
+    stamina: { current: 100, maximum: 100 },
+    mana: { current: 100, maximum: 100 },
+  },
   purchasedMerchantListingIds: [],
   itemLocations: [],
   claimedContainerItemIds: [],
