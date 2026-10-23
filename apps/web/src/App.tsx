@@ -1709,6 +1709,44 @@ export function WorldClient({
     : undefined;
   const hasVisiblePvp = Boolean(visiblePvp);
   const isPvpTurn = visiblePvp?.turnCharacterId === snapshot?.character?.characterId;
+  useEffect(() => {
+    if (screen !== "play") return;
+
+    const handleMovementKeys = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable || target.closest("input, textarea, select, [contenteditable='true'], [role='textbox']"))
+      ) return;
+
+      let direction: "north" | "east" | "south" | "west" | "up" | "down" | undefined;
+      if (event.shiftKey) {
+        if (event.key === "ArrowUp") direction = "up";
+        else if (event.key === "ArrowDown") direction = "down";
+      } else {
+        if (event.key === "ArrowUp") direction = "north";
+        else if (event.key === "ArrowRight") direction = "east";
+        else if (event.key === "ArrowDown") direction = "south";
+        else if (event.key === "ArrowLeft") direction = "west";
+      }
+      if (!direction || !snapshot?.character || !snapshot.location || pending || isAnyCombatActive || hasVisiblePvp) return;
+
+      event.preventDefault();
+      const matchingExits = snapshot.location.exits.filter((exit) =>
+        exit.available && (exit.direction?.trim() || exit.label.trim()).toLocaleLowerCase() === direction
+      );
+      if (matchingExits.length > 1) {
+        setQuickCommandPage(1);
+        setQuickCommandMode("choose-exit");
+        return;
+      }
+      if (matchingExits[0]) void move(matchingExits[0].id);
+    };
+
+    document.addEventListener("keydown", handleMovementKeys);
+    return () => document.removeEventListener("keydown", handleMovementKeys);
+  }, [hasVisiblePvp, isAnyCombatActive, move, pending, screen, snapshot]);
   useLayoutEffect(() => {
     if (!mobileCommandInputOpen) return;
     document.getElementById("focused-world-command")?.focus({ preventScroll: true });

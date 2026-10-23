@@ -156,6 +156,11 @@ function currentLocation(includeNpcDescriptions = false) {
     }] : [],
     occupants: roomOccupants,
     exits: room === 'belfry' ? [{
+      id: 'belfry-to-roof',
+      label: 'Up to the roof',
+      direction: 'up',
+      available: true,
+    }, {
       id: 'belfry-to-tower',
       label: 'Down to the tower floor',
       direction: 'down',
@@ -814,6 +819,7 @@ beforeEach(() => {
       }
       if (moveError) return json({ message: moveError }, 409);
       const destinationByExitId: Record<string, typeof room> = {
+        'belfry-to-roof': 'belfry',
         'clearing-to-bridge': 'bridge',
         'bridge-to-clearing': 'clearing',
         'reedbank-to-bridge': 'bridge',
@@ -1327,6 +1333,42 @@ describe('single-character world session client', () => {
     expect(apiFetch.mock.calls.filter(([path]) => path === '/api/commands')).toHaveLength(0);
   });
 
+  it('uses arrow keys for cardinal movement but leaves command fields alone', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Enter a command' }), { key: 'ArrowUp' });
+    expect(screen.getByRole('heading', { name: 'Mossgate Clearing' })).toBeVisible();
+
+    fireEvent.keyDown(document, { key: 'ArrowUp' });
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    expect(history).toHaveTextContent('You travel north.');
+
+    fireEvent.keyDown(document, { key: 'ArrowDown' });
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    expect(history).toHaveTextContent('You travel south.');
+  });
+
+  it('maps Shift+Down to the vertical down direction and preserves ambiguous exit choices', async () => {
+    room = 'belfry';
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    const history = await screen.findByRole('region', { name: 'Terminal output' });
+
+    fireEvent.keyDown(document, { key: 'ArrowUp', shiftKey: true });
+    await waitFor(() => expect(history).toHaveTextContent('You travel up.'));
+    const upCommand = JSON.parse(
+      apiFetch.mock.calls.find(([path]) => path === '/api/commands')?.[1].body as string,
+    );
+    expect(upCommand.payload.exitId).toBe('belfry-to-roof');
+
+    fireEvent.keyDown(document, { key: 'ArrowDown', shiftKey: true });
+    const choices = await screen.findByRole('group', { name: 'Choose a destination' });
+    expect(within(choices).getByRole('button', { name: 'Down to the tower floor' })).toBeVisible();
+    expect(within(choices).getByRole('button', { name: 'Down into the Underhollow' })).toBeVisible();
+    expect(apiFetch.mock.calls.filter(([path]) => path === '/api/commands')).toHaveLength(1);
+  });
+
   it('shows Willowrest Inn and its Reedbank path only after traveling there', async () => {
     room = 'market';
     visitedLocationIds = ['mossgate-clearing', 'glasswater-bridge', 'reedbank-stalls'];
@@ -1344,7 +1386,7 @@ describe('single-character world session client', () => {
     expect(reedbankMarkerBeforeArrival).toBeDefined();
     expect(locationMarker('Willowrest Inn')).toBeUndefined();
 
-    quickGo('east');
+    fireEvent.keyDown(document, { key: 'ArrowRight' });
 
     await screen.findByRole('heading', { name: 'Willowrest Inn' });
     await waitFor(() => expect(map).toHaveTextContent('Willowrest Inn'));
@@ -1355,6 +1397,8 @@ describe('single-character world session client', () => {
     expect(map.querySelectorAll('.focused-world-map__path')).toHaveLength(3);
 
     expect(map.querySelectorAll('.focused-world-map__path')).toHaveLength(3);
+    fireEvent.keyDown(document, { key: 'ArrowLeft' });
+    await screen.findByRole('heading', { name: 'Reedbank Stalls' });
   });
 
   it('collapses the map and can still open it full screen', async () => {
