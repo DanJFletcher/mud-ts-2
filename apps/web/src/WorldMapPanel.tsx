@@ -32,6 +32,7 @@ type MapPanDrag = {
 };
 type MinimapOffset = Readonly<{ x: number; y: number }>;
 type MinimapRect = Readonly<{ left: number; top: number; width: number; height: number }>;
+type VerticalMapDirection = 'up' | 'down';
 type MinimapDrag = {
   pointerId: number;
   pointerX: number;
@@ -52,6 +53,24 @@ const MAX_MAP_ZOOM = 4;
 const MAP_ZOOM_FACTOR = 1.25;
 const MINIMAP_OFFSET_STORAGE_KEY = 'mudd.mobile-map-minimap-offset.v1';
 const MINIMAP_EDGE_GAP = 8;
+
+function orderedVerticalExits(directions: readonly VerticalMapDirection[]): VerticalMapDirection[] {
+  return (['up', 'down'] as const).filter((direction) => directions.includes(direction));
+}
+
+function verticalArrowPath(
+  screenX: number,
+  screenY: number,
+  direction: VerticalMapDirection,
+  stacked: boolean,
+): string {
+  const verticalOffset = stacked ? (direction === 'up' ? -3.5 : 3.5) : 0;
+  const centerY = screenY + verticalOffset;
+  const leftX = screenX - 3.5;
+  return direction === 'up'
+    ? `M ${leftX} ${centerY + 1.5} l 3.5 -3.5 3.5 3.5 Z`
+    : `M ${leftX} ${centerY - 1.5} l 3.5 3.5 3.5 -3.5 Z`;
+}
 
 function readMinimapOffset(): MinimapOffset {
   if (typeof window === 'undefined') return { x: 0, y: 0 };
@@ -596,6 +615,8 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
               {points.map((point) => {
                 const isCurrent = point.id === map?.currentLocationId;
                 const isSelected = point.id === focusedLocationId;
+                const verticalExits = orderedVerticalExits(point.verticalExits ?? []);
+                const stackVerticalExits = verticalExits.length === 2;
                 return (
                   <g
                     key={point.id}
@@ -638,13 +659,12 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
                       height={MAP_TILE_SIZE}
                       style={point.mapColor ? { fill: point.mapColor } : undefined}
                     />
-                    {(point.verticalExits ?? []).map((direction, index) => (
+                    {verticalExits.map((direction) => (
                       <path
                         key={`${point.id}-${direction}`}
                         className="focused-world-map__vertical-arrow"
-                        d={direction === 'up'
-                          ? `M ${point.screenX - 4 + index * 8} ${point.screenY + 2} l 4 -4 4 4 Z`
-                          : `M ${point.screenX - 4 + index * 8} ${point.screenY - 2} l 4 4 4 -4 Z`}
+                        data-direction={direction}
+                        d={verticalArrowPath(point.screenX, point.screenY, direction, stackVerticalExits)}
                         aria-hidden="true"
                       />
                     ))}
@@ -713,29 +733,32 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
               />
             );
           })}
-          {points.map((point) => (
-            <g
-              key={point.id}
-              className={point.id === map?.currentLocationId ? 'focused-world-map__minimap-point--current' : ''}
-            >
-              <rect
-                className={`focused-world-map__tile focused-world-map__tile--${point.terrain ?? 'land'}`}
-                x={point.screenX - MAP_TILE_SIZE / 2}
-                y={point.screenY - MAP_TILE_SIZE / 2}
-                width={MAP_TILE_SIZE}
-                height={MAP_TILE_SIZE}
-              />
-              {(point.verticalExits ?? []).map((direction, index) => (
-                <path
-                  key={`${point.id}-${direction}`}
-                  className="focused-world-map__vertical-arrow"
-                  d={direction === 'up'
-                    ? `M ${point.screenX - 4 + index * 8} ${point.screenY + 2} l 4 -4 4 4 Z`
-                    : `M ${point.screenX - 4 + index * 8} ${point.screenY - 2} l 4 4 4 -4 Z`}
+          {points.map((point) => {
+            const verticalExits = orderedVerticalExits(point.verticalExits ?? []);
+            const stackVerticalExits = verticalExits.length === 2;
+            return (
+              <g
+                key={point.id}
+                className={point.id === map?.currentLocationId ? 'focused-world-map__minimap-point--current' : ''}
+              >
+                <rect
+                  className={`focused-world-map__tile focused-world-map__tile--${point.terrain ?? 'land'}`}
+                  x={point.screenX - MAP_TILE_SIZE / 2}
+                  y={point.screenY - MAP_TILE_SIZE / 2}
+                  width={MAP_TILE_SIZE}
+                  height={MAP_TILE_SIZE}
                 />
-              ))}
-            </g>
-          ))}
+                {verticalExits.map((direction) => (
+                  <path
+                    key={`${point.id}-${direction}`}
+                    className="focused-world-map__vertical-arrow"
+                    data-direction={direction}
+                    d={verticalArrowPath(point.screenX, point.screenY, direction, stackVerticalExits)}
+                  />
+                ))}
+              </g>
+            );
+          })}
         </svg>
       ) : (
         <span className="focused-world-map__minimap-empty">Map</span>

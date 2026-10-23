@@ -38,7 +38,67 @@ const denseMap: WorldMapProjection = {
   ],
 };
 
+function arrowYBounds(path: SVGElement): Readonly<{ top: number; bottom: number }> {
+  const values = path.getAttribute('d')?.match(/-?\d+(?:\.\d+)?/g)?.map(Number) ?? [];
+  const start = values[1] ?? 0;
+  const second = start + (values[3] ?? 0);
+  const third = second + (values[5] ?? 0);
+  return { top: Math.min(start, second, third), bottom: Math.max(start, second, third) };
+}
+
 describe('map switching between floors', () => {
+  it('stacks up above down inside a location square with a visible gap', () => {
+    const churchMap: WorldMapProjection = {
+      worldInstanceId: 'world',
+      packId: 'pack',
+      packVersion: '1.0.0',
+      currentLocationId: 'church',
+      locationGroups: [],
+      locations: [{
+        id: 'church',
+        name: 'Abandoned Church',
+        shortName: 'Church',
+        qualifiedName: 'Abandoned Church',
+        locationGroupIds: [],
+        x: 0,
+        y: 0,
+        terrain: 'building',
+        verticalExits: ['down', 'up'],
+      }],
+      connections: [],
+    };
+    const { container } = render(
+      <WorldMapPanel map={churchMap} fullscreen={false} onFullscreenChange={vi.fn()} />,
+    );
+    const svg = screen.getByRole('group', { name: 'Directional map of visited locations' });
+    const church = within(svg).getByRole('button', {
+      name: 'Focus Abandoned Church on map, current location',
+    });
+    const up = church.querySelector<SVGElement>('[data-direction="up"]');
+    const down = church.querySelector<SVGElement>('[data-direction="down"]');
+    const tile = church.querySelector<SVGRectElement>('.focused-world-map__tile');
+
+    expect(up).not.toBeNull();
+    expect(down).not.toBeNull();
+    expect(tile).not.toBeNull();
+    const upBounds = arrowYBounds(up!);
+    const downBounds = arrowYBounds(down!);
+    const tileTop = Number(tile!.getAttribute('y'));
+    const tileBottom = tileTop + Number(tile!.getAttribute('height'));
+    expect(upBounds.bottom).toBeLessThan(downBounds.top);
+    expect(upBounds.top).toBeGreaterThan(tileTop);
+    expect(downBounds.bottom).toBeLessThan(tileBottom);
+
+    const minimap = container.querySelector('.focused-world-map__minimap-svg');
+    if (minimap) {
+      const miniUp = minimap.querySelector<SVGElement>('[data-direction="up"]');
+      const miniDown = minimap.querySelector<SVGElement>('[data-direction="down"]');
+      expect(miniUp).not.toBeNull();
+      expect(miniDown).not.toBeNull();
+      expect(arrowYBounds(miniUp!).bottom).toBeLessThan(arrowYBounds(miniDown!).top);
+    }
+  });
+
   it('renders a northward exit above the current room', () => {
     const map: WorldMapProjection = {
       worldInstanceId: 'world',
