@@ -17,6 +17,7 @@ import {
   worldItemsPlugin,
 } from '@mudd/core-plugins';
 import { ORRAVETH_WORLD_INSTANCE_ID, orravethWorld } from '@mudd/world-orraveth';
+import { demoWorld } from '@mudd/world-demo';
 import {
   createAutonomousNpcScheduler,
 } from './autonomous-npc-scheduler.js';
@@ -769,5 +770,25 @@ describe('Orraveth Bellwold settlement', () => {
     } finally {
       await h.engine.stop();
     }
+  });
+
+  it('keeps NPC look text observable while preserving background in supported interactions', () => {
+    const npcs = [
+      ...orravethWorld.locations.flatMap((location) => location.npcs ?? []),
+      ...demoWorld.locations.flatMap((location) => location.npcs ?? []),
+    ];
+    const biographyOrMotive = /\b(?:runs? the shop|keeps the Kindly Roof|keeps her observations close|wants?|works? (?:at|as)|builds?|repairs?|weaves?|mends?|tends?|takes on|studies? the old tower)\b/i;
+
+    expect(npcs.length).toBeGreaterThan(0);
+    for (const npc of npcs) {
+      expect(npc.description, `${npc.name} look description`).not.toMatch(biographyOrMotive);
+    }
+
+    const findNpc = (id: string) => npcs.find((npc) => npc.id === id);
+    expect(findNpc('anwen-marr')?.greeting).toContain('shop');
+    expect(findNpc('mara-waykeeper')?.greeting).toContain('keep the paths');
+    expect(findNpc('edda-bellwright')?.greeting).toContain('repair bells');
+    expect(JSON.stringify(findNpc('nim-fernshade')?.dialogue)).toContain('Fernshade fronds');
+    expect(findNpc('talla-sedgewatch')?.greeting).toContain('thatch roofs with reeds');
   });
 });

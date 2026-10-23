@@ -30,7 +30,7 @@ const draft = {
         {
           id: 'linnet-reed',
           name: 'Linnet Reed',
-          description: 'Linnet Reed is a Bellwold villager on foot between the market, the well, and the settlement’s shared spaces.',
+          description: 'A villager crosses the square at an easy pace, glancing between the market stalls and the road to the well.',
           activityDescription: 'walking between the market and shared spaces',
           greeting: '“I was headed to the well. Or the square. I’ll know when I get there.”',
           topics: [
@@ -66,7 +66,7 @@ const draft = {
         {
           id: 'taren-voss',
           name: 'Taren Voss',
-          description: 'Taren Voss is a Bellwold watch guard, keeping an eye on the road, the square, and the southern public lanes.',
+          description: 'A guard in a weathered coat stands near the square’s edge, scanning the road and nearby crossings.',
           activityDescription: 'watching the square and the road',
           greeting: '“Keep the road clear and let people pass. That is most of the work.”',
           topics: [
@@ -117,7 +117,7 @@ const draft = {
         {
           id: 'tomas-innkeeper',
           name: 'Tomas',
-          description: 'Tomas keeps the Kindly Roof. He gives each traveler his attention, but weighs a story before passing it on.',
+          description: 'Behind the common-room counter, Tomas turns from one traveler to the next, listening as low voices drift around the tables.',
           activityDescription: 'listening to travelers in the common room',
           greeting: '“Come in and warm yourself. If you want the road news, ask who saw it and when.”',
           topics: [
@@ -179,9 +179,9 @@ const draft = {
         {
           id: 'anwen-marr',
           name: 'Anwen Marr',
-          description: 'Anwen Marr runs the shop. She checks each measure carefully and keeps her observations close at hand.',
+          description: 'A brass weight rests in Anwen Marr’s palm as she studies the balance scale and makes a note in an open ledger.',
           activityDescription: 'checking a measure beside her ledger',
-          greeting: '“Welcome. If you want to understand a thing, start with what it does—not with what you hope it means.”',
+          greeting: '“Welcome to my shop. If you want to understand a thing, start with what it does—not with what you hope it means.”',
           topics: [
             { id: 'age-of-measures', keywords: ['Age of Measures', 'Glass Collegium', 'natural philosophers'], response: '“People call this the Age of Measures. Scholars are testing the physical world and Resonance with instruments. A repeatable result matters, but it still does not explain itself.”' },
             { id: 'scale', keywords: ['scale', 'measure', 'measurement'], response: '“The readings are repeatable often enough to trouble me. That does not tell us what causes them.”' },
@@ -265,7 +265,7 @@ const draft = {
         {
           id: 'ilya-fen',
           name: 'Ilya Fen',
-          description: 'Ilya Fen tends Bellwold’s Green Mortar, sorting local plants and practical care from claims that have not been tested.',
+          description: 'Ilya sorts dried leaves into shallow trays beside a bowl and a stack of folded cloth.',
           activityDescription: 'sorting plants at her workbench',
           greeting: '“Tell me what you noticed and when. A careful account is a better beginning than a guess.”',
           topics: [
@@ -290,7 +290,7 @@ const draft = {
         {
           id: 'darric-holt',
           name: 'Darric Holt',
-          description: 'Darric Holt works at the forge, repairing tools and fittings used around the settlement.',
+          description: 'Darric turns a half-mended iron fitting beside the forge, coal smoke darkening the sleeve of his work shirt.',
           activityDescription: 'repairing a farm fitting at the forge',
           greeting: '“If something is broken, show me where it failed. If it is only a rumor, I have work to finish.”',
           topics: [
@@ -339,7 +339,7 @@ const draft = {
         {
           id: 'rell-soven',
           name: 'Rell Soven',
-          description: 'Rell Soven builds and repairs wheels, axles, and wooden fittings for Bellwold’s carts.',
+          description: 'Rell turns a cart wheel by its rim, pausing to watch it wobble against the wooden frame.',
           activityDescription: 'checking a cart axle',
           greeting: '“A wheel tells you where it is failing if you watch it turn.”',
           topics: [
@@ -364,7 +364,7 @@ const draft = {
         {
           id: 'seli-tor',
           name: 'Seli Tor',
-          description: 'Seli Tor weaves and mends cloth at home, taking on work from neighbors when the loom is free.',
+          description: 'Seli draws a pale thread taut through a strip of cloth at the loom by the window.',
           activityDescription: 'weaving cloth at her loom',
           greeting: '“Mind the loose thread by the door. It has already caught two sleeves today.”',
           topics: [
@@ -397,7 +397,7 @@ const draft = {
         {
           id: 'aven-rusk',
           name: 'Aven Rusk',
-          description: 'Aven Rusk keeps the grain house’s records and checks that the stored sacks remain dry and accounted for.',
+          description: 'Aven checks the chalk marks on a grain bin, then writes in a narrow ledger.',
           activityDescription: 'checking the grain tally',
           greeting: '“If you need the store, tell me what you are looking for. I keep the tally, not the harvest.”',
           topics: [
@@ -423,7 +423,7 @@ const draft = {
         {
           id: 'enna-pell',
           name: 'Enna Pell',
-          description: 'Enna Pell keeps the Common House notices and copies agreed decisions into the village record book.',
+          description: 'Enna bends over an open record book, copying a line from one of the notices on the wall.',
           activityDescription: 'copying a notice into the village record book',
           greeting: '“The notes are public. If something is missing, tell me what you saw and when.”',
           topics: [

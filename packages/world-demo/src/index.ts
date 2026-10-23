@@ -145,9 +145,9 @@ const draft = {
         {
           id: 'mara-waykeeper',
           name: 'Mara',
-          description: 'A path keeper stands beside the weathered marker, watching the northern trail.',
+          description: 'Mara stands beside the weathered marker, one hand resting on its rain-smoothed edge as she watches the northern trail.',
           activityDescription: 'watching the northern trail',
-          greeting: 'The north bridge is open. The marker points east toward the western approach to the Old Bell Tower.',
+          greeting: 'I keep the paths around here. The north bridge is open, and the marker points east toward the western approach to the Old Bell Tower.',
           dialogue: {
             prompt: 'The old paths still have their stories. What would you like to ask?',
             questResponses: [
@@ -403,7 +403,7 @@ const draft = {
         {
           id: 'edda-bellwright',
           name: 'Edda',
-          description: 'A bellwright with a grease-stained ledger studies the old tower; she wants to hear whether its cracked bell can still be tuned.',
+          description: 'Edda studies a grease-stained ledger, tracing one line with a soot-darkened finger.',
           activityDescription: 'studying a grease-stained ledger',
           greeting: 'I repair bells. This one may still know the way below.',
           dialogue: {
@@ -1242,7 +1242,7 @@ const draft = {
         {
           id: 'sella-reedbank-merchant',
           name: 'Sella',
-          description: 'A careful trader sorts travel goods into a neat row beneath a green awning.',
+          description: 'Sella sorts travel goods into a neat row beneath a green awning.',
           activityDescription: 'sorting travel goods beneath a green awning',
           greeting: 'Welcome to Reedbank. Look over the goods, and ask if you need the price explained.',
           topics: [
@@ -1341,7 +1341,7 @@ const draft = {
         {
           id: 'nim-fernshade',
           name: 'Nim',
-          description: 'A basket-maker sorts long fern fronds beside the cottage hearth, setting the sound ones apart from the brittle.',
+          description: 'Nim sorts long fern fronds beside the cottage hearth, setting the sound ones apart from the brittle.',
           activityDescription: 'sorting fern fronds beside the cottage hearth',
           greeting: 'Mind the drying fronds by the door. They take a full day to soften.',
           dialogue: {
@@ -1421,9 +1421,9 @@ const draft = {
         {
           id: 'talla-sedgewatch',
           name: 'Talla',
-          description: 'A reed thatcher ties roof bundles beside a small stone gauge, checking each reed for damp.',
+          description: 'Talla ties roof bundles beside a small stone gauge, checking a reed for damp.',
           activityDescription: 'checking a reed bundle for damp',
-          greeting: 'The river has been rising. I need to know whether it has reached the high notch beneath the bridge.',
+          greeting: 'I thatch roofs with reeds. The river has been rising, and I need to know whether it has reached the high notch beneath the bridge.',
           dialogue: {
             prompt: 'Talla looks up from the reeds. What would you like to ask?',
             questResponses: [
