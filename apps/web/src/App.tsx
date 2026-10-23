@@ -378,6 +378,7 @@ export function WorldClient({
     if (!location || lastRoomLookIdRef.current === location.locationId) return;
     lastRoomLookIdRef.current = location.locationId;
     addEntry("system", "> look");
+    addEntry("location", location.title);
     addEntry("narration", location.description);
   }, [addEntry]);
 
@@ -669,6 +670,7 @@ export function WorldClient({
       );
       setSnapshot((current) => current ? { ...current, location } : current);
       if (!target) {
+        addEntry("location", location.title);
         addEntry("narration", location.description);
         return;
       }

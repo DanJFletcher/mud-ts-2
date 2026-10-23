@@ -1122,7 +1122,8 @@ describe('single-character world session client', () => {
     const onLeaveWorld = vi.fn().mockResolvedValue(undefined);
     characterHealth = { current: 5, maximum: 6 };
     render(<WorldClient onLeaveWorld={onLeaveWorld} />);
-    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const roomHeading = await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    expect(roomHeading).toHaveClass('mudd-visually-hidden');
     const history = screen.getByRole('region', { name: 'Terminal output' });
     expect(history).toHaveTextContent('> look');
     await waitFor(() => {
@@ -1130,6 +1131,11 @@ describe('single-character world session client', () => {
         'A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east. One loose stone bears a pale stripe.',
       );
     });
+    const initialTranscript = history.textContent ?? '';
+    expect(initialTranscript.indexOf('Mossgate Clearing')).toBeLessThan(
+      initialTranscript.indexOf('A circle of pale stones breaks through the moss.'),
+    );
+    expect(within(history).getByText('Mossgate Clearing')).toHaveClass('mudd-log__entry--location');
     expect(history).not.toHaveTextContent('A path keeper stands beside the weathered marker');
     expect(screen.queryByText(/World activity|\b\d+\s+events?\b/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Look around' })).not.toBeInTheDocument();
@@ -1779,6 +1785,7 @@ describe('single-character world session client', () => {
 
     await waitFor(() => {
       expect(screen.getAllByText('> look')).toHaveLength(2);
+      expect(within(history).getAllByText('Mossgate Clearing')).toHaveLength(2);
       expect(
         history.textContent?.match(/A circle of pale stones breaks through the moss\./g),
       ).toHaveLength(2);

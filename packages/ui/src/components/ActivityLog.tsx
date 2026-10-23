@@ -1,6 +1,6 @@
 export interface ActivityEntry {
   id: string;
-  kind: 'narration' | 'system' | 'error';
+  kind: 'narration' | 'location' | 'system' | 'error';
   text: string;
 }
 

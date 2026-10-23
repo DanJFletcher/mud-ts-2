@@ -167,10 +167,17 @@
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
   padding: 9px 17px;
   border-bottom: 1px solid var(--terminal-border);
+}
+
+@media (max-width: 699px) {
+  .focused-terminal-room {
+    padding: 0;
+    border-bottom: 0;
+  }
 }
 
 .focused-terminal-location {
@@ -405,6 +412,13 @@
 .focused-terminal-history .mudd-log__entry--system {
   border-color: var(--terminal-warm);
   color: var(--terminal-muted);
+}
+
+.focused-terminal-history .mudd-log__entry--location {
+  border-color: var(--terminal-warm);
+  color: var(--terminal-warm);
+  font-size: .84rem;
+  font-weight: 600;
 }
 
 .focused-terminal-history .mudd-log__entry--error {

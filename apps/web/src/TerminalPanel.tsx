@@ -133,7 +133,7 @@ export function TerminalPanel({ title, busy, children, expandRequest = 0, mobile
       onTouchCancel={() => { touchStartRef.current = null; }}
     >
       <div className="focused-terminal-room">
-        <h1 className="focused-terminal-location">{title}</h1>
+        <h1 className="focused-terminal-location mudd-visually-hidden">{title}</h1>
         {!mobileViewport && !fullscreenPresent && (
           <DisclosureButton
             className="focused-terminal-toggle"
