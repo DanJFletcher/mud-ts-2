@@ -1350,14 +1350,14 @@
   .focused-world-map__minimap {
     position: fixed;
     z-index: 30;
-    top: calc(env(safe-area-inset-top) + 8px);
-    right: 10px;
+    top: 0;
+    right: 0;
     display: grid;
     width: clamp(80px, 24vw, 96px);
     aspect-ratio: 1 / 1;
     place-items: center;
     overflow: hidden;
-    padding: 4px;
+    padding: 0;
     border: 1px solid color-mix(in srgb, var(--mudd-border) 55%, transparent);
     border-radius: 3px;
     background: rgb(23 25 27 / 58%);
