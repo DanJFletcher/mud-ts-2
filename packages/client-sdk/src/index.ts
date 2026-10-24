@@ -73,6 +73,8 @@ import {
   type TeamCombatInfoProjection,
 } from '@mudd/contracts';
 import { z } from 'zod';
+import { MuddRealtimeTransport } from './realtime.js';
+export { MuddRealtimeTransport } from './realtime.js';
 
 export const GameSnapshotSchema = z.object({
   dailyActivities: z.object({
@@ -158,13 +160,23 @@ export class MuddHttpError extends Error {
 
 export class MuddHttpClient {
   private readonly fetcher: typeof fetch;
+  private realtime: MuddRealtimeTransport;
 
   constructor(private readonly options: ClientOptions) {
     this.fetcher = options.fetcher ?? fetch.bind(globalThis);
+    this.realtime = new MuddRealtimeTransport(() => {
+      const url = new URL(`${this.options.basePath?.replace(/\/$/, '') ?? ''}/api/realtime`, globalThis.location.origin);
+      url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+      url.searchParams.set('world', this.options.worldInstanceId);
+      return url.toString();
+    }, () => this.options.worldInstanceId);
   }
+  watchRealtime(...args: Parameters<MuddRealtimeTransport['watch']>) { return this.realtime.watch(...args); }
+  get realtimeConnectionState() { return this.realtime.connectionState; }
 
   setWorldInstanceId(worldInstanceId: string): void {
     if (!worldInstanceId.trim()) throw new Error('Choose a valid world.');
+    this.realtime.dispose();
     this.options.worldInstanceId = worldInstanceId;
   }
 

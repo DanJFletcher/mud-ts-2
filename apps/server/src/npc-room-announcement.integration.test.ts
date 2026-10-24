@@ -180,6 +180,7 @@ vi.mock('@mudd/core-plugins', () => ({
   interactionPlugin: {},
   interactionStreamId: (worldInstanceId: string) => `world-interactions:${worldInstanceId}`,
   projectInteractionEvents: () => ({ requests: [], latestEncounterEvent: undefined }),
+  projectCharacterInteractions: () => ({ requests: [], encounter: null }),
   updateInteractionRequestStatus: async () => false,
   movementPlugin: {},
   roadTravelPlugin: {},
@@ -283,6 +284,15 @@ vi.mock('./autonomous-npc-scheduler.js', () => ({
     stop: vi.fn(),
     tick: vi.fn(),
   }),
+}));
+
+// This HTTP routing fixture does not model recovery histories/heartbeats.
+// Recovery has its own clock-driven tests.
+vi.mock('./stamina-recovery-scheduler.js', () => ({
+  createStaminaRecoveryScheduler: () => ({ start: vi.fn(), stop: vi.fn(), tick: vi.fn() }),
+}));
+vi.mock('./realtime-notifications.js', () => ({
+  startRealtimeNotifications: () => vi.fn(),
 }));
 
 vi.mock('./npc-announcer.js', async (importOriginal) => {
@@ -638,6 +648,7 @@ vi.mock('./middlewares/clerkProxyMiddleware.js', () => ({
 
 vi.mock('./persistence/postgres-event-store.js', () => ({
   PostgresEventStore: class {
+    async rebuildRoomStates() {}
     async readStream(_worldInstanceId: string, characterId: string) {
       return state.characters[characterId as keyof typeof state.characters] ?? null;
     }

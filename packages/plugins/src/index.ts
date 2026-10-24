@@ -1,4 +1,5 @@
 export { dailyJobsPlugin } from './daily-jobs.js';
+export { projectGroupActivity } from './groups.js';
 export * from './classes.js';
 export { characterPlugin } from './character.js';
 export { movementPlugin } from './movement.js';
@@ -15,7 +16,7 @@ export { roadTravelPlugin } from './road-travel.js';
 export { npcDialoguePlugin } from './npc-dialogue.js';
 export { merchantPlugin } from './merchant.js';
 export { combatPlugin } from './combat.js';
-export { interactionPlugin } from './interactions.js';
+export { interactionPlugin, projectCharacterInteractions } from './interactions.js';
 export { groupsPlugin, groupsStateCapability, projectGroups, GROUPS_STREAM_ID } from './groups.js';
 export { partyPlugin, partyStateCapability } from './parties.js';
 export { partyQuestPlugin, partyQuestStreamId } from './party-quests.js';

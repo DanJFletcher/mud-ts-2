@@ -22,7 +22,7 @@ import {
   type CharacterProjection,
 } from '@mudd/contracts';
 import type { CommandPlan, EngineCommandContext, EnginePlugin, EventEffectContext, ProposedDomainEvent, ProposedEventEffect, StreamGuard } from '@mudd/engine-core';
-import { replayCharacter, RuleViolationError, SYSTEM_ACTOR_ID } from '@mudd/engine-core';
+import { replayCharacter, RuleViolationError, SYSTEM_ACTOR_ID, createIncrementalProjection } from '@mudd/engine-core';
 import {
   assertCharacterAlive,
   assertCharacterStanding,
@@ -51,11 +51,13 @@ type CombatEvent = {
   payload: unknown;
 };
 
-function project(events: readonly { type: string; version: number; payload: unknown }[]) {
-  const encounters = new Map<string, TeamCombatEncounter>();
-  const roadTravelByEncounter = new Map<string, TeamRoadTravelSnapshot>();
-  let revision = 0;
-  for (const stored of events) {
+const projectCombat = createIncrementalProjection(
+  () => ({ encounters: new Map<string, TeamCombatEncounter>(),
+    roadTravelByEncounter: new Map<string, TeamRoadTravelSnapshot>(),
+    latestByCharacter: new Map<string, TeamCombatEncounter>(), revision: 0 }),
+  (state, stored: CombatEvent) => {
+    const { encounters, roadTravelByEncounter } = state;
+    let latest: TeamCombatEncounter | undefined;
     const event: CombatEvent = {
       type: stored.type,
       version: stored.version,
@@ -63,21 +65,31 @@ function project(events: readonly { type: string; version: number; payload: unkn
     };
     if (event.type === 'team.road_encounter_started') {
       const parsed = TeamRoadEncounterStartedEventSchema.parse(event);
+      latest = parsed.payload.encounter;
       encounters.delete(parsed.payload.encounter.encounterId);
       encounters.set(parsed.payload.encounter.encounterId, parsed.payload.encounter);
       roadTravelByEncounter.set(parsed.payload.encounter.encounterId, parsed.payload.roadTravel);
     } else if (event.type === 'team.combat_started') {
       const parsed = TeamCombatStartedEventSchema.parse(event);
+      latest = parsed.payload.encounter;
       encounters.delete(parsed.payload.encounter.encounterId);
       encounters.set(parsed.payload.encounter.encounterId, parsed.payload.encounter);
     } else if (event.type === 'team.combat_action_resolved') {
       const parsed = TeamCombatActionResolvedEventSchema.parse(event);
+      latest = parsed.payload.encounter;
       encounters.delete(parsed.payload.encounter.encounterId);
       encounters.set(parsed.payload.encounter.encounterId, parsed.payload.encounter);
     }
-    revision += 1;
-  }
-  return { encounters: [...encounters.values()], roadTravelByEncounter, revision };
+    if (latest) for (const participant of latest.participants) {
+      if (participant.characterId) state.latestByCharacter.set(participant.characterId, latest);
+    }
+    state.revision += 1;
+  },
+);
+function project(events: readonly CombatEvent[]) {
+  const state = projectCombat(events);
+  return { encounters: [...state.encounters.values()],
+    roadTravelByEncounter: state.roadTravelByEncounter, revision: state.revision };
 }
 
 function encounterFor(events: ReturnType<typeof project>['encounters'], characterId: string) {
@@ -843,14 +855,12 @@ export const teamCombatPlugin: EnginePlugin = {
     });
 
     registerQuery('team.combat.info', TeamCombatInfoQuerySchema, async (query, context) => {
-      const state = project(await context.store.readStream(context.worldInstanceId, STREAM_ID));
-      const encounter = encounterFor(state.encounters, query.characterId);
-      return TeamCombatInfoProjectionSchema.parse({
-        encounter,
-        ...(encounter && state.roadTravelByEncounter.has(encounter.encounterId)
-          ? { roadTravel: state.roadTravelByEncounter.get(encounter.encounterId) }
-          : {}),
-      });
+      const events = await context.store.readStream(context.worldInstanceId, STREAM_ID);
+      return TeamCombatInfoProjectionSchema.parse(projectCombat.select(events, (state) => {
+        const encounter = state.latestByCharacter.get(query.characterId) ?? null;
+        return { encounter, ...(encounter && state.roadTravelByEncounter.has(encounter.encounterId)
+          ? { roadTravel: state.roadTravelByEncounter.get(encounter.encounterId) } : {}) };
+      }));
     });
 
     registerEffect(

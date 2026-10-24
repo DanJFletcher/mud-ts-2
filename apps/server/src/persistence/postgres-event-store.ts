@@ -7,9 +7,9 @@ import type {
   StoredEventEffect,
   StoredGameEvent,
 } from '@mudd/engine-core';
-import { characters, commandReceipts, durableEffects, gameEvents, worldSessions } from '../db/schema.js';
+import { characters, commandReceipts, durableEffects, gameEvents, worldSessions, roomCharacterStates } from '../db/schema.js';
 import { db } from '../db/client.js';
-import { retainCharacterReplayPrefix } from '@mudd/engine-core';
+import { retainCharacterReplayPrefix, replayCharacter } from '@mudd/engine-core';
 
 export function toStoredGameEvent(row: typeof gameEvents.$inferSelect): StoredGameEvent {
   return {
@@ -54,6 +54,70 @@ function conflict(
 }
 
 export class PostgresEventStore implements EventStorePort {
+  private async refreshRoomState(
+    tx: Pick<typeof db, 'select' | 'insert'>,
+    worldInstanceId: string,
+    streamId: string,
+  ) {
+    // Only character aggregates participate. Shared streams are text IDs.
+    if (!/^[0-9a-f-]{36}$/i.test(streamId)) return;
+    const [character] = await tx.select({ id: characters.id }).from(characters)
+      .where(and(eq(characters.id, streamId), eq(characters.worldInstanceId, worldInstanceId))).limit(1);
+    if (!character) return;
+    const cached = this.streamCache.get(this.streamKey(worldInstanceId, streamId));
+    const tail = (await tx.select().from(gameEvents).where(and(
+      eq(gameEvents.worldInstanceId, worldInstanceId), eq(gameEvents.streamId, streamId),
+      ...(cached ? [sql`${gameEvents.streamVersion} > ${cached.revision}`] : []),
+    )).orderBy(asc(gameEvents.streamVersion))).map(toStoredGameEvent);
+    const history = cached ? [...cached.events, ...tail] : tail;
+    retainCharacterReplayPrefix(history, cached?.events);
+    const state = replayCharacter(history);
+    if (!state) throw new Error('Character room projection requires creation history.');
+    const values = {
+      characterId: streamId, worldInstanceId, locationId: state.locationId,
+      revision: state.revision, schemaVersion: 1,
+      state: {
+        characterId: streamId, worldInstanceId, locationId: state.locationId,
+        name: state.name, archived: state.archived,
+        ...(state.health ? { health: state.health } : {}),
+        ...(state.combat ? { combat: { status: state.combat.status } } : {}),
+      },
+    };
+    await tx.insert(roomCharacterStates).values(values)
+      .onConflictDoUpdate({ target: roomCharacterStates.characterId, set: values });
+  }
+
+  /** Resumable, serialized backfill before accepting traffic; histories stay intact. */
+  async rebuildRoomStates(worldInstanceId?: string, characterId?: string) {
+    const rows = await db.select({ id: characters.id, world: characters.worldInstanceId }).from(characters)
+      .where(and(
+        worldInstanceId ? eq(characters.worldInstanceId, worldInstanceId) : undefined,
+        characterId ? eq(characters.id, characterId) : undefined,
+        sql`NOT EXISTS (
+          SELECT 1 FROM room_character_states r
+          WHERE r.character_id = characters.id AND r.world_instance_id = characters.world_instance_id
+            AND r.schema_version = 1 AND r.revision = COALESCE((
+              SELECT e.stream_version FROM game_events e
+              WHERE e.world_instance_id = characters.world_instance_id
+                AND e.stream_id = characters.id::text
+              ORDER BY e.stream_version DESC LIMIT 1
+            ), 0)
+        )`,
+      ));
+    for (const row of rows) {
+      await db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${row.world}), hashtext(${row.id}))`);
+        const [head] = await tx.select({ revision: gameEvents.streamVersion }).from(gameEvents)
+          .where(and(eq(gameEvents.worldInstanceId, row.world), eq(gameEvents.streamId, row.id)))
+          .orderBy(desc(gameEvents.streamVersion)).limit(1);
+        const [projection] = await tx.select().from(roomCharacterStates)
+          .where(eq(roomCharacterStates.characterId, row.id)).limit(1);
+        if (projection?.revision === (head?.revision ?? 0) && projection?.schemaVersion === 1) return;
+        await this.refreshRoomState(tx, row.world, row.id);
+      });
+    }
+  }
+
   private readonly streamCache = new Map<string, {
     readonly revision: number;
     readonly events: readonly StoredGameEvent[];
@@ -336,6 +400,9 @@ export class PostgresEventStore implements EventStorePort {
         }
       }
 
+      for (const streamId of writeIds) {
+        await this.refreshRoomState(tx, request.worldInstanceId, streamId);
+      }
       const receipt: Extract<CommandReceipt, { ok: true }> = {
         ok: true,
         commandId: request.commandId,

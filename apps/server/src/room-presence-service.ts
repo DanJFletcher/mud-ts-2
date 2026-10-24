@@ -1,9 +1,17 @@
-import { and, desc, eq, gte, ne } from 'drizzle-orm';
+import { and, desc, eq, gte, ne, sql } from 'drizzle-orm';
 import type { EventStorePort } from '@mudd/engine-core';
-import { replayCharacter } from '@mudd/engine-core';
 import { db } from './db/client.js';
-import { worldSessions } from './db/schema.js';
+import { worldSessions, roomCharacterStates } from './db/schema.js';
 import { projectRoomOccupants, ROOM_PRESENCE_TTL_MS } from './room-presence-projection.js';
+
+// Fail closed during mixed-version rollout if an older writer bypassed the
+// read model. The covering stream index makes this a bounded head check.
+const currentRoomState = sql`${roomCharacterStates.revision} = (
+  SELECT e.stream_version FROM game_events e
+  WHERE e.world_instance_id = ${roomCharacterStates.worldInstanceId}
+    AND e.stream_id = ${roomCharacterStates.characterId}::text
+  ORDER BY e.stream_version DESC LIMIT 1
+)`;
 
 export async function touchWorldSessionPresence(
   playerId: string,
@@ -23,7 +31,7 @@ export async function touchWorldSessionPresence(
 }
 
 export async function listRoomOccupants(
-  store: Pick<EventStorePort, 'readStream'>,
+  _store: Pick<EventStorePort, 'readStream'>,
   worldInstanceId: string,
   locationId: string,
   viewerCharacterId: string,
@@ -33,15 +41,19 @@ export async function listRoomOccupants(
     worldInstanceId: worldSessions.worldInstanceId,
     characterId: worldSessions.characterId,
     lastSeenAt: worldSessions.lastSeenAt,
-  }).from(worldSessions).where(and(
+    character: roomCharacterStates.state,
+  }).from(worldSessions).innerJoin(roomCharacterStates, and(
+    eq(worldSessions.characterId, roomCharacterStates.characterId),
+    eq(worldSessions.worldInstanceId, roomCharacterStates.worldInstanceId),
+  )).where(and(
+    eq(roomCharacterStates.locationId, locationId),
+    eq(roomCharacterStates.schemaVersion, 1),
+    currentRoomState,
     eq(worldSessions.worldInstanceId, worldInstanceId),
     ne(worldSessions.characterId, viewerCharacterId),
     gte(worldSessions.lastSeenAt, new Date(now.getTime() - ROOM_PRESENCE_TTL_MS)),
   ));
-  const candidates = await Promise.all(sessions.map(async (session) => ({
-    ...session,
-    character: replayCharacter(await store.readStream(worldInstanceId, session.characterId)),
-  })));
+  const candidates = sessions;
   return projectRoomOccupants({
     candidates,
     worldInstanceId,
@@ -52,7 +64,7 @@ export async function listRoomOccupants(
 }
 
 export async function listActiveRoomCharacters(
-  store: Pick<EventStorePort, 'readStream'>,
+  _store: Pick<EventStorePort, 'readStream'>,
   worldInstanceId: string,
   locationId: string,
   now = new Date(),
@@ -62,15 +74,19 @@ export async function listActiveRoomCharacters(
     worldInstanceId: worldSessions.worldInstanceId,
     characterId: worldSessions.characterId,
     lastSeenAt: worldSessions.lastSeenAt,
-  }).from(worldSessions).where(and(
+    character: roomCharacterStates.state,
+  }).from(worldSessions).innerJoin(roomCharacterStates, and(
+    eq(worldSessions.characterId, roomCharacterStates.characterId),
+    eq(worldSessions.worldInstanceId, roomCharacterStates.worldInstanceId),
+  )).where(and(
+    eq(roomCharacterStates.locationId, locationId),
+    eq(roomCharacterStates.schemaVersion, 1),
+    currentRoomState,
     eq(worldSessions.worldInstanceId, worldInstanceId),
     gte(worldSessions.lastSeenAt, new Date(now.getTime() - ROOM_PRESENCE_TTL_MS)),
   )).orderBy(desc(worldSessions.lastSeenAt));
 
-  const candidates = await Promise.all(sessions.map(async (session) => ({
-    ...session,
-    character: replayCharacter(await store.readStream(worldInstanceId, session.characterId)),
-  })));
+  const candidates = sessions;
 
   const activeByPlayer = new Map<string, {
     playerId: string;

@@ -57,6 +57,14 @@ type ReplayCheckpoint = {
 const checkpoints = new WeakMap<readonly StoredGameEvent[], ReplayCheckpoint>();
 const prefixes = new WeakMap<readonly StoredGameEvent[], ReplayCheckpoint>();
 const immutableHistories = new WeakSet<readonly StoredGameEvent[]>();
+const historyParents = new WeakMap<readonly StoredGameEvent[], WeakRef<readonly StoredGameEvent[]>>();
+export function immutableReplayParent(events: readonly unknown[]): readonly StoredGameEvent[] | undefined {
+  return historyParents.get(events as readonly StoredGameEvent[])?.deref();
+}
+/** Only adapter-registered histories may participate in incremental projections. */
+export function isImmutableReplayHistory(events: readonly unknown[]): boolean {
+  return immutableHistories.has(events as readonly StoredGameEvent[]);
+}
 function freezeHistoryValue(value: unknown): void {
   if (!value || typeof value !== 'object' || Object.isFrozen(value)) return;
   for (const nested of Object.values(value)) freezeHistoryValue(nested);
@@ -71,6 +79,7 @@ export function retainCharacterReplayPrefix(
   if (immutableHistories.has(next)) return;
   const hasPrefix = previous && immutableHistories.has(previous) && next.length > previous.length &&
     next[previous.length - 1] === previous.at(-1);
+  if (hasPrefix) historyParents.set(next, new WeakRef(previous));
   for (let i = hasPrefix ? previous.length : 0; i < next.length; i++) freezeHistoryValue(next[i]);
   Object.freeze(next);
   immutableHistories.add(next);

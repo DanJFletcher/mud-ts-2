@@ -8,8 +8,8 @@ export type RoomPresenceCandidate = Readonly<{
   lastSeenAt: Date;
   character: Pick<
     CharacterProjection,
-    'worldInstanceId' | 'characterId' | 'name' | 'locationId' | 'archived' | 'health' | 'combat'
-  > | undefined;
+    'worldInstanceId' | 'characterId' | 'name' | 'locationId' | 'archived' | 'health'
+  > & { combat?: { status: string } } | undefined;
 }>;
 
 export function projectRoomOccupants(input: Readonly<{

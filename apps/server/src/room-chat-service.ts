@@ -1,15 +1,13 @@
 import { and, asc, desc, eq, gt, isNull, notLike, or, sql } from 'drizzle-orm';
-import { replayCharacter } from '@mudd/engine-core';
 import { db } from './db/client.js';
-import { characters, durableEffects, gameEvents, roomChatMessages, worldSessions } from './db/schema.js';
-import { toStoredGameEvent } from './persistence/postgres-event-store.js';
+import { characters, durableEffects, gameEvents, roomChatMessages, worldSessions, roomCharacterStates } from './db/schema.js';
 import { PLAYER_ROOM_MESSAGE_EFFECT } from './durable-effect-contracts.js';
 
 export const MAX_ROOM_CHAT_MESSAGE_LENGTH = 500;
 const INITIAL_ROOM_CHAT_LIMIT = 50;
 const ROOM_CHAT_POLL_LIMIT = 100;
 export const NPC_MOVEMENT_MESSAGE_SOURCE_PREFIX = 'world-npc-movement:';
-type CharacterProjection = NonNullable<ReturnType<typeof replayCharacter>>;
+type CharacterProjection = typeof roomCharacterStates.$inferSelect['state'];
 
 export type RoomChatSpeakerType = 'player' | 'npc';
 
@@ -125,11 +123,18 @@ async function readAuthorizedRoomCharacter(
   )).limit(1);
   if (!characterRow) return undefined;
 
-  const rows = await tx.select().from(gameEvents).where(and(
+  const [head] = await tx.select({ revision: gameEvents.streamVersion }).from(gameEvents).where(and(
     eq(gameEvents.worldInstanceId, input.worldInstanceId),
     eq(gameEvents.streamId, input.characterId),
-  )).orderBy(asc(gameEvents.streamVersion));
-  const projection = replayCharacter(rows.map(toStoredGameEvent));
+  )).orderBy(desc(gameEvents.streamVersion)).limit(1);
+  const [current] = await tx.select().from(roomCharacterStates).where(and(
+    eq(roomCharacterStates.characterId, input.characterId),
+    eq(roomCharacterStates.worldInstanceId, input.worldInstanceId),
+  )).limit(1);
+  // The stream lock remains held: a move cannot race this authorization.
+  // Fail closed on an old writer or an incomplete backfill.
+  if (!current || current.schemaVersion !== 1 || current.revision !== head?.revision) return undefined;
+  const projection = current.state;
   if (!projection || projection.archived || projection.locationId !== input.roomId) return undefined;
   return projection;
 }

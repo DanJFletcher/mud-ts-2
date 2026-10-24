@@ -3,6 +3,7 @@ import {
   InteractionRequestProjectionSchema,
   InteractionRespondCommandSchema,
   type InteractionRequestProjection,
+  PvpEncounterProjectionSchema,
 } from '@mudd/contracts';
 import type {
   EngineCommandContext,
@@ -11,7 +12,7 @@ import type {
   ProposedDomainEvent,
   StreamGuard,
 } from '@mudd/engine-core';
-import { RuleViolationError, SYSTEM_ACTOR_ID } from '@mudd/engine-core';
+import { RuleViolationError, SYSTEM_ACTOR_ID, createIncrementalProjection } from '@mudd/engine-core';
 import type { CapabilityToken } from '@mudd/contracts';
 
 const REQUEST_TTL_MS = 60_000;
@@ -50,24 +51,51 @@ type InteractionRecord = {
   latestEncounterEvent?: { type: string; payload: Record<string, unknown> };
 };
 
-export function projectInteractionEvents(
-  events: readonly { type: string; payload: Readonly<Record<string, unknown>> }[],
-): InteractionRecord {
-  const requests = new Map<string, InteractionRequestProjection>();
-  let latestEncounterEvent: InteractionRecord['latestEncounterEvent'];
-  for (const event of events) {
+const projectInteractions = createIncrementalProjection(
+  () => ({ requests: new Map<string, InteractionRequestProjection>(),
+    requestsByCharacter: new Map<string, Map<string, InteractionRequestProjection>>(),
+    encountersByCharacter: new Map<string, ReturnType<typeof PvpEncounterProjectionSchema.parse>>(),
+    latestEncounterEvent: undefined as InteractionRecord['latestEncounterEvent'] }),
+  (state, event: { type: string; payload: Readonly<Record<string, unknown>> }) => {
     if (event.type === 'interaction.request.created' || event.type === 'interaction.request.updated') {
       const parsed = InteractionRequestProjectionSchema.safeParse(event.payload.request);
-      if (parsed.success) requests.set(parsed.data.requestId, parsed.data);
+      if (parsed.success) {
+        state.requests.set(parsed.data.requestId, parsed.data);
+        for (const id of [parsed.data.initiatorCharacterId, parsed.data.recipientCharacterId]) {
+          let inbox = state.requestsByCharacter.get(id);
+          if (!inbox) state.requestsByCharacter.set(id, inbox = new Map());
+          inbox.set(parsed.data.requestId, parsed.data);
+        }
+      }
     } else if (
       event.type === 'pvp.encounter.started' ||
       event.type === 'pvp.action.resolved' ||
       event.type === 'pvp.outcome.applied'
     ) {
-      latestEncounterEvent = { type: event.type, payload: event.payload };
+      state.latestEncounterEvent = { type: event.type, payload: event.payload };
+      const encounter = PvpEncounterProjectionSchema.safeParse(event.payload.encounter);
+      if (encounter.success) for (const participant of encounter.data.participants) {
+        state.encountersByCharacter.set(participant.characterId, encounter.data);
+      }
     }
-  }
-  return { requests: [...requests.values()], latestEncounterEvent };
+  },
+);
+
+/** Viewer-scoped indexed read, with no copy of unrelated requests or encounters. */
+export function projectCharacterInteractions(
+  events: Parameters<typeof projectInteractions>[0], characterId: string,
+) {
+  return projectInteractions.select(events, (state) => ({
+    requests: [...(state.requestsByCharacter.get(characterId)?.values() ?? [])].slice(-30),
+    encounter: state.encountersByCharacter.get(characterId) ?? null,
+  }));
+}
+
+export function projectInteractionEvents(
+  events: readonly { type: string; payload: Readonly<Record<string, unknown>> }[],
+): InteractionRecord {
+  const state = projectInteractions(events);
+  return { requests: [...state.requests.values()], latestEncounterEvent: state.latestEncounterEvent };
 }
 
 export async function updateInteractionRequestStatus(

@@ -533,6 +533,42 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     expect(firstSession?.characterId).toBe(firstCharacterId);
   });
 
+  it('rebuilds room read models and refuses authorization from stale projections', async () => {
+    const { eq, and } = await import('drizzle-orm');
+    const { roomCharacterStates, worldSessions } = await import('./db/schema.js');
+    const { PostgresEventStore } = await import('./persistence/postgres-event-store.js');
+    const { listRoomChatMessages } = await import('./room-chat-service.js');
+    const { replayCharacter } = await import('@mudd/engine-core');
+    const id = randomUUID();
+    await store.append({
+      worldInstanceId, streamId: id, actorId: playerId,
+      commandId: randomUUID(), payloadHash: randomUUID(), expectedVersion: 0,
+      events: [{ type: 'character.created', version: 1, payload: {
+        characterId: id, playerId, name: 'Read model', startingLocationId: 'read-room',
+      } }],
+    });
+    // A separate world avoids the other fixtures' active-session uniqueness.
+    await db.delete(worldSessions).where(and(eq(worldSessions.playerId, playerId),
+      eq(worldSessions.worldInstanceId, worldInstanceId)));
+    await db.insert(worldSessions).values({
+      id: randomUUID(), playerId, characterId: id, worldInstanceId,
+    });
+    const read = () => listRoomChatMessages({
+      worldInstanceId, playerId, characterId: id, roomId: 'read-room',
+    });
+    expect(await read()).toBeDefined();
+    await db.update(roomCharacterStates).set({ revision: 0 }).where(eq(roomCharacterStates.characterId, id));
+    expect(await read()).toBeUndefined();
+    const restarted = new PostgresEventStore();
+    await restarted.rebuildRoomStates(worldInstanceId, id);
+    expect(await read()).toBeDefined();
+    const [row] = await db.select().from(roomCharacterStates).where(eq(roomCharacterStates.characterId, id));
+    const replay = replayCharacter(await restarted.readStream(worldInstanceId, id))!;
+    expect(row?.state.locationId).toBe(replay.locationId);
+    expect(row?.revision).toBe(replay.revision);
+    await db.delete(worldSessions).where(eq(worldSessions.characterId, id));
+  });
+
   it('keeps room-chat membership and idempotency ordered with character movement', async () => {
     const { PostgresEventStore: EventStore } = await import('./persistence/postgres-event-store.js');
     const { createPlayerRoomChatMessage, listRoomChatMessages } = await import('./room-chat-service.js');

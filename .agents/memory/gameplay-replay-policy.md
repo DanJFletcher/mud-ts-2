@@ -8,9 +8,14 @@ are immutable. Preserve replay-only deduplication metadata with every checkpoint
 and never infer freshness from a local revision without checking the authoritative
 database head.
 
+Shared aggregate projections may use the same exact-parent incremental rule, but
+viewer-scoped reads should select indexed results rather than clone unrelated
+groups, requests, or encounters.
+
 **Why:** Cached event arrays alone do not prevent repeated schema parsing, and a
 projection-only snapshot loses outcome/action deduplication needed for safe tail replay.
-Mutable authoring/test histories must retain pure replay semantics.
+Mutable authoring/test histories must retain pure replay semantics; copying an
+entire shared aggregate per viewer reintroduces cost and exposes unnecessary data.
 
 **How to apply:** Treat process caches as disposable optimizations; rebuild on
 eviction/restart, clone returned projections, and measure both warm and cold paths.

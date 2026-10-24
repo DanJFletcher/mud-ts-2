@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { ChevronDown, ChevronUp, Maximize2, X } from 'lucide-react';
 import { Button, DisclosureButton } from '@mudd/ui';
 import { trapDialogTab } from './dialog-focus.js';
+import type { MuddHttpClient } from '@mudd/client-sdk';
 
 export type RoomChatMessage = Readonly<{
   id: number;
@@ -14,6 +15,7 @@ export type RoomChatMessage = Readonly<{
 }>;
 
 type RoomChatPanelProps = Readonly<{
+  realtimeClient?: MuddHttpClient;
   worldInstanceId: string;
   roomId: string;
   fullscreen: boolean;
@@ -44,6 +46,7 @@ function mergeMessages(current: readonly RoomChatMessage[], incoming: readonly R
 }
 
 export function RoomChatPanel({
+  realtimeClient,
   worldInstanceId,
   roomId,
   fullscreen,
@@ -177,15 +180,17 @@ export function RoomChatPanel({
     };
 
     void refreshMessages();
-    const interval = window.setInterval(() => void refreshMessages(), 3000);
+    const stopRealtime = realtimeClient?.watchRealtime('chat', refreshMessages, 3000, () => !actionPendingRef.current);
+    const interval = stopRealtime ? undefined : window.setInterval(() => void refreshMessages(), 3000);
     const visible = () => { if (document.visibilityState === 'visible') void refreshMessages(); };
     document.addEventListener('visibilitychange', visible);
     return () => {
       active = false;
       window.clearInterval(interval);
+      stopRealtime?.();
       document.removeEventListener('visibilitychange', visible);
     };
-  }, [onTerminalEvent, roomId, worldInstanceId]);
+  }, [onTerminalEvent, roomId, worldInstanceId, realtimeClient]);
 
   useEffect(() => {
     const messagesElement = messagesRef.current;

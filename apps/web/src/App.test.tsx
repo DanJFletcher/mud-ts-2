@@ -1114,6 +1114,9 @@ describe('single-character world session client', () => {
     heartbeatOccupants = [{ id: 'mira-character', displayName: 'Mira' }];
     render(<WorldClient onLeaveWorld={async () => undefined} />);
 
+    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith('/api/world-session/heartbeat', expect.objectContaining({
+      method: 'POST',
+    })));
     expect(await screen.findByText('Here now: Mira')).toBeTruthy();
     expect(apiFetch).toHaveBeenCalledWith('/api/world-session/heartbeat', expect.objectContaining({
       method: 'POST',

@@ -571,7 +571,15 @@ export function WorldClient({
       snapshotRefreshRunning = true;
       try {
         const latest = await client.getGame();
-        if (active && refreshGate.current.accepts(epoch)) setSnapshot(latest);
+        if (active && refreshGate.current.accepts(epoch)) setSnapshot((current) => {
+          const previousLocation = current?.location;
+          if (previousLocation &&
+              previousLocation.worldInstanceId === latest.location.worldInstanceId &&
+              previousLocation.locationId === latest.location.locationId) {
+            return { ...latest, location: { ...latest.location, occupants: previousLocation.occupants } };
+          }
+          return latest;
+        });
       } catch {
         // Keep the last known snapshot; heartbeat owns connection health.
       } finally {
@@ -586,16 +594,22 @@ export function WorldClient({
     };
 
     void sendHeartbeat();
-    const interval = window.setInterval(() => void sendHeartbeat(), 3_000);
+    const interval = window.setInterval(() => void sendHeartbeat(), 30_000);
+    const snapshotFallback = window.setInterval(() => {
+      if (client.realtimeConnectionState !== 'connected') void refreshSnapshot();
+    }, 15_000);
+    const stopPresence = client.watchRealtime("presence", sendHeartbeat, 3_000, () => !refreshGate.current.busy);
     // Presence remains frequent for multiplayer; the full game snapshot also
     // includes map, journal, stats and room data, so refresh that less often.
-    const snapshotInterval = window.setInterval(() => void refreshSnapshot(), 15_000);
+    const stopSnapshot = client.watchRealtime("character", refreshSnapshot, 15_000, () => !refreshGate.current.busy);
     document.addEventListener("visibilitychange", refreshWhenVisible);
     window.addEventListener("pageshow", refreshWhenVisible);
     return () => {
       active = false;
       window.clearInterval(interval);
-      window.clearInterval(snapshotInterval);
+      window.clearInterval(snapshotFallback);
+      stopPresence();
+      stopSnapshot();
       document.removeEventListener("visibilitychange", refreshWhenVisible);
       window.removeEventListener("pageshow", refreshWhenVisible);
     };
@@ -650,14 +664,14 @@ export function WorldClient({
       }
     };
     void refreshInteractions();
-    const interval = window.setInterval(() => void refreshInteractions(), 3_000);
+    const stopInteractions = client.watchRealtime("interactions", refreshInteractions, 3_000, () => !refreshGate.current.busy);
     const onVisible = () => {
       if (document.visibilityState === "visible") void refreshInteractions();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       active = false;
-      window.clearInterval(interval);
+      stopInteractions();
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [addEntry, presenceCharacterId]);
@@ -719,10 +733,11 @@ export function WorldClient({
       }
     };
     void poll();
-    const interval = window.setInterval(() => void poll(), 2_000);
+    const stopTeam = client.watchRealtime("team", () => { lastChecked = 0; return poll(); }, 2_000,
+      () => !refreshGate.current.busy);
     return () => {
       active = false;
-      window.clearInterval(interval);
+      stopTeam();
     };
   }, [presenceCharacterId]);
 
@@ -747,14 +762,15 @@ export function WorldClient({
       }
     };
     void pollParty();
-    const interval = window.setInterval(() => void pollParty(), partyInfo?.party ? 3_000 : 9_000);
+    const stopParty = client.watchRealtime("party", pollParty, partyInfo?.party ? 3_000 : 9_000,
+      () => !refreshGate.current.busy);
     const onVisible = () => {
       if (document.visibilityState === "visible") void pollParty();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       active = false;
-      window.clearInterval(interval);
+      stopParty();
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [presenceCharacterId, refreshPartyState, Boolean(partyInfo?.party)]);
@@ -3400,6 +3416,7 @@ export function WorldClient({
                   )}
                   {isMobileViewport && (
                     <RoomChatPanel
+                      realtimeClient={client}
                       actionPending={Boolean(pending)}
                       worldInstanceId={worldInstanceId}
                       roomId={snapshot.location.locationId}
@@ -3433,6 +3450,7 @@ export function WorldClient({
                 </TerminalPanel>
                 {!isMobileViewport && (
                   <RoomChatPanel
+                    realtimeClient={client}
                     actionPending={Boolean(pending)}
                     worldInstanceId={worldInstanceId}
                     roomId={snapshot.location.locationId}

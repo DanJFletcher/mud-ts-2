@@ -28,6 +28,7 @@ import {
 import {
   GROUPS_STREAM_ID,
   groupsStateCapability,
+  projectGroupActivity,
   type GroupReadContext,
   type GroupsStateCapability,
 } from './groups.js';
@@ -249,42 +250,12 @@ export const partyPlugin: EnginePlugin = {
     });
 
     registerQuery('party.info', PartyInfoQuerySchema, async (query, context) => {
-      const groups = await groupsState.load(context);
       const events = await readGroupEvents(context);
-      const party = activePartyForPlayer(groups, context.session.playerId);
-      const latestRelevantEvent = [...events].reverse().find((event) =>
-        eventPlayer(event).playerId === context.session.playerId);
-      const relevantGroupId = party?.groupId
-        ?? (latestRelevantEvent ? eventGroupId(latestRelevantEvent) : undefined);
-      const relevantGroup = relevantGroupId
-        ? groups.groups.find((group) => group.groupId === relevantGroupId)
-        : undefined;
-      const names = new Map<string, string>();
-      for (const event of events) {
-        if (event.type === 'group.created' || event.type === 'group.member_joined') {
-          const payload = event.payload.member as Record<string, unknown> | undefined;
-          if (typeof payload?.playerId === 'string' && typeof payload.displayName === 'string') {
-            names.set(payload.playerId, payload.displayName);
-          }
-        }
-      }
-      const cursor = query.payload.afterRevision ?? groups.revision;
-      const activity = relevantGroupId
-        ? events.flatMap((event) => {
-            const type = activityType(event);
-            if (!type || eventGroupId(event) !== relevantGroupId ||
-              event.aggregateVersion <= cursor) return [];
-            const actor = eventPlayer(event);
-            const displayName = actor.displayName ?? (actor.playerId ? names.get(actor.playerId) : undefined);
-            return [{
-              revision: event.aggregateVersion,
-              groupId: relevantGroupId,
-              type,
-              ...(actor.playerId ? { playerId: actor.playerId } : {}),
-              ...(displayName ? { displayName } : {}),
-            }];
-          })
-        : [];
+      const indexed = projectGroupActivity(events, context.session.playerId, query.payload.afterRevision ?? 0);
+      const party = indexed.party;
+      const relevantGroupId = party?.groupId ?? indexed.relevantGroupId;
+      const relevantGroup = party;
+      const activity = indexed.activity;
       return PartyInfoProjectionSchema.parse({
         party: party && relevantGroup
           ? {
@@ -293,7 +264,7 @@ export const partyPlugin: EnginePlugin = {
                 ?? 'Unknown leader',
             }
           : null,
-        revision: groups.revision,
+        revision: indexed.revision,
         activity,
       });
     });

@@ -1,10 +1,13 @@
 import express, { type Request, type Response } from 'express';
+import expressWs from 'express-ws';
+import { createRealtimeGateway } from './realtime-gateway.js';
+import { startRealtimeNotifications } from './realtime-notifications.js';
 import { requestMeasurements, newMeasurements, measureStage, eventLoopDelayMs } from './performance.js';
 import { fileURLToPath } from 'node:url';
 import cors from 'cors';
 import { getAuth, clerkMiddleware } from '@clerk/express';
 import { publishableKeyFromHost } from '@clerk/shared/keys';
-import { and, desc, eq, gte } from 'drizzle-orm';
+import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import {
   ArchiveCharacterCommandSchema,
@@ -38,11 +41,12 @@ import {
   interactionStreamId,
   mobileNpcDefinitions,
   projectInteractionEvents,
+  projectCharacterInteractions,
   updateInteractionRequestStatus,
 } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID } from '@mudd/world-demo';
 import { db, pool } from './db/client.js';
-import { characters, worldSessions } from './db/schema.js';
+import { characters, worldSessions, roomChatMessages } from './db/schema.js';
 import { PostgresEventStore } from './persistence/postgres-event-store.js';
 import { projectLocationWithGroups } from './location-group-projection.js';
 import { listRoomOccupants, touchWorldSessionPresence } from './room-presence-service.js';
@@ -100,6 +104,7 @@ if (process.env.NODE_ENV === 'production' && trustedHosts.size === 0) {
 }
 
 const store = new PostgresEventStore();
+await store.rebuildRoomStates();
 function replayCharacter(events: Parameters<typeof reconstructCharacter>[0]) {
   const started = performance.now();
   try { return reconstructCharacter(events); }
@@ -247,6 +252,7 @@ const interactionPoller = setInterval(() => void runInteractionMaintenance(), 2_
 interactionPoller.unref();
 
 const app = express();
+const websocketApp = expressWs(app, undefined, { wsOptions: { maxPayload: 1024 } }).app;
 app.set('trust proxy', trustedProxyHops);
 app.use(createRequestId());
 app.use((req, res, next) => {
@@ -355,6 +361,55 @@ function worldContext(identity: AccountIdentity, session: typeof worldSessions.$
     selectedCharacterId: session.characterId,
   };
 }
+
+const realtimeGateway = createRealtimeGateway(async (req, channels) => {
+  const auth = getAuth(req);
+  if (auth.sessionClaims?.exp && Date.now() >= auth.sessionClaims.exp * 1000) return undefined;
+  const identity = await getAccountIdentity(req, { userId: auth.userId, sessionId: auth.sessionId });
+  if (!identity) return undefined;
+  const worldId = typeof req.query.world === 'string' ? req.query.world : '';
+  const runtime = worldRuntimes.get(worldId);
+  if (!runtime) return undefined;
+  const current = await activeCharacter(identity, worldId);
+  if (!current) return undefined;
+  const { session, character } = current;
+  const context = worldContext(identity, session);
+  const [chat, presence, interactions, party, team] = await Promise.all([
+    channels.includes('chat') ? db.select({ cursor: sql<number>`coalesce(max(${roomChatMessages.id}), 0)` }).from(roomChatMessages)
+      .where(and(eq(roomChatMessages.worldInstanceId, worldId), eq(roomChatMessages.roomId, character.locationId)))
+      : Promise.resolve([]),
+    channels.includes('presence')
+      ? listRoomOccupants(store, worldId, character.locationId, character.characterId) : Promise.resolve([]),
+    channels.includes('interactions') ? store.readStream(worldId, interactionStreamId(worldId)).then((events) =>
+      projectCharacterInteractions(events, character.characterId))
+      : Promise.resolve(null),
+    channels.includes('party') ? runtime.engine.query({ type: 'party.info', version: 1, queryId: crypto.randomUUID(),
+      worldInstanceId: worldId, characterId: character.characterId, payload: {} }, context) : Promise.resolve(null),
+    channels.includes('team') ? runtime.engine.query({ type: 'team.combat.info', version: 1, queryId: crypto.randomUUID(),
+      worldInstanceId: worldId, characterId: character.characterId, payload: {} }, context) : Promise.resolve(null),
+  ]);
+  if (party && !party.ok || team && !team.ok) return undefined;
+  const guestExpiry = Date.now() + 60_000;
+  const tokenExpiry = auth.sessionClaims?.exp ? auth.sessionClaims.exp * 1000 : guestExpiry;
+  return { worldInstanceId: worldId, characterId: character.characterId, playerId: identity.playerId,
+    expiresAt: Math.min(guestExpiry, tokenExpiry),
+    roomId: character.locationId, values: {
+    chat: [character.locationId, chat[0]?.cursor], presence: [character.locationId, presence],
+    interactions, party: party?.ok ? party.value : null, team: team?.ok ? team.value : null,
+    character: channels.includes('character') ? character.revision : undefined,
+  } };
+});
+websocketApp.ws('/api/realtime', (socket, req) => {
+  // Exact same-origin or explicitly configured origins only; never allow absent
+  // or opaque browser origins on the socket path.
+  const origin = req.get('origin');
+  if (!origin || !(allowedOrigins.has(origin) || origin === `${req.protocol}://${req.get('host')}`)) {
+    socket.close(1008); return;
+  }
+  realtimeGateway.connect(socket, req);
+});
+const stopRealtimeNotifications = startRealtimeNotifications(
+  (change) => realtimeGateway.invalidate(change), () => realtimeGateway.refreshAll());
 
 async function ensureCharacterWallet(
   identity: AccountIdentity,
@@ -736,19 +791,8 @@ app.get('/api/interactions', async (req, res, next) => {
     const current = await activeCharacter(identity, selectedRuntime(res).worldInstanceId);
     if (!current) return res.status(409).json({ message: 'Enter the world with a character before checking interactions.' });
     const events = await store.readStream(current.session.worldInstanceId, interactionStreamId(current.session.worldInstanceId));
-    const projected = projectInteractionEvents(events);
     const characterId = current.character.characterId;
-    const requests = projected.requests
-      .filter((request) =>
-        request.initiatorCharacterId === characterId ||
-        request.recipientCharacterId === characterId)
-      .slice(-30);
-    const eventEncounter = projected.latestEncounterEvent?.payload.encounter;
-    const parsedEncounter = PvpEncounterProjectionSchema.safeParse(eventEncounter);
-    const encounter = parsedEncounter.success &&
-      parsedEncounter.data.participants.some((participant) => participant.characterId === characterId)
-      ? parsedEncounter.data
-      : null;
+    const { requests, encounter } = projectCharacterInteractions(events, characterId);
     return res.json(InteractionInboxSchema.parse({ requests, encounter }));
   } catch (error) {
     next(error);
@@ -808,8 +852,8 @@ app.post('/api/commands', createRateLimiter({ windowMs: 60_000, maxRequests: 120
         current.worldInstanceId,
         interactionStreamId(current.worldInstanceId),
       );
-      const latestInteraction = projectInteractionEvents(interactionEvents).latestEncounterEvent;
-      const latestEncounter = PvpEncounterProjectionSchema.safeParse(latestInteraction?.payload.encounter);
+      const latestEncounter = PvpEncounterProjectionSchema.safeParse(
+        projectCharacterInteractions(interactionEvents, current.characterId).encounter);
       const characterInPvp = latestEncounter.success &&
         latestEncounter.data.status !== 'completed' &&
         latestEncounter.data.participants.some((participant) => participant.characterId === current.characterId);
@@ -1037,6 +1081,8 @@ export const server = app.listen(port, '0.0.0.0', () => {
 });
 
 async function shutdown() {
+  stopRealtimeNotifications();
+  realtimeGateway.close();
   server.close();
   for (const scheduler of autonomousNpcSchedulers) scheduler.stop();
   for (const scheduler of staminaRecoverySchedulers) scheduler.stop();

@@ -72,6 +72,20 @@ export const gameEvents = pgTable('game_events', {
     .on(table.worldInstanceId, table.streamId, table.streamVersion),
 ]);
 
+/** Rebuildable room read model; updated in the event append transaction. */
+export const roomCharacterStates = pgTable('room_character_states', {
+  characterId: uuid('character_id').primaryKey().references(() => characters.id, { onDelete: 'cascade' }),
+  worldInstanceId: text('world_instance_id').notNull(),
+  locationId: text('location_id').notNull(),
+  revision: integer('revision').notNull(),
+  schemaVersion: integer('schema_version').notNull().default(1),
+  state: jsonb('state').notNull().$type<{
+    worldInstanceId: string; characterId: string; name: string; locationId: string;
+    archived: boolean; health?: { current: number; maximum: number };
+    combat?: { status: 'active' | 'victory' | 'defeat' | 'fled' };
+  }>(),
+}, (table) => [index('room_character_states_room_idx').on(table.worldInstanceId, table.locationId)]);
+
 export const commandReceipts = pgTable('command_receipts', {
   worldInstanceId: text('world_instance_id').notNull(),
   actorId: uuid('actor_id').notNull(),
