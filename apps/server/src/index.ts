@@ -236,6 +236,27 @@ interactionPoller.unref();
 const app = express();
 app.set('trust proxy', trustedProxyHops);
 app.use(createRequestId());
+app.use((req, res, next) => {
+  const startedAt = performance.now();
+  res.once('finish', () => {
+    const durationMs = performance.now() - startedAt;
+    if (durationMs < 250) return;
+    console.warn(JSON.stringify({
+      event: 'slow_http_request',
+      requestId: res.locals.requestId,
+      method: req.method,
+      path: req.path,
+      status: res.statusCode,
+      durationMs: Math.round(durationMs),
+      dbPool: {
+        total: pool.totalCount,
+        idle: pool.idleCount,
+        waiting: pool.waitingCount,
+      },
+    }));
+  });
+  next();
+});
 app.use(createTrustedHostGuard(trustedHosts));
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 app.use(cors({
@@ -532,24 +553,6 @@ app.get('/api/game', async (req, res, next) => {
       characterId: current.characterId,
       payload: {},
     });
-    const result = await selected.engine.query(query, worldContext(identity, current), {
-      characterProjection: character,
-      correlationId: res.locals.requestId,
-    });
-    if (!result.ok) {
-      const status = result.code === 'INTERNAL_ERROR' ? 500 : result.code === 'NOT_FOUND' ? 404 : 403;
-      return res.status(status).json({
-        message: result.message,
-        ...(result.code === 'INTERNAL_ERROR' ? { requestId: result.correlationId ?? res.locals.requestId } : {}),
-      });
-    }
-    const locationGroupCatalog = await selected.locationGroupsFeature.catalog.read();
-    const location = await locationWithRoomPresence(
-      result.value,
-      current.worldInstanceId,
-      current.characterId,
-      locationGroupCatalog.groups,
-    );
     const statsQuery = CharacterStatsQuerySchema.parse({
       type: 'character.stats',
       version: 1,
@@ -558,10 +561,24 @@ app.get('/api/game', async (req, res, next) => {
       characterId: current.characterId,
       payload: {},
     });
-    const statsResult = await selected.engine.query(statsQuery, worldContext(identity, current), {
-      characterProjection: character,
-      correlationId: res.locals.requestId,
-    });
+    const [result, statsResult, locationGroupCatalog] = await Promise.all([
+      selected.engine.query(query, worldContext(identity, current), {
+        characterProjection: character,
+        correlationId: res.locals.requestId,
+      }),
+      selected.engine.query(statsQuery, worldContext(identity, current), {
+        characterProjection: character,
+        correlationId: res.locals.requestId,
+      }),
+      selected.locationGroupsFeature.catalog.read(),
+    ]);
+    if (!result.ok) {
+      const status = result.code === 'INTERNAL_ERROR' ? 500 : result.code === 'NOT_FOUND' ? 404 : 403;
+      return res.status(status).json({
+        message: result.message,
+        ...(result.code === 'INTERNAL_ERROR' ? { requestId: result.correlationId ?? res.locals.requestId } : {}),
+      });
+    }
     if (!statsResult.ok) {
       const status = statsResult.code === 'INTERNAL_ERROR' ? 500 : statsResult.code === 'NOT_FOUND' ? 404 : 403;
       return res.status(status).json({
@@ -569,6 +586,12 @@ app.get('/api/game', async (req, res, next) => {
         ...(statsResult.code === 'INTERNAL_ERROR' ? { requestId: statsResult.correlationId ?? res.locals.requestId } : {}),
       });
     }
+    const location = await locationWithRoomPresence(
+      result.value,
+      current.worldInstanceId,
+      current.characterId,
+      locationGroupCatalog.groups,
+    );
     return res.json({
       player: { id: identity.playerId, displayName: identity.displayName },
       character,
@@ -851,7 +874,9 @@ app.post('/api/commands', createRateLimiter({ windowMs: 60_000, maxRequests: 120
     }
 
     const result = await selected.engine.dispatch(req.body, context, res.locals.requestId);
-    if (result.receipt.ok) await runPendingEffectBatch();
+    // Effects are durably queued with the command. Their worker is already
+    // running; don't make the action wait for unrelated effects across worlds.
+    if (result.receipt.ok) void runPendingEffectBatch();
     if (!result.receipt.ok && result.receipt.code === 'INTERNAL_ERROR') {
       return res.status(500).json({
         ...result,

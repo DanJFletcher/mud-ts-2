@@ -358,8 +358,9 @@ export class EngineHost {
         };
       }
       if (typeof characterId === 'string' && typeof command.expectedVersion === 'number') {
-        const events = await this.store.readStream(worldInstanceId, characterId);
-        const currentVersion = events.at(-1)?.aggregateVersion ?? 0;
+        const currentVersion = this.store.readStreamRevision
+          ? await this.store.readStreamRevision(worldInstanceId, characterId)
+          : (await this.store.readStream(worldInstanceId, characterId)).at(-1)?.aggregateVersion ?? 0;
         if (currentVersion !== command.expectedVersion) {
           return {
             receipt: failure(commandId, 'VERSION_CONFLICT', `Expected revision ${command.expectedVersion}; current revision is ${currentVersion}.`),

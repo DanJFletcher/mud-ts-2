@@ -526,20 +526,15 @@ export function WorldClient({
       try {
         const presence = await client.heartbeatWorldSession();
         if (!active) return;
-        const latest = await client.getGame();
-        if (!active) return;
-        const location = latest.location;
-        setSnapshot({
-          ...latest,
-          ...(location ? {
-            location: {
-              ...location,
-              occupants: presence.worldInstanceId === location.worldInstanceId &&
-                presence.locationId === location.locationId
-                ? presence.occupants
-                : location.occupants,
-            },
-          } : {}),
+        setSnapshot((current) => {
+          const location = current?.location;
+          if (
+            !current ||
+            !location ||
+            presence.worldInstanceId !== location.worldInstanceId ||
+            presence.locationId !== location.locationId
+          ) return current;
+          return { ...current, location: { ...location, occupants: presence.occupants } };
         });
         setPresenceStale(false);
       } catch {
@@ -548,17 +543,37 @@ export function WorldClient({
         requestRunning = false;
       }
     };
+    let snapshotRefreshRunning = false;
+    const refreshSnapshot = async () => {
+      if (!active || document.visibilityState === "hidden" || snapshotRefreshRunning) return;
+      snapshotRefreshRunning = true;
+      try {
+        const latest = await client.getGame();
+        if (active) setSnapshot(latest);
+      } catch {
+        // Keep the last known snapshot; heartbeat owns connection health.
+      } finally {
+        snapshotRefreshRunning = false;
+      }
+    };
     const refreshWhenVisible = () => {
-      if (document.visibilityState === "visible") void sendHeartbeat();
+      if (document.visibilityState === "visible") {
+        void sendHeartbeat();
+        void refreshSnapshot();
+      }
     };
 
     void sendHeartbeat();
     const interval = window.setInterval(() => void sendHeartbeat(), 3_000);
+    // Presence remains frequent for multiplayer; the full game snapshot also
+    // includes map, journal, stats and room data, so refresh that less often.
+    const snapshotInterval = window.setInterval(() => void refreshSnapshot(), 15_000);
     document.addEventListener("visibilitychange", refreshWhenVisible);
     window.addEventListener("pageshow", refreshWhenVisible);
     return () => {
       active = false;
       window.clearInterval(interval);
+      window.clearInterval(snapshotInterval);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
       window.removeEventListener("pageshow", refreshWhenVisible);
     };

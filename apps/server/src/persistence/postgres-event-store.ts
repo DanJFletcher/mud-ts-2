@@ -53,11 +53,91 @@ function conflict(
 }
 
 export class PostgresEventStore implements EventStorePort {
-  async readStream(worldInstanceId: string, streamId: string): Promise<readonly StoredGameEvent[]> {
-    const rows = await db.select().from(gameEvents)
+  private readonly streamCache = new Map<string, {
+    readonly revision: number;
+    readonly events: readonly StoredGameEvent[];
+    readonly bytes: number;
+  }>();
+  private cachedStreamBytes = 0;
+
+  private streamKey(worldInstanceId: string, streamId: string) {
+    return `${worldInstanceId}\u0000${streamId}`;
+  }
+
+  private cacheStream(key: string, events: readonly StoredGameEvent[]) {
+    const bytes = Buffer.byteLength(JSON.stringify(events));
+    const MAX_STREAM_BYTES = 512 * 1024;
+    const MAX_CACHE_BYTES = 8 * 1024 * 1024;
+    const MAX_CACHE_STREAMS = 128;
+    if (bytes > MAX_STREAM_BYTES || events.length === 0) {
+      const previous = this.streamCache.get(key);
+      if (previous) {
+        this.cachedStreamBytes -= previous.bytes;
+        this.streamCache.delete(key);
+      }
+      return;
+    }
+    const previous = this.streamCache.get(key);
+    if (previous) this.cachedStreamBytes -= previous.bytes;
+    this.streamCache.delete(key);
+    while (
+      this.streamCache.size >= MAX_CACHE_STREAMS ||
+      this.cachedStreamBytes + bytes > MAX_CACHE_BYTES
+    ) {
+      const oldestKey = this.streamCache.keys().next().value as string | undefined;
+      if (!oldestKey) break;
+      const oldest = this.streamCache.get(oldestKey)!;
+      this.cachedStreamBytes -= oldest.bytes;
+      this.streamCache.delete(oldestKey);
+    }
+    this.streamCache.set(key, {
+      revision: events.at(-1)?.aggregateVersion ?? 0,
+      events,
+      bytes,
+    });
+    this.cachedStreamBytes += bytes;
+  }
+
+  private invalidateStream(worldInstanceId: string, streamId: string) {
+    const key = this.streamKey(worldInstanceId, streamId);
+    const cached = this.streamCache.get(key);
+    if (!cached) return;
+    this.cachedStreamBytes -= cached.bytes;
+    this.streamCache.delete(key);
+  }
+
+  async readStreamRevision(worldInstanceId: string, streamId: string): Promise<number> {
+    const [head] = await db.select({ revision: gameEvents.streamVersion }).from(gameEvents)
       .where(and(eq(gameEvents.worldInstanceId, worldInstanceId), eq(gameEvents.streamId, streamId)))
+      .orderBy(desc(gameEvents.streamVersion)).limit(1);
+    return head?.revision ?? 0;
+  }
+
+  async readStream(worldInstanceId: string, streamId: string): Promise<readonly StoredGameEvent[]> {
+    const key = this.streamKey(worldInstanceId, streamId);
+    const revision = await this.readStreamRevision(worldInstanceId, streamId);
+    const cached = this.streamCache.get(key);
+    if (cached?.revision === revision) {
+      this.streamCache.delete(key);
+      this.streamCache.set(key, cached);
+      return cached.events;
+    }
+
+    const rows = await db.select().from(gameEvents)
+      .where(and(
+        eq(gameEvents.worldInstanceId, worldInstanceId),
+        eq(gameEvents.streamId, streamId),
+        ...(cached && revision > cached.revision
+          ? [sql`${gameEvents.streamVersion} > ${cached.revision}`]
+          : []),
+      ))
       .orderBy(gameEvents.streamVersion);
-    return rows.map(toStoredGameEvent);
+    const tail = rows.map(toStoredGameEvent);
+    const events = cached && revision > cached.revision
+      ? [...cached.events, ...tail]
+      : tail;
+    this.cacheStream(key, events);
+    return events;
   }
 
   async lookupCommand(
@@ -89,7 +169,7 @@ export class PostgresEventStore implements EventStorePort {
   }
 
   async append(request: AppendRequest): Promise<AppendOutcome> {
-    return db.transaction(async (tx) => {
+    const outcome = await db.transaction(async (tx) => {
       // Lock command identity first so retries cannot race across different stream IDs.
       await tx.execute(sql`
         SELECT pg_advisory_xact_lock(hashtext(${request.worldInstanceId}), hashtext(${`${request.actorId}:${request.commandId}`}))`);
@@ -251,6 +331,13 @@ export class PostgresEventStore implements EventStorePort {
       });
       return { kind: 'committed', streamId: request.streamId, events: appended, receipt };
     });
+    if (outcome.kind === 'committed') {
+      this.invalidateStream(request.worldInstanceId, request.streamId);
+      for (const companion of request.companions ?? []) {
+        this.invalidateStream(request.worldInstanceId, companion.streamId);
+      }
+    }
+    return outcome;
   }
 
   async claimNextEffect(leaseMs: number, worldInstanceId?: string): Promise<StoredEventEffect | undefined> {

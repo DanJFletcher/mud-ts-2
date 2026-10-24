@@ -74,6 +74,8 @@ export type AppendOutcome =
 
 export interface EventStorePort {
   readStream(worldInstanceId: string, streamId: string): Promise<readonly StoredGameEvent[]>;
+  /** Read only the authoritative head revision when callers don't need history payloads. */
+  readStreamRevision?(worldInstanceId: string, streamId: string): Promise<number>;
   lookupCommand(
     worldInstanceId: string,
     actorId: string,

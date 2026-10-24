@@ -148,6 +148,36 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     expect(results.map((result) => result.kind).sort()).toEqual(['committed', 'conflict']);
   });
 
+  it('keeps cached stream histories fresh across store instances and reads heads without payload history', async () => {
+    const streamId = `revision-cache-${randomUUID()}`;
+    const firstRequest: AppendRequest = {
+      worldInstanceId,
+      streamId,
+      actorId: playerId,
+      commandId: `cache-first-${randomUUID()}`,
+      payloadHash: randomUUID(),
+      expectedVersion: 0,
+      events: [{ type: 'cache.fixture', version: 1, payload: { index: 1 } }],
+    };
+    await store.append(firstRequest);
+    expect(await store.readStream(worldInstanceId, streamId)).toHaveLength(1);
+
+    const { PostgresEventStore } = await import('./persistence/postgres-event-store.js');
+    const independentStore = new PostgresEventStore();
+    await independentStore.append({
+      ...firstRequest,
+      commandId: `cache-second-${randomUUID()}`,
+      payloadHash: randomUUID(),
+      expectedVersion: 1,
+      events: [{ type: 'cache.fixture', version: 1, payload: { index: 2 } }],
+    });
+
+    expect(await store.readStreamRevision(worldInstanceId, streamId)).toBe(2);
+    const refreshed = await store.readStream(worldInstanceId, streamId);
+    expect(refreshed.map((event) => event.aggregateVersion)).toEqual([1, 2]);
+    expect(refreshed.map((event) => event.payload.index)).toEqual([1, 2]);
+  });
+
   it('atomically commits shared turns and character debits, including duplicate retries and racing resources', async () => {
     const resourceStream = `resource-${randomUUID()}`;
     const firstTurn = `turn-${randomUUID()}`;
