@@ -2,16 +2,55 @@ import {
   WorldPackDraftSchema,
   validateDraftWorldGraph,
   type WorldPackDraft,
+  type NpcDailyJobResponseDefinition,
 } from '@mudd/contracts';
 import { orravethClassCatalog } from './classes.js';
 export { orravethClassCatalog } from './classes.js';
 
 export const ORRAVETH_WORLD_INSTANCE_ID = 'orraveth-bellwold-instance';
 
+function bulletinResponses(
+  jobIds: string[], active: string, completed: string,
+): NpcDailyJobResponseDefinition[] {
+  return jobIds.flatMap((jobId) => [
+    { boardId: 'bellwold-notice-board', jobId, status: 'active' as const, response: active },
+    { boardId: 'bellwold-notice-board', jobId, status: 'completed' as const, response: completed },
+  ]);
+}
+const seliJobs = bulletinResponses(
+  ['seli-hide', 'seli-hides'],
+  '“You took my hide notice? Bring the hides to the South Common board when you have them. I have the torn seams ready.”',
+  '“Those hides you delivered today will mend a good few seams. Thank you for seeing to my notice.”',
+);
+const tomasJobs = [
+  ...bulletinResponses(
+    ['tomas-fish', 'tomas-fish-basket'],
+    '“Thank you for taking the fish notice. Deliver them at the South Common board; there is room in the supper pot.”',
+    '“Your fish arrived from the board today. Supper will be better for it—thank you.”',
+  ),
+  ...bulletinResponses(
+    ['tomas-wood'],
+    '“You are bringing wood for the kitchen? Leave it through the South Common board when you are ready.”',
+    '“The kitchen has the wood you delivered today. That is one less worry before supper. Thank you.”',
+  ),
+];
+const darricJobs = bulletinResponses(
+  ['darric-wood'],
+  '“You took the kindling job. Good. Deliver the bundles at the South Common board when you have enough.”',
+  '“Your kindling came through today. Dry wood, useful work. Thank you.”',
+);
+function bulletinTopic(dailyJobResponses: NpcDailyJobResponseDefinition[]) {
+  return {
+    id: 'bulletin-jobs', keywords: ['job', 'jobs', 'bulletin', 'notice'],
+    response: '“Check the South Common bulletin board for today’s jobs. Accept and deliver there.”',
+    dailyJobResponses,
+  };
+}
+
 const draft = {
   formatVersion: 1,
   packId: 'orraveth.bellwold',
-  packVersion: '1.8.0',
+  packVersion: '1.9.0',
   displayName: 'Orraveth: Bellwold',
   dailyBoards: [{
     id: 'bellwold-notice-board', locationId: 'bellwold-south-common', name: 'South Common bulletin board',
@@ -140,10 +179,12 @@ const draft = {
         {
           id: 'tomas-innkeeper',
           name: 'Tomas',
+          dailyJobResponses: tomasJobs,
           description: 'Behind the common-room counter, Tomas turns from one traveler to the next, listening as low voices drift around the tables.',
           activityDescription: 'listening to travelers in the common room',
           greeting: '“Come in and warm yourself. If you want the road news, ask who saw it and when.”',
           topics: [
+            bulletinTopic(tomasJobs),
             { id: 'road', keywords: ['road', 'travel'], response: '“The tower road leaves from the square. The mill is farther along. I can tell you what travelers report, not what waits for you there.”' },
             { id: 'elira', keywords: ['elira', 'professor', 'scholar'], response: '“Professor Elira Venn was investigating the old bell and disappeared near Bellwold. I have no reliable account of what happened after.”' },
             { id: 'bell-history', keywords: ['seventeen villagers', 'storm warnings', 'bell history'], response: '“The older account says the bell warned of storms, then rang without stopping while seventeen villagers disappeared. It records the terrible sequence, not its cause.”' },
@@ -318,10 +359,12 @@ const draft = {
         {
           id: 'darric-holt',
           name: 'Darric Holt',
+          dailyJobResponses: darricJobs,
           description: 'Darric turns a half-mended iron fitting beside the forge, coal smoke darkening the sleeve of his work shirt.',
           activityDescription: 'repairing a farm fitting at the forge',
           greeting: '“If something is broken, show me where it failed. If it is only a rumor, I have work to finish.”',
           topics: [
+            bulletinTopic(darricJobs),
             { id: 'repairs', keywords: ['repair', 'repairs', 'forge', 'smith', 'tools'], response: '“Most days it is hinges, blades, and cart fittings. Keeping a place working is less dramatic than building it from scratch.”' },
             { id: 'bell', keywords: ['bell', 'tower'], response: '“I know how metal wears. I do not know why the tower bell went silent.”' },
             { id: 'sevenfold-workshop', keywords: ['Sevenfold Workshop', 'divine artisans', 'craft and creation'], response: '“Some people speak of creation as a workshop shaped by seven artisans. I understand the metaphor; it does not tell me which faith is right, or why the bell went quiet.”' },
@@ -394,10 +437,12 @@ const draft = {
         {
           id: 'seli-tor',
           name: 'Seli Tor',
+          dailyJobResponses: seliJobs,
           description: 'Seli draws a pale thread taut through a strip of cloth at the loom by the window.',
           activityDescription: 'weaving cloth at her loom',
           greeting: '“Mind the loose thread by the door. It has already caught two sleeves today.”',
           topics: [
+            bulletinTopic(seliJobs),
             { id: 'weaving', keywords: ['weaving', 'cloth', 'loom', 'mending'], response: '“A torn sack is a small problem until the road is long. Most of my work keeps ordinary things useful a little longer.”' },
             { id: 'wattle-row', keywords: ['wattle', 'row', 'homes', 'neighbors'], response: '“The lane is close, but people keep their own hours. You learn who is awake by the sound of their work.”' },
             { id: 'travelers-and-customs', keywords: ['customs', 'travelers', 'farther roads'], response: '“People passing through carry different ways of wrapping, mending, and marking their things. I ask what a pattern means before I assume it belongs to a faith or a family.”' },

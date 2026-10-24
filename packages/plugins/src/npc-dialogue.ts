@@ -6,10 +6,13 @@ import {
   QuestAcceptedEventSchema,
   QuestCompletedEventSchema,
   NpcTalkQuerySchema,
+  dailyCycle,
+  dailyPostings,
   type CharacterProjection,
   type NpcDefinition,
   type NpcQuestResponseDefinition,
   type NpcQuestStateCondition,
+  type NpcDailyJobResponseDefinition,
 } from '@mudd/contracts';
 import type {
   EngineCommandContext,
@@ -68,8 +71,19 @@ function dialogueProjection(
   npc: NpcDefinition,
   character: CharacterProjection,
   world: QueryContext['world'],
+  now: Date,
   topic?: string,
 ) {
+  const cycle = dailyCycle(now);
+  // Keep author order as the tie-breaker, but acknowledge completed work first.
+  const dailyResponse = (responses: NpcDailyJobResponseDefinition[] | undefined) =>
+    (responses ?? []).filter((condition) => {
+      const board = world.dailyBoards.find((candidate) => candidate.id === condition.boardId);
+      return board && dailyPostings(board, cycle).some((job) => job.id === condition.jobId) &&
+        character.dailyJobs.some((job) =>
+          job.boardId === condition.boardId && job.jobId === condition.jobId &&
+          job.cycle === cycle && job.status === condition.status);
+    }).sort((left, right) => Number(right.status === 'completed') - Number(left.status === 'completed'))[0];
   if (topic) {
     const normalizedTopic = topic.toLocaleLowerCase();
     const matchingTopic = npc.topics.find((entry) =>
@@ -80,7 +94,8 @@ function dialogueProjection(
     return NpcDialogueProjectionSchema.parse({
       npcId: npc.id,
       npcName: npc.name,
-      text: questResponse?.response ?? matchingTopic?.response ?? npc.unknownTopicResponse,
+      text: questResponse?.response ?? dailyResponse(matchingTopic?.dailyJobResponses)?.response ??
+        matchingTopic?.response ?? npc.unknownTopicResponse,
       choices: [],
     });
   }
@@ -90,7 +105,7 @@ function dialogueProjection(
     return NpcDialogueProjectionSchema.parse({
       npcId: npc.id,
       npcName: npc.name,
-      text: npc.greeting,
+      text: dailyResponse(npc.dailyJobResponses)?.response ?? npc.greeting,
       choices: [],
     });
   }
@@ -120,7 +135,8 @@ function dialogueProjection(
   return NpcDialogueProjectionSchema.parse({
     npcId: npc.id,
     npcName: npc.name,
-    text: questResponse?.response ?? lastChoice?.response ?? dialogue.prompt,
+    text: questResponse?.response ?? dailyResponse(npc.dailyJobResponses)?.response ??
+      lastChoice?.response ?? dialogue.prompt,
     choices,
   });
 }
@@ -152,7 +168,7 @@ export const npcDialoguePlugin: EnginePlugin = {
           .find((candidate) => candidate.id === query.payload.npcId)
         : currentNpc(context, character, query.payload.npcId);
       if (!npc) throw new RuleViolationError('That person is not here.');
-      return dialogueProjection(npc, character, context.world, query.payload.topic);
+      return dialogueProjection(npc, character, context.world, context.now(), query.payload.topic);
     });
 
     registerCommand('npc.dialogue.choose', NpcDialogueChoiceCommandSchema, async (command, context) => {

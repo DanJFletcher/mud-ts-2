@@ -4,7 +4,7 @@ import { ClientCommandBaseSchema, ClientQueryBaseSchema } from './protocol.js';
 import { ContractVersionSchema, IdSchema, NonNegativeIntSchema } from './ids.js';
 import { ConsumableItemSchema, InventoryEquipmentSchema } from './character.js';
 import { QuestDefinitionSchema, QuestDialogueActionSchema } from './quests.js';
-import { DailyBoardDefinitionSchema, SupplySourceDefinitionSchema } from './daily-jobs.js';
+import { DailyBoardDefinitionSchema, NpcDailyJobResponseDefinitionSchema, SupplySourceDefinitionSchema } from './daily-jobs.js';
 import {
   InnDefinitionSchema,
   InnProjectionSchema,
@@ -188,6 +188,7 @@ export const NpcDialogueTopicDefinitionSchema = z.object({
   keywords: z.array(z.string().trim().min(1).max(80)).min(1).max(12),
   response: z.string().min(1).max(2000),
   questResponses: z.array(NpcQuestResponseDefinitionSchema).max(24).optional(),
+  dailyJobResponses: z.array(NpcDailyJobResponseDefinitionSchema).max(24).optional(),
 }).strict();
 
 export const NpcRoomChatReactionDefinitionSchema = z.object({
@@ -278,6 +279,7 @@ export const NpcDefinitionSchema = z.object({
   description: z.string().min(1).max(1000),
   activityDescription: z.string().min(1).max(240).optional(),
   greeting: z.string().min(1).max(2000),
+  dailyJobResponses: z.array(NpcDailyJobResponseDefinitionSchema).max(24).optional(),
   topics: z.array(NpcDialogueTopicDefinitionSchema).max(24),
   dialogue: NpcDialogueDefinitionSchema.optional(),
   unknownTopicResponse: z.string().min(1).max(2000),
@@ -939,6 +941,18 @@ export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
     }
   }
   for (const { npc } of npcs) {
+    const dailyJobResponses = [
+      ...(npc.dailyJobResponses ?? []),
+      ...npc.topics.flatMap((topic) => topic.dailyJobResponses ?? []),
+    ];
+    for (const response of dailyJobResponses) {
+      const board = pack.dailyBoards?.find((candidate) => candidate.id === response.boardId);
+      if (!board) {
+        errors.push(`NPC ${npc.id} dialogue response references missing daily board ${response.boardId}`);
+      } else if (!board.slots.flat().some((job) => job.id === response.jobId)) {
+        errors.push(`NPC ${npc.id} dialogue response references missing daily job ${response.jobId} on board ${board.id}`);
+      }
+    }
     const questResponses = [
       ...(npc.dialogue?.questResponses ?? []),
       ...npc.topics.flatMap((topic) => topic.questResponses ?? []),

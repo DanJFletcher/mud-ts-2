@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   DailyBoardDefinitionSchema, DailyJobCommandSchema, GatherSupplyCommandSchema,
   InventoryItemProjectionSchema, WorldPackDraftSchema, dailyPostings,
+  NpcDailyJobConditionSchema, NpcDailyJobResponseDefinitionSchema, validateDraftWorldGraph,
 } from '../dist/src/index.js';
 
 test('old worlds default to no boards or sources and inventory type IDs are optional', () => {
@@ -35,4 +36,29 @@ test('daily variants rotate by UTC calendar day rather than by query or characte
     slots: [[{ ...job, id: 'a' }, { ...job, id: 'b' }]] });
   assert.deepEqual(dailyPostings(board, '2026-10-23'), dailyPostings(board, '2026-10-23'));
   assert.notDeepEqual(dailyPostings(board, '2026-10-23'), dailyPostings(board, '2026-10-24'));
+});
+
+test('daily dialogue conditions are typed and world validation checks board/job references', () => {
+  const condition = { boardId: 'board', jobId: 'fish-a', status: 'active' };
+  assert.equal(NpcDailyJobConditionSchema.safeParse(condition).success, true);
+  assert.equal(NpcDailyJobConditionSchema.safeParse({ ...condition, status: 'available' }).success, false);
+  assert.equal(NpcDailyJobConditionSchema.safeParse({ ...condition, cycle: 'yesterday' }).success, false);
+  assert.equal(NpcDailyJobResponseDefinitionSchema.safeParse({ ...condition, response: '' }).success, false);
+  const job = { poster: 'Cook', title: 'Fish', supplyTypeId: 'fish', quantity: 2, gold: 5, experience: 8 };
+  const response = { ...condition, response: 'Thank you for taking my notice.' };
+  const world = WorldPackDraftSchema.parse({
+    formatVersion: 1, packId: 'dialogue', packVersion: '1.0.0', displayName: 'Dialogue',
+    currency: { id: 'gold', name: 'Gold', symbol: 'g', startingBalance: 0 },
+    dailyBoards: [{ id: 'board', locationId: 'room', name: 'Jobs',
+      slots: [[{ ...job, id: 'fish-a' }, { ...job, id: 'fish-b' }]] }],
+    locations: [{ id: 'room', name: 'Room', description: 'A room.', exits: [],
+      npcs: [{ id: 'cook', name: 'Cook', description: 'A cook.', greeting: 'Hello.',
+        dailyJobResponses: [response], unknownTopicResponse: 'What?',
+        topics: [{ id: 'jobs', keywords: ['jobs'], response: 'Read the board.', dailyJobResponses: [response] }] }] }],
+  });
+  assert.deepEqual(validateDraftWorldGraph(world), []);
+  world.locations[0].npcs[0].dailyJobResponses = [{ ...response, boardId: 'missing' }];
+  world.locations[0].npcs[0].topics[0].dailyJobResponses = [{ ...response, jobId: 'missing' }];
+  assert.match(validateDraftWorldGraph(world).join('\n'), /missing daily board missing/);
+  assert.match(validateDraftWorldGraph(world).join('\n'), /missing daily job missing on board board/);
 });

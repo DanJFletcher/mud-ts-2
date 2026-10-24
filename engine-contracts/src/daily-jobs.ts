@@ -39,6 +39,17 @@ export const DailyJobStateSchema = z.object({
   /** Accepted terms remain fixed even if authoring changes before delivery. */
   details: DailyJobDefinitionSchema.optional(),
 }).strict();
+/** Matches only a currently posted job in the authoritative UTC cycle. */
+export const NpcDailyJobConditionSchema = z.object({
+  boardId: IdSchema,
+  jobId: IdSchema,
+  status: z.enum(['active', 'completed']),
+}).strict();
+export const NpcDailyJobResponseDefinitionSchema = NpcDailyJobConditionSchema.extend({
+  response: z.string().min(1).max(2000),
+}).strict();
+export type NpcDailyJobCondition = z.infer<typeof NpcDailyJobConditionSchema>;
+export type NpcDailyJobResponseDefinition = z.infer<typeof NpcDailyJobResponseDefinitionSchema>;
 export const SupplyCollectionStateSchema = z.object({
   sourceId: IdSchema,
   cycle: z.string(),

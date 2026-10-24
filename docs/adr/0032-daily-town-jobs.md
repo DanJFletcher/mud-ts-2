@@ -27,6 +27,16 @@ character and world-item revisions plus command-ID deduplication protect retries
 concurrent deliveries. Existing combat level thresholds and constitution health rules apply.
 The board query uses the host's injected clock, just like commands.
 
+NPC greetings and topics may declare typed `dailyJobResponses` keyed by board ID,
+job template ID and active/completed status. The dialogue query matches only the
+viewing character's ledger in the host clock's current UTC cycle and verifies that
+the template is currently posted. Expired or rotated-away jobs never acknowledge
+current work. Completed responses take priority over active responses, then author
+order breaks ties. Existing one-time/party quest response matching keeps priority;
+daily conditions neither read nor write ordinary quest progress or dialogue flags.
+This is an additive content contract; no client-specific matching or new events,
+plugin dependencies, or persistence changes are needed.
+
 ## Compatibility and limits
 
 All added authoring/projection fields default to empty; old worlds, characters and quest
