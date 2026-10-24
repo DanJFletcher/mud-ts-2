@@ -194,9 +194,9 @@ describe('Orraveth Bellwold settlement', () => {
     }
   });
 
-  it('has a valid, fully reachable fifty-six-location region with map directions matching its exits', () => {
+  it('has a valid, fully reachable sixty-nine-location region with map directions matching its exits', () => {
     expect(validateDraftWorldGraph(orravethWorld)).toEqual([]);
-    expect(orravethWorld.locations).toHaveLength(56);
+    expect(orravethWorld.locations).toHaveLength(69);
 
     const worldWithMissingQuestRewardItem = structuredClone(orravethWorld);
     const churchQuest = worldWithMissingQuestRewardItem.quests?.find(
@@ -252,6 +252,31 @@ describe('Orraveth Bellwold settlement', () => {
       }
     }
     expect(reached).toEqual(locationIds);
+  });
+
+  it('connects Bellwold’s alleys, homes, jail, library, upstairs room, and rear museum', () => {
+    const locationsById = new Map(orravethWorld.locations.map((location) => [location.id, location]));
+    const exitTo = (fromId: string, toId: string) =>
+      locationsById.get(fromId)?.exits.find((exit) => exit.toLocationId === toId);
+
+    expect(exitTo('bellwold-hearth-alley', 'bellwold-lantern-court')).toMatchObject({ direction: 'west' });
+    expect(exitTo('bellwold-lantern-court', 'bellwold-nettlemere-house')).toMatchObject({ direction: 'west' });
+    expect(exitTo('bellwold-lantern-court', 'bellwold-upper-row-house')).toMatchObject({ direction: 'north' });
+    expect(exitTo('bellwold-lower-row', 'bellwold-south-lane-cottage')).toMatchObject({ direction: 'south' });
+    expect(exitTo('bellwold-south-gate', 'bellwold-jail')).toMatchObject({ direction: 'west' });
+    expect(exitTo('bellwold-jail', 'bellwold-jail-cell')).toMatchObject({ direction: 'down' });
+    expect(exitTo('bellwold-common-house', 'bellwold-library')).toMatchObject({ direction: 'east' });
+    expect(exitTo('bellwold-library', 'bellwold-library-upper-room')).toMatchObject({ direction: 'up' });
+    expect(exitTo('bellwold-library', 'bellwold-local-museum')).toMatchObject({ direction: 'east' });
+
+    for (const locationId of [
+      'bellwold-nettlemere-house',
+      'bellwold-upper-row-house',
+      'bellwold-lower-row-house',
+      'bellwold-south-lane-cottage',
+    ]) {
+      expect(locationsById.get(locationId)?.npcs?.length).toBeGreaterThan(0);
+    }
   });
 
   it('defines the south road as a room-by-room route that ends before any new settlement', () => {

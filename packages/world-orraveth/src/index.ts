@@ -11,7 +11,7 @@ export const ORRAVETH_WORLD_INSTANCE_ID = 'orraveth-bellwold-instance';
 const draft = {
   formatVersion: 1,
   packId: 'orraveth.bellwold',
-  packVersion: '1.6.0',
+  packVersion: '1.7.0',
   displayName: 'Orraveth: Bellwold',
   classCatalog: orravethClassCatalog,
   currency: {
@@ -330,10 +330,11 @@ const draft = {
     {
       id: 'sovens-wheelwright-yard',
       name: 'Soven’s Wheelwright Yard',
-      description: 'A turning frame, wooden spokes, and a rack of finished rims fill this fenced yard. Shavings gather in the corners despite the broom leaning by the gate.\n\nWattle Row is east.',
+      description: 'A turning frame, wooden spokes, and a rack of finished rims fill this fenced yard. Shavings gather in the corners despite the broom leaning by the gate; the sound of a saw carries from the south.',
       mapPosition: { x: -2, y: -2, terrain: 'building' },
       exits: [
         { id: 'sovens-yard-to-wattle-row', fromLocationId: 'sovens-wheelwright-yard', toLocationId: 'bellwold-wattle-row', label: 'east', direction: 'east' },
+        { id: 'sovens-yard-to-hearth-alley', fromLocationId: 'sovens-wheelwright-yard', toLocationId: 'bellwold-hearth-alley', label: 'south', direction: 'south' },
       ],
       npcs: [
         {
@@ -359,6 +360,7 @@ const draft = {
       exits: [
         { id: 'tallow-cottage-to-wattle-row', fromLocationId: 'tallow-end-cottage', toLocationId: 'bellwold-wattle-row', label: 'north', direction: 'north' },
         { id: 'tallow-cottage-to-common-house', fromLocationId: 'tallow-end-cottage', toLocationId: 'bellwold-common-house', label: 'east', direction: 'east' },
+        { id: 'tallow-cottage-to-hearth-alley', fromLocationId: 'tallow-end-cottage', toLocationId: 'bellwold-hearth-alley', label: 'west', direction: 'west' },
       ],
       npcs: [
         {
@@ -418,6 +420,7 @@ const draft = {
         { id: 'common-house-to-well-court', fromLocationId: 'bellwold-common-house', toLocationId: 'bellwold-well-court', label: 'north', direction: 'north' },
         { id: 'common-house-to-tallow-cottage', fromLocationId: 'bellwold-common-house', toLocationId: 'tallow-end-cottage', label: 'west', direction: 'west' },
         { id: 'common-house-to-south-gate', fromLocationId: 'bellwold-common-house', toLocationId: 'bellwold-south-gate', label: 'south', direction: 'south' },
+        { id: 'common-house-to-library', fromLocationId: 'bellwold-common-house', toLocationId: 'bellwold-library', label: 'east', direction: 'east' },
       ],
       npcs: [
         {
@@ -444,6 +447,249 @@ const draft = {
       exits: [
         { id: 'south-gate-to-common-house', fromLocationId: 'bellwold-south-gate', toLocationId: 'bellwold-common-house', label: 'north', direction: 'north' },
         { id: 'south-gate-to-track', fromLocationId: 'bellwold-south-gate', toLocationId: 'bellwold-southbound-track', label: 'south', direction: 'south', roadId: 'bellwold-south-road' },
+        { id: 'south-gate-to-jail', fromLocationId: 'bellwold-south-gate', toLocationId: 'bellwold-jail', label: 'west', direction: 'west' },
+      ],
+    },
+    {
+      id: 'bellwold-hearth-alley',
+      name: 'Hearth Alley',
+      description: 'Close-set walls cast a narrow strip of shade across the lane. A cooking fire crackles behind one shutter.',
+      mapPosition: { x: -2, y: -3, terrain: 'dirt' },
+      exits: [
+        { id: 'hearth-alley-to-wheelwright-yard', fromLocationId: 'bellwold-hearth-alley', toLocationId: 'sovens-wheelwright-yard', label: 'north', direction: 'north' },
+        { id: 'hearth-alley-to-tallow-cottage', fromLocationId: 'bellwold-hearth-alley', toLocationId: 'tallow-end-cottage', label: 'east', direction: 'east' },
+        { id: 'hearth-alley-to-lantern-court', fromLocationId: 'bellwold-hearth-alley', toLocationId: 'bellwold-lantern-court', label: 'west', direction: 'west' },
+        { id: 'hearth-alley-to-lower-row', fromLocationId: 'bellwold-hearth-alley', toLocationId: 'bellwold-lower-row', label: 'south', direction: 'south' },
+      ],
+    },
+    {
+      id: 'bellwold-lantern-court',
+      name: 'Lantern Court',
+      description: 'A dented iron lantern hangs above the lane, and rainwater darkens the stones beneath it.',
+      mapPosition: { x: -3, y: -3, terrain: 'cobblestone' },
+      exits: [
+        { id: 'lantern-court-to-hearth-alley', fromLocationId: 'bellwold-lantern-court', toLocationId: 'bellwold-hearth-alley', label: 'east', direction: 'east' },
+        { id: 'lantern-court-to-nettlemere-house', fromLocationId: 'bellwold-lantern-court', toLocationId: 'bellwold-nettlemere-house', label: 'west', direction: 'west' },
+        { id: 'lantern-court-to-upper-row-house', fromLocationId: 'bellwold-lantern-court', toLocationId: 'bellwold-upper-row-house', label: 'north', direction: 'north' },
+        { id: 'lantern-court-to-lower-row-west', fromLocationId: 'bellwold-lantern-court', toLocationId: 'bellwold-lower-row-west', label: 'south', direction: 'south' },
+      ],
+    },
+    {
+      id: 'bellwold-nettlemere-house',
+      name: 'Nettlemere House',
+      description: 'A copper kettle rattles softly above the hearth, and the kitchen smells of warm bread.',
+      mapPosition: { x: -4, y: -3, terrain: 'building' },
+      exits: [
+        { id: 'nettlemere-house-to-lantern-court', fromLocationId: 'bellwold-nettlemere-house', toLocationId: 'bellwold-lantern-court', label: 'east', direction: 'east' },
+      ],
+      npcs: [
+        {
+          id: 'sella-nettlemere',
+          name: 'Sella Nettlemere',
+          description: 'Sella kneads a small round of dough on the kitchen table, flour dusting her sleeves.',
+          activityDescription: 'kneading dough at the kitchen table',
+          greeting: '“Come in out of the lane. Just mind the kettle.”',
+          topics: [
+            { id: 'lantern-court', keywords: ['Lantern Court', 'alley', 'neighbors'], response: '“The lane is narrow, but everyone knows whose door to knock on when a roof leaks or a pot goes missing.”' },
+            { id: 'bellwold-meals', keywords: ['food', 'bread', 'meals'], response: '“The market brings flour through town, but people still trade favors and whatever their own gardens produce.”' },
+          ],
+          unknownTopicResponse: '“I can tell you about this lane, if that’s what you came to ask.”',
+        },
+      ],
+    },
+    {
+      id: 'bellwold-upper-row-house',
+      name: 'Upper Row House',
+      description: 'A handloom clicks beside a sunlit window. Wool fibers cling to the rough boards.',
+      mapPosition: { x: -3, y: -2, terrain: 'building' },
+      exits: [
+        { id: 'upper-row-house-to-lantern-court', fromLocationId: 'bellwold-upper-row-house', toLocationId: 'bellwold-lantern-court', label: 'south', direction: 'south' },
+      ],
+      npcs: [
+        {
+          id: 'tovin-ashdown',
+          name: 'Tovin Ashdown',
+          description: 'Tovin works a shuttle through the loom, pausing to smooth a loose thread.',
+          activityDescription: 'weaving at a handloom',
+          greeting: '“If you’re here about the cloth, give me a moment to finish this row.”',
+          topics: [
+            { id: 'household-work', keywords: ['weaving', 'loom', 'cloth', 'work'], response: '“A good length of cloth takes time. Most of mine goes to mending clothes and covering goods before they travel.”' },
+            { id: 'town-lanes', keywords: ['town', 'houses', 'alleys', 'lanes'], response: '“These lanes grew where people needed a door close to their work. They don’t all lead somewhere grand.”' },
+          ],
+          unknownTopicResponse: '“Ask me about the loom or the people on this row.”',
+        },
+      ],
+    },
+    {
+      id: 'bellwold-lower-row-west',
+      name: 'Lower Row',
+      description: 'A loose shutter taps in the breeze; damp earth darkens the packed lane.',
+      mapPosition: { x: -3, y: -4, terrain: 'dirt' },
+      exits: [
+        { id: 'lower-row-west-to-lantern-court', fromLocationId: 'bellwold-lower-row-west', toLocationId: 'bellwold-lantern-court', label: 'north', direction: 'north' },
+        { id: 'lower-row-west-to-lower-row', fromLocationId: 'bellwold-lower-row-west', toLocationId: 'bellwold-lower-row', label: 'east', direction: 'east' },
+        { id: 'lower-row-west-to-row-house', fromLocationId: 'bellwold-lower-row-west', toLocationId: 'bellwold-lower-row-house', label: 'west', direction: 'west' },
+      ],
+    },
+    {
+      id: 'bellwold-lower-row-house',
+      name: 'Lower Row House',
+      description: 'A saw scrapes across a plank, scattering pale curls over the workbench.',
+      mapPosition: { x: -4, y: -4, terrain: 'building' },
+      exits: [
+        { id: 'lower-row-house-to-lower-row', fromLocationId: 'bellwold-lower-row-house', toLocationId: 'bellwold-lower-row-west', label: 'east', direction: 'east' },
+      ],
+      npcs: [
+        {
+          id: 'renna-kell',
+          name: 'Renna Kell',
+          description: 'Renna trims a warped board against the workbench, then checks its edge with her thumb.',
+          activityDescription: 'smoothing a board at the workbench',
+          greeting: '“Close the door behind you; the sawdust gets everywhere.”',
+          topics: [
+            { id: 'repairs', keywords: ['repairs', 'woodwork', 'workbench'], response: '“A loose step or a split shutter is usually easier to mend before the next rain.”' },
+            { id: 'lower-row', keywords: ['Lower Row', 'neighbors', 'houses'], response: '“The row is quiet until someone starts fixing something. Then the whole lane has an opinion.”' },
+          ],
+          unknownTopicResponse: '“If it’s about wood or the lane, ask directly.”',
+        },
+      ],
+    },
+    {
+      id: 'bellwold-lower-row',
+      name: 'South Lower Row',
+      description: 'Packed earth gives way to a patch of worn stone. A dog barks behind a fence.',
+      mapPosition: { x: -2, y: -4, terrain: 'dirt' },
+      exits: [
+        { id: 'lower-row-to-hearth-alley', fromLocationId: 'bellwold-lower-row', toLocationId: 'bellwold-hearth-alley', label: 'north', direction: 'north' },
+        { id: 'lower-row-to-lower-row-west', fromLocationId: 'bellwold-lower-row', toLocationId: 'bellwold-lower-row-west', label: 'west', direction: 'west' },
+        { id: 'lower-row-to-jail', fromLocationId: 'bellwold-lower-row', toLocationId: 'bellwold-jail', label: 'east', direction: 'east' },
+        { id: 'lower-row-to-cottage', fromLocationId: 'bellwold-lower-row', toLocationId: 'bellwold-south-lane-cottage', label: 'south', direction: 'south' },
+      ],
+    },
+    {
+      id: 'bellwold-south-lane-cottage',
+      name: 'South Lane Cottage',
+      description: 'A clay pot of thyme sits on the sill; its sharp scent reaches through the open window.',
+      mapPosition: { x: -2, y: -5, terrain: 'building' },
+      exits: [
+        { id: 'south-lane-cottage-to-lower-row', fromLocationId: 'bellwold-south-lane-cottage', toLocationId: 'bellwold-lower-row', label: 'north', direction: 'north' },
+      ],
+      npcs: [
+        {
+          id: 'pella-wren',
+          name: 'Pella Wren',
+          description: 'Pella sorts fresh thyme into a shallow basket beside the window.',
+          activityDescription: 'sorting herbs beside the window',
+          greeting: '“There’s enough room by the table if you need to sit.”',
+          topics: [
+            { id: 'herbs', keywords: ['herbs', 'thyme', 'plants'], response: '“I keep a few useful plants close by. I know what I have tried myself, and I leave the rest to people with better notes.”' },
+            { id: 'town-life', keywords: ['Bellwold', 'town', 'life'], response: '“People here borrow tools, return them late, and argue about whose turn it is to mend the fence. Then they help anyway.”' },
+          ],
+          unknownTopicResponse: '“I can tell you what grows in my pots, or what I’ve seen on the lane.”',
+        },
+      ],
+    },
+    {
+      id: 'bellwold-jail',
+      name: 'Bellwold Jail',
+      description: 'Iron bars cast thin shadows across the stone floor. Keys clink briefly behind the desk.',
+      mapPosition: { x: -1, y: -4, terrain: 'building' },
+      exits: [
+        { id: 'jail-to-south-gate', fromLocationId: 'bellwold-jail', toLocationId: 'bellwold-south-gate', label: 'east', direction: 'east' },
+        { id: 'jail-to-lower-row', fromLocationId: 'bellwold-jail', toLocationId: 'bellwold-lower-row', label: 'west', direction: 'west' },
+        { id: 'jail-to-holding-cell', fromLocationId: 'bellwold-jail', toLocationId: 'bellwold-jail-cell', label: 'down to the holding cell', direction: 'down' },
+      ],
+      npcs: [
+        {
+          id: 'sergeant-nera-vail',
+          name: 'Sergeant Nera Vail',
+          description: 'Sergeant Vail sits behind the desk, turning a key ring over in one hand.',
+          activityDescription: 'checking the jail keys',
+          greeting: '“If you have a concern, state what happened and when. I keep the record plain.”',
+          topics: [
+            { id: 'jail', keywords: ['jail', 'holding cell', 'detention'], response: '“The cell is for keeping people safely while a matter is heard. It is not a sentence, and I do not decide a dispute without a record.”' },
+            { id: 'town-watch', keywords: ['watch', 'guard', 'Taren Voss'], response: '“Taren walks the public routes. I keep this room and its keys; the two jobs overlap only when someone needs help.”' },
+            { id: 'records', keywords: ['records', 'charges', 'law'], response: '“I write down what each person says and who witnessed it. A written claim is not the same thing as a proven one.”' },
+          ],
+          unknownTopicResponse: '“Keep your account specific. I can’t act on a story with no place or time attached.”',
+        },
+      ],
+    },
+    {
+      id: 'bellwold-jail-cell',
+      name: 'Jail Holding Cell',
+      description: 'A narrow barred door stands across from the stone wall. Damp straw smells sour in the close air.',
+      mapAreaId: 'bellwold-jail',
+      mapPosition: { x: -1, y: -4, z: -1, terrain: 'building' },
+      exits: [
+        { id: 'jail-cell-to-jail', fromLocationId: 'bellwold-jail-cell', toLocationId: 'bellwold-jail', label: 'up to the jail desk', direction: 'up' },
+      ],
+    },
+    {
+      id: 'bellwold-library',
+      name: 'Bellwold Library',
+      description: 'Books and stitched pamphlets fill the shelves around a broad reading table. Dry paper and lamp oil mingle in the air.',
+      mapPosition: { x: 1, y: -3, terrain: 'building' },
+      exits: [
+        { id: 'library-to-common-house', fromLocationId: 'bellwold-library', toLocationId: 'bellwold-common-house', label: 'west', direction: 'west' },
+        { id: 'library-to-museum', fromLocationId: 'bellwold-library', toLocationId: 'bellwold-local-museum', label: 'east to the museum', direction: 'east' },
+        { id: 'library-to-upper-room', fromLocationId: 'bellwold-library', toLocationId: 'bellwold-library-upper-room', label: 'upstairs', direction: 'up' },
+      ],
+      readables: [
+        {
+          id: 'bellwold-library-shelf-guide',
+          label: 'Shelf guide',
+          description: 'A hand-lettered guide fixed to the end of a bookcase.',
+          text: '“Village notices and copied minutes: left shelf. Field and mill accounts: center shelves. Travel records and maps: right shelf. Ask before removing a bound volume.”',
+        },
+      ],
+      npcs: [
+        {
+          id: 'mira-dell',
+          name: 'Mira Dell',
+          description: 'Mira straightens a stack of stitched booklets, then brushes dust from the table.',
+          activityDescription: 'sorting pamphlets at the reading table',
+          greeting: '“The shelves are open. If you need a particular record, tell me what it concerns.”',
+          topics: [
+            { id: 'library', keywords: ['library', 'books', 'records'], response: '“Most of these are copies or working notes. I keep the source with the copy when I can, so readers know what they are looking at.”' },
+            { id: 'museum', keywords: ['museum', 'collection', 'exhibits'], response: '“The room behind this one holds objects residents have lent or found nearby. Their labels say what is known—and leave blank what is not.”' },
+            { id: 'bellwold-history', keywords: ['Bellwold history', 'town history', 'old records'], response: '“There is no complete town chronicle here. We have notices, tallies, and pieces of older accounts. They do not all answer the same questions.”' },
+          ],
+          unknownTopicResponse: '“Tell me what you are trying to find. I may know which shelf to check.”',
+        },
+      ],
+    },
+    {
+      id: 'bellwold-library-upper-room',
+      name: 'Upper Reading Room',
+      description: 'A long window fills the sloped room with pale light. Pages rustle softly in the draft.',
+      mapAreaId: 'bellwold-library',
+      mapPosition: { x: 1, y: -3, z: 1, terrain: 'building' },
+      exits: [
+        { id: 'library-upper-room-to-library', fromLocationId: 'bellwold-library-upper-room', toLocationId: 'bellwold-library', label: 'down to the library', direction: 'down' },
+      ],
+    },
+    {
+      id: 'bellwold-local-museum',
+      name: 'Bellwold Local Museum',
+      description: 'Glass-fronted cases stand against the walls. A slate tally board and a faded waterwheel sketch sit beneath a dusty window.',
+      mapPosition: { x: 2, y: -3, terrain: 'building' },
+      exits: [
+        { id: 'museum-to-library', fromLocationId: 'bellwold-local-museum', toLocationId: 'bellwold-library', label: 'west to the library', direction: 'west' },
+      ],
+      readables: [
+        {
+          id: 'museum-tally-board-label',
+          label: 'Tally board label',
+          description: 'A paper label beneath a slate board marked with columns of old chalk lines.',
+          text: '“Loaned from the Old Grain House. The surviving marks show measured grain totals; the board’s maker and the dates of the entries are not recorded.”',
+        },
+        {
+          id: 'museum-mill-sketch-label',
+          label: 'Mill sketch label',
+          description: 'A paper label beneath a faded drawing of a waterwheel.',
+          text: '“Copied from a page kept at the abandoned watermill. The drawing records a wheel and channel but gives no date or account of who made it.”',
+        },
       ],
     },
     {
