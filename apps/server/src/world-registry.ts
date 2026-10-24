@@ -3,6 +3,8 @@ import { EngineHost } from '@mudd/engine-core';
 import {
   characterPlugin,
   dailyJobsPlugin,
+  fishingPlugin,
+  woodcuttingPlugin,
   createClassRulesetPlugin,
   createLocationGroupsPlugin,
   autonomousNpcsPlugin,
@@ -93,6 +95,8 @@ export function createWorldRuntimes(
       npcDialoguePlugin,
       merchantPlugin,
       dailyJobsPlugin,
+      fishingPlugin,
+      woodcuttingPlugin,
       worldEventEffectsPlugin,
     ];
     runtimes.set(definition.worldInstanceId, {

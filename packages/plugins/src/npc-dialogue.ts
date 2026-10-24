@@ -1,5 +1,6 @@
 import {
   CharacterNpcDialogueChoiceMadeEventSchema,
+  CharacterItemGrantedEventSchema,
   NpcDialogueChoiceCommandSchema,
   NpcDialogueProjectionSchema,
   CharacterQuestRewardedEventSchema,
@@ -151,6 +152,7 @@ export const npcDialoguePlugin: EnginePlugin = {
     requires: ['mudd.character.state.v1'],
     eventSchemaVersions: {
       'character.npc_dialogue_choice_made': 1,
+      'character.item_granted': 1,
       'quest.accepted': 1,
       'quest.completed': 1,
       'character.quest_rewarded': 1,
@@ -207,6 +209,25 @@ export const npcDialoguePlugin: EnginePlugin = {
         version: 1,
         payload,
       }];
+      if (choice.itemReward) {
+        if (character.inventory.some((item) => item.id === choice.itemReward!.id)) {
+          throw new RuleViolationError('You already received that item.');
+        }
+        const reward = choice.itemReward;
+        const item = {
+          id: reward.id,
+          ...(reward.typeId ? { typeId: reward.typeId } : {}),
+          label: reward.label,
+          description: reward.description,
+          ...(reward.questBound ? { questBound: true } : {}),
+          ...(reward.consumable ? { consumable: reward.consumable } : {}),
+          ...(reward.equipment ? { equipment: reward.equipment } : {}),
+          ...(reward.fishingRod ? { fishingRod: reward.fishingRod } : {}),
+        };
+        const grantPayload = { characterId: character.characterId, item, sourceId: `dialogue-${npc.id}-${choice.id}` };
+        CharacterItemGrantedEventSchema.shape.payload.parse(grantPayload);
+        events.push({ type: 'character.item_granted', version: 1, payload: grantPayload });
+      }
       if (choice.questAction) {
         const quest = context.world.quests.find((candidate) => candidate.id === choice.questAction?.questId);
         if (!quest) throw new RuleViolationError('That quest is not available in this world.');

@@ -26,6 +26,28 @@ function supplies(character: CharacterProjection, typeId: string) {
   return character.inventory.filter((item) => item.typeId === typeId && !item.questBound &&
     item.id !== character.equipment.weaponItemId && item.id !== character.equipment.armorItemId);
 }
+function supplyCount(character: CharacterProjection, typeId: string) {
+  return supplies(character, typeId).reduce((count, item) => count + (item.quantity ?? 1), 0);
+}
+function chooseSupplies(character: CharacterProjection, typeId: string, quantity: number) {
+  let remaining = quantity;
+  const items: CharacterProjection['inventory'] = [];
+  const consumedItemIds: string[] = [];
+  const consumedItemQuantities: Array<{ itemId: string; quantity: number }> = [];
+  const eligible = supplies(character, typeId).sort((a, b) =>
+    Number(Boolean(a.sharedItemId)) - Number(Boolean(b.sharedItemId)),
+  );
+  for (const item of eligible) {
+    if (!remaining) break;
+    const available = item.quantity ?? 1;
+    const consumed = Math.min(available, remaining);
+    items.push({ ...item, ...(item.stackable ? { quantity: consumed } : {}) });
+    if (consumed === available) consumedItemIds.push(item.id);
+    else consumedItemQuantities.push({ itemId: item.id, quantity: consumed });
+    remaining -= consumed;
+  }
+  return remaining ? undefined : { items, consumedItemIds, consumedItemQuantities };
+}
 
 export const dailyJobsPlugin: EnginePlugin = {
   manifest: {
@@ -65,7 +87,7 @@ export const dailyJobsPlugin: EnginePlugin = {
         jobs: dailyPostings(board, cycle).map((offered) => {
           const accepted = character.dailyJobs.find((entry) => entry.boardId === board.id && entry.cycle === cycle && entry.jobId === offered.id);
           const job = accepted?.details ?? offered;
-          return { ...job, carried: supplies(character, job.supplyTypeId).length, status: accepted?.status ?? 'available' };
+          return { ...job, carried: supplyCount(character, job.supplyTypeId), status: accepted?.status ?? 'available' };
         }),
       });
     });
@@ -87,8 +109,9 @@ export const dailyJobsPlugin: EnginePlugin = {
       }
       const currency = context.world.currency;
       if (!currency || character.wallet?.currencyId !== currency.id) throw new RuleViolationError('Your wallet is not ready.');
-      const items = completing ? supplies(character, job.supplyTypeId).slice(0, job.quantity) : [];
-      if (completing && items.length !== job.quantity) throw new RuleViolationError(`Bring ${job.quantity} eligible supplies for this job.`);
+      const selection = completing ? chooseSupplies(character, job.supplyTypeId, job.quantity) : undefined;
+      if (completing && !selection) throw new RuleViolationError(`Bring ${job.quantity} eligible supplies for this job.`);
+      const items = selection?.items ?? [];
       const gold = completing ? job.gold : 0;
       const experience = completing ? job.experience : 0;
       if (character.wallet.balance + gold > 2147483647) throw new RuleViolationError('Your wallet is full.');
@@ -98,7 +121,9 @@ export const dailyJobsPlugin: EnginePlugin = {
       const payload = DailyJobChangedEventSchema.shape.payload.parse({
         characterId: character.characterId,
         job: { boardId: board.id, cycle, jobId: job.id, title: job.title, details: job, status: completing ? 'completed' : 'active' },
-        consumedItemIds: items.map((item) => item.id), gold, experience, currencyId: currency.id,
+        consumedItemIds: selection?.consumedItemIds ?? [],
+        consumedItemQuantities: selection?.consumedItemQuantities ?? [],
+        gold, experience, currencyId: currency.id,
         level, maximumHealth: maximumHealthForLevel(level, character.attributes.constitution),
       });
       const sharedIds = items.flatMap((item) => item.sharedItemId ? [item.sharedItemId] : []);

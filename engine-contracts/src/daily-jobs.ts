@@ -86,6 +86,11 @@ export const DailyJobChangedEventSchema = DomainEventBaseSchema.extend({
     characterId: IdSchema,
     job: DailyJobStateSchema,
     consumedItemIds: z.array(IdSchema).max(20),
+    /** Partial removal from stackable inventory slots; absent in legacy events. */
+    consumedItemQuantities: z.array(z.object({
+      itemId: IdSchema,
+      quantity: z.number().int().positive().max(2_147_483_647),
+    }).strict()).max(20).optional(),
     gold: z.number().int().nonnegative().max(1000),
     experience: z.number().int().nonnegative().max(1000),
     currencyId: IdSchema,

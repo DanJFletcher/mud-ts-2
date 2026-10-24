@@ -135,9 +135,9 @@ describe('autonomous NPC scheduler and room movement messages', () => {
         now: () => now,
       });
 
-      expect(await scheduler.tick()).toBe(2);
-      expect(await engine.processPendingEffects()).toBe(2);
-      expect(publishNpcMessage).toHaveBeenCalledTimes(4);
+      expect(await scheduler.tick()).toBe(3);
+      expect(await engine.processPendingEffects()).toBe(3);
+      expect(publishNpcMessage).toHaveBeenCalledTimes(6);
       expect(publishNpcMessage).toHaveBeenCalledWith(expect.objectContaining({
         worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
         roomId: 'bellwold-market-square',

@@ -109,6 +109,7 @@ let walletBalance: number;
 let worldCurrency: { id: string; name: string; symbol: string };
 let merchantLanternPurchased: boolean;
 let healingDraughtCarried: boolean;
+let fishingRodCarried: boolean;
 let characterHealth: { current: number; maximum: number } | null;
 let characterStamina: { current: number; maximum: number };
 let staminaPosture: 'standing' | 'resting';
@@ -463,6 +464,7 @@ beforeEach(() => {
   worldCurrency = { id: 'moss-mark', name: 'moss mark', symbol: 'm' };
   merchantLanternPurchased = false;
   healingDraughtCarried = false;
+  fishingRodCarried = false;
   characterHealth = null;
   characterStamina = { current: 100, maximum: 100 };
   staminaPosture = 'standing';
@@ -618,6 +620,13 @@ beforeEach(() => {
               description: 'A stoppered glass vial of herbal tonic.',
               consumable: { effect: 'heal' as const, amount: 3 },
             }] : []),
+            ...(fishingRodCarried ? [{
+              id: 'old-rod',
+              typeId: 'old-rod',
+              label: 'old rod',
+              description: 'A worn fishing rod.',
+              fishingRod: { qualityId: 'old', biteChancePercent: 10, waitSeconds: 10 },
+            }] : []),
           ],
         },
         stats: {
@@ -635,6 +644,9 @@ beforeEach(() => {
         },
         currency: worldCurrency,
         location: currentLocation(),
+        availableFishingSpots: room === 'bridge' && !orravethWorld
+          ? [{ id: 'glasswater-fishing-spot', label: 'Glasswater Bridge' }]
+          : [],
         map: currentWorldMap(),
         questJournal,
         ...(dailyFeatureEnabled ? {
@@ -1975,7 +1987,7 @@ describe('single-character world session client', () => {
     expect(history).toHaveTextContent('> help');
     expect(history).toHaveTextContent('take <item> | take all — Pick up one or all items in the current room.');
     expect(history).toHaveTextContent('talk <npc> [about <topic>] — Speak privately with someone in the current room.');
-    expect(history).toHaveTextContent('use <item> on <target> | use <healing item> — Use a room item or restore health during or between encounters.');
+    expect(history).toHaveTextContent('use <item> on <target> | use <healing item> | use <fishing rod> — Use a room item, restore health, or fish at a marked spot.');
     expect(history).toHaveTextContent('Quick actions include available movement, item, equipment, merchant, dialogue, and combat actions.');
     expect(history).toHaveTextContent('equip <item> — Equip a carried weapon or armor item.');
 
@@ -2846,6 +2858,16 @@ describe('single-character world session client', () => {
     expect(dailyCommandPayloads).toContainEqual(expect.objectContaining({ type: 'supply.gather' }));
     expect(screen.getByRole('region', { name: 'Terminal output' })).not.toHaveTextContent('could not gather');
     expect(screen.queryByText(/That bulletin is not available/)).not.toBeInTheDocument();
+  });
+
+  it('offers a carried fishing rod as a quick action at a fishing spot', async () => {
+    room = 'bridge';
+    fishingRodCarried = true;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Show items to use' }));
+    expect(await screen.findByRole('button', { name: 'Use old rod to fish at Glasswater Bridge' })).toBeInTheDocument();
   });
 
   it('shows active daily postings from previous cycles as expired in Field notes', async () => {

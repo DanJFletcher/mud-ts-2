@@ -669,6 +669,8 @@ app.get('/api/game', async (req, res, next) => {
       current.characterId,
       locationGroupCatalog.groups,
     );
+    const currentWorldLocation = selected.world.locations.find((entry) => entry.id === character.locationId);
+    const currentStateId = character.locationStateId ?? currentWorldLocation?.defaultStateId;
     return res.json({
       player: { id: identity.playerId, displayName: identity.displayName },
       character,
@@ -683,6 +685,13 @@ app.get('/api/game', async (req, res, next) => {
         }
         : {}),
       location,
+      availableFishingSpots: selected.world.fishingSpots
+        .filter((spot) => spot.locationId === character.locationId &&
+          (!spot.stateId || spot.stateId === currentStateId))
+        .map(({ id, label }) => ({ id, label })),
+      availableWoodcuttingTrees: selected.world.woodcuttingTrees
+        .filter((tree) => tree.locationId === character.locationId)
+        .map(({ id, label }) => ({ id, label })),
       map: projectWorldMap(character, selected.world, locationGroupCatalog.groups),
       questJournal: projectQuestJournal(character, selected.world),
       dailyActivities: {

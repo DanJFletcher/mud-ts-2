@@ -188,6 +188,7 @@ vi.mock('@mudd/core-plugins', () => ({
   npcDialoguePlugin: {},
   merchantPlugin: {},
   dailyJobsPlugin: {},
+  fishingPlugin: {},
 }));
 
 vi.mock('@mudd/engine-core', () => ({

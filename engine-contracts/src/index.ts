@@ -1,4 +1,6 @@
 export * from './daily-jobs.js';
+export * from './fishing.js';
+export * from './woodcutting.js';
 export * from './classes.js';
 /** MUDD CONTRACTS PROPOSED. Design reference, not a verified shipped API. */
 export * from './ids.js';

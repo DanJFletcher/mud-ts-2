@@ -3,6 +3,7 @@ import {
   DailyJobChangedEventSchema,
   SupplyGatheredEventSchema,
   CharacterItemTakenEventSchema,
+  CharacterItemGrantedEventSchema,
   CharacterItemDroppedEventSchema,
   CharacterEquipmentChangedEventSchema,
   CharacterItemUsedEventSchema,
@@ -21,6 +22,10 @@ import {
   CharacterStaminaRecoverySettledEventSchema,
   CharacterVitalRecoverySettledEventSchema,
   CharacterPostureChangedEventSchema,
+  FishingCastStartedEventSchema,
+  FishingCastAdvancedEventSchema,
+  WoodcuttingActionStartedEventSchema,
+  WoodcuttingActionAdvancedEventSchema,
   DEFAULT_CHARACTER_RESOURCES,
   resolveStaminaRecovery,
   resolveVitalRecovery,
@@ -155,31 +160,149 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
           { sourceId: collected.sourceId, cycle: collected.cycle, count: (prior?.count ?? 0) + 1 },
         ],
       });
+    } else if (event.type === 'character.fishing_cast_started') {
+      if (!state) throw new Error('Fishing cast started before character creation.');
+      const started = FishingCastStartedEventSchema.parse(publicEvent).payload;
+      if (started.characterId !== state.characterId || state.activeFishing ||
+          started.cast.locationId !== state.locationId ||
+          !state.inventory.some((item) => item.id === started.cast.rodItemId && item.fishingRod?.qualityId === started.cast.rodQualityId)) {
+        throw new Error(`Invalid fishing cast start at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({ ...state, activeFishing: started.cast, revision: event.aggregateVersion });
+    } else if (event.type === 'character.fishing_cast_advanced') {
+      if (!state) throw new Error('Fishing cast advanced before character creation.');
+      const advanced = FishingCastAdvancedEventSchema.parse(publicEvent).payload;
+      const cast = state.activeFishing;
+      if (!cast || advanced.characterId !== state.characterId || advanced.castId !== cast.castId ||
+          advanced.ticksCompleted < cast.ticksCompleted ||
+          (advanced.status !== 'interrupted' && advanced.ticksCompleted === cast.ticksCompleted) ||
+          advanced.ticksCompleted > cast.ticksRequired ||
+          (advanced.status !== 'interrupted' && advanced.tickRolls.length !== advanced.ticksCompleted - cast.ticksCompleted) ||
+          advanced.tickRolls.some((roll, index) => roll.tick !== cast.ticksCompleted + index + 1) ||
+          (advanced.status === 'waiting' && advanced.ticksCompleted >= cast.ticksRequired) ||
+          (advanced.status === 'no-bite' && advanced.ticksCompleted !== cast.ticksRequired) ||
+          (advanced.status === 'interrupted' && advanced.item)) {
+        throw new Error(`Invalid fishing progress at revision ${event.aggregateVersion}.`);
+      }
+      if (advanced.item && state.inventory.some((item) => item.id === advanced.item!.id)) {
+        throw new Error(`Duplicate fish item at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        ...(advanced.status === 'waiting'
+          ? { activeFishing: { ...cast, ticksCompleted: advanced.ticksCompleted } }
+          : { activeFishing: undefined }),
+        ...(advanced.item ? { inventory: [...state.inventory, advanced.item] } : {}),
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.woodcutting_action_started') {
+      if (!state) throw new Error('Woodcutting action started before character creation.');
+      const started = WoodcuttingActionStartedEventSchema.parse(publicEvent).payload;
+      const axe = state.inventory.find((item) => item.id === started.action.axeItemId);
+      if (started.characterId !== state.characterId || state.activeWoodcutting || state.activeFishing ||
+          started.action.locationId !== state.locationId || !axe?.woodcuttingAxe ||
+          (state.woodcutting?.level ?? 1) < axe.woodcuttingAxe.requiredLevel) {
+        throw new Error(`Invalid woodcutting start at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        activeWoodcutting: started.action,
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.woodcutting_action_advanced') {
+      if (!state) throw new Error('Woodcutting action advanced before character creation.');
+      const advanced = WoodcuttingActionAdvancedEventSchema.parse(publicEvent).payload;
+      const action = state.activeWoodcutting;
+      const skillExperience = advanced.skillExperienceAwarded;
+      const expectedExperience = (state.woodcutting?.experience ?? 0) + skillExperience;
+      let expectedLevel = 1;
+      while (expectedLevel < 99 && expectedExperience >= 25 * expectedLevel * expectedLevel) expectedLevel += 1;
+      const hasLog = advanced.status === 'logged';
+      const validLogItem = advanced.item
+        ? advanced.item.stackable === true && advanced.item.quantity === 1 &&
+          advanced.item.typeId === advanced.logTypeId &&
+          !state.inventory.some((item) => item.id === advanced.item!.id || (item.stackable && item.typeId === advanced.item!.typeId))
+        : true;
+      const stack = advanced.stackItemId
+        ? state.inventory.find((item) => item.id === advanced.stackItemId)
+        : undefined;
+      if (!action || advanced.characterId !== state.characterId || advanced.actionId !== action.actionId ||
+          advanced.ticksCompleted < action.ticksCompleted || advanced.ticksCompleted > action.ticksRequired ||
+          (['waiting', 'logged', 'no-log'].includes(advanced.status) &&
+            advanced.tickRolls.length !== advanced.ticksCompleted - action.ticksCompleted) ||
+          advanced.tickRolls.some((roll, index) => roll.tick !== action.ticksCompleted + index + 1) ||
+          (advanced.status === 'waiting' && (advanced.ticksCompleted <= action.ticksCompleted || advanced.ticksCompleted >= action.ticksRequired || advanced.tickRolls.some((roll) => roll.success) || skillExperience !== 0 || advanced.item || advanced.stackItemId)) ||
+          (advanced.status === 'logged' && (!advanced.tickRolls.some((roll) => roll.success) || skillExperience <= 0 || (advanced.item === undefined) === (advanced.stackItemId === undefined) || !advanced.logTypeId || !advanced.logLabel)) ||
+          (advanced.status === 'no-log' && (advanced.ticksCompleted !== action.ticksRequired || advanced.tickRolls.some((roll) => roll.success) || skillExperience !== 0 || advanced.item || advanced.stackItemId)) ||
+          (['interrupted', 'tree-depleted'].includes(advanced.status) && (advanced.tickRolls.length || skillExperience || advanced.item || advanced.stackItemId)) ||
+          (advanced.status !== 'logged' && (advanced.logTypeId || advanced.logLabel || advanced.treeDepleted)) ||
+          (hasLog ? expectedExperience !== advanced.totalExperience : advanced.totalExperience !== (state.woodcutting?.experience ?? 0)) ||
+          (hasLog ? advanced.level !== expectedLevel : advanced.level !== (state.woodcutting?.level ?? 1)) ||
+          !validLogItem ||
+          (advanced.stackItemId && (!stack?.stackable || stack.typeId !== advanced.logTypeId ||
+            advanced.stackQuantity !== (stack.quantity ?? 1) + 1)) ||
+          (!advanced.stackItemId && advanced.stackQuantity !== undefined)) {
+        throw new Error(`Invalid woodcutting progress at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        ...(advanced.status === 'waiting'
+          ? { activeWoodcutting: { ...action, ticksCompleted: advanced.ticksCompleted } }
+          : { activeWoodcutting: undefined }),
+        ...(advanced.item ? { inventory: [...state.inventory, advanced.item] } : {}),
+        ...(advanced.stackItemId
+          ? { inventory: state.inventory.map((item) => item.id === advanced.stackItemId
+            ? { ...item, quantity: advanced.stackQuantity }
+            : item) }
+          : {}),
+        ...(hasLog ? {
+          woodcutting: { experience: advanced.totalExperience, level: advanced.level },
+        } : {}),
+        revision: event.aggregateVersion,
+      });
     } else if (event.type === 'character.daily_job_changed') {
       if (!state) throw new Error('Daily job before creation.');
       const changed = DailyJobChangedEventSchema.parse(publicEvent).payload;
       const { job, consumedItemIds, gold, experience } = changed;
+      const consumedItemQuantities = changed.consumedItemQuantities ?? [];
       const matches = (entry: typeof job) => entry.boardId === job.boardId && entry.cycle === job.cycle && entry.jobId === job.jobId;
       const prior = state.dailyJobs.find(matches);
       const consumed = new Set(consumedItemIds);
+      const partialConsumption = new Map(consumedItemQuantities.map(({ itemId, quantity }) => [itemId, quantity]));
+      const consumedQuantity = consumedItemIds.length +
+        consumedItemQuantities.reduce((total, entry) => total + entry.quantity, 0);
       const terms = prior?.details ?? job.details;
       if (changed.characterId !== state.characterId || state.wallet?.currencyId !== changed.currencyId ||
           (job.details && job.details.id !== job.jobId) ||
           consumed.size !== consumedItemIds.length ||
+          partialConsumption.size !== consumedItemQuantities.length ||
+          consumedItemQuantities.some(({ itemId, quantity }) => {
+            const item = state!.inventory.find((entry) => entry.id === itemId);
+            return consumed.has(itemId) || !item?.stackable || !item.quantity || quantity >= item.quantity;
+          }) ||
           consumedItemIds.some((id) => !state!.inventory.some((item) => item.id === id && !item.questBound)) ||
-          (job.status === 'active' ? prior || gold || experience || consumed.size : prior?.status !== 'active') ||
+          (job.status === 'active' ? prior || gold || experience || consumedQuantity : prior?.status !== 'active') ||
           (job.status === 'completed' && terms && (
-            gold !== terms.gold || experience !== terms.experience || consumed.size !== terms.quantity ||
-            consumedItemIds.some((id) => state!.inventory.find((item) => item.id === id)?.typeId !== terms.supplyTypeId)
+            gold !== terms.gold || experience !== terms.experience || consumedQuantity !== terms.quantity ||
+            consumedItemIds.some((id) => state!.inventory.find((item) => item.id === id)?.typeId !== terms.supplyTypeId) ||
+            consumedItemQuantities.some(({ itemId }) => state!.inventory.find((item) => item.id === itemId)?.typeId !== terms.supplyTypeId)
           )) ||
-          consumed.has(state.equipment.weaponItemId ?? '') || consumed.has(state.equipment.armorItemId ?? '')) {
+          consumed.has(state.equipment.weaponItemId ?? '') || consumed.has(state.equipment.armorItemId ?? '') ||
+          partialConsumption.has(state.equipment.weaponItemId ?? '') || partialConsumption.has(state.equipment.armorItemId ?? '')) {
         throw new Error('Invalid daily job transition.');
       }
       state = CharacterProjectionSchema.parse({
         ...state, revision: event.aggregateVersion,
         dailyJobs: [...state.dailyJobs.filter((entry) => entry.cycle === job.cycle && !matches(entry)), job],
-        inventory: state.inventory.filter((item) => !consumed.has(item.id)),
-        itemLocations: state.itemLocations.filter((entry) => !consumed.has(entry.item.id)),
+        inventory: state.inventory.flatMap((item) => {
+          if (consumed.has(item.id)) return [];
+          const amount = partialConsumption.get(item.id);
+          if (!amount) return [item];
+          const { sharedItemId: _sharedItemId, ...detached } = item;
+          return [{ ...detached, quantity: (item.quantity ?? 1) - amount }];
+        }),
+        itemLocations: state.itemLocations.filter((entry) =>
+          !consumed.has(entry.item.id) && !(partialConsumption.has(entry.item.id) && entry.item.sharedItemId)),
         wallet: { ...state.wallet, balance: state.wallet.balance + gold },
         advancement: { ...state.advancement, experience: (state.advancement?.experience ?? 0) + experience, level: changed.level },
         ...(state.health ? { health: { ...state.health, maximum: changed.maximumHealth } } : {}),
@@ -800,6 +923,23 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
               : [...state.claimedContainerItemIds, taken.payload.item.id],
           }
           : {}),
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.item_granted') {
+      if (!state) throw new Error('Item granted event encountered before character creation.');
+      const granted = CharacterItemGrantedEventSchema.parse(publicEvent);
+      if (granted.payload.characterId !== state.characterId ||
+          state.inventory.some((item) => item.id === granted.payload.item.id)) {
+        throw new Error(`Invalid item grant at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        inventory: [...state.inventory, granted.payload.item],
+        itemLocations: state.itemLocations.some((entry) => entry.item.id === granted.payload.item.id)
+          ? state.itemLocations.map((entry) => entry.item.id === granted.payload.item.id
+            ? { ...entry, locationId: null }
+            : entry)
+          : [...state.itemLocations, { item: granted.payload.item, locationId: null }],
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'character.item_dropped') {

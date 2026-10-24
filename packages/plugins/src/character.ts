@@ -545,6 +545,8 @@ export const characterPlugin: EnginePlugin = {
           ...(inventoryItem.questBound ? { questBound: true } : {}),
           ...(inventoryItem.consumable ? { consumable: inventoryItem.consumable } : {}),
           ...(inventoryItem.equipment ? { equipment: inventoryItem.equipment } : {}),
+          ...(inventoryItem.fishingRod ? { fishingRod: inventoryItem.fishingRod } : {}),
+          ...(inventoryItem.woodcuttingAxe ? { woodcuttingAxe: inventoryItem.woodcuttingAxe } : {}),
         },
       };
       CharacterItemTakenEventSchema.shape.payload.parse(payload);

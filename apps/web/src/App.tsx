@@ -8,7 +8,7 @@ import {
   type FormEvent,
   type TouchEvent as ReactTouchEvent,
 } from "react";
-import { MuddHttpClient, type CommandResponse, type GameSnapshot } from "@mudd/client-sdk";
+import { GameSnapshotSchema, MuddHttpClient, type CommandResponse, type GameSnapshot } from "@mudd/client-sdk";
 import { FLEE_STAMINA_COST, type InteractionInbox } from "@mudd/contracts";
 import {
   ActivityLog,
@@ -99,8 +99,8 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
     "Browse today’s local bulletin, accept a posting, or deliver its carried supplies.",
   ],
   gather: [
-    "Usage: gather <source-id or label> | fish",
-    "Collect a supply from a source in the current location. Fish is a shortcut for a local fish source.",
+    "Usage: gather <source-id or label>",
+    "Collect a non-fish supply from a source in the current location. Use a fishing rod to fish.",
   ],
   accept: [
     "Usage: accept <request-id>",
@@ -147,7 +147,7 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
     "Remove the item from an equipment slot. Gear cannot be changed during combat.",
   ],
   use: [
-    "Usage: use <item> on <target> | use <healing item>",
+    "Usage: use <item> on <target> | use <healing item> | use <fishing rod>",
     "Use an item on a room object, or restore health during or between encounters.",
   ],
   rest: [
@@ -189,7 +189,7 @@ const GENERAL_HELP = [
   "help [command] — List commands or show instructions for one.",
   "party [help|info|list|create|join <id>|quests|quest start <id>|leave|close] — Manage your party and its quests.",
   "jobs [browse|accept <id>|deliver <id>] — Browse the local daily bulletin and fulfil postings.",
-  "gather <source> | fish — Collect a local supply source.",
+  "gather <source> — Collect a local supply source; use a fishing rod to fish.",
   "talk <npc> [about <topic>] — Speak privately with someone in the current room.",
   "shop <merchant> — Browse a merchant’s goods and your balance.",
   "buy <item> — Purchase an item from the open merchant catalog.",
@@ -199,7 +199,7 @@ const GENERAL_HELP = [
   "take <item> | take all — Pick up one or all items in the current room.",
   "equip <item> — Equip a carried weapon or armor item.",
   "unequip <weapon|armor> — Remove equipped gear from a slot.",
-  "use <item> on <target> | use <healing item> — Use a room item or restore health during or between encounters.",
+  "use <item> on <target> | use <healing item> | use <fishing rod> — Use a room item, restore health, or fish at a marked spot.",
   "rest — Rest for free in any room while out of combat; recover health, stamina, and mana.",
   "stand — Leave the free resting posture.",
   "inn rest — Immediately restore missing health, stamina, and mana for the inn’s listed price.",
@@ -331,6 +331,8 @@ export function WorldClient({
   const navMenuRef = useRef<HTMLDivElement>(null);
   const navMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const terminalHistoryRef = useRef<HTMLDivElement>(null);
+  const fishingTickBusyRef = useRef(false);
+  const woodcuttingTickBusyRef = useRef(false);
   const terminalFollowsLatestRef = useRef(true);
   const lastRoomLookIdRef = useRef<string | null>(null);
   const knownQuestObjectiveCompletionsRef = useRef<Set<string>>(new Set());
@@ -570,10 +572,10 @@ export function WorldClient({
       const epoch = refreshGate.current.capture();
       snapshotRefreshRunning = true;
       try {
-        const latest = await client.getGame();
+        const latest = GameSnapshotSchema.parse(await client.getGame());
         if (active && refreshGate.current.accepts(epoch)) setSnapshot((current) => {
           const previousLocation = current?.location;
-          if (previousLocation &&
+          if (previousLocation && latest.location &&
               previousLocation.worldInstanceId === latest.location.worldInstanceId &&
               previousLocation.locationId === latest.location.locationId) {
             return { ...latest, location: { ...latest.location, occupants: previousLocation.occupants } };
@@ -948,6 +950,200 @@ export function WorldClient({
       setPending(null);
     }
   }, [addEntry, dailyBoard, fetchDailyBoard, pending, refreshAfterMutation, snapshot]);
+
+  const performFishingTick = useCallback(async (castId: string) => {
+    if (fishingTickBusyRef.current) return;
+    fishingTickBusyRef.current = true;
+    try {
+      const current = await client.getGame();
+      const character = current.character;
+      if (!character?.activeFishing || character.activeFishing.castId !== castId) {
+        setSnapshot(current);
+        return;
+      }
+      const result = await client.advanceFishingCast(character.characterId, castId, character.revision);
+      const event = result.events?.find((candidate) => candidate.type === "character.fishing_cast_advanced");
+      const payload = event?.payload;
+      const next = await client.getGame();
+      setSnapshot(next);
+      setConnectionError("");
+      if (!payload || typeof payload !== "object" || !("status" in payload)) return;
+      const outcome = payload as {
+        status?: unknown;
+        item?: { label?: unknown; fishCatch?: { lengthCm?: unknown; weightGrams?: unknown; rarity?: unknown } };
+      };
+      if (outcome.status === "caught" && outcome.item) {
+        const fish = outcome.item;
+        addEntry("narration", `You caught a ${typeof fish.label === "string" ? fish.label : "fish"}!`);
+        if (typeof fish.fishCatch?.lengthCm === "number" && typeof fish.fishCatch?.weightGrams === "number") {
+          const rarity = typeof fish.fishCatch.rarity === "string"
+            ? `${fish.fishCatch.rarity.charAt(0).toLocaleUpperCase()}${fish.fishCatch.rarity.slice(1)} catch`
+            : "Catch";
+          addEntry("system", `${rarity}: ${fish.fishCatch.lengthCm} cm, ${fish.fishCatch.weightGrams} g.`);
+        }
+      } else if (outcome.status === "no-bite") {
+        addEntry("narration", "No bites. You reel in your line.");
+      } else if (outcome.status === "interrupted") {
+        addEntry("narration", "Your fishing is interrupted. You reel in your line.");
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The fishing cast could not be advanced.";
+      if (message.includes("line is still in the water")) {
+        window.setTimeout(() => { void performFishingTick(castId); }, 250);
+      } else {
+        addEntry("error", message);
+        try {
+          const refreshed = await client.getGame();
+          setSnapshot(refreshed);
+          if (refreshed.character?.activeFishing?.castId === castId) {
+            window.setTimeout(() => { void performFishingTick(castId); }, 1_000);
+          }
+        } catch {
+          // The cast will be resumed from its persisted snapshot after reconnect.
+        }
+      }
+    } finally {
+      fishingTickBusyRef.current = false;
+    }
+  }, [addEntry]);
+
+  const performFishingCast = useCallback(async (rodItemId: string) => {
+    if (!snapshot?.character || pending) return;
+    setPending("use");
+    try {
+      await client.startFishingCast(snapshot.character.characterId, rodItemId, snapshot.character.revision);
+      const next = await client.getGame();
+      setSnapshot(next);
+      setConnectionError("");
+      addEntry("narration", "You cast your line and wait...");
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "You cannot fish here.");
+    } finally {
+      setPending(null);
+    }
+  }, [addEntry, pending, snapshot]);
+
+  const activeFishingCast = snapshot?.character?.activeFishing;
+  useEffect(() => {
+    if (!activeFishingCast) return;
+    const nextTickAt = Date.parse(activeFishingCast.startedAt) +
+      (activeFishingCast.ticksCompleted + 1) * activeFishingCast.tickIntervalSeconds * 1000;
+    const timer = window.setTimeout(() => {
+      void performFishingTick(activeFishingCast.castId);
+    }, Math.max(0, nextTickAt - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [
+    activeFishingCast?.castId,
+    activeFishingCast?.startedAt,
+    activeFishingCast?.ticksCompleted,
+    activeFishingCast?.tickIntervalSeconds,
+    performFishingTick,
+  ]);
+
+  const performWoodcuttingTick = useCallback(async (actionId: string) => {
+    if (woodcuttingTickBusyRef.current) return;
+    woodcuttingTickBusyRef.current = true;
+    try {
+      const current = await client.getGame();
+      const character = current.character;
+      if (!character?.activeWoodcutting || character.activeWoodcutting.actionId !== actionId) {
+        setSnapshot(current);
+        return;
+      }
+      const result = await client.advanceWoodcutting(character.characterId, actionId, character.revision);
+      const event = result.events?.find((candidate) => candidate.type === "character.woodcutting_action_advanced");
+      const payload = event?.payload;
+      const next = await client.getGame();
+      setSnapshot(next);
+      setConnectionError("");
+      if (!payload || typeof payload !== "object" || !("status" in payload)) return;
+      const outcome = payload as {
+        status?: unknown;
+        logLabel?: unknown;
+        skillExperienceAwarded?: unknown;
+        totalExperience?: unknown;
+        level?: unknown;
+        treeDepleted?: unknown;
+      };
+      if (outcome.status === "logged") {
+        const label = typeof outcome.logLabel === "string" ? outcome.logLabel : "logs";
+        addEntry("narration", `You cut a bundle of ${label}.`);
+        if (typeof outcome.skillExperienceAwarded === "number" &&
+            typeof outcome.totalExperience === "number" && typeof outcome.level === "number") {
+          addEntry("system", `Woodcutting +${outcome.skillExperienceAwarded} XP · Level ${outcome.level} · ${outcome.totalExperience} XP total.`);
+        }
+        if (outcome.treeDepleted === true) {
+          addEntry("narration", "The pine has been chopped down. It will regrow in about a minute.");
+        }
+      } else if (outcome.status === "no-log") {
+        addEntry("narration", "You swing for ten seconds, but no logs come free.");
+      } else if (outcome.status === "tree-depleted") {
+        addEntry("narration", "The tree has already been chopped down.");
+      } else if (outcome.status === "interrupted") {
+        addEntry("narration", "You stop chopping.");
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The woodcutting action could not be advanced.";
+      if (message.includes("axe is still swinging")) {
+        window.setTimeout(() => { void performWoodcuttingTick(actionId); }, 250);
+      } else if (/revision|conflict/i.test(message)) {
+        try {
+          const refreshed = await client.getGame();
+          setSnapshot(refreshed);
+          if (refreshed.character?.activeWoodcutting?.actionId === actionId) {
+            window.setTimeout(() => { void performWoodcuttingTick(actionId); }, 250);
+          }
+        } catch {
+          // Refresh and resume the persisted action on the next connection update.
+        }
+      } else {
+        addEntry("error", message);
+        try {
+          const refreshed = await client.getGame();
+          setSnapshot(refreshed);
+          if (refreshed.character?.activeWoodcutting?.actionId === actionId) {
+            window.setTimeout(() => { void performWoodcuttingTick(actionId); }, 1_000);
+          }
+        } catch {
+          // The action resumes from its persisted character projection after reconnect.
+        }
+      }
+    } finally {
+      woodcuttingTickBusyRef.current = false;
+    }
+  }, [addEntry]);
+
+  const performWoodcuttingStart = useCallback(async (axeItemId: string, treeId: string) => {
+    if (!snapshot?.character || pending) return;
+    setPending("use");
+    try {
+      await client.startWoodcutting(snapshot.character.characterId, axeItemId, treeId, snapshot.character.revision);
+      const next = await client.getGame();
+      setSnapshot(next);
+      setConnectionError("");
+      addEntry("narration", "You begin swinging your axe at the tree...");
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "You cannot chop that tree.");
+    } finally {
+      setPending(null);
+    }
+  }, [addEntry, pending, snapshot]);
+
+  const activeWoodcutting = snapshot?.character?.activeWoodcutting;
+  useEffect(() => {
+    if (!activeWoodcutting) return;
+    const nextTickAt = Date.parse(activeWoodcutting.startedAt) +
+      (activeWoodcutting.ticksCompleted + 1) * 1000;
+    const timer = window.setTimeout(() => {
+      void performWoodcuttingTick(activeWoodcutting.actionId);
+    }, Math.max(0, nextTickAt - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [
+    activeWoodcutting?.actionId,
+    activeWoodcutting?.startedAt,
+    activeWoodcutting?.ticksCompleted,
+    performWoodcuttingTick,
+  ]);
 
   const handleDailyJobAction = useCallback((jobId: string, action: "accept" | "deliver") => {
     if (displayedDailyBoard) void performDailyJob(displayedDailyBoard, jobId, action);
@@ -1679,31 +1875,24 @@ export function WorldClient({
       }
       return;
     }
-    if (verb.toLowerCase() === "gather" || verb.toLowerCase() === "fish") {
+    if (verb.toLowerCase() === "gather") {
       addEntry("system", `> ${value}`);
-      if (verb.toLowerCase() === "fish" && target) {
-        addEntry("error", 'Use “fish” without a target, or “gather <source>”.');
-        return;
-      }
       const sources = (snapshot?.dailyActivities?.sources ?? [])
         .filter((source) => source.locationId === snapshot?.location?.locationId);
-      const targetText = verb.toLowerCase() === "fish" ? "fish" : target;
-      if (!targetText) {
+      if (!target) {
         addEntry("error", "Choose a local source: gather <source-id or label>.");
         return;
       }
       const matches = sources.filter((source) => {
-        const search = targetText.toLocaleLowerCase();
-        return verb.toLowerCase() === "fish"
-          ? `${source.id} ${source.label} ${source.supply.typeId} ${source.supply.label}`.toLocaleLowerCase().includes("fish")
-          : source.id.toLocaleLowerCase() === search ||
-            source.label.toLocaleLowerCase() === search ||
-            source.label.toLocaleLowerCase().includes(search);
+        const search = target.toLocaleLowerCase();
+        return source.id.toLocaleLowerCase() === search ||
+          source.label.toLocaleLowerCase() === search ||
+          source.label.toLocaleLowerCase().includes(search);
       });
       if (matches.length !== 1) {
         addEntry("error", matches.length
           ? `Which source do you mean: ${matches.map((source) => source.label).join(", ")}?`
-          : `There is no local supply source matching “${targetText}”.`);
+          : `There is no local supply source matching “${target}”.`);
         return;
       }
       await performSupplyGather(matches[0]!.id, matches[0]!.label);
@@ -2084,7 +2273,10 @@ export function WorldClient({
       const useMatch = /^(.+?)\s+on\s+(.+)$/i.exec(target);
       if (!useMatch) {
         const itemTarget = target.replace(/^(?:the|a|an)\s+/i, "").trim();
-        const itemMatches = findObjectMatches(itemTarget, snapshot?.character?.inventory ?? []);
+        let itemMatches = findObjectMatches(itemTarget, snapshot?.character?.inventory ?? []);
+        if (!itemMatches.length && itemTarget.replace(/\s+/g, "").toLocaleLowerCase() === "fishingrod") {
+          itemMatches = (snapshot?.character?.inventory ?? []).filter((item) => item.fishingRod);
+        }
         if (itemMatches.length > 1) {
           addEntry("error", `Which item do you mean: ${itemMatches.map((item) => item.label).join(", ")}?`);
           return;
@@ -2094,7 +2286,11 @@ export function WorldClient({
           await performCombatAction("use-item", undefined, false, item.id);
           return;
         }
-        addEntry("error", "Use a healing item by name, or use a carried item on a room target.");
+        if (item?.fishingRod) {
+          await performFishingCast(item.id);
+          return;
+        }
+        addEntry("error", "Use a healing item, a fishing rod at a marked spot, or an axe on a named tree.");
         return;
       }
       const itemTarget = useMatch[1]!.replace(/^(?:the|a|an)\s+/i, "").trim();
@@ -2106,6 +2302,27 @@ export function WorldClient({
       const carriedItems = (snapshot?.character?.inventory ?? []).map((item) => ({
         ...item, readable: false, takeable: true,
       }));
+      const axeMatches = findObjectMatches(
+        itemTarget,
+        carriedItems.filter((item) => item.woodcuttingAxe),
+      );
+      if (axeMatches.length) {
+        if (axeMatches.length > 1) {
+          addEntry("error", `Which axe do you mean: ${axeMatches.map((item) => item.label).join(", ")}?`);
+          return;
+        }
+        const treeMatches = findObjectMatches(objectTarget, snapshot?.availableWoodcuttingTrees ?? []);
+        if (treeMatches.length === 0) {
+          addEntry("error", `There is no tree called “${objectTarget}” here.`);
+          return;
+        }
+        if (treeMatches.length > 1) {
+          addEntry("error", `Which tree do you mean: ${treeMatches.map((tree) => tree.label).join(", ")}?`);
+          return;
+        }
+        await performWoodcuttingStart(axeMatches[0]!.id, treeMatches[0]!.id);
+        return;
+      }
       const itemMatches = findObjectMatches(itemTarget, carriedItems);
       if (itemMatches.length === 0) {
         addEntry("error", `You are not carrying anything called “${itemTarget}”.`);
@@ -2168,7 +2385,7 @@ export function WorldClient({
     }
     addEntry("system", `> ${value}`);
     addEntry("error", 'Unknown command. Try "help" for the command list.');
-  }, [addEntry, browseMerchant, changeEquipment, dropObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, activeMerchantCatalog, performCombatAction, performInnRest, performStaminaPostureChange, interactionInbox, respondToPlayerChallenge, challengePlayer, partyInfo, refreshPartyState, teamCombatInfo, openDailyBoard, fetchDailyBoard, performDailyJob, performSupplyGather, displayedDailyBoard]);
+  }, [addEntry, browseMerchant, changeEquipment, dropObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, performFishingCast, performWoodcuttingStart, activeMerchantCatalog, performCombatAction, performInnRest, performStaminaPostureChange, interactionInbox, respondToPlayerChallenge, challengePlayer, partyInfo, refreshPartyState, teamCombatInfo, openDailyBoard, fetchDailyBoard, performDailyJob, performSupplyGather, displayedDailyBoard]);
 
   const submitQuickCommand = useCallback((rawCommand: string) => {
     setQuickCommandMode("quick");
@@ -2322,6 +2539,13 @@ export function WorldClient({
     outsideCombatHealth && outsideCombatHealth.current < outsideCombatHealth.maximum,
   );
   const quickUseItems = quickInventory.filter((item) => {
+    if (item.fishingRod) {
+      return !isAnyCombatActive && (snapshot?.availableFishingSpots?.length ?? 0) > 0;
+    }
+    if (item.woodcuttingAxe) {
+      return !isAnyCombatActive && !snapshot?.character?.activeWoodcutting &&
+        !snapshot?.character?.activeFishing && (snapshot?.availableWoodcuttingTrees?.length ?? 0) > 0;
+    }
     if (item.consumable?.effect === "heal") {
       return activeTeamCombat
         ? Boolean(teamCombatant &&
@@ -2381,20 +2605,6 @@ export function WorldClient({
         opensMenu: false,
         disabled: count >= source.dailyLimit,
         onSelect: () => { void performSupplyGather(source.id, source.label); },
-      });
-    }
-    const fishSource = localSources.find((source) =>
-      `${source.id} ${source.label} ${source.supply.typeId} ${source.supply.label}`.toLocaleLowerCase().includes("fish"),
-    );
-    if (fishSource && fishSource.id !== localSources.find((source) => source.label.toLocaleLowerCase() === "fish")?.id) {
-      const count = countForSource(fishSource.id);
-      actions.push({
-        id: "fish",
-        label: `fish ${count}/${fishSource.dailyLimit}`,
-        ariaLabel: `Fish at ${fishSource.label}; ${count} of ${fishSource.dailyLimit} collected today`,
-        opensMenu: false,
-        disabled: count >= fishSource.dailyLimit,
-        onSelect: () => { void performSupplyGather(fishSource.id, fishSource.label); },
       });
     }
     if (snapshot?.character?.staminaRecovery.posture === "resting") {
@@ -2507,6 +2717,8 @@ export function WorldClient({
     quickUseItems.length,
     setQuickCommandMode,
     snapshot?.character?.inventory,
+    snapshot?.availableFishingSpots,
+    snapshot?.availableWoodcuttingTrees,
     snapshot?.character?.equipment,
     snapshot?.location?.npcs,
     snapshot?.location?.objects,
@@ -2519,6 +2731,8 @@ export function WorldClient({
     visibleCombat,
     openDailyBoard,
     performSupplyGather,
+    performFishingCast,
+    pending,
   ]);
   const quickCommandPages = useMemo(() => {
     const pages: (typeof quickCommandItems)[] = [];
@@ -3174,16 +3388,25 @@ export function WorldClient({
                                 type="button"
                                 className="focused-quick-command"
                                 onClick={() => {
-                                  if (item.consumable?.effect === "heal") {
+                                  if (item.fishingRod) {
+                                    void performFishingCast(item.id);
+                                  } else if (item.woodcuttingAxe) {
+                                    const tree = snapshot?.availableWoodcuttingTrees?.[0];
+                                    if (tree) void performWoodcuttingStart(item.id, tree.id);
+                                  } else if (item.consumable?.effect === "heal") {
                                     submitQuickCommand(`use ${item.label}`);
                                   } else {
                                     setQuickUseItemId(item.id);
                                     setQuickCommandMode("use-target");
                                   }
                                 }}
-                                aria-label={item.consumable?.effect === "heal"
-                                  ? `Use ${item.label}${isAnyCombatActive ? " during combat" : ""}`
-                                  : `Choose ${item.label} to use`}
+                                aria-label={item.fishingRod
+                                  ? `Use ${item.label} to fish at ${snapshot?.availableFishingSpots?.[0]?.label ?? "this spot"}`
+                                  : item.woodcuttingAxe
+                                    ? `Use ${item.label} to chop ${snapshot?.availableWoodcuttingTrees?.[0]?.label ?? "a tree"}`
+                                  : item.consumable?.effect === "heal"
+                                    ? `Use ${item.label}${isAnyCombatActive ? " during combat" : ""}`
+                                    : `Choose ${item.label} to use`}
                                 disabled={pending !== null}
                               >
                                 {item.label.toLocaleLowerCase()}
@@ -3617,11 +3840,11 @@ export function WorldClient({
                               <button
                                 type="button"
                                 className="focused-inventory-item"
-                                aria-label={`Inspect ${item.label}`}
+                                aria-label={`Inspect ${item.label}${item.stackable && (item.quantity ?? 1) > 1 ? ` quantity ${item.quantity}` : ""}`}
                                 disabled={pending !== null}
                                 onClick={() => void inspectCarriedItem(item)}
                               >
-                                {item.label}
+                                {item.label}{item.stackable && (item.quantity ?? 1) > 1 ? ` ×${item.quantity}` : ""}
                               </button>
                               {item.equipment && (
                                 <span className="focused-item-tag">
@@ -3712,6 +3935,17 @@ export function WorldClient({
                     <div className="focused-stat"><span>Intelligence</span><strong>{snapshot.stats?.attributes.intelligence ?? "—"}</strong></div>
                     <div className="focused-stat"><span>Constitution</span><strong>{snapshot.stats?.attributes.constitution ?? "—"}</strong></div>
                     <div className="focused-stat"><span>Dexterity</span><strong>{snapshot.stats?.attributes.dexterity ?? "—"}</strong></div>
+                  </div>
+                </section>
+                <section className="focused-stat-section" aria-labelledby="skills-title">
+                  <h2 id="skills-title">Skills</h2>
+                  <div className="focused-stat-grid">
+                    <div className="focused-stat">
+                      <span>Woodcutting</span>
+                      <strong>
+                        Level {snapshot.character?.woodcutting?.level ?? 1} · {snapshot.character?.woodcutting?.experience ?? 0} XP
+                      </strong>
+                    </div>
                   </div>
                 </section>
                 <section className="focused-stat-section" aria-labelledby="derived-stats-title">

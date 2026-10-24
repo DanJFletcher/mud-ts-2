@@ -1,6 +1,8 @@
 import { CharacterClassCatalogSchema, ChooseCharacterClassCommandSchema } from '@mudd/contracts';
 import {
   DailyBoardQuerySchema, DailyBoardProjectionSchema, DailyJobCommandSchema, GatherSupplyCommandSchema, SupplySourceDefinitionSchema,
+  FishingCastCommandSchema, FishingAdvanceCommandSchema,
+  StartWoodcuttingCommandSchema, AdvanceWoodcuttingCommandSchema,
   CharacterProjectionSchema,
   CharacterStatsProjectionSchema,
   CommandReceiptSchema,
@@ -77,6 +79,14 @@ import { MuddRealtimeTransport } from './realtime.js';
 export { MuddRealtimeTransport } from './realtime.js';
 
 export const GameSnapshotSchema = z.object({
+  availableFishingSpots: z.array(z.object({
+    id: IdSchema,
+    label: z.string().trim().min(1).max(120),
+  }).strict()).optional(),
+  availableWoodcuttingTrees: z.array(z.object({
+    id: IdSchema,
+    label: z.string().trim().min(1).max(120),
+  }).strict()).optional(),
   dailyActivities: z.object({
     cycle: z.string(),
     boards: z.array(z.object({ id: z.string(), name: z.string() })),
@@ -407,6 +417,34 @@ export class MuddHttpClient {
     return this.send(GatherSupplyCommandSchema.parse({
       type: 'supply.gather', version: 1, commandId, worldInstanceId: this.options.worldInstanceId,
       characterId, expectedVersion, payload: { sourceId, cycle },
+    }));
+  }
+
+  async startFishingCast(characterId: string, rodItemId: string, expectedVersion: number, commandId = crypto.randomUUID()) {
+    return this.send(FishingCastCommandSchema.parse({
+      type: 'fishing.cast', version: 1, commandId, worldInstanceId: this.options.worldInstanceId,
+      characterId, expectedVersion, payload: { rodItemId },
+    }));
+  }
+
+  async advanceFishingCast(characterId: string, castId: string, expectedVersion: number, commandId = crypto.randomUUID()) {
+    return this.send(FishingAdvanceCommandSchema.parse({
+      type: 'fishing.advance', version: 1, commandId, worldInstanceId: this.options.worldInstanceId,
+      characterId, expectedVersion, payload: { castId },
+    }));
+  }
+
+  async startWoodcutting(characterId: string, axeItemId: string, treeId: string, expectedVersion: number, commandId = crypto.randomUUID()) {
+    return this.send(StartWoodcuttingCommandSchema.parse({
+      type: 'woodcutting.start', version: 1, commandId, worldInstanceId: this.options.worldInstanceId,
+      characterId, expectedVersion, payload: { axeItemId, treeId },
+    }));
+  }
+
+  async advanceWoodcutting(characterId: string, actionId: string, expectedVersion: number, commandId = crypto.randomUUID()) {
+    return this.send(AdvanceWoodcuttingCommandSchema.parse({
+      type: 'woodcutting.advance', version: 1, commandId, worldInstanceId: this.options.worldInstanceId,
+      characterId, expectedVersion, payload: { actionId },
     }));
   }
 

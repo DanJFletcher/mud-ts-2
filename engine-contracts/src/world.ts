@@ -3,8 +3,11 @@ import { z } from 'zod';
 import { ClientCommandBaseSchema, ClientQueryBaseSchema } from './protocol.js';
 import { ContractVersionSchema, IdSchema, NonNegativeIntSchema } from './ids.js';
 import { ConsumableItemSchema, InventoryEquipmentSchema } from './character.js';
+import { WoodcuttingAxeDefinitionSchema } from './woodcutting.js';
 import { QuestDefinitionSchema, QuestDialogueActionSchema } from './quests.js';
 import { DailyBoardDefinitionSchema, NpcDailyJobResponseDefinitionSchema, SupplySourceDefinitionSchema } from './daily-jobs.js';
+import { FishingRodDefinitionSchema, FishingSpotDefinitionSchema } from './fishing.js';
+import { WoodcuttingTreeDefinitionSchema } from './woodcutting.js';
 import {
   InnDefinitionSchema,
   InnProjectionSchema,
@@ -84,12 +87,21 @@ export const TakeableObjectDefinitionSchema = z.object({
   questBound: z.boolean().optional(),
   consumable: ConsumableItemSchema.optional(),
   equipment: InventoryEquipmentSchema.optional(),
+  fishingRod: FishingRodDefinitionSchema.optional(),
+  woodcuttingAxe: WoodcuttingAxeDefinitionSchema.optional(),
 }).strict().superRefine((item, context) => {
   if (item.consumable && item.equipment) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['consumable'],
       message: 'Consumable items cannot also be equipped.',
+    });
+  }
+  if (item.woodcuttingAxe && (item.consumable || item.equipment)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['woodcuttingAxe'],
+      message: 'A woodcutting axe cannot also be consumable or combat equipment.',
     });
   }
 });
@@ -244,6 +256,7 @@ export const NpcDialogueChoiceDefinitionSchema = z.object({
   progressFlagId: IdSchema,
   questCondition: NpcQuestStateConditionSchema.optional(),
   questAction: QuestDialogueActionSchema.optional(),
+  itemReward: TakeableObjectDefinitionSchema.optional(),
 }).strict();
 
 export const NpcDialogueDefinitionSchema = z.object({
@@ -339,6 +352,8 @@ export const WorldPackDraftSchema = z.object({
   quests: z.array(QuestDefinitionSchema).default([]),
   dailyBoards: z.array(DailyBoardDefinitionSchema).default([]),
   supplySources: z.array(SupplySourceDefinitionSchema).default([]),
+  fishingSpots: z.array(FishingSpotDefinitionSchema).default([]),
+  woodcuttingTrees: z.array(WoodcuttingTreeDefinitionSchema).max(1000).default([]),
 }).strict().superRefine((world, context) => {
   if (
     world.respawn &&
@@ -351,6 +366,31 @@ export const WorldPackDraftSchema = z.object({
     });
   }
   const locationIds = new Set(world.locations.map(({ id }) => id));
+  const fishingSpotIds = new Set<string>();
+  const woodcuttingTreeIds = new Set<string>();
+  for (const [treeIndex, tree] of world.woodcuttingTrees.entries()) {
+    if (woodcuttingTreeIds.has(tree.id)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['woodcuttingTrees', treeIndex, 'id'], message: 'Woodcutting tree IDs must be unique.' });
+    }
+    if (!locationIds.has(tree.locationId)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['woodcuttingTrees', treeIndex, 'locationId'], message: 'Woodcutting tree location must exist in this world.' });
+    }
+    woodcuttingTreeIds.add(tree.id);
+  }
+  for (const [spotIndex, spot] of world.fishingSpots.entries()) {
+    if (fishingSpotIds.has(spot.id)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['fishingSpots', spotIndex, 'id'], message: 'Fishing spot IDs must be unique.' });
+    }
+    if (!locationIds.has(spot.locationId)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['fishingSpots', spotIndex, 'locationId'], message: 'Fishing spot location must exist in this world.' });
+    } else if (spot.stateId) {
+      const location = world.locations.find(({ id }) => id === spot.locationId);
+      if (!location?.states?.some(({ id }) => id === spot.stateId)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['fishingSpots', spotIndex, 'stateId'], message: 'Fishing spot state must exist at its location.' });
+      }
+    }
+    fishingSpotIds.add(spot.id);
+  }
   const locationGroupIds = new Set<string>();
   const primaryLocationGroups = new Map<string, string>();
   for (const [groupIndex, group] of world.locationGroups.entries()) {

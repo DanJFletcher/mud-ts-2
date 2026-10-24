@@ -30,14 +30,14 @@ const tomasJobs = [
   ),
   ...bulletinResponses(
     ['tomas-wood'],
-    '“You are bringing wood for the kitchen? Leave it through the South Common board when you are ready.”',
-    '“The kitchen has the wood you delivered today. That is one less worry before supper. Thank you.”',
+    '“You are bringing pine logs for the kitchen? Leave them through the South Common board when you are ready.”',
+    '“The kitchen has the pine logs you delivered today. That is one less worry before supper. Thank you.”',
   ),
 ];
 const darricJobs = bulletinResponses(
   ['darric-wood'],
-  '“You took the kindling job. Good. Deliver the bundles at the South Common board when you have enough.”',
-  '“Your kindling came through today. Dry wood, useful work. Thank you.”',
+  '“You took the pine-log job. Good. Deliver the logs at the South Common board when you have enough.”',
+  '“Your pine logs came through today. Useful work for the forge. Thank you.”',
 );
 function bulletinTopic(dailyJobResponses: NpcDailyJobResponseDefinition[]) {
   return {
@@ -50,7 +50,7 @@ function bulletinTopic(dailyJobResponses: NpcDailyJobResponseDefinition[]) {
 const draft = {
   formatVersion: 1,
   packId: 'orraveth.bellwold',
-  packVersion: '1.9.0',
+  packVersion: '1.11.0',
   displayName: 'Orraveth: Bellwold',
   dailyBoards: [{
     id: 'bellwold-notice-board', locationId: 'bellwold-south-common', name: 'South Common bulletin board',
@@ -64,17 +64,69 @@ const draft = {
         { id: 'tomas-fish-basket', poster: 'Tomas', title: 'Fill the fish basket', supplyTypeId: 'river-fish', quantity: 3, gold: 6, experience: 10 },
       ],
       [
-        { id: 'darric-wood', poster: 'Darric Holt', title: 'Kindling for the forge', supplyTypeId: 'firewood', quantity: 2, gold: 3, experience: 6 },
-        { id: 'tomas-wood', poster: 'Tomas', title: 'Wood for the kitchen hearth', supplyTypeId: 'firewood', quantity: 3, gold: 5, experience: 8 },
+        { id: 'darric-wood', poster: 'Darric Holt', title: 'Pine logs for the forge', supplyTypeId: 'pine-logs', quantity: 2, gold: 3, experience: 6 },
+        { id: 'tomas-wood', poster: 'Tomas', title: 'Pine logs for the kitchen hearth', supplyTypeId: 'pine-logs', quantity: 3, gold: 5, experience: 8 },
       ],
     ],
   }],
-  supplySources: [
-    { id: 'reedbank-fishing', locationId: 'bellwold-reedbed-approach', label: 'Catch river fish',
-      supply: { typeId: 'river-fish', label: 'River fish', description: 'A freshly caught silver fish, cool and slick to the touch.' }, dailyLimit: 6 },
-    { id: 'track-firewood', locationId: 'bellwold-southbound-track', label: 'Gather firewood',
-      supply: { typeId: 'firewood', label: 'Bundle of firewood', description: 'A bundle of dry fallen branches tied with grass.' }, dailyLimit: 6 },
-  ],
+  supplySources: [],
+  woodcuttingTrees: [{
+    id: 'bellwold-southbound-pine',
+    locationId: 'bellwold-southbound-track',
+    label: 'pine',
+    logTypeId: 'pine-logs',
+    logLabel: 'Pine Logs',
+    logDescription: 'A bundled set of fresh pine logs, still carrying a sharp resin scent.',
+    maximumLogs: 5,
+    respawnSeconds: 60,
+    experiencePerLog: 25,
+    baseChancePercent: 10,
+  }],
+  fishingSpots: [{
+    id: 'bellwold-south-bridge-fishing',
+    locationId: 'bellwold-river-bridge',
+    stateId: 'on',
+    label: 'Bellwold River Bridge',
+    tickSeconds: 1,
+    species: [
+      {
+        id: 'smallmouth-bass',
+        name: 'Smallmouth bass',
+        itemTypeId: 'river-fish',
+        weightPercent: 50,
+        sizeBands: [
+          { rarity: 'common', weightPercent: 35, minLengthCm: 15, maxLengthCm: 25, minWeightGrams: 100, maxWeightGrams: 300 },
+          { rarity: 'uncommon', weightPercent: 59, minLengthCm: 25, maxLengthCm: 40, minWeightGrams: 300, maxWeightGrams: 1200 },
+          { rarity: 'rare', weightPercent: 5, minLengthCm: 45, maxLengthCm: 55, minWeightGrams: 1800, maxWeightGrams: 3000 },
+          { rarity: 'trophy', weightPercent: 1, minLengthCm: 56, maxLengthCm: 69, minWeightGrams: 3001, maxWeightGrams: 5410 },
+        ],
+      },
+      {
+        id: 'common-carp',
+        name: 'Common carp',
+        itemTypeId: 'river-fish',
+        weightPercent: 45,
+        sizeBands: [
+          { rarity: 'common', weightPercent: 35, minLengthCm: 25, maxLengthCm: 40, minWeightGrams: 500, maxWeightGrams: 2000 },
+          { rarity: 'uncommon', weightPercent: 59, minLengthCm: 45, maxLengthCm: 75, minWeightGrams: 2000, maxWeightGrams: 7000 },
+          { rarity: 'rare', weightPercent: 5, minLengthCm: 90, maxLengthCm: 110, minWeightGrams: 15000, maxWeightGrams: 25000 },
+          { rarity: 'trophy', weightPercent: 1, minLengthCm: 111, maxLengthCm: 129, minWeightGrams: 40000, maxWeightGrams: 50000 },
+        ],
+      },
+      {
+        id: 'rainbow-trout',
+        name: 'Rainbow trout',
+        itemTypeId: 'river-fish',
+        weightPercent: 5,
+        sizeBands: [
+          { rarity: 'common', weightPercent: 35, minLengthCm: 20, maxLengthCm: 30, minWeightGrams: 100, maxWeightGrams: 300 },
+          { rarity: 'uncommon', weightPercent: 59, minLengthCm: 30, maxLengthCm: 50, minWeightGrams: 300, maxWeightGrams: 1500 },
+          { rarity: 'rare', weightPercent: 5, minLengthCm: 60, maxLengthCm: 85, minWeightGrams: 3000, maxWeightGrams: 8000 },
+          { rarity: 'trophy', weightPercent: 1, minLengthCm: 86, maxLengthCm: 107, minWeightGrams: 8001, maxWeightGrams: 21770 },
+        ],
+      },
+    ],
+  }],
   classCatalog: orravethClassCatalog,
   currency: {
     id: 'gold',
@@ -157,6 +209,61 @@ const draft = {
             },
           },
         },
+        {
+          id: 'orin-vale',
+          name: 'Orin Vale',
+          description: 'A broad-hatted angler walks with a folded net under one arm, pausing to study the river whenever the road bends near it.',
+          activityDescription: 'walking between the market square and the south bridge',
+          greeting: '“The river gives no promises. A patient line and a little luck are all I ever had.”',
+          topics: [
+            { id: 'fishing', keywords: ['fish', 'fishing', 'river', 'rod', 'angling'], response: '“The current under the south bridge still holds bass, carp, and trout. You need a rod to fish from the bridge.”' },
+          ],
+          unknownTopicResponse: '“I’m headed back toward the bridge. The river is the only thing I know well.”',
+          dialogue: {
+            prompt: 'Orin turns a worn fishing rod in his hands. “I’ve no use for this old thing now. Would you like it?”',
+            choices: [{
+              id: 'accept-old-rod',
+              label: 'Accept the old rod',
+              response: '“Here you are. The cork is worn, but the line still holds. Cast from the south bridge and wait for a bite.”',
+              progressFlagId: 'received-old-fishing-rod',
+              itemReward: {
+                id: 'old-fishing-rod',
+                typeId: 'fishing-rod',
+                label: 'old rod',
+                description: 'A weathered fishing rod with a worn cork handle and a serviceable length of line.',
+                fishingRod: {
+                  qualityId: 'old',
+                  biteChancePercent: 10,
+                  waitSeconds: 10,
+                },
+              },
+            }],
+          },
+          movement: {
+            strategy: 'route',
+            intervalMs: 20_000,
+            routeLocationIds: [
+              'bellwold-market-square',
+              'bellwold-south-common',
+              'bellwold-well-court',
+              'bellwold-common-house',
+              'bellwold-south-gate',
+              'bellwold-southbound-track',
+              'bellwold-reedbed-approach',
+              'bellwold-river-bridge',
+              'bellwold-reedbed-approach',
+              'bellwold-southbound-track',
+              'bellwold-south-gate',
+              'bellwold-common-house',
+              'bellwold-well-court',
+              'bellwold-south-common',
+            ],
+            narrative: {
+              arrival: 'Orin arrives from the {direction}, glancing toward the river.',
+              departure: 'Orin heads {direction}, his folded net tucked beneath one arm.',
+            },
+          },
+        },
       ],
       exits: [
         { id: 'square-to-inn', fromLocationId: 'bellwold-market-square', toLocationId: 'kindly-roof-inn', label: 'west', direction: 'west' },
@@ -231,6 +338,13 @@ const draft = {
       exits: [
         { id: 'shop-to-square', fromLocationId: 'marrs-general-goods', toLocationId: 'bellwold-market-square', label: 'west', direction: 'west' },
       ],
+      takeables: [{
+        id: 'marr-starter-bronze-axe',
+        typeId: 'bronze-axe',
+        label: 'Bronze Axe',
+        description: 'A serviceable bronze axe for woodcutters of level 1 or higher, left near the counter for travelers who need to cut their own firewood.',
+        woodcuttingAxe: { requiredLevel: 1, power: 1 },
+      }],
       readables: [
         {
           id: 'anwen-scale-note',
@@ -246,6 +360,32 @@ const draft = {
           description: 'A brass weight rests in Anwen Marr’s palm as she studies the balance scale and makes a note in an open ledger.',
           activityDescription: 'checking a measure beside her ledger',
           greeting: '“Welcome to my shop. If you want to understand a thing, start with what it does—not with what you hope it means.”',
+          shop: {
+            listings: [
+              {
+                id: 'marr-iron-axe',
+                item: {
+                  id: 'iron-axe',
+                  typeId: 'iron-axe',
+                  label: 'Iron Axe',
+                  description: 'A balanced iron axe. Requires Woodcutting level 10.',
+                  woodcuttingAxe: { requiredLevel: 10, power: 2 },
+                },
+                price: 20,
+              },
+              {
+                id: 'marr-steel-axe',
+                item: {
+                  id: 'steel-axe',
+                  typeId: 'steel-axe',
+                  label: 'Steel Axe',
+                  description: 'A keen steel axe. Requires Woodcutting level 20.',
+                  woodcuttingAxe: { requiredLevel: 20, power: 3 },
+                },
+                price: 50,
+              },
+            ],
+          },
           topics: [
             { id: 'age-of-measures', keywords: ['Age of Measures', 'Glass Collegium', 'natural philosophers'], response: '“People call this the Age of Measures. Scholars are testing the physical world and Resonance with instruments. A repeatable result matters, but it still does not explain itself.”' },
             { id: 'scale', keywords: ['scale', 'measure', 'measurement'], response: '“The readings are repeatable often enough to trouble me. That does not tell us what causes them.”' },
@@ -311,7 +451,7 @@ const draft = {
       readables: [{
         id: 'bellwold-daily-notice', label: 'Daily supply notices',
         description: 'Small handwritten requests are pinned beneath a heading: “Supplies wanted.”',
-        text: 'Seli Tor requests deer hides for stitching; deer can be found along the south road. Tomas seeks fish from the shallow reedbank pool south of town. Fallen branches beside Southbound Track can be bundled for the kitchen and forge. Read the bulletin for today’s quantities and rewards. Each traveler may deliver each posting once before the notices change at midnight UTC. Use jobs here to browse; gather at the marked sources, then return here to deliver.',
+        text: 'Seli Tor requests deer hides for stitching; deer can be found along the south road. Tomas seeks river fish, caught from the Bellwold River Bridge with a fishing rod. Fallen branches beside Southbound Track can be bundled for the kitchen and forge. Read the bulletin for today’s quantities and rewards. Each traveler may deliver each posting once before the notices change at midnight UTC. Use jobs here to browse; gather at the marked sources, then return here to deliver.',
       }],
       mapPosition: { x: 0, y: -1, terrain: 'pasture' },
       exits: [
@@ -768,7 +908,7 @@ const draft = {
     {
       id: 'bellwold-southbound-track',
       name: 'Southbound Track',
-      description: 'The packed road cuts through open fields between low fence lines. Wind stirs the grass as Bellwold’s roofs recede north. Dry fallen branches lie beside the fence; deer prints mark the softer earth.\n\nThe South Gate is north; the reedbed approach lies south.',
+      description: 'A pine tree rises beside the packed road and the air smells sharp with resin. Wind stirs the grass as Bellwold’s roofs recede north; deer prints mark the softer earth.\n\nThe South Gate is north; the reedbed approach lies south.',
       mapPosition: { x: 0, y: -5, terrain: 'pasture' },
       exits: [
         { id: 'southbound-track-to-gate', fromLocationId: 'bellwold-southbound-track', toLocationId: 'bellwold-south-gate', label: 'north', direction: 'north', roadId: 'bellwold-south-road' },
@@ -778,7 +918,7 @@ const draft = {
     {
       id: 'bellwold-reedbed-approach',
       name: 'Reedbed Approach',
-      description: 'Damp grass brushes the road’s edges, and reeds rustle along the riverbanks. Silver fish flicker in a shallow pool beside the firm bank.\n\nThe Southbound Track is north; Bellwold River Bridge is south.',
+      description: 'Damp grass brushes the road’s edges, and reeds rustle along the riverbanks. The current deepens toward the stone bridge to the south.\n\nThe Southbound Track is north; Bellwold River Bridge is south.',
       mapPosition: { x: 0, y: -6, terrain: 'land' },
       exits: [
         { id: 'reedbed-approach-to-track', fromLocationId: 'bellwold-reedbed-approach', toLocationId: 'bellwold-southbound-track', label: 'north', direction: 'north', roadId: 'bellwold-south-road' },

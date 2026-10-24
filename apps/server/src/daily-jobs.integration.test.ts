@@ -59,6 +59,8 @@ function harness(encounterChancePercent = 0, bellwoldDialogue = false, configure
       (room.npcs ?? []).filter((npc) => ['tomas-innkeeper', 'seli-tor', 'darric-holt'].includes(npc.id))));
     world.supplySources = [
       ...orravethWorld.supplySources.map((source) => ({ ...source, locationId: 'board-room' })),
+      { id: 'fixture-river-fish', locationId: 'board-room', label: 'Fish delivery supplies', dailyLimit: 6,
+        supply: { typeId: 'river-fish', label: 'Fish', description: 'A freshly caught fish for the test fixture.' } },
       { id: 'fixture-hides', locationId: 'board-room', label: 'Collect hides', dailyLimit: 6,
         supply: { typeId: 'deer-hide', label: 'Hide', description: 'A deer hide.' } },
     ];
@@ -269,7 +271,9 @@ describe('daily town jobs through an authorized engine', () => {
     const today = dailyPostings(board, '2026-10-23');
     expect(today.map((job) => job.supplyTypeId)).toEqual(['deer-hide', 'river-fish', 'firewood']);
     expect(dailyPostings(board, '2026-10-24').map((job) => job.id)).not.toEqual(today.map((job) => job.id));
-    expect(orravethWorld.supplySources.map((source) => source.supply.typeId)).toEqual(['river-fish', 'firewood']);
+    expect(orravethWorld.supplySources.map((source) => source.supply.typeId)).toEqual(['firewood']);
+    expect(orravethWorld.fishingSpots.flatMap((spot) => spot.species.map((species) => species.itemTypeId)))
+      .toContain('river-fish');
     expect(orravethWorld.roads.flatMap((road) => road.encounters).some((encounter) =>
       encounter.loot?.items.some((item) => item.typeId === 'deer-hide'))).toBe(true);
   });

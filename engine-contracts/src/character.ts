@@ -9,6 +9,8 @@ import { CombatEncounterProjectionSchema } from './combat.js';
 import { CharacterHealthSchema } from './health.js';
 import { CharacterClassSnapshotSchema, AvailableClassActionSchema } from './classes.js';
 import { DailyJobStateSchema, SupplyCollectionStateSchema } from './daily-jobs.js';
+import { FishCatchMetadataSchema, FishingCastStateSchema, FishingRodDefinitionSchema } from './fishing.js';
+import { WoodcuttingAxeDefinitionSchema, WoodcuttingActionStateSchema, WoodcuttingSkillSchema } from './woodcutting.js';
 
 export const ConsumableItemSchema = z.object({
   effect: z.literal('heal'),
@@ -38,6 +40,11 @@ export const InventoryItemProjectionSchema = z.object({
   questBound: z.boolean().optional(),
   consumable: ConsumableItemSchema.optional(),
   equipment: InventoryEquipmentSchema.optional(),
+  fishingRod: FishingRodDefinitionSchema.optional(),
+  fishCatch: FishCatchMetadataSchema.optional(),
+  woodcuttingAxe: WoodcuttingAxeDefinitionSchema.optional(),
+  stackable: z.boolean().optional(),
+  quantity: PositiveIntSchema.max(2_147_483_647).optional(),
 }).strict().superRefine((item, context) => {
   if (item.sharedItemId && item.sharedItemId !== item.id) {
     context.addIssue({
@@ -51,6 +58,20 @@ export const InventoryItemProjectionSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['consumable'],
       message: 'Consumable items cannot also be equipped.',
+    });
+  }
+  if (item.quantity && item.stackable !== true) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['quantity'],
+      message: 'Only stackable items can have a quantity greater than one.',
+    });
+  }
+  if (item.stackable && item.quantity === undefined) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['quantity'],
+      message: 'Stackable items must specify their quantity.',
     });
   }
 });
@@ -323,6 +344,16 @@ export const CharacterItemTakenEventSchema = DomainEventBaseSchema.extend({
   }).strict(),
 }).strict();
 
+export const CharacterItemGrantedEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('character.item_granted'),
+  version: z.literal(1),
+  payload: z.object({
+    characterId: IdSchema,
+    item: InventoryItemProjectionSchema,
+    sourceId: IdSchema,
+  }).strict(),
+}).strict();
+
 export const DropCharacterItemCommandSchema = ClientCommandBaseSchema.extend({
   type: z.literal('character.drop'),
   expectedVersion: NonNegativeIntSchema,
@@ -471,6 +502,8 @@ export const CharacterProjectionSchema = z.object({
   }),
   wallet: CharacterWalletSchema.optional(),
   advancement: CharacterAdvancementProjectionSchema.optional(),
+  woodcutting: WoodcuttingSkillSchema.optional(),
+  activeWoodcutting: WoodcuttingActionStateSchema.optional(),
   health: CharacterHealthSchema.optional(),
   combat: CombatEncounterProjectionSchema.optional(),
   purchasedMerchantListingIds: z.array(IdSchema).default([]),
@@ -503,6 +536,7 @@ export const CharacterProjectionSchema = z.object({
   questRewardedIds: z.array(IdSchema).default([]),
   dailyJobs: z.array(DailyJobStateSchema).default([]),
   supplyCollections: z.array(SupplyCollectionStateSchema).default([]),
+  activeFishing: FishingCastStateSchema.optional(),
   archived: z.boolean().default(false),
 }).strict();
 

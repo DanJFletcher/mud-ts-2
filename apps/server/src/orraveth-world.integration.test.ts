@@ -11,6 +11,9 @@ import {
   autonomousNpcStreamId,
   characterPlugin,
   createClassRulesetPlugin,
+  fishingPlugin,
+  woodcuttingPlugin,
+  WOODCUTTING_TREES_STREAM_ID,
   movementPlugin,
   npcDialoguePlugin,
   projectAutonomousNpcPosition,
@@ -42,6 +45,8 @@ function makeHarness(options: Readonly<{
       characterPlugin,
       movementPlugin,
       npcDialoguePlugin,
+      fishingPlugin,
+      woodcuttingPlugin,
       worldEventEffectsPlugin,
     ],
     store,
@@ -91,6 +96,166 @@ function makeHarness(options: Readonly<{
 }
 
 describe('Orraveth Bellwold settlement', () => {
+  it('stacks pine logs and shares tree depletion and the 60-second regrowth across characters', async () => {
+    let clock = new Date('2026-10-24T12:00:00.000Z');
+    const world = structuredClone(orravethWorld);
+    const tree = world.woodcuttingTrees.find((candidate) => candidate.id === 'bellwold-southbound-pine')!;
+    const treeLocationIndex = world.locations.findIndex((location) => location.id === tree.locationId);
+    const [treeLocation] = world.locations.splice(treeLocationIndex, 1);
+    treeLocation!.takeables = [
+      {
+        id: 'test-bronze-axe-a', typeId: 'bronze-axe', label: 'Bronze Axe',
+        description: 'A test axe.', woodcuttingAxe: { requiredLevel: 1, power: 1 },
+      },
+      {
+        id: 'test-bronze-axe-b', typeId: 'bronze-axe', label: 'Bronze Axe',
+        description: 'A second test axe.', woodcuttingAxe: { requiredLevel: 1, power: 1 },
+      },
+      {
+        id: 'test-iron-axe', typeId: 'iron-axe', label: 'Iron Axe',
+        description: 'A test iron axe.', woodcuttingAxe: { requiredLevel: 10, power: 2 },
+      },
+    ];
+    world.locations.unshift(treeLocation!);
+    world.respawn = { locationId: tree.locationId };
+    const h = makeHarness({
+      world,
+      now: () => clock,
+      rng: { roll: () => 1 },
+    });
+    await h.engine.start();
+    const client = new MuddHttpClient({
+      worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+      fetcher: async (input, init = {}) => {
+        const body = JSON.parse(String(init.body ?? '{}')) as unknown;
+        const result = String(input).endsWith('/commands')
+          ? await h.engine.dispatch(body, h.session)
+          : await h.engine.query(body, h.session);
+        return Response.json(result);
+      },
+    });
+    try {
+      const create = async (name: string, id: string) => {
+        const result = await client.createCharacter(name, `woodcut-create-${id}`, 'orraveth.scout');
+        const characterId = result.streamId!;
+        h.owners.set(characterId, h.session.playerId);
+        const character = await h.loadCharacter(characterId);
+        await h.dispatch(characterId, {
+          type: 'character.take', version: 1, commandId: `woodcut-take-${id}`,
+          expectedVersion: character.revision, payload: { itemId: `test-bronze-axe-${id.toLocaleLowerCase()}` },
+        });
+        return characterId;
+      };
+      const first = await create('Pine Cutter A', 'a');
+      const second = await create('Pine Cutter B', 'b');
+      let firstCharacter = await h.loadCharacter(first);
+      await h.dispatch(first, {
+        type: 'character.take', version: 1, commandId: 'woodcut-take-iron',
+        expectedVersion: firstCharacter.revision, payload: { itemId: 'test-iron-axe' },
+      });
+      firstCharacter = await h.loadCharacter(first);
+      const underLevelAttempt = await h.engine.dispatch({
+        type: 'woodcutting.start', version: 1, commandId: 'woodcut-iron-under-level',
+        worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID, characterId: first,
+        expectedVersion: firstCharacter.revision,
+        payload: { axeItemId: 'test-iron-axe', treeId: tree.id },
+      }, h.session);
+      expect(underLevelAttempt.receipt.ok).toBe(false);
+      const chop = async (characterId: string, commandId: string) => {
+        let character = await h.loadCharacter(characterId);
+        await h.dispatch(characterId, {
+          type: 'woodcutting.start', version: 1, commandId: `${commandId}-start`,
+          expectedVersion: character.revision,
+          payload: { axeItemId: `test-bronze-axe-${characterId === first ? 'a' : 'b'}`, treeId: tree.id },
+        });
+        clock = new Date(clock.getTime() + 1_000);
+        character = await h.loadCharacter(characterId);
+        await h.dispatch(characterId, {
+          type: 'woodcutting.advance', version: 1, commandId: `${commandId}-advance`,
+          expectedVersion: character.revision,
+          payload: { actionId: character.activeWoodcutting!.actionId },
+        });
+      };
+
+      await chop(first, 'shared-log-1');
+      await chop(second, 'shared-log-2');
+      await chop(first, 'shared-log-3');
+      await chop(second, 'shared-log-4');
+
+      for (const [characterId, suffix] of [[first, 'a'], [second, 'b']] as const) {
+        const character = await h.loadCharacter(characterId);
+        await h.dispatch(characterId, {
+          type: 'woodcutting.start', version: 1, commandId: `shared-last-start-${suffix}`,
+          expectedVersion: character.revision,
+          payload: { axeItemId: `test-bronze-axe-${suffix}`, treeId: tree.id },
+        });
+      }
+      clock = new Date(clock.getTime() + 1_000);
+      const lastAttemptCharacters = await Promise.all([h.loadCharacter(first), h.loadCharacter(second)]);
+      await Promise.all(lastAttemptCharacters.map((character, index) =>
+        h.engine.dispatch({
+          type: 'woodcutting.advance', version: 1, commandId: `shared-last-advance-${index}`,
+          worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+          characterId: character.characterId,
+          expectedVersion: character.revision,
+          payload: { actionId: character.activeWoodcutting!.actionId },
+        }, h.session),
+      ));
+      for (const characterId of [first, second]) {
+        const character = await h.loadCharacter(characterId);
+        if (character.activeWoodcutting) {
+          await h.dispatch(characterId, {
+            type: 'woodcutting.advance', version: 1, commandId: `shared-last-retry-${characterId}`,
+            expectedVersion: character.revision,
+            payload: { actionId: character.activeWoodcutting.actionId },
+          });
+        }
+      }
+
+      const firstProjection = await h.loadCharacter(first);
+      const secondProjection = await h.loadCharacter(second);
+      expect(firstProjection.inventory.filter((item) => item.typeId === 'pine-logs')).toHaveLength(1);
+      const firstLogCount = firstProjection.inventory.find((item) => item.typeId === 'pine-logs')?.quantity ?? 0;
+      const secondLogCount = secondProjection.inventory.find((item) => item.typeId === 'pine-logs')?.quantity ?? 0;
+      expect(firstLogCount + secondLogCount).toBe(5);
+      expect(firstProjection.woodcutting?.experience).toBe(firstLogCount * 25);
+      expect(secondProjection.woodcutting?.experience).toBe(secondLogCount * 25);
+      expect(firstProjection.advancement?.experience ?? 0).toBe(0);
+      expect(secondProjection.advancement?.experience ?? 0).toBe(0);
+
+      const treeEvents = await h.store.readStream(ORRAVETH_WORLD_INSTANCE_ID, WOODCUTTING_TREES_STREAM_ID);
+      expect(treeEvents).toHaveLength(5);
+      expect(treeEvents.at(-1)?.payload).toMatchObject({ treeId: tree.id, remainingLogs: 0 });
+
+      const blockedCharacter = await h.loadCharacter(second);
+      const blocked = await h.engine.dispatch({
+        type: 'woodcutting.start', version: 1, commandId: 'shared-tree-cooldown',
+        worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID, characterId: second,
+        expectedVersion: blockedCharacter.revision,
+        payload: { axeItemId: 'test-bronze-axe-b', treeId: tree.id },
+      }, h.session);
+      expect(blocked.receipt.ok).toBe(false);
+      clock = new Date(clock.getTime() + 59_000);
+      const stillBlocked = await h.engine.dispatch({
+        type: 'woodcutting.start', version: 1, commandId: 'shared-tree-still-cooldown',
+        worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID, characterId: second,
+        expectedVersion: (await h.loadCharacter(second)).revision,
+        payload: { axeItemId: 'test-bronze-axe-b', treeId: tree.id },
+      }, h.session);
+      expect(stillBlocked.receipt.ok).toBe(false);
+      clock = new Date(clock.getTime() + 1_000);
+      const regrown = await h.engine.dispatch({
+        type: 'woodcutting.start', version: 1, commandId: 'shared-tree-regrown',
+        worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID, characterId: second,
+        expectedVersion: (await h.loadCharacter(second)).revision,
+        payload: { axeItemId: 'test-bronze-axe-b', treeId: tree.id },
+      }, h.session);
+      expect(regrown.receipt.ok).toBe(true);
+    } finally {
+      await h.engine.stop();
+    }
+  });
+
   it('allows resting in an ordinary square, on a road, and in the undercrypt', async () => {
     const startAt = async (locationId: string, expectedArea?: string) => {
       const world = structuredClone(orravethWorld);
@@ -454,7 +619,7 @@ describe('Orraveth Bellwold settlement', () => {
         worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
         now: () => now,
       });
-      expect(await scheduler.tick()).toBe(2);
+      expect(await scheduler.tick()).toBe(3);
 
       const atSquare = await h.loadCharacter(characterId);
       await h.dispatch(characterId, {
@@ -491,7 +656,7 @@ describe('Orraveth Bellwold settlement', () => {
       expect(NpcDialogueProjectionSchema.parse(villagerDialogue.value).npcName).toBe('Linnet Reed');
 
       now = new Date(now.getTime() + 60_000);
-      expect(await scheduler.tick()).toBe(2);
+      expect(await scheduler.tick()).toBe(3);
       const guardEvents = await h.store.readStream(
         ORRAVETH_WORLD_INSTANCE_ID,
         autonomousNpcStreamId('taren-voss'),
@@ -815,5 +980,150 @@ describe('Orraveth Bellwold settlement', () => {
     expect(findNpc('edda-bellwright')?.greeting).toContain('repair bells');
     expect(JSON.stringify(findNpc('nim-fernshade')?.dialogue)).toContain('Fernshade fronds');
     expect(findNpc('talla-sedgewatch')?.greeting).toContain('thatch roofs with reeds');
+  });
+
+  it('grants Orin’s old rod and resolves fishing only from server-timed cast events', async () => {
+    const runCast = async (name: string, roll: number, elapsedMs: number, expectedStatus: string) => {
+      let now = new Date('2026-10-23T12:00:00.000Z');
+      let rollCount = 0;
+      const fixtureWorld = structuredClone(orravethWorld);
+      fixtureWorld.roads = [];
+      for (const location of fixtureWorld.locations) {
+        for (const exit of location.exits) delete exit.roadId;
+      }
+      const h = makeHarness({ world: fixtureWorld, now: () => now, rng: { roll: () => { rollCount += 1; return roll; } } });
+      await h.engine.start();
+      const client = new MuddHttpClient({
+        worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+        fetcher: async (input, init = {}) => {
+          const body = JSON.parse(String(init.body ?? '{}')) as unknown;
+          const path = String(input);
+          const result = path.endsWith('/commands')
+            ? await h.engine.dispatch(body, h.session)
+            : await h.engine.query(body, h.session);
+          return Response.json(result);
+        },
+      });
+      try {
+        const created = await h.dispatch(undefined, {
+          type: 'character.create',
+          version: 1,
+          commandId: `fishing-create-${name}`,
+          payload: { name, classId: 'orraveth.scout' },
+        });
+        const characterId = (created.events.find((event) => event.type === 'character.created')?.payload as
+          { characterId?: string } | undefined)?.characterId;
+        if (!characterId) throw new Error('Character creation returned no character ID.');
+        h.owners.set(characterId, h.session.playerId);
+
+        let character = await h.loadCharacter(characterId);
+        const gift = await h.dispatch(characterId, {
+          type: 'npc.dialogue.choose',
+          version: 1,
+          commandId: `fishing-old-rod-${name}`,
+          expectedVersion: character.revision,
+          payload: { npcId: 'orin-vale', choiceId: 'accept-old-rod' },
+        });
+        expect(gift.events.map(({ type }) => type)).toContain('character.item_granted');
+        character = await h.loadCharacter(characterId);
+        expect(character.inventory).toContainEqual(expect.objectContaining({
+          id: 'old-fishing-rod',
+          label: 'old rod',
+          fishingRod: expect.objectContaining({ biteChancePercent: 10, waitSeconds: 10 }),
+        }));
+
+        const previous = new Map<string, { from: string; exitId: string }>();
+        const visited = new Set([character.locationId]);
+        const queue = [character.locationId];
+        while (queue.length) {
+          const from = queue.shift()!;
+          if (from === 'bellwold-river-bridge') break;
+          const location = orravethWorld.locations.find((room) => room.id === from);
+          for (const exit of location?.exits ?? []) {
+            if (visited.has(exit.toLocationId)) continue;
+            visited.add(exit.toLocationId);
+            previous.set(exit.toLocationId, { from, exitId: exit.id });
+            queue.push(exit.toLocationId);
+          }
+        }
+        const path: string[] = [];
+        let cursor = 'bellwold-river-bridge';
+        while (cursor !== character.locationId) {
+          const step = previous.get(cursor);
+          if (!step) throw new Error('No route from the market square to the south bridge.');
+          path.unshift(step.exitId);
+          cursor = step.from;
+        }
+        for (const exitId of path) {
+          character = await h.loadCharacter(characterId);
+          await h.dispatch(characterId, {
+            type: 'character.move',
+            version: 1,
+            commandId: `fishing-move-${name}-${exitId}`,
+            expectedVersion: character.revision,
+            payload: { exitId },
+          });
+        }
+        character = await h.loadCharacter(characterId);
+        expect(character.locationId).toBe('bellwold-river-bridge');
+        expect(character.locationStateId).toBe('on');
+        expect(orravethWorld.fishingSpots[0]?.species.map((species) => [species.id, species.weightPercent]))
+          .toEqual([['smallmouth-bass', 50], ['common-carp', 45], ['rainbow-trout', 5]]);
+        const cast = await client.startFishingCast(
+          characterId,
+          'old-fishing-rod',
+          character.revision,
+          `fishing-cast-${name}`,
+        );
+        const castId = (cast.events.find((event) => event.type === 'character.fishing_cast_started')?.payload as
+          { cast?: { castId?: string } } | undefined)?.cast?.castId;
+        if (!castId) throw new Error('The fishing cast did not start.');
+
+        now = new Date(now.getTime() + elapsedMs);
+        character = await h.loadCharacter(characterId);
+        const advanced = await client.advanceFishingCast(
+          characterId,
+          castId,
+          character.revision,
+          `fishing-advance-${name}`,
+        );
+        const outcome = advanced.events.find((event) => event.type === 'character.fishing_cast_advanced')?.payload as
+          {
+            status?: string;
+            ticksCompleted?: number;
+            tickRolls?: Array<{ tick: number; roll: number; caught: boolean }>;
+            item?: { label?: string; fishCatch?: { rarity?: string; lengthCm?: number; weightGrams?: number } };
+          } | undefined;
+        expect(outcome?.status).toBe(expectedStatus);
+        expect(rollCount).toBe(expectedStatus === 'caught' ? 5 : 10);
+        if (expectedStatus === 'caught') {
+          expect(outcome).toMatchObject({
+            ticksCompleted: 1,
+            tickRolls: [{ tick: 1, roll: 1, caught: true }],
+            item: { label: 'Smallmouth bass', fishCatch: { rarity: 'common' } },
+          });
+          expect(outcome?.item?.fishCatch?.lengthCm).toBeGreaterThanOrEqual(15);
+          expect(outcome?.item?.fishCatch?.lengthCm).toBeLessThanOrEqual(25);
+          expect(outcome?.item?.fishCatch?.weightGrams).toBeGreaterThanOrEqual(100);
+          expect(outcome?.item?.fishCatch?.weightGrams).toBeLessThanOrEqual(300);
+          expect((await h.loadCharacter(characterId)).inventory).toContainEqual(
+            expect.objectContaining({ typeId: 'river-fish', label: 'Smallmouth bass' }),
+          );
+        } else {
+          expect(outcome?.ticksCompleted).toBe(10);
+          expect(outcome?.tickRolls).toEqual(Array.from({ length: 10 }, (_, index) => ({
+            tick: index + 1, roll: 100, caught: false,
+          })));
+          const after = await h.loadCharacter(characterId);
+          expect(after.activeFishing).toBeUndefined();
+          expect(after.inventory.filter((item) => item.typeId === 'river-fish')).toHaveLength(0);
+        }
+      } finally {
+        await h.engine.stop();
+      }
+    };
+
+    await runCast('Lucky Angler', 1, 1_000, 'caught');
+    await runCast('Patient Angler', 100, 10_000, 'no-bite');
   });
 });
