@@ -16,3 +16,4 @@
 - [Shared corpses and loot](shared-corpses.md) — Dynamic PvE corpses and their unclaimed loot belong to the shared world-item stream.
 - [Room narration](room-narration.md) — Look descriptions use one or two senses; background knowledge belongs in readable sources and NPC dialogue.
 - [Deployment packaging](deployment-packaging.md) — Successful builds can still omit runtime dependencies/output; deployment exclusions must differ from Git exclusions.
+- [Daily town quests](daily-town-quests.md) — Resident bulletin-board jobs refresh daily, award gold and experience, and remain independently available to each character.
