@@ -87,6 +87,21 @@ describe('RoomChatPanel message polling', () => {
     expect(screen.getByText('Room')).toBeInTheDocument();
   });
 
+  it('pauses hidden-tab chat polling and refreshes immediately on becoming visible', async () => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get');
+    visibility.mockReturnValue('visible');
+    render(<RoomChatPanel worldInstanceId={worldInstanceId} roomId="test-room"
+      fullscreen={false} onFullscreenChange={vi.fn()} />);
+    await screen.findByText('No room messages yet.');
+    const before = fetchMock.mock.calls.length;
+    visibility.mockReturnValue('hidden');
+    await act(async () => { for (const poll of intervals) poll(); });
+    expect(fetchMock).toHaveBeenCalledTimes(before);
+    visibility.mockReturnValue('visible');
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(before);
+  });
+
   it('does not skip another speaker message arriving before the send acknowledgement', async () => {
     storedMessages = [{
       id: 10,

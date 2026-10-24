@@ -9,6 +9,7 @@ import type {
 } from '@mudd/engine-core';
 import { characters, commandReceipts, durableEffects, gameEvents, worldSessions } from '../db/schema.js';
 import { db } from '../db/client.js';
+import { retainCharacterReplayPrefix } from '@mudd/engine-core';
 
 export function toStoredGameEvent(row: typeof gameEvents.$inferSelect): StoredGameEvent {
   return {
@@ -64,12 +65,12 @@ export class PostgresEventStore implements EventStorePort {
     return `${worldInstanceId}\u0000${streamId}`;
   }
 
-  private cacheStream(key: string, events: readonly StoredGameEvent[]) {
-    const bytes = Buffer.byteLength(JSON.stringify(events));
-    const MAX_STREAM_BYTES = 512 * 1024;
-    const MAX_CACHE_BYTES = 8 * 1024 * 1024;
+  private cacheStream(key: string, events: readonly StoredGameEvent[], knownBytes?: number) {
+    const bytes = knownBytes ?? Buffer.byteLength(JSON.stringify(events));
+    const MAX_STREAM_BYTES = 8 * 1024 * 1024;
+    const MAX_CACHE_BYTES = 32 * 1024 * 1024;
     const MAX_CACHE_STREAMS = 128;
-    if (bytes > MAX_STREAM_BYTES || events.length === 0) {
+    if (bytes > MAX_STREAM_BYTES) {
       const previous = this.streamCache.get(key);
       if (previous) {
         this.cachedStreamBytes -= previous.bytes;
@@ -90,6 +91,7 @@ export class PostgresEventStore implements EventStorePort {
       this.cachedStreamBytes -= oldest.bytes;
       this.streamCache.delete(oldestKey);
     }
+    retainCharacterReplayPrefix(events);
     this.streamCache.set(key, {
       revision: events.at(-1)?.aggregateVersion ?? 0,
       events,
@@ -119,7 +121,9 @@ export class PostgresEventStore implements EventStorePort {
       this.invalidateStream(worldInstanceId, streamId);
       return;
     }
-    this.cacheStream(key, [...cached.events, ...appended]);
+    const next = [...cached.events, ...appended];
+    retainCharacterReplayPrefix(next, cached.events);
+    this.cacheStream(key, next, cached.bytes + Buffer.byteLength(JSON.stringify(appended)));
   }
 
   async readStreamRevision(worldInstanceId: string, streamId: string): Promise<number> {
@@ -152,7 +156,9 @@ export class PostgresEventStore implements EventStorePort {
     const events = cached && revision > cached.revision
       ? [...cached.events, ...tail]
       : tail;
-    this.cacheStream(key, events);
+    if (cached && revision > cached.revision) retainCharacterReplayPrefix(events, cached.events);
+    this.cacheStream(key, events, cached && revision > cached.revision
+      ? cached.bytes + Buffer.byteLength(JSON.stringify(tail)) : undefined);
     return events;
   }
 

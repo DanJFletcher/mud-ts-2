@@ -10,7 +10,7 @@ export function createStaminaRecoveryScheduler(input: Readonly<{
   engine: EngineHost;
   store: Pick<EventStorePort, 'readStream'>;
   worldInstanceId: string;
-  listSessions: () => Promise<readonly StaminaRecoverySession[]>;
+  listSessions: (activeSince?: Date) => Promise<readonly StaminaRecoverySession[]>;
   now?: () => Date;
   intervalMs?: number;
   onlineWindowMs?: number;
@@ -21,6 +21,10 @@ export function createStaminaRecoveryScheduler(input: Readonly<{
   const onlineWindowMs = input.onlineWindowMs ?? 45_000;
   let timer: ReturnType<typeof setInterval> | undefined;
   let running = false;
+  let initialized = false;
+  // Retain only online sessions and failed final settlements, never every
+  // character that has played. On startup do one reconciliation of old sessions.
+  const tracked = new Map<string, StaminaRecoverySession>();
 
   const tick = async (): Promise<number> => {
     if (running) return 0;
@@ -28,14 +32,21 @@ export function createStaminaRecoveryScheduler(input: Readonly<{
     let attempted = 0;
     const currentTime = now();
     try {
-      const sessions = await input.listSessions();
+      const sessions = await input.listSessions(initialized
+        ? new Date(currentTime.getTime() - onlineWindowMs) : undefined);
       for (const session of sessions) {
+        if (!initialized || currentTime.getTime() - session.lastSeenAt.getTime() <= onlineWindowMs ||
+            tracked.has(session.characterId)) tracked.set(session.characterId, session);
+      }
+      initialized = true;
+      for (const session of tracked.values()) {
+        const online = currentTime.getTime() - session.lastSeenAt.getTime() <= onlineWindowMs;
+        let retry = false;
         try {
           const events = await input.store.readStream(input.worldInstanceId, session.characterId);
           const character = replayCharacter(events);
           if (!character || character.archived || character.health?.current === 0) continue;
           const seenAt = session.lastSeenAt.getTime();
-          const online = currentTime.getTime() - seenAt <= onlineWindowMs;
           if (!online && !character.staminaRecovery.lastSettledAt) continue;
           const settleAt = new Date(Math.min(currentTime.getTime(), seenAt));
           const previousAt = character.staminaRecovery.lastSettledAt
@@ -66,11 +77,15 @@ export function createStaminaRecoveryScheduler(input: Readonly<{
             payload: { settleAt: settleAt.toISOString(), resetAnchor: false },
           }, SYSTEM_ACTOR_ID);
           attempted += 1;
+          retry = !result.receipt.ok;
           if (!result.receipt.ok && result.receipt.code !== 'VERSION_CONFLICT') {
             input.onError?.(new Error(result.receipt.message), session.characterId);
           }
         } catch (error) {
+          retry = true;
           input.onError?.(error, session.characterId);
+        } finally {
+          if (!online && !retry) tracked.delete(session.characterId);
         }
       }
     } finally {

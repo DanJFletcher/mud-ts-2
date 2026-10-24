@@ -130,6 +130,48 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     expect(await restartedStore.readStream('another-world-instance', characterId)).toHaveLength(0);
   });
 
+  it('incrementally replays history above the old byte ceiling, then rebuilds safely after eviction', async () => {
+    const { PostgresEventStore } = await import('./persistence/postgres-event-store.js');
+    const { replayCharacter, replayCharacterUncached } = await import('@mudd/engine-core');
+    const reader = new PostgresEventStore(), writer = new PostgresEventStore();
+    const id = randomUUID();
+    const base = { worldInstanceId, streamId: id, actorId: playerId,
+      commandId: randomUUID(), payloadHash: randomUUID(), expectedVersion: 0,
+      events: [{ type: 'character.created', version: 1, payload: {
+        characterId: id, playerId, name: 'Large history', startingLocationId: 'mossgate-clearing',
+      } }],
+    };
+    expect((await writer.append(base)).kind).toBe('committed');
+    expect((await writer.append({ ...base, commandId: randomUUID(), expectedVersion: 1,
+      events: Array.from({ length: 2000 }, (_, i) => ({
+        type: 'character.renamed', version: 1, payload: { characterId: id, name: `Long history ${i}` },
+      })),
+    })).kind).toBe('committed');
+    const first = await reader.readStream(worldInstanceId, id);
+    expect(Buffer.byteLength(JSON.stringify(first))).toBeGreaterThan(512 * 1024);
+    expect(replayCharacter(first)).toEqual(replayCharacterUncached(first));
+    expect(await reader.readStream(worldInstanceId, id)).toBe(first);
+    const change = { ...base, commandId: randomUUID(), expectedVersion: 2001,
+      events: [{ type: 'character.renamed', version: 1, payload: { characterId: id, name: 'Other process' } }],
+    };
+    expect((await writer.append(change)).kind).toBe('committed');
+    const updated = await reader.readStream(worldInstanceId, id);
+    expect(updated[0]).toBe(first[0]);
+    expect(replayCharacter(updated)).toEqual(replayCharacterUncached(updated));
+    expect(replayCharacter(updated)?.name).toBe('Other process');
+    expect((await reader.append({ ...change, commandId: randomUUID() })).kind).toBe('conflict');
+    for (let i = 0; i < 129; i++) {
+      const streamId = `eviction-${i}`;
+      await writer.append({ ...base, streamId, commandId: randomUUID(),
+        events: [{ type: 'audit.eviction', version: 1, payload: {} }],
+      });
+      await reader.readStream(worldInstanceId, streamId);
+    }
+    const rebuilt = await reader.readStream(worldInstanceId, id);
+    expect(rebuilt).not.toBe(updated);
+    expect(replayCharacter(rebuilt)).toEqual(replayCharacterUncached(updated));
+  });
+
   it('returns a revision conflict for competing writes to one stream', async () => {
     const streamId = `concurrent-${randomUUID()}`;
     const makeRequest = (commandId: string): AppendRequest => ({

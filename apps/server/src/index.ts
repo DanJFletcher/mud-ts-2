@@ -1,9 +1,10 @@
 import express, { type Request, type Response } from 'express';
+import { requestMeasurements, newMeasurements, measureStage, eventLoopDelayMs } from './performance.js';
 import { fileURLToPath } from 'node:url';
 import cors from 'cors';
 import { getAuth, clerkMiddleware } from '@clerk/express';
 import { publishableKeyFromHost } from '@clerk/shared/keys';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, gte } from 'drizzle-orm';
 import { z } from 'zod';
 import {
   ArchiveCharacterCommandSchema,
@@ -32,7 +33,7 @@ import {
   resolveLocationDisplayName,
   type LocationGroupDefinition,
 } from '@mudd/contracts';
-import { projectQuestJournal, replayCharacter, SYSTEM_ACTOR_ID } from '@mudd/engine-core';
+import { projectQuestJournal, replayCharacter as reconstructCharacter, SYSTEM_ACTOR_ID } from '@mudd/engine-core';
 import {
   interactionStreamId,
   mobileNpcDefinitions,
@@ -99,6 +100,15 @@ if (process.env.NODE_ENV === 'production' && trustedHosts.size === 0) {
 }
 
 const store = new PostgresEventStore();
+function replayCharacter(events: Parameters<typeof reconstructCharacter>[0]) {
+  const started = performance.now();
+  try { return reconstructCharacter(events); }
+  finally {
+    const metrics = requestMeasurements.getStore();
+    if (metrics) metrics.stages.characterReplay =
+      (metrics.stages.characterReplay ?? 0) + performance.now() - started;
+  }
+}
 const registeredWorldIds = new Set(registeredWorlds.map((world) => world.worldInstanceId));
 const authorization = {
   async canAccessInstance(session: { worldInstanceId: string }, id: string) {
@@ -140,11 +150,14 @@ const staminaRecoverySchedulers = [...worldRuntimes.values()].map((runtime) =>
     engine: runtime.engine,
     store,
     worldInstanceId: runtime.worldInstanceId,
-    listSessions: async () => {
+    listSessions: async (activeSince) => {
       const sessions = await db.select({
         characterId: worldSessions.characterId,
         lastSeenAt: worldSessions.lastSeenAt,
-      }).from(worldSessions).where(eq(worldSessions.worldInstanceId, runtime.worldInstanceId));
+      }).from(worldSessions).where(and(
+        eq(worldSessions.worldInstanceId, runtime.worldInstanceId),
+        ...(activeSince ? [gte(worldSessions.lastSeenAt, activeSince)] : []),
+      ));
       return sessions;
     },
     onError(error, characterId) {
@@ -237,7 +250,14 @@ const app = express();
 app.set('trust proxy', trustedProxyHops);
 app.use(createRequestId());
 app.use((req, res, next) => {
+  const measurements = newMeasurements();
   const startedAt = performance.now();
+  const json = res.json.bind(res);
+  res.json = ((body: unknown) => {
+    const started = performance.now();
+    try { return json(body); }
+    finally { measurements.stages.responseSerialization = performance.now() - started; }
+  }) as typeof res.json;
   res.once('finish', () => {
     const durationMs = performance.now() - startedAt;
     if (durationMs < 250) return;
@@ -248,6 +268,8 @@ app.use((req, res, next) => {
       path: req.path,
       status: res.statusCode,
       durationMs: Math.round(durationMs),
+      measurements,
+      eventLoop: eventLoopDelayMs(),
       dbPool: {
         total: pool.totalCount,
         idle: pool.idleCount,
@@ -255,7 +277,7 @@ app.use((req, res, next) => {
       },
     }));
   });
-  next();
+  requestMeasurements.run(measurements, next);
 });
 app.use(createTrustedHostGuard(trustedHosts));
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
@@ -281,7 +303,7 @@ app.use(clerkMiddleware((req) => ({
 
 async function accountFor(request: Request, response: Response): Promise<AccountIdentity | undefined> {
   const auth = getAuth(request);
-  const identity = await getAccountIdentity(request, { userId: auth.userId, sessionId: auth.sessionId });
+  const identity = await measureStage('account', () => getAccountIdentity(request, { userId: auth.userId, sessionId: auth.sessionId }));
   if (!identity) {
     response.status(401).json({ message: 'Start a guest session or sign in to access your characters.' });
     return undefined;
@@ -310,10 +332,10 @@ function selectedRuntime(response: Response): WorldRuntime {
 }
 
 async function activeSession(identity: AccountIdentity, worldInstanceId: string) {
-  const [session] = await db.select().from(worldSessions).where(and(
+  const [session] = await measureStage('session', () => db.select().from(worldSessions).where(and(
     eq(worldSessions.playerId, identity.playerId),
     eq(worldSessions.worldInstanceId, worldInstanceId),
-  )).limit(1);
+  )).limit(1));
   return session;
 }
 
@@ -562,14 +584,14 @@ app.get('/api/game', async (req, res, next) => {
       payload: {},
     });
     const [result, statsResult, locationGroupCatalog] = await Promise.all([
-      selected.engine.query(query, worldContext(identity, current), {
+      measureStage('locationProjection', () => selected.engine.query(query, worldContext(identity, current), {
         characterProjection: character,
         correlationId: res.locals.requestId,
-      }),
-      selected.engine.query(statsQuery, worldContext(identity, current), {
+      })),
+      measureStage('statsProjection', () => selected.engine.query(statsQuery, worldContext(identity, current), {
         characterProjection: character,
         correlationId: res.locals.requestId,
-      }),
+      })),
       selected.locationGroupsFeature.catalog.read(),
     ]);
     if (!result.ok) {
@@ -873,7 +895,7 @@ app.post('/api/commands', createRateLimiter({ windowMs: 60_000, maxRequests: 120
       context = worldContext(identity, current);
     }
 
-    const result = await selected.engine.dispatch(req.body, context, res.locals.requestId);
+    const result = await measureStage('command', () => selected.engine.dispatch(req.body, context, res.locals.requestId));
     // Effects are durably queued with the command. Their worker is already
     // running; don't make the action wait for unrelated effects across worlds.
     if (result.receipt.ok) void runPendingEffectBatch();

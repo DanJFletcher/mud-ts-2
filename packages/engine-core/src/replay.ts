@@ -44,14 +44,63 @@ import {
   CombatActionResolvedEventSchema,
 } from '@mudd/contracts';
 
-export function replayCharacter(events: readonly StoredGameEvent[]) {
-  let state: ReturnType<typeof CharacterProjectionSchema.parse> | undefined;
-  const pvpOutcomeEncounterIds = new Set<string>();
-  const teamCombatOutcomeEncounterIds = new Set<string>();
-  const teamCombatVictoryEncounterIds = new Set<string>();
-  const abilityActionIds = new Set<string>();
+type ReplayCheckpoint = {
+  state: ReturnType<typeof CharacterProjectionSchema.parse> | undefined;
+  count: number;
+  pvp: Set<string>;
+  team: Set<string>;
+  victories: Set<string>;
+  abilities: Set<string>;
+};
+// Histories are immutable adapter-owned values. Weak keys bound checkpoint
+// lifetime to the adapter's bounded history cache, not the number of characters.
+const checkpoints = new WeakMap<readonly StoredGameEvent[], ReplayCheckpoint>();
+const prefixes = new WeakMap<readonly StoredGameEvent[], ReplayCheckpoint>();
+const immutableHistories = new WeakSet<readonly StoredGameEvent[]>();
+function freezeHistoryValue(value: unknown): void {
+  if (!value || typeof value !== 'object' || Object.isFrozen(value)) return;
+  for (const nested of Object.values(value)) freezeHistoryValue(nested);
+  Object.freeze(value);
+}
 
-  for (const event of events) {
+/** Adapter-only: a fresh history consists of this exact committed prefix + tail. */
+export function retainCharacterReplayPrefix(
+  next: readonly StoredGameEvent[],
+  previous?: readonly StoredGameEvent[],
+) {
+  if (immutableHistories.has(next)) return;
+  const hasPrefix = previous && immutableHistories.has(previous) && next.length > previous.length &&
+    next[previous.length - 1] === previous.at(-1);
+  for (let i = hasPrefix ? previous.length : 0; i < next.length; i++) freezeHistoryValue(next[i]);
+  Object.freeze(next);
+  immutableHistories.add(next);
+  const checkpoint = hasPrefix ? checkpoints.get(previous) : undefined;
+  if (checkpoint) prefixes.set(next, checkpoint);
+}
+
+/** Pure full reconstruction for rebuilds, audits and benchmark comparisons. */
+export function replayCharacterUncached(events: readonly StoredGameEvent[]) {
+  return reconstructCharacter(events);
+}
+
+export function replayCharacter(events: readonly StoredGameEvent[]) {
+  // Unregistered author/test histories remain pure and can be edited between
+  // calls. Only adapters explicitly promising an immutable prefix opt in.
+  if (!immutableHistories.has(events)) return reconstructCharacter(events);
+  const known = checkpoints.get(events);
+  if (known) return structuredClone(known.state);
+  return reconstructCharacter(events, prefixes.get(events), true);
+}
+
+function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: ReplayCheckpoint, cache = false) {
+  let state = prefix?.state;
+  const pvpOutcomeEncounterIds = new Set(prefix?.pvp);
+  const teamCombatOutcomeEncounterIds = new Set(prefix?.team);
+  const teamCombatVictoryEncounterIds = new Set(prefix?.victories);
+  const abilityActionIds = new Set(prefix?.abilities);
+
+  for (let index = prefix?.count ?? 0; index < events.length; index++) {
+    const event = events[index]!;
     const { streamId: _streamId, ...publicEvent } = event;
     if (event.aggregateVersion !== (state?.revision ?? 0) + 1) {
       throw new Error(`Non-contiguous aggregate revision at ${event.aggregateVersion}.`);
@@ -993,6 +1042,12 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
     state = { ...state, availableClassActions: [{ ...ability, available,
       ...(!available ? { unavailableReason: `You need ${ability.cost.amount} ${ability.cost.resource}.` } : {}),
     }] };
+  }
+  if (cache) {
+    checkpoints.set(events, { state, count: events.length, pvp: pvpOutcomeEncounterIds,
+      team: teamCombatOutcomeEncounterIds, victories: teamCombatVictoryEncounterIds, abilities: abilityActionIds });
+    prefixes.delete(events);
+    return structuredClone(state);
   }
   return state;
 }

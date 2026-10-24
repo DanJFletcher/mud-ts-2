@@ -17,3 +17,4 @@
 - [Room narration](room-narration.md) — Look descriptions use one or two senses; background knowledge belongs in readable sources and NPC dialogue.
 - [Deployment packaging](deployment-packaging.md) — Successful builds can still omit runtime dependencies/output; deployment exclusions must differ from Git exclusions.
 - [Daily town quests](daily-town-quests.md) — Resident bulletin-board jobs refresh daily, award gold and experience, and remain independently available to each character.
+- [Gameplay replay policy](gameplay-replay-policy.md) — Cache only adapter-owned immutable histories; retain replay deduplication state and distinguish local benchmarks from production latency.

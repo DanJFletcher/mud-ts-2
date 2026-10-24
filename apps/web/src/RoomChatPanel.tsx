@@ -19,6 +19,7 @@ type RoomChatPanelProps = Readonly<{
   fullscreen: boolean;
   onFullscreenChange: (fullscreen: boolean) => void;
   embedded?: boolean;
+  actionPending?: boolean;
   onTerminalEvent?: (message: RoomChatMessage) => void;
 }>;
 type RoomChatResponse = Readonly<{
@@ -48,9 +49,12 @@ export function RoomChatPanel({
   fullscreen,
   onFullscreenChange,
   embedded = false,
+  actionPending = false,
   onTerminalEvent,
 }: RoomChatPanelProps) {
   const [messages, setMessages] = useState<readonly RoomChatMessage[]>([]);
+  const actionPendingRef = useRef(actionPending);
+  actionPendingRef.current = actionPending;
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -131,7 +135,7 @@ export function RoomChatPanel({
     setSendError('');
 
     const refreshMessages = async () => {
-      if (requesting) return;
+      if (requesting || !active || actionPendingRef.current || document.visibilityState === 'hidden') return;
       requesting = true;
       try {
         const query = new URLSearchParams({ roomId });
@@ -174,9 +178,12 @@ export function RoomChatPanel({
 
     void refreshMessages();
     const interval = window.setInterval(() => void refreshMessages(), 3000);
+    const visible = () => { if (document.visibilityState === 'visible') void refreshMessages(); };
+    document.addEventListener('visibilitychange', visible);
     return () => {
       active = false;
       window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', visible);
     };
   }, [onTerminalEvent, roomId, worldInstanceId]);
 

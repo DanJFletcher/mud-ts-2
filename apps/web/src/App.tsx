@@ -27,6 +27,7 @@ import {
 } from "@mudd/ui";
 import { ChevronDown, Compass, Heart, Info as InfoIcon, Keyboard, Menu, Moon, Sparkles, Sun, Users, X, Zap } from "lucide-react";
 import { RoomChatPanel, type RoomChatMessage } from "./RoomChatPanel.js";
+import { ActionRefreshGate } from "./action-refresh-gate.js";
 import { TerminalPanel } from "./TerminalPanel.js";
 import { WorldMapPanel } from "./WorldMapPanel.js";
 import CodexScreen from "./codex/CodexScreen.js";
@@ -264,9 +265,28 @@ export function WorldClient({
   const [interactionInbox, setInteractionInbox] = useState<InteractionInbox | null>(null);
   const [partyInfo, setPartyInfo] = useState<Awaited<ReturnType<MuddHttpClient["getPartyInfo"]>> | null>(null);
   const [teamCombatInfo, setTeamCombatInfo] = useState<Awaited<ReturnType<MuddHttpClient["getTeamCombatInfo"]>> | null>(null);
+  const teamPollingActive = useRef(false);
+  teamPollingActive.current = Boolean(partyInfo?.party || teamCombatInfo?.encounter?.status === "active");
   const [presenceStale, setPresenceStale] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"look" | "read" | "take" | "use" | "drop" | "move" | "talk" | "shop" | "buy" | "combat" | "rest" | "stand" | "equip" | "party" | "daily" | "gather" | null>(null);
+  const [pending, setPendingState] = useState<"look" | "read" | "take" | "use" | "drop" | "move" | "talk" | "shop" | "buy" | "combat" | "rest" | "stand" | "equip" | "party" | "daily" | "gather" | null>(null);
+  const refreshGate = useRef(new ActionRefreshGate());
+  const actionTiming = useRef<{ name: string; started: number } | null>(null);
+  const setPending = useCallback((value: typeof pending) => {
+    if (value) {
+      refreshGate.current.begin();
+      actionTiming.current = { name: value, started: performance.now() };
+    } else refreshGate.current.end();
+    setPendingState(value);
+  }, []);
+  useLayoutEffect(() => {
+    if (pending || !actionTiming.current) return;
+    const { name, started } = actionTiming.current;
+    const metric = `mudd:action-visible:${name}`;
+    performance.clearMeasures?.(metric);
+    performance.measure?.(metric, { start: started, end: performance.now() });
+    actionTiming.current = null;
+  }, [pending, snapshot]);
   const [command, setCommand] = useState("");
   const [quickCommandPage, setQuickCommandPage] = useState(1);
   const [quickCommandPageSize, setQuickCommandPageSize] = useState(() =>
@@ -521,11 +541,12 @@ export function WorldClient({
     let active = true;
     let requestRunning = false;
     const sendHeartbeat = async () => {
-      if (!active || document.visibilityState === "hidden" || requestRunning) return;
+      if (!active || document.visibilityState === "hidden" || requestRunning || refreshGate.current.busy) return;
+      const epoch = refreshGate.current.capture();
       requestRunning = true;
       try {
         const presence = await client.heartbeatWorldSession();
-        if (!active) return;
+        if (!active || !refreshGate.current.accepts(epoch)) return;
         setSnapshot((current) => {
           const location = current?.location;
           if (
@@ -545,11 +566,12 @@ export function WorldClient({
     };
     let snapshotRefreshRunning = false;
     const refreshSnapshot = async () => {
-      if (!active || document.visibilityState === "hidden" || snapshotRefreshRunning) return;
+      if (!active || document.visibilityState === "hidden" || snapshotRefreshRunning || refreshGate.current.busy) return;
+      const epoch = refreshGate.current.capture();
       snapshotRefreshRunning = true;
       try {
         const latest = await client.getGame();
-        if (active) setSnapshot(latest);
+        if (active && refreshGate.current.accepts(epoch)) setSnapshot(latest);
       } catch {
         // Keep the last known snapshot; heartbeat owns connection health.
       } finally {
@@ -588,11 +610,12 @@ export function WorldClient({
     let active = true;
     let requestRunning = false;
     const refreshInteractions = async () => {
-      if (!active || document.visibilityState === "hidden" || requestRunning) return;
+      if (!active || document.visibilityState === "hidden" || requestRunning || refreshGate.current.busy) return;
+      const epoch = refreshGate.current.capture();
       requestRunning = true;
       try {
         const inbox = await client.getInteractionInbox();
-        if (!active) return;
+        if (!active || !refreshGate.current.accepts(epoch)) return;
         for (const request of inbox.requests) {
           const previous = knownInteractionStatusesRef.current.get(request.requestId);
           if (previous === undefined) {
@@ -641,8 +664,11 @@ export function WorldClient({
 
   const refreshPartyState = useCallback(async (preserveTerminalScroll = false) => {
     if (!presenceCharacterId) return null;
+    if (preserveTerminalScroll && refreshGate.current.busy) return null;
+    const epoch = refreshGate.current.capture();
     const previousRevision = knownPartyRevisionRef.current;
     const next = await client.getPartyInfo(presenceCharacterId, previousRevision ?? undefined);
+    if (preserveTerminalScroll && !refreshGate.current.accepts(epoch)) return null;
     if (previousRevision !== null) {
       for (const activity of next.activity) {
         if (activity.playerId === snapshot?.player.id) continue;
@@ -676,12 +702,16 @@ export function WorldClient({
     }
     let active = true;
     let requestRunning = false;
+    let lastChecked = 0;
     const poll = async () => {
-      if (!active || requestRunning || document.visibilityState === "hidden") return;
+      if (!active || requestRunning || document.visibilityState === "hidden" || refreshGate.current.busy) return;
+      if (!teamPollingActive.current && Date.now() - lastChecked < 6_000) return;
+      const epoch = refreshGate.current.capture();
+      lastChecked = Date.now();
       requestRunning = true;
       try {
         const next = await client.getTeamCombatInfo(presenceCharacterId);
-        if (active) setTeamCombatInfo(next);
+        if (active && refreshGate.current.accepts(epoch)) setTeamCombatInfo(next);
       } catch {
         // Keep the last known encounter while the connection recovers.
       } finally {
@@ -717,7 +747,7 @@ export function WorldClient({
       }
     };
     void pollParty();
-    const interval = window.setInterval(() => void pollParty(), 3_000);
+    const interval = window.setInterval(() => void pollParty(), partyInfo?.party ? 3_000 : 9_000);
     const onVisible = () => {
       if (document.visibilityState === "visible") void pollParty();
     };
@@ -727,7 +757,7 @@ export function WorldClient({
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [presenceCharacterId, refreshPartyState]);
+  }, [presenceCharacterId, refreshPartyState, Boolean(partyInfo?.party)]);
 
   const refreshAfterMutation = useCallback(async (message: string, announceQuestObjectives = false) => {
     addEntry("system", message);
@@ -3370,6 +3400,7 @@ export function WorldClient({
                   )}
                   {isMobileViewport && (
                     <RoomChatPanel
+                      actionPending={Boolean(pending)}
                       worldInstanceId={worldInstanceId}
                       roomId={snapshot.location.locationId}
                       fullscreen={chatFullscreen}
@@ -3402,6 +3433,7 @@ export function WorldClient({
                 </TerminalPanel>
                 {!isMobileViewport && (
                   <RoomChatPanel
+                    actionPending={Boolean(pending)}
                     worldInstanceId={worldInstanceId}
                     roomId={snapshot.location.locationId}
                     fullscreen={chatFullscreen}

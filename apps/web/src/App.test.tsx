@@ -1121,6 +1121,29 @@ describe('single-character world session client', () => {
     expect(screen.getByRole('group', { name: 'Players in this room' })).toBeTruthy();
   });
 
+  it('does not let a delayed background snapshot replace a completed movement', async () => {
+    const timers = vi.spyOn(window, 'setInterval');
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const original = apiFetch.getMockImplementation()!;
+    const oldResponse = await original('/api/game');
+    let release!: (value: Response) => void;
+    const delayed = new Promise<Response>((resolve) => { release = resolve; });
+    let first = true;
+    apiFetch.mockImplementation((path, init) => {
+      if (path === '/api/game' && first) { first = false; return delayed; }
+      return original(path, init);
+    });
+    const refresh = timers.mock.calls.find(([, delay]) => delay === 15_000)?.[0];
+    expect(typeof refresh).toBe('function');
+    act(() => { (refresh as () => void)(); });
+    quickGo('north');
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    await act(async () => { release(oldResponse); await delayed; });
+    expect(screen.getByRole('heading', { name: 'Glasswater Bridge' })).toBeInTheDocument();
+    timers.mockRestore();
+  });
+
   it('shows only available quick commands with no more than four actions per page', async () => {
     render(<WorldClient onLeaveWorld={async () => undefined} />);
 
@@ -1604,11 +1627,11 @@ describe('single-character world session client', () => {
     fireEvent.keyDown(screen.getByRole('textbox', { name: 'Enter a command' }), { key: 'ArrowUp' });
     expect(screen.getByRole('heading', { name: 'Mossgate Clearing' })).toBeVisible();
 
-    fireEvent.keyDown(document, { key: 'ArrowUp' });
+    await act(async () => { fireEvent.keyDown(document, { key: 'ArrowUp' }); });
     await screen.findByRole('heading', { name: 'Glasswater Bridge' });
     expect(history).toHaveTextContent('You travel north.');
 
-    fireEvent.keyDown(document, { key: 'ArrowDown' });
+    await act(async () => { fireEvent.keyDown(document, { key: 'ArrowDown' }); });
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     expect(history).toHaveTextContent('You travel south.');
   });

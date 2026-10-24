@@ -89,6 +89,37 @@ function characterEvents(
 }
 
 describe('online stamina recovery scheduler', () => {
+  it('reconciles offline history once rather than replaying it every tick', async () => {
+    const now = new Date('2026-10-23T12:05:00.000Z');
+    const readStream = vi.fn(async () => characterEvents('2026-10-23T11:59:50.000Z'));
+    const listSessions = vi.fn(async () => [{
+      characterId: 'character', lastSeenAt: new Date('2026-10-23T12:00:00.000Z'),
+    }]);
+    const scheduler = createStaminaRecoveryScheduler({
+      engine: { dispatchSystem: async () => ({ receipt: { ok: true }, events: [] }) } as unknown as EngineHost,
+      store: { readStream }, worldInstanceId: 'world', listSessions, now: () => now,
+    });
+    await scheduler.tick(); await scheduler.tick(); await scheduler.tick();
+    expect(readStream).toHaveBeenCalledTimes(1);
+    expect(listSessions.mock.calls[0]).toEqual([undefined]);
+    expect(listSessions.mock.calls[1]).toEqual([new Date(now.getTime() - 45_000)]);
+  });
+
+  it('retries a failed offline final settlement before retiring it', async () => {
+    const now = new Date('2026-10-23T12:05:00.000Z');
+    const dispatchSystem = vi.fn()
+      .mockResolvedValueOnce({ receipt: { ok: false, code: 'VERSION_CONFLICT' } })
+      .mockResolvedValue({ receipt: { ok: true } });
+    const readStream = vi.fn(async () => characterEvents('2026-10-23T11:59:50.000Z'));
+    const scheduler = createStaminaRecoveryScheduler({
+      engine: { dispatchSystem } as unknown as EngineHost,
+      store: { readStream }, worldInstanceId: 'world',
+      listSessions: async () => [{ characterId: 'character', lastSeenAt: new Date('2026-10-23T12:00:00.000Z') }],
+      now: () => now,
+    });
+    await scheduler.tick(); await scheduler.tick(); await scheduler.tick();
+    expect(dispatchSystem).toHaveBeenCalledTimes(2);
+  });
   it('settles only through the last confirmed heartbeat and skips unanchored offline sessions', async () => {
     const now = new Date('2026-10-23T12:05:00.000Z');
     const dispatchSystem = vi.fn(async () => ({
@@ -114,9 +145,8 @@ describe('online stamina recovery scheduler', () => {
         resetAnchor: false,
       },
     }), expect.any(String));
-    const command = dispatchSystem.mock.calls[0]?.[0] as { commandId: string };
-    expect(await scheduler.tick()).toBe(1);
-    expect((dispatchSystem.mock.calls[1]?.[0] as { commandId: string }).commandId).toBe(command.commandId);
+    expect(await scheduler.tick()).toBe(0);
+    expect(dispatchSystem).toHaveBeenCalledTimes(1);
   });
 
   it('does not mint offline stamina when an old stream has no recovery anchor', async () => {
