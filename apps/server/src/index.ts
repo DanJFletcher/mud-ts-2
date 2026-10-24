@@ -585,6 +585,12 @@ app.get('/api/game', async (req, res, next) => {
       location,
       map: projectWorldMap(character, selected.world, locationGroupCatalog.groups),
       questJournal: projectQuestJournal(character, selected.world),
+      dailyActivities: {
+        cycle: new Date().toISOString().slice(0, 10),
+        boards: selected.world.dailyBoards.filter((board) => board.locationId === character.locationId)
+          .map(({ id, name }) => ({ id, name })),
+        sources: selected.world.supplySources.filter((source) => source.locationId === character.locationId),
+      },
     });
   } catch (error) {
     next(error);

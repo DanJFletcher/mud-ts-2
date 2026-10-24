@@ -4,6 +4,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 const state = vi.hoisted(() => ({
   world: {
+    dailyBoards: [],
+    supplySources: [],
     locations: [
       {
         id: 'npc-room',
@@ -184,6 +186,7 @@ vi.mock('@mudd/core-plugins', () => ({
   worldItemsPlugin: {},
   npcDialoguePlugin: {},
   merchantPlugin: {},
+  dailyJobsPlugin: {},
 }));
 
 vi.mock('@mudd/engine-core', () => ({

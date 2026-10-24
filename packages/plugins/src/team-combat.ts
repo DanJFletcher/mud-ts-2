@@ -31,7 +31,7 @@ import {
   type CharacterStateCapability,
 } from './character.js';
 import { prepareCharacterRespawn } from './respawn.js';
-import { characterAttackDamage, maximumHealthForLevel } from './character-stats.js';
+import { characterAttackDamage, maximumHealthForLevel, levelAfterExperience } from './character-stats.js';
 import {
   teamCombatRosterPolicyCapability,
   teamRoadEncounterCapability,
@@ -162,8 +162,7 @@ async function applyOutcomes(
     if (payload.result === 'victory') {
       const advancement = character.advancement ?? { experience: 0, level: 1 };
       const totalExperience = advancement.experience + 10;
-      let level = advancement.level;
-      while (level < 10 && totalExperience >= level * 20) level += 1;
+      const level = levelAfterExperience(advancement.level, totalExperience);
       nextMaximumHealth = maximumHealthForLevel(level, character.attributes.constitution);
       const advancementPayload = CharacterAdvancementAwardedEventV2Schema.shape.payload.parse({
         characterId: player.characterId,

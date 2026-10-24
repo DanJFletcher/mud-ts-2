@@ -2,6 +2,7 @@ import type { WorldPackDraft } from '@mudd/contracts';
 import { EngineHost } from '@mudd/engine-core';
 import {
   characterPlugin,
+  dailyJobsPlugin,
   createClassRulesetPlugin,
   createLocationGroupsPlugin,
   autonomousNpcsPlugin,
@@ -91,6 +92,7 @@ export function createWorldRuntimes(
       roadTravelPlugin,
       npcDialoguePlugin,
       merchantPlugin,
+      dailyJobsPlugin,
       worldEventEffectsPlugin,
     ];
     runtimes.set(definition.worldInstanceId, {

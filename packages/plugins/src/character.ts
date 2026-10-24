@@ -126,7 +126,7 @@ export function staminaRecoveryEvent(
   };
 }
 
-async function isInSharedCombat(
+export async function isInSharedCombat(
   context: EngineCommandContext,
   characterId: string,
 ): Promise<boolean> {
@@ -539,6 +539,7 @@ export const characterPlugin: EnginePlugin = {
         ...(containerItem && authoredContainer ? { containerId: authoredContainer.id } : {}),
         item: {
           id: inventoryItem.id,
+          ...(inventoryItem.typeId ? { typeId: inventoryItem.typeId } : {}),
           label: inventoryItem.label,
           description: inventoryItem.description,
           ...(inventoryItem.questBound ? { questBound: true } : {}),

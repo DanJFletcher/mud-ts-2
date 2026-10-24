@@ -73,6 +73,11 @@ function classApiFixture(initiallySelected = false, completedDuel = false) {
 const characterId = '11111111-1111-4111-8111-111111111111';
 let room: 'clearing' | 'bridge' | 'market' | 'inn' | 'belfry';
 let orravethWorld: boolean;
+let dailyFeatureEnabled: boolean;
+let dailyJobStatus: 'available' | 'active' | 'completed';
+let dailySupplyCount: number;
+let dailyBoardQueryCount: number;
+let dailyCommandPayloads: Array<{ type: string; payload: Record<string, unknown> }>;
 let visitedLocationIds: string[];
 let revision: number;
 let moveError: string | null;
@@ -403,6 +408,12 @@ function quickGo(direction: 'north' | 'south' | 'east' | 'west' | 'up' | 'down')
   fireEvent.click(within(navigation).getByRole('button', { name: direction[0]!.toUpperCase() + direction.slice(1) }));
 }
 
+function submitWorldCommand(value: string) {
+  const input = screen.getByRole('textbox', { name: 'Enter a command' });
+  fireEvent.change(input, { target: { value } });
+  fireEvent.submit(input.closest('form')!);
+}
+
 function fireTouchSwipe(
   target: Element,
   start: Readonly<{ x: number; y: number }>,
@@ -431,6 +442,11 @@ beforeEach(() => {
   delete document.documentElement.dataset.theme;
   room = 'clearing';
   orravethWorld = false;
+  dailyFeatureEnabled = false;
+  dailyJobStatus = 'available';
+  dailySupplyCount = 0;
+  dailyBoardQueryCount = 0;
+  dailyCommandPayloads = [];
   visitedLocationIds = ['mossgate-clearing'];
   revision = 1;
   moveError = null;
@@ -518,6 +534,35 @@ beforeEach(() => {
           locationId: currentLocation().locationId,
           visitedLocationIds,
           revision,
+          ...(dailyFeatureEnabled ? {
+            dailyJobs: [{
+              boardId: 'reedbank-board',
+              cycle: '2000-01-01',
+              jobId: 'expired-herbs',
+              title: 'An old river-mint posting',
+              status: 'active' as const,
+            }, {
+              boardId: 'reedbank-board',
+              cycle: '2098-12-31',
+              jobId: 'current-mint',
+              title: 'Current river-mint posting',
+              status: 'active' as const,
+              details: {
+                id: 'current-mint',
+                poster: 'Sella',
+                title: 'Current river-mint posting',
+                supplyTypeId: 'river-mint',
+                quantity: 3,
+                gold: 15,
+                experience: 9,
+              },
+            }],
+            supplyCollections: dailySupplyCount ? [{
+              sourceId: 'bridge-fishing-pools',
+              cycle: '2026-10-23',
+              count: dailySupplyCount,
+            }] : [],
+          } : {}),
           wallet: { currencyId: 'moss-mark', balance: walletBalance },
           attributes: { strength: 10, intelligence: 10, constitution: 10, dexterity: 10 },
           honors: { glory: 0, medals: 0 },
@@ -532,7 +577,25 @@ beforeEach(() => {
             fractionalCarry: 0,
           },
           ...(combatEncounter ? { combat: combatEncounter } : {}),
+          ...(dailyFeatureEnabled ? { equipment: { weaponItemId: 'mint-equipped', armorItemId: null } } : {}),
           inventory: [
+            ...(dailyFeatureEnabled ? [{
+              id: 'mint-carried',
+              typeId: 'river-mint',
+              label: 'River mint',
+              description: 'A fragrant bunch of fresh mint.',
+            }, {
+              id: 'mint-bound',
+              typeId: 'river-mint',
+              label: 'Bound river mint',
+              description: 'A quest-bound bunch of river mint.',
+              questBound: true,
+            }, {
+              id: 'mint-equipped',
+              typeId: 'river-mint',
+              label: 'Equipped mint',
+              description: 'A test fixture for filtering equipped items.',
+            }] : []),
             ...(itemTaken ? [{
               id: 'mossgate-loose-stone',
               label: 'Loose stone',
@@ -574,6 +637,21 @@ beforeEach(() => {
         location: currentLocation(),
         map: currentWorldMap(),
         questJournal,
+        ...(dailyFeatureEnabled ? {
+          dailyActivities: {
+            cycle: '2026-10-23',
+            boards: room === 'clearing' && !orravethWorld
+              ? [{ id: 'reedbank-board', name: 'Reedbank Bulletin' }]
+              : [],
+            sources: room === 'bridge' && !orravethWorld ? [{
+              id: 'bridge-fishing-pools',
+              locationId: 'glasswater-bridge',
+              label: 'Glasswater fishing pools',
+              supply: { typeId: 'river-fish', label: 'River fish', description: 'Silver fish gather in the clear pools.' },
+              dailyLimit: 3,
+            }] : [],
+          },
+        } : {}),
       });
     }
     if (path === '/api/queries') {
@@ -585,8 +663,35 @@ beforeEach(() => {
           topic?: string;
           merchantNpcId?: string;
           includeNpcDescriptions?: boolean;
+          boardId?: string;
         };
       };
+      if (query.type === 'daily.board') {
+        dailyBoardQueryCount += 1;
+        if (!dailyFeatureEnabled || room !== 'clearing' || query.payload?.boardId !== 'reedbank-board') {
+          return json({ ok: false, message: 'That bulletin is not available in this location.' });
+        }
+        return json({
+          ok: true,
+          value: {
+            boardId: 'reedbank-board',
+            name: 'Reedbank Bulletin',
+            cycle: '2026-10-23',
+            resetsAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+            jobs: [{
+              id: 'river-mint-delivery',
+              poster: 'Sella',
+              title: 'Bring river mint',
+              supplyTypeId: 'river-mint',
+              quantity: 1,
+              gold: 15,
+              experience: 9,
+              carried: dailyJobStatus === 'active' || dailyJobStatus === 'completed' ? 1 : 0,
+              status: dailyJobStatus,
+            }],
+          },
+        });
+      }
       if (query.type === 'location.describe') {
         return json({ ok: true, value: currentLocation(query.payload?.includeNpcDescriptions === true) });
       }
@@ -683,11 +788,45 @@ beforeEach(() => {
           objectId?: string;
           exitId?: string;
           innId?: string;
-          action?: 'attack' | 'defend' | 'flee' | 'use-item';
+          action?: 'attack' | 'defend' | 'flee' | 'use-item' | 'accept' | 'deliver';
           encounterId?: string;
           targetNpcId?: string;
+          boardId?: string;
+          cycle?: string;
+          jobId?: string;
+          sourceId?: string;
         };
       };
+      if (command.type === 'daily.job') {
+        const payload = command.payload ?? {};
+        dailyCommandPayloads.push({ type: 'daily.job', payload: payload as Record<string, unknown> });
+        if (room !== 'clearing' || payload.boardId !== 'reedbank-board') {
+          return json({ receipt: { ok: false, commandId: command.commandId ?? 'mock-command', code: 'RULE_VIOLATION', message: 'The bulletin is not here.' } });
+        }
+        dailyJobStatus = payload.action === 'accept' ? 'active' : 'completed';
+        revision += 1;
+        return json({
+          receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision },
+          streamId: characterId,
+          events: [{
+            type: 'character.daily_job_changed',
+            payload: { gold: payload.action === 'deliver' ? 15 : 0, experience: payload.action === 'deliver' ? 9 : 0 },
+          }],
+        });
+      }
+      if (command.type === 'supply.gather') {
+        const payload = command.payload ?? {};
+        dailyCommandPayloads.push({ type: 'supply.gather', payload: payload as Record<string, unknown> });
+        if (room !== 'bridge' || payload.sourceId !== 'bridge-fishing-pools') {
+          return json({ receipt: { ok: false, commandId: command.commandId ?? 'mock-command', code: 'RULE_VIOLATION', message: 'That supply is not here.' } });
+        }
+        dailySupplyCount += 1;
+        revision += 1;
+        return json({
+          receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision },
+          streamId: characterId,
+        });
+      }
       if (command.type === 'character.rest' || command.type === 'character.stand') {
         if (command.type === 'character.rest' && staminaPosture === 'resting') {
           return json({ receipt: { ok: false, commandId: command.commandId ?? 'mock-command', code: 'RULE_VIOLATION', message: 'You are already resting.' } });
@@ -768,7 +907,9 @@ beforeEach(() => {
             combatEncounter = {
               ...combatEncounter,
               round: combatEncounter.round + 1,
-              lastAction: action ?? combatEncounter.lastAction,
+              lastAction: action === 'attack' || action === 'defend' || action === 'flee' || action === 'use-item'
+                ? action
+                : combatEncounter.lastAction,
               lastNarration: action === 'defend'
                 ? 'You guard against Practice Sentinel’s padded strike and take no damage.'
                 : combatEncounter.lastNarration,
@@ -2617,5 +2758,83 @@ describe('single-character world session client', () => {
       merchantNpcId: 'sella-reedbank-merchant',
       listingId: 'reedbank-brass-lantern',
     });
+  });
+
+  it('browses a daily board and accepts and delivers postings from terminal commands', async () => {
+    dailyFeatureEnabled = true;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('jobs');
+
+    const board = await screen.findByRole('region', { name: 'Reedbank Bulletin' });
+    expect(board).toHaveTextContent('Sella');
+    expect(board).toHaveTextContent('Bring river mint');
+    expect(board).toHaveTextContent('river-mint: 0/1 carried');
+    expect(board).toHaveTextContent('15 gold · 9 XP');
+    const terminal = screen.getByRole('region', { name: 'Terminal output' });
+    expect(terminal).toHaveTextContent('Resets at');
+    expect(terminal).toHaveTextContent('Sella: Bring river mint.');
+
+    submitWorldCommand('jobs accept river-mint-delivery');
+    await screen.findByText('In progress');
+    submitWorldCommand('jobs deliver river-mint-delivery');
+    await screen.findByText(/Delivered “Bring river mint” for 15 gold and 9 XP/);
+    await screen.findByText('Complete');
+    expect(dailyCommandPayloads).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'daily.job', payload: expect.objectContaining({ action: 'accept', cycle: '2026-10-23' }) }),
+      expect.objectContaining({ type: 'daily.job', payload: expect.objectContaining({ action: 'deliver', cycle: '2026-10-23' }) }),
+    ]));
+  });
+
+  it('uses bulletin buttons for accept and deliver and lets travelers close the inline panel', async () => {
+    dailyFeatureEnabled = true;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    clickQuickAction('Browse Reedbank Bulletin');
+    await waitFor(() => expect(dailyBoardQueryCount).toBe(1));
+    const board = await screen.findByRole('region', { name: 'Reedbank Bulletin' });
+    fireEvent.click(within(board).getByRole('button', { name: 'Accept' }));
+    await screen.findByText('In progress');
+    fireEvent.click(within(board).getByRole('button', { name: 'Deliver' }));
+    await screen.findByText('Complete');
+    expect(screen.getByRole('region', { name: 'Terminal output' })).toHaveTextContent('15 gold and 9 XP');
+    fireEvent.click(within(board).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('region', { name: 'Reedbank Bulletin' })).not.toBeInTheDocument();
+  });
+
+  it('clears the board after leaving and does not query it while gathering elsewhere', async () => {
+    dailyFeatureEnabled = true;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('jobs');
+    await screen.findByRole('region', { name: 'Reedbank Bulletin' });
+    expect(dailyBoardQueryCount).toBe(1);
+
+    quickGo('north');
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    expect(screen.queryByRole('region', { name: 'Reedbank Bulletin' })).not.toBeInTheDocument();
+    submitWorldCommand('gather fishing pools');
+    await screen.findByText('Gathered supplies at Glasswater fishing pools.');
+    expect(dailyBoardQueryCount).toBe(1);
+    expect(dailyCommandPayloads).toContainEqual(expect.objectContaining({ type: 'supply.gather' }));
+    expect(screen.getByRole('region', { name: 'Terminal output' })).not.toHaveTextContent('could not gather');
+    expect(screen.queryByText(/That bulletin is not available/)).not.toBeInTheDocument();
+  });
+
+  it('shows active daily postings from previous cycles as expired in Field notes', async () => {
+    dailyFeatureEnabled = true;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    await openInfoSection('Field notes');
+    expect(screen.getByText('An old river-mint posting')).toBeInTheDocument();
+    expect(screen.getByText('Expired')).toBeInTheDocument();
+    expect(screen.getByText('2000-01-01')).toBeInTheDocument();
+    expect(screen.getByText('Posted by Sella')).toBeInTheDocument();
+    expect(screen.getByText('Bring 3 river-mint · carried 1/3')).toBeInTheDocument();
+    expect(screen.getByText('Reward: 15 gold · 9 XP')).toBeInTheDocument();
+    const localResetDate = new Date(Date.parse('2098-12-31T00:00:00.000Z') + 86_400_000)
+      .toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    expect(screen.getByText(/resets/)).toHaveTextContent(localResetDate);
   });
 });

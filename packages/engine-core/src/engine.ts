@@ -550,6 +550,7 @@ export class EngineHost {
     }
     try {
       const context: QueryContext = {
+        now: this.now,
         session,
         worldInstanceId,
         store: this.store,

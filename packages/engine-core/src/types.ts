@@ -143,6 +143,7 @@ export interface EventEffectDefinition<T = unknown> {
 }
 
 export interface QueryContext {
+  readonly now: () => Date;
   readonly session: SessionContext;
   readonly worldInstanceId: string;
   readonly store: EventStorePort;

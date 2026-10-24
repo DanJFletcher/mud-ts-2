@@ -15,6 +15,7 @@ import { WorldCard } from './WorldCard.js';
 import { WorldHero } from './WorldHero.js';
 import { CharacterEntryCard } from './CharacterEntryCard.js';
 import { StaminaStatus } from './StaminaStatus.js';
+import { DailyBoard } from './DailyBoard.js';
 
 afterEach(() => cleanup());
 
@@ -227,5 +228,40 @@ describe('@mudd/ui components', () => {
   it('announces a loading state for projected actions', () => {
     render(<ClassAbilityList actions={[]} onUse={vi.fn()} loading />);
     expect(screen.getByRole('status')).toHaveTextContent('Loading class actions');
+  });
+
+  it('shows compact posting requirements and sends accessible board actions', () => {
+    const onAccept = vi.fn();
+    const onDeliver = vi.fn();
+    render(<DailyBoard
+      name="Reedbank Bulletin"
+      cycle="2026-10-23"
+      resetsAt="2026-10-24T00:00:00.000Z"
+      jobs={[
+        { id: 'mint', poster: 'Sella', title: 'Gather river mint', supplyTypeId: 'river-mint', supplyLabel: 'River mint', quantity: 3, carried: 1, gold: 18, experience: 12, status: 'active' },
+        { id: 'flowers', poster: 'Mira', title: 'Bring marsh flowers', supplyTypeId: 'marsh-flower', quantity: 2, carried: 2, gold: 16, experience: 10, status: 'active' },
+        { id: 'reeds', poster: 'Olan', title: 'Bundle reeds', supplyTypeId: 'fresh-reed', quantity: 2, carried: 0, gold: 14, experience: 9, status: 'available' },
+      ]}
+      onAccept={onAccept}
+      onDeliver={onDeliver}
+    />);
+    expect(screen.getByRole('heading', { name: 'Reedbank Bulletin' })).toBeInTheDocument();
+    expect(screen.getByText('River mint: 1/3 carried · 2 needed')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+    expect(onAccept).toHaveBeenCalledWith('reeds');
+    const deliverButtons = screen.getAllByRole('button', { name: 'Deliver' });
+    expect(deliverButtons[0]).toBeDisabled();
+    expect(deliverButtons[1]).toBeEnabled();
+    fireEvent.click(deliverButtons[1]!);
+    expect(onDeliver).toHaveBeenCalledWith('flowers');
+  });
+
+  it('offers a retry control in the inline board error state', () => {
+    const onRetry = vi.fn();
+    render(<DailyBoard name="Board" cycle="2026-10-23" resetsAt="2026-10-24T00:00:00.000Z"
+      jobs={[]} error="Bulletin unavailable." onRetry={onRetry} onAccept={vi.fn()} onDeliver={vi.fn()} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Bulletin unavailable.');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(onRetry).toHaveBeenCalledOnce();
   });
 });

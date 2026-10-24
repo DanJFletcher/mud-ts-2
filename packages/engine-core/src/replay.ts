@@ -1,5 +1,7 @@
 import type { StoredGameEvent } from './types.js';
 import {
+  DailyJobChangedEventSchema,
+  SupplyGatheredEventSchema,
   CharacterItemTakenEventSchema,
   CharacterItemDroppedEventSchema,
   CharacterEquipmentChangedEventSchema,
@@ -79,6 +81,50 @@ export function replayCharacter(events: readonly StoredGameEvent[]) {
           ? created.payload.resources
           : DEFAULT_CHARACTER_RESOURCES,
         ...(created.payload.wallet ? { wallet: created.payload.wallet } : {}),
+      });
+    } else if (event.type === 'character.supply_gathered') {
+      if (!state) throw new Error('Supply collection before creation.');
+      const collected = SupplyGatheredEventSchema.parse(publicEvent).payload;
+      if (collected.characterId !== state.characterId || state.inventory.some((item) => item.id === collected.item.id)) {
+        throw new Error('Invalid supply collection.');
+      }
+      const prior = state.supplyCollections.find((entry) => entry.sourceId === collected.sourceId && entry.cycle === collected.cycle);
+      state = CharacterProjectionSchema.parse({
+        ...state, revision: event.aggregateVersion,
+        inventory: [...state.inventory, collected.item],
+        supplyCollections: [
+          ...state.supplyCollections.filter((entry) => entry.cycle === collected.cycle && entry.sourceId !== collected.sourceId),
+          { sourceId: collected.sourceId, cycle: collected.cycle, count: (prior?.count ?? 0) + 1 },
+        ],
+      });
+    } else if (event.type === 'character.daily_job_changed') {
+      if (!state) throw new Error('Daily job before creation.');
+      const changed = DailyJobChangedEventSchema.parse(publicEvent).payload;
+      const { job, consumedItemIds, gold, experience } = changed;
+      const matches = (entry: typeof job) => entry.boardId === job.boardId && entry.cycle === job.cycle && entry.jobId === job.jobId;
+      const prior = state.dailyJobs.find(matches);
+      const consumed = new Set(consumedItemIds);
+      const terms = prior?.details ?? job.details;
+      if (changed.characterId !== state.characterId || state.wallet?.currencyId !== changed.currencyId ||
+          (job.details && job.details.id !== job.jobId) ||
+          consumed.size !== consumedItemIds.length ||
+          consumedItemIds.some((id) => !state!.inventory.some((item) => item.id === id && !item.questBound)) ||
+          (job.status === 'active' ? prior || gold || experience || consumed.size : prior?.status !== 'active') ||
+          (job.status === 'completed' && terms && (
+            gold !== terms.gold || experience !== terms.experience || consumed.size !== terms.quantity ||
+            consumedItemIds.some((id) => state!.inventory.find((item) => item.id === id)?.typeId !== terms.supplyTypeId)
+          )) ||
+          consumed.has(state.equipment.weaponItemId ?? '') || consumed.has(state.equipment.armorItemId ?? '')) {
+        throw new Error('Invalid daily job transition.');
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state, revision: event.aggregateVersion,
+        dailyJobs: [...state.dailyJobs.filter((entry) => entry.cycle === job.cycle && !matches(entry)), job],
+        inventory: state.inventory.filter((item) => !consumed.has(item.id)),
+        itemLocations: state.itemLocations.filter((entry) => !consumed.has(entry.item.id)),
+        wallet: { ...state.wallet, balance: state.wallet.balance + gold },
+        advancement: { ...state.advancement, experience: (state.advancement?.experience ?? 0) + experience, level: changed.level },
+        ...(state.health ? { health: { ...state.health, maximum: changed.maximumHealth } } : {}),
       });
     } else if (event.type === 'character.class_selected') {
       if (!state) throw new Error('Class selection before creation.');

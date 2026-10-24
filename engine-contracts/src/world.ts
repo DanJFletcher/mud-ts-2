@@ -4,6 +4,7 @@ import { ClientCommandBaseSchema, ClientQueryBaseSchema } from './protocol.js';
 import { ContractVersionSchema, IdSchema, NonNegativeIntSchema } from './ids.js';
 import { ConsumableItemSchema, InventoryEquipmentSchema } from './character.js';
 import { QuestDefinitionSchema, QuestDialogueActionSchema } from './quests.js';
+import { DailyBoardDefinitionSchema, SupplySourceDefinitionSchema } from './daily-jobs.js';
 import {
   InnDefinitionSchema,
   InnProjectionSchema,
@@ -75,6 +76,7 @@ export const ReadableObjectDefinitionSchema = z.object({
 }).strict();
 
 export const TakeableObjectDefinitionSchema = z.object({
+  typeId: IdSchema.optional(),
   id: IdSchema,
   label: z.string().min(1).max(120),
   description: z.string().min(1).max(1000),
@@ -333,6 +335,8 @@ export const WorldPackDraftSchema = z.object({
   locationGroups: z.array(LocationGroupDefinitionSchema).max(500).default([]),
   roads: z.array(RoadDefinitionSchema).default([]),
   quests: z.array(QuestDefinitionSchema).default([]),
+  dailyBoards: z.array(DailyBoardDefinitionSchema).default([]),
+  supplySources: z.array(SupplySourceDefinitionSchema).default([]),
 }).strict().superRefine((world, context) => {
   if (
     world.respawn &&

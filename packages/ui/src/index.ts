@@ -27,3 +27,5 @@ export { CharacterEntryCard } from './components/CharacterEntryCard.js';
 export type { CharacterEntryCardProps } from './components/CharacterEntryCard.js';
 export { StaminaStatus } from './components/StaminaStatus.js';
 export type { StaminaStatusProps } from './components/StaminaStatus.js';
+export { DailyBoard } from './components/DailyBoard.js';
+export type { DailyBoardProps, DailyBoardJobView } from './components/DailyBoard.js';

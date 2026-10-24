@@ -11,8 +11,31 @@ export const ORRAVETH_WORLD_INSTANCE_ID = 'orraveth-bellwold-instance';
 const draft = {
   formatVersion: 1,
   packId: 'orraveth.bellwold',
-  packVersion: '1.7.0',
+  packVersion: '1.8.0',
   displayName: 'Orraveth: Bellwold',
+  dailyBoards: [{
+    id: 'bellwold-notice-board', locationId: 'bellwold-south-common', name: 'South Common bulletin board',
+    slots: [
+      [
+        { id: 'seli-hide', poster: 'Seli Tor', title: 'A hide for repairs', supplyTypeId: 'deer-hide', quantity: 1, gold: 5, experience: 8 },
+        { id: 'seli-hides', poster: 'Seli Tor', title: 'Hides for winter stitching', supplyTypeId: 'deer-hide', quantity: 2, gold: 9, experience: 12 },
+      ],
+      [
+        { id: 'tomas-fish', poster: 'Tomas', title: 'Fish for the supper pot', supplyTypeId: 'river-fish', quantity: 2, gold: 4, experience: 8 },
+        { id: 'tomas-fish-basket', poster: 'Tomas', title: 'Fill the fish basket', supplyTypeId: 'river-fish', quantity: 3, gold: 6, experience: 10 },
+      ],
+      [
+        { id: 'darric-wood', poster: 'Darric Holt', title: 'Kindling for the forge', supplyTypeId: 'firewood', quantity: 2, gold: 3, experience: 6 },
+        { id: 'tomas-wood', poster: 'Tomas', title: 'Wood for the kitchen hearth', supplyTypeId: 'firewood', quantity: 3, gold: 5, experience: 8 },
+      ],
+    ],
+  }],
+  supplySources: [
+    { id: 'reedbank-fishing', locationId: 'bellwold-reedbed-approach', label: 'Catch river fish',
+      supply: { typeId: 'river-fish', label: 'River fish', description: 'A freshly caught silver fish, cool and slick to the touch.' }, dailyLimit: 6 },
+    { id: 'track-firewood', locationId: 'bellwold-southbound-track', label: 'Gather firewood',
+      supply: { typeId: 'firewood', label: 'Bundle of firewood', description: 'A bundle of dry fallen branches tied with grass.' }, dailyLimit: 6 },
+  ],
   classCatalog: orravethClassCatalog,
   currency: {
     id: 'gold',
@@ -244,6 +267,11 @@ const draft = {
       id: 'bellwold-south-common',
       name: 'Bellwold South Common',
       description: 'Benches stand beside drying lines and a public notice board. Voices and footsteps carry across the grass. The market square is north, the Green Mortar west, Blackwater Forge east, and Well Court south.',
+      readables: [{
+        id: 'bellwold-daily-notice', label: 'Daily supply notices',
+        description: 'Small handwritten requests are pinned beneath a heading: “Supplies wanted.”',
+        text: 'Seli Tor requests deer hides for stitching; deer can be found along the south road. Tomas seeks fish from the shallow reedbank pool south of town. Fallen branches beside Southbound Track can be bundled for the kitchen and forge. Read the bulletin for today’s quantities and rewards. Each traveler may deliver each posting once before the notices change at midnight UTC. Use jobs here to browse; gather at the marked sources, then return here to deliver.',
+      }],
       mapPosition: { x: 0, y: -1, terrain: 'pasture' },
       exits: [
         { id: 'south-common-to-square', fromLocationId: 'bellwold-south-common', toLocationId: 'bellwold-market-square', label: 'north', direction: 'north' },
@@ -695,7 +723,7 @@ const draft = {
     {
       id: 'bellwold-southbound-track',
       name: 'Southbound Track',
-      description: 'The packed road cuts through open fields between low fence lines. Wind stirs the grass as Bellwold’s roofs recede north. The South Gate is north; the reedbed approach lies south.',
+      description: 'The packed road cuts through open fields between low fence lines. Wind stirs the grass as Bellwold’s roofs recede north. Dry fallen branches lie beside the fence; deer prints mark the softer earth.\n\nThe South Gate is north; the reedbed approach lies south.',
       mapPosition: { x: 0, y: -5, terrain: 'pasture' },
       exits: [
         { id: 'southbound-track-to-gate', fromLocationId: 'bellwold-southbound-track', toLocationId: 'bellwold-south-gate', label: 'north', direction: 'north', roadId: 'bellwold-south-road' },
@@ -705,7 +733,7 @@ const draft = {
     {
       id: 'bellwold-reedbed-approach',
       name: 'Reedbed Approach',
-      description: 'Damp grass brushes the road’s edges, and reeds rustle along the riverbanks. The Southbound Track is north; Bellwold River Bridge is south.',
+      description: 'Damp grass brushes the road’s edges, and reeds rustle along the riverbanks. Silver fish flicker in a shallow pool beside the firm bank.\n\nThe Southbound Track is north; Bellwold River Bridge is south.',
       mapPosition: { x: 0, y: -6, terrain: 'land' },
       exits: [
         { id: 'reedbed-approach-to-track', fromLocationId: 'bellwold-reedbed-approach', toLocationId: 'bellwold-southbound-track', label: 'north', direction: 'north', roadId: 'bellwold-south-road' },
@@ -1197,6 +1225,12 @@ const draft = {
           id: 'bellwold-south-road-stray-hound',
           name: 'Stray Hound',
           combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' },
+        },
+        {
+          id: 'bellwold-road-deer', name: 'Roadside Deer',
+          combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' },
+          loot: { items: [{ id: 'deer-hide-template', typeId: 'deer-hide', label: 'Deer hide',
+            description: 'A brown deer hide with a pale underside.' }] },
         },
       ],
     },

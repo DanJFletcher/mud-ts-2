@@ -13,11 +13,16 @@ relationships:
     targetId: orraveth-bellwold
 canonStatus: Provisional Canon
 sourceRefs: []
-lastUpdated: "2026-10-22"
+lastUpdated: "2026-10-23"
 regionId: orraveth-bellwold
 ---
 
 South Common is an open green between Bellwold's central square and its shared well. Benches, drying lines, and a public notice board serve ordinary daily needs.
+
+Residents pin small supply requests to the board. Seli Tor seeks hides for stitching,
+while the kitchen at the Kindly Roof and the forge request fish or dry wood.
+These notices reflect the town's everyday work rather than the affairs recorded
+in the Common House.
 
 The [[blackwater-forge|Blackwater Forge]] and [[green-mortar|Green Mortar]] open onto the common. The path north returns to [[bellwold-market-square|the market square]]; the route south continues to [[well-court|Well Court]].
 

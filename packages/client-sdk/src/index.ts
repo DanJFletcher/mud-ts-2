@@ -1,5 +1,6 @@
 import { CharacterClassCatalogSchema, ChooseCharacterClassCommandSchema } from '@mudd/contracts';
 import {
+  DailyBoardQuerySchema, DailyBoardProjectionSchema, DailyJobCommandSchema, GatherSupplyCommandSchema, SupplySourceDefinitionSchema,
   CharacterProjectionSchema,
   CharacterStatsProjectionSchema,
   CommandReceiptSchema,
@@ -74,6 +75,11 @@ import {
 import { z } from 'zod';
 
 export const GameSnapshotSchema = z.object({
+  dailyActivities: z.object({
+    cycle: z.string(),
+    boards: z.array(z.object({ id: z.string(), name: z.string() })),
+    sources: z.array(SupplySourceDefinitionSchema),
+  }).optional(),
   player: z.object({ id: IdSchema, displayName: z.string() }),
   character: CharacterProjectionSchema.optional(),
   stats: CharacterStatsProjectionSchema.optional(),
@@ -363,6 +369,33 @@ export class MuddHttpClient {
     }, queryResultSchema(ObjectInspectionProjectionSchema));
     if (!result.ok || !result.value) throw new Error(result.message ?? 'Unable to inspect that object.');
     return result.value;
+  }
+
+  async dailyBoard(characterId: string, boardId: string) {
+    const query = DailyBoardQuerySchema.parse({
+      type: 'daily.board', version: 1, queryId: crypto.randomUUID(),
+      worldInstanceId: this.options.worldInstanceId, characterId, payload: { boardId },
+    });
+    const result = await this.request('/api/queries', { method: 'POST', body: JSON.stringify(query) },
+      queryResultSchema(DailyBoardProjectionSchema));
+    if (!result.ok) throw new Error(result.message);
+    return result.value;
+  }
+
+  async dailyJob(characterId: string, expectedVersion: number, payload: {
+    boardId: string; cycle: string; jobId: string; action: 'accept' | 'deliver';
+  }, commandId = crypto.randomUUID()) {
+    return this.send(DailyJobCommandSchema.parse({
+      type: 'daily.job', version: 1, commandId, worldInstanceId: this.options.worldInstanceId,
+      characterId, expectedVersion, payload,
+    }));
+  }
+
+  async gatherSupply(characterId: string, expectedVersion: number, sourceId: string, cycle: string, commandId = crypto.randomUUID()) {
+    return this.send(GatherSupplyCommandSchema.parse({
+      type: 'supply.gather', version: 1, commandId, worldInstanceId: this.options.worldInstanceId,
+      characterId, expectedVersion, payload: { sourceId, cycle },
+    }));
   }
 
   async talk(

@@ -6,6 +6,7 @@ import {
   WorldCorpseGoldClaimedEventSchema,
   WorldCorpseRecordSchema,
   WorldItemClaimedEventSchema,
+  WorldItemsConsumedEventSchema,
   WorldItemDroppedEventSchema,
   WorldItemRecordSchema,
   type CombatLootDefinition,
@@ -132,6 +133,7 @@ export function createWorldCorpseEffect(
       item: InventoryItemProjectionSchema.parse({
         id: worldItemId,
         sharedItemId: worldItemId,
+        ...(template.typeId ? { typeId: template.typeId } : {}),
         label: template.label,
         description: template.description,
         ...(template.consumable ? { consumable: template.consumable } : {}),
@@ -152,16 +154,25 @@ export function projectWorldItems(
 ): WorldItemsState {
   const items = new Map<string, WorldItemRecord>();
   const corpses = new Map<string, WorldCorpseRecord>();
+  const consumedIds = new Set<string>();
   let revision = 0;
   for (const stored of events) {
     if (stored.aggregateVersion !== revision + 1) {
       throw new Error(`Non-contiguous world item revision at ${stored.aggregateVersion}.`);
     }
     const { streamId: _streamId, ...event } = stored;
-    if (stored.type === 'world.item_dropped') {
+    if (stored.type === 'world.items_consumed') {
+      const consumed = WorldItemsConsumedEventSchema.parse(event).payload;
+      for (const id of consumed.worldItemIds) {
+        if (items.get(id)?.holderCharacterId !== consumed.characterId) throw new Error('Invalid shared item consumption.');
+        items.delete(id);
+        consumedIds.add(id);
+      }
+    } else if (stored.type === 'world.item_dropped') {
       const dropped = WorldItemDroppedEventSchema.parse(event);
       const payload = dropped.payload;
       if (
+        consumedIds.has(payload.worldItemId) ||
         payload.worldItemId !== payload.item.id ||
         payload.worldItemId !== payload.item.sharedItemId ||
         payload.item.questBound === true
@@ -196,6 +207,7 @@ export function projectWorldItems(
           worldItemId !== item.id ||
           item.sharedItemId !== worldItemId ||
           item.questBound === true ||
+          consumedIds.has(worldItemId) ||
           items.has(worldItemId) ||
           created.payload.items.filter((candidate) => candidate.worldItemId === worldItemId).length > 1
         ) {

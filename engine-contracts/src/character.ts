@@ -8,6 +8,7 @@ import {
 import { CombatEncounterProjectionSchema } from './combat.js';
 import { CharacterHealthSchema } from './health.js';
 import { CharacterClassSnapshotSchema, AvailableClassActionSchema } from './classes.js';
+import { DailyJobStateSchema, SupplyCollectionStateSchema } from './daily-jobs.js';
 
 export const ConsumableItemSchema = z.object({
   effect: z.literal('heal'),
@@ -29,6 +30,7 @@ export const InventoryEquipmentSchema = z.object({
 
 export const InventoryItemProjectionSchema = z.object({
   id: IdSchema,
+  typeId: IdSchema.optional(),
   /** Present only while this physical item is owned by the shared world-item aggregate. */
   sharedItemId: IdSchema.optional(),
   label: z.string().min(1).max(120),
@@ -499,6 +501,8 @@ export const CharacterProjectionSchema = z.object({
     status: z.enum(['active', 'completed']),
   }).strict()).default([]),
   questRewardedIds: z.array(IdSchema).default([]),
+  dailyJobs: z.array(DailyJobStateSchema).default([]),
+  supplyCollections: z.array(SupplyCollectionStateSchema).default([]),
   archived: z.boolean().default(false),
 }).strict();
 

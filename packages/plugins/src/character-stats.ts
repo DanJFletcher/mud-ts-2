@@ -17,6 +17,13 @@ export function maximumHealthForLevel(level: number, constitution = 10): number 
   return Math.max(1, levelHealth + constitutionBonus);
 }
 
+/** Existing cumulative experience thresholds, shared by combat and quest awards. */
+export function levelAfterExperience(currentLevel: number, totalExperience: number): number {
+  let level = currentLevel;
+  while (level < 10 && totalExperience >= level * 20) level++;
+  return level;
+}
+
 export function characterAttackDamage(character: CharacterProjection): number {
   const weapon = character.inventory.find((item) => item.id === character.equipment.weaponItemId);
   const primary = character.characterClass?.primaryAttribute;

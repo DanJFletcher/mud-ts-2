@@ -31,12 +31,11 @@ import {
 import { prepareCharacterRespawn } from './respawn.js';
 import { registerPvpCombat } from './pvp-combat.js';
 import { interactionPolicyRegistry } from './interactions.js';
-import { calculateCharacterStats, characterAttackDamage, maximumHealthForLevel } from './character-stats.js';
+import { calculateCharacterStats, characterAttackDamage, maximumHealthForLevel, levelAfterExperience } from './character-stats.js';
 import { createWorldCorpseEffect } from './world-items.js';
 import { classAdoptionGuards, classCombatPolicyCapability, type ClassCombatPolicy } from './classes.js';
 
 const VICTORY_EXPERIENCE_REWARD = 10;
-const MAX_LEVEL = 10;
 
 export function createRoadEncounterStartEvent(
   context: EngineCommandContext,
@@ -97,10 +96,6 @@ function findCombatOpponent(
     }
   }
   return undefined;
-}
-
-function experienceRequiredForNextLevel(level: number): number {
-  return level * 20;
 }
 
 export const combatPlugin: EnginePlugin = {
@@ -435,10 +430,7 @@ export const combatPlugin: EnginePlugin = {
         }));
         const currentAdvancement = character.advancement ?? { experience: 0, level: 1 };
         const totalExperience = currentAdvancement.experience + VICTORY_EXPERIENCE_REWARD;
-        let level = currentAdvancement.level;
-        while (level < MAX_LEVEL && totalExperience >= experienceRequiredForNextLevel(level)) {
-          level += 1;
-        }
+        const level = levelAfterExperience(currentAdvancement.level, totalExperience);
         const advancementPayload = {
           characterId: character.characterId,
           encounterId: resolvedEncounter.encounterId,

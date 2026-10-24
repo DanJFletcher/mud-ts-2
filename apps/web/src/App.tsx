@@ -15,6 +15,7 @@ import {
   Button,
   ClassAbilityList,
   ClassChoice,
+  DailyBoard,
   DisclosureButton,
   NavigationControls,
   Panel,
@@ -91,6 +92,14 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
   party: [
     "Usage: party [help|info|list|create|join <id>|quests|quest start <id>|leave|close]",
     "Manage a public party of up to four players, start shared quests, and coordinate cooperative encounters.",
+  ],
+  jobs: [
+    "Usage: jobs [browse|accept <id>|deliver <id>]",
+    "Browse today’s local bulletin, accept a posting, or deliver its carried supplies.",
+  ],
+  gather: [
+    "Usage: gather <source-id or label> | fish",
+    "Collect a supply from a source in the current location. Fish is a shortcut for a local fish source.",
   ],
   accept: [
     "Usage: accept <request-id>",
@@ -178,6 +187,8 @@ const GENERAL_HELP = [
   "Commands",
   "help [command] — List commands or show instructions for one.",
   "party [help|info|list|create|join <id>|quests|quest start <id>|leave|close] — Manage your party and its quests.",
+  "jobs [browse|accept <id>|deliver <id>] — Browse the local daily bulletin and fulfil postings.",
+  "gather <source> | fish — Collect a local supply source.",
   "talk <npc> [about <topic>] — Speak privately with someone in the current room.",
   "shop <merchant> — Browse a merchant’s goods and your balance.",
   "buy <item> — Purchase an item from the open merchant catalog.",
@@ -223,6 +234,16 @@ function makeEntry(kind: ActivityEntry["kind"], text: string): ActivityEntry {
   return { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, kind, text };
 }
 
+function dailyCycleResetDate(cycle: string): string {
+  const cycleStart = Date.parse(`${cycle}T00:00:00.000Z`);
+  if (!Number.isFinite(cycleStart)) return cycle;
+  return new Date(cycleStart + 86_400_000).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 function completedQuestObjectiveKeys(snapshot: GameSnapshot): string[] {
   return (snapshot.questJournal ?? []).flatMap((quest) =>
     quest.objectives
@@ -245,7 +266,7 @@ export function WorldClient({
   const [teamCombatInfo, setTeamCombatInfo] = useState<Awaited<ReturnType<MuddHttpClient["getTeamCombatInfo"]>> | null>(null);
   const [presenceStale, setPresenceStale] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"look" | "read" | "take" | "use" | "drop" | "move" | "talk" | "shop" | "buy" | "combat" | "rest" | "stand" | "equip" | "party" | null>(null);
+  const [pending, setPending] = useState<"look" | "read" | "take" | "use" | "drop" | "move" | "talk" | "shop" | "buy" | "combat" | "rest" | "stand" | "equip" | "party" | "daily" | "gather" | null>(null);
   const [command, setCommand] = useState("");
   const [quickCommandPage, setQuickCommandPage] = useState(1);
   const [quickCommandPageSize, setQuickCommandPageSize] = useState(() =>
@@ -263,6 +284,15 @@ export function WorldClient({
   const [collapsedQuestCards, setCollapsedQuestCards] = useState<Set<string>>(() => new Set());
   const [activeDialogue, setActiveDialogue] = useState<DialogueProjection | null>(null);
   const [activeMerchantCatalog, setActiveMerchantCatalog] = useState<MerchantCatalog | null>(null);
+  const [dailyBoard, setDailyBoard] = useState<Awaited<ReturnType<MuddHttpClient["dailyBoard"]>> | null>(null);
+  const [dailyBoardContext, setDailyBoardContext] = useState<{
+    characterId: string;
+    locationId: string;
+    worldInstanceId: string;
+  } | null>(null);
+  const [dailyBoardLoading, setDailyBoardLoading] = useState(false);
+  const [dailyBoardError, setDailyBoardError] = useState("");
+  const [pendingDailyJobId, setPendingDailyJobId] = useState<string>();
   const [connectionError, setConnectionError] = useState("");
   const [inspectedCarriedItem, setInspectedCarriedItem] = useState<{ id: string; label: string; description: string }>();
   const [inventoryInspectError, setInventoryInspectError] = useState("");
@@ -288,6 +318,41 @@ export function WorldClient({
   const knownPvpUpdateRef = useRef<string | null>(null);
   const knownPartyRevisionRef = useRef<number | null>(null);
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+  const dailyBoardRequestIdRef = useRef(0);
+  const dailyContextRef = useRef({
+    characterId: snapshot?.character?.characterId,
+    locationId: snapshot?.location?.locationId,
+    worldInstanceId,
+    boardIds: (snapshot?.dailyActivities?.boards ?? []).map((board) => board.id),
+  });
+  dailyContextRef.current = {
+    characterId: snapshot?.character?.characterId,
+    locationId: snapshot?.location?.locationId,
+    worldInstanceId,
+    boardIds: (snapshot?.dailyActivities?.boards ?? []).map((board) => board.id),
+  };
+  const dailyBoardIdsKey = dailyContextRef.current.boardIds.join("\u0000");
+  const displayedDailyBoard = dailyBoard && dailyBoardContext &&
+    dailyBoardContext.characterId === dailyContextRef.current.characterId &&
+    dailyBoardContext.locationId === dailyContextRef.current.locationId &&
+    dailyBoardContext.worldInstanceId === dailyContextRef.current.worldInstanceId &&
+    dailyContextRef.current.boardIds.includes(dailyBoard.boardId)
+    ? dailyBoard
+    : null;
+
+  useEffect(() => {
+    dailyBoardRequestIdRef.current += 1;
+    setDailyBoard(null);
+    setDailyBoardContext(null);
+    setDailyBoardError("");
+    setDailyBoardLoading(false);
+    setPendingDailyJobId(undefined);
+  }, [
+    snapshot?.character?.characterId,
+    snapshot?.location?.locationId,
+    worldInstanceId,
+    dailyBoardIdsKey,
+  ]);
 
   useEffect(() => {
     let active = true;
@@ -659,6 +724,205 @@ export function WorldClient({
     else rememberCompletedQuestObjectives(nextSnapshot);
     return nextSnapshot;
   }, [addDefaultLook, addEntry, announceNewQuestObjectives, rememberCompletedQuestObjectives]);
+
+  const fetchDailyBoard = useCallback(async (boardId: string) => {
+    const requestContext = { ...dailyContextRef.current };
+    if (!requestContext.characterId || !requestContext.locationId) {
+      const message = "Enter the world with a character before browsing daily postings.";
+      setDailyBoardError(message);
+      throw new Error(message);
+    }
+    if (!requestContext.boardIds.includes(boardId)) {
+      dailyBoardRequestIdRef.current += 1;
+      setDailyBoard(null);
+      setDailyBoardContext(null);
+      setDailyBoardError("");
+      setDailyBoardLoading(false);
+      return null;
+    }
+    const requestId = ++dailyBoardRequestIdRef.current;
+    setDailyBoardLoading(true);
+    setDailyBoardError("");
+    try {
+      const board = await client.dailyBoard(requestContext.characterId, boardId);
+      const latestContext = dailyContextRef.current;
+      if (
+        requestId !== dailyBoardRequestIdRef.current ||
+        latestContext.characterId !== requestContext.characterId ||
+        latestContext.locationId !== requestContext.locationId ||
+        latestContext.worldInstanceId !== requestContext.worldInstanceId ||
+        !latestContext.boardIds.includes(boardId)
+      ) return null;
+      if (!board) throw new Error("The bulletin returned no postings.");
+      setDailyBoard(board);
+      setDailyBoardContext({
+        characterId: requestContext.characterId,
+        locationId: requestContext.locationId,
+        worldInstanceId: requestContext.worldInstanceId,
+      });
+      return board;
+    } catch (error) {
+      if (requestId !== dailyBoardRequestIdRef.current) return null;
+      const message = error instanceof Error ? error.message : "The daily bulletin could not be reached.";
+      setDailyBoardError(message);
+      throw error;
+    } finally {
+      if (requestId === dailyBoardRequestIdRef.current) setDailyBoardLoading(false);
+    }
+  }, []);
+
+  const openDailyBoard = useCallback(async (boardId?: string) => {
+    const characterId = snapshot?.character?.characterId;
+    const selectedBoardId = boardId ?? snapshot?.dailyActivities?.boards[0]?.id;
+    if (!characterId) {
+      addEntry("error", "Enter the world with a character before browsing daily postings.");
+      return null;
+    }
+    if (!selectedBoardId) {
+      addEntry("narration", "There is no daily bulletin available in this world.");
+      setDailyBoard(null);
+      return null;
+    }
+    try {
+      const board = await fetchDailyBoard(selectedBoardId);
+      if (!board) return null;
+      addEntry("system", `${board.name} — cycle ${board.cycle}.`);
+      const resetAt = new Date(board.resetsAt);
+      const remainingMs = Math.max(0, resetAt.getTime() - Date.now());
+      const resetHours = Math.floor(remainingMs / 3_600_000);
+      const resetMinutes = Math.floor((remainingMs % 3_600_000) / 60_000);
+      addEntry("narration", `Resets at ${resetAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} (${resetHours}h ${resetMinutes}m remaining).`);
+      for (const job of board.jobs) {
+        const supplyLabel = snapshot?.dailyActivities?.sources.find(
+          (source) => source.supply.typeId === job.supplyTypeId,
+        )?.supply.label ?? job.supplyTypeId;
+        const status = job.status === "available" ? "available" : job.status === "active" ? "in progress" : "completed";
+        addEntry(
+          "narration",
+          `${job.poster}: ${job.title}. Bring ${job.quantity} ${supplyLabel}; ${job.carried}/${job.quantity} carried. Status: ${status}. Reward: ${job.gold} gold and ${job.experience} XP.`,
+        );
+      }
+      return board;
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "The daily bulletin could not be reached.");
+      return null;
+    }
+  }, [addEntry, fetchDailyBoard, snapshot?.character?.characterId, snapshot?.dailyActivities?.boards, snapshot?.dailyActivities?.sources]);
+
+  const performDailyJob = useCallback(async (
+    board: NonNullable<typeof dailyBoard>,
+    jobId: string,
+    action: "accept" | "deliver",
+  ) => {
+    if (!snapshot?.character || pending) return;
+    const job = board.jobs.find((candidate) => candidate.id === jobId);
+    if (!job) {
+      addEntry("error", "That posting is no longer on this bulletin.");
+      return;
+    }
+    setPending("daily");
+    setPendingDailyJobId(jobId);
+    try {
+      const response = await client.dailyJob(snapshot.character.characterId, snapshot.character.revision, {
+        boardId: board.boardId,
+        cycle: board.cycle,
+        jobId,
+        action,
+      });
+      let message = `Accepted “${job.title}” from ${job.poster}.`;
+      if (action === "deliver") {
+        const event = response.events?.find((candidate) => candidate.type === "character.daily_job_changed");
+        const payload = event?.payload;
+        const actualGold = payload && typeof payload === "object" && "gold" in payload && typeof payload.gold === "number"
+          ? payload.gold
+          : job.gold;
+        const actualExperience = payload && typeof payload === "object" && "experience" in payload && typeof payload.experience === "number"
+          ? payload.experience
+          : job.experience;
+        message = `Delivered “${job.title}” for ${actualGold} gold and ${actualExperience} XP.`;
+      }
+      const updatedSnapshot = await refreshAfterMutation(message);
+      const stillAtBoard = updatedSnapshot.character?.characterId === snapshot.character.characterId &&
+        updatedSnapshot.location?.locationId === snapshot.location?.locationId &&
+        updatedSnapshot.dailyActivities?.boards.some((candidate) => candidate.id === board.boardId);
+      if (stillAtBoard) {
+        try {
+          await fetchDailyBoard(board.boardId);
+        } catch {
+          // The command succeeded; the inline board exposes its own refresh error.
+        }
+      }
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : `You could not ${action} that posting.`);
+    } finally {
+      setPendingDailyJobId(undefined);
+      setPending(null);
+    }
+  }, [addEntry, fetchDailyBoard, pending, refreshAfterMutation, snapshot]);
+
+  const performSupplyGather = useCallback(async (sourceId: string, label: string) => {
+    if (!snapshot?.character || pending) return;
+    const cycle = snapshot.dailyActivities?.cycle;
+    if (!cycle) {
+      addEntry("error", "Daily supply gathering is not available right now.");
+      return;
+    }
+    setPending("gather");
+    try {
+      await client.gatherSupply(snapshot.character.characterId, snapshot.character.revision, sourceId, cycle);
+      const updatedSnapshot = await refreshAfterMutation(`Gathered supplies at ${label}.`);
+      const stillAtBoard = dailyBoard && updatedSnapshot.character?.characterId === snapshot.character.characterId &&
+        updatedSnapshot.location?.locationId === snapshot.location?.locationId &&
+        updatedSnapshot.dailyActivities?.boards.some((candidate) => candidate.id === dailyBoard.boardId);
+      if (stillAtBoard && dailyBoard) {
+        try {
+          await fetchDailyBoard(dailyBoard.boardId);
+        } catch {
+          // A board refresh failure must not turn a successful gather into a failed action.
+        }
+      }
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "You could not gather that supply.");
+    } finally {
+      setPending(null);
+    }
+  }, [addEntry, dailyBoard, fetchDailyBoard, pending, refreshAfterMutation, snapshot]);
+
+  const handleDailyJobAction = useCallback((jobId: string, action: "accept" | "deliver") => {
+    if (displayedDailyBoard) void performDailyJob(displayedDailyBoard, jobId, action);
+  }, [displayedDailyBoard, performDailyJob]);
+
+  useEffect(() => {
+    if (!displayedDailyBoard) return;
+    const resetAt = Date.parse(displayedDailyBoard.resetsAt);
+    let timeout = 0;
+    const refreshAtReset = () => {
+      const remaining = resetAt - Date.now();
+      if (remaining > 0) {
+        timeout = window.setTimeout(refreshAtReset, Math.min(remaining + 100, 2_147_000_000));
+        return;
+      }
+      const current = dailyContextRef.current;
+      if (
+        current.characterId !== dailyBoardContext?.characterId ||
+        current.locationId !== dailyBoardContext?.locationId ||
+        current.worldInstanceId !== dailyBoardContext?.worldInstanceId ||
+        !current.boardIds.includes(displayedDailyBoard.boardId)
+      ) return;
+      void loadGame();
+      void fetchDailyBoard(displayedDailyBoard.boardId).catch(() => undefined);
+    };
+    timeout = window.setTimeout(refreshAtReset, Math.min(Math.max(0, resetAt - Date.now() + 100), 2_147_000_000));
+    return () => window.clearTimeout(timeout);
+  }, [dailyBoardContext, displayedDailyBoard?.boardId, displayedDailyBoard?.cycle, displayedDailyBoard?.resetsAt, fetchDailyBoard, loadGame]);
+
+  const closeDailyBoard = useCallback(() => {
+    dailyBoardRequestIdRef.current += 1;
+    setDailyBoard(null);
+    setDailyBoardContext(null);
+    setDailyBoardError("");
+    setDailyBoardLoading(false);
+  }, []);
 
   const inspect = useCallback(async (target?: string) => {
     if (!snapshot?.character || pending) return;
@@ -1323,6 +1587,67 @@ export function WorldClient({
       for (const line of getCommandHelp(target)) addEntry("narration", line);
       return;
     }
+    if (verb.toLowerCase() === "jobs") {
+      addEntry("system", `> ${value}`);
+      const commandArgs = target.split(/\s+/).filter(Boolean);
+      const [subcommand = "browse", jobId] = commandArgs;
+      const normalized = subcommand.toLocaleLowerCase();
+      if (normalized === "help") {
+        for (const line of getCommandHelp("jobs")) addEntry("narration", line);
+        return;
+      }
+      const boardId = snapshot?.dailyActivities?.boards[0]?.id;
+      if (normalized === "browse" && (commandArgs.length === 0 || commandArgs.length === 1)) {
+        await openDailyBoard(boardId);
+        return;
+      }
+      if ((normalized !== "accept" && normalized !== "deliver") || commandArgs.length !== 2 || !jobId) {
+        addEntry("error", "Usage: jobs [browse|accept <id>|deliver <id>].");
+        return;
+      }
+      if (!boardId) {
+        addEntry("error", "There is no daily bulletin available in this world.");
+        return;
+      }
+      try {
+        const board = displayedDailyBoard?.boardId === boardId ? displayedDailyBoard : await fetchDailyBoard(boardId);
+        if (!board) throw new Error("The bulletin returned no postings.");
+        await performDailyJob(board, jobId, normalized);
+      } catch (error) {
+        addEntry("error", error instanceof Error ? error.message : "The daily posting could not be completed.");
+      }
+      return;
+    }
+    if (verb.toLowerCase() === "gather" || verb.toLowerCase() === "fish") {
+      addEntry("system", `> ${value}`);
+      if (verb.toLowerCase() === "fish" && target) {
+        addEntry("error", 'Use “fish” without a target, or “gather <source>”.');
+        return;
+      }
+      const sources = (snapshot?.dailyActivities?.sources ?? [])
+        .filter((source) => source.locationId === snapshot?.location?.locationId);
+      const targetText = verb.toLowerCase() === "fish" ? "fish" : target;
+      if (!targetText) {
+        addEntry("error", "Choose a local source: gather <source-id or label>.");
+        return;
+      }
+      const matches = sources.filter((source) => {
+        const search = targetText.toLocaleLowerCase();
+        return verb.toLowerCase() === "fish"
+          ? `${source.id} ${source.label} ${source.supply.typeId} ${source.supply.label}`.toLocaleLowerCase().includes("fish")
+          : source.id.toLocaleLowerCase() === search ||
+            source.label.toLocaleLowerCase() === search ||
+            source.label.toLocaleLowerCase().includes(search);
+      });
+      if (matches.length !== 1) {
+        addEntry("error", matches.length
+          ? `Which source do you mean: ${matches.map((source) => source.label).join(", ")}?`
+          : `There is no local supply source matching “${targetText}”.`);
+        return;
+      }
+      await performSupplyGather(matches[0]!.id, matches[0]!.label);
+      return;
+    }
     if (verb.toLowerCase() === "party") {
       addEntry("system", `> ${value}`);
       const [subcommand = "info", ...args] = target.split(/\s+/).filter(Boolean);
@@ -1782,7 +2107,7 @@ export function WorldClient({
     }
     addEntry("system", `> ${value}`);
     addEntry("error", 'Unknown command. Try "help" for the command list.');
-  }, [addEntry, browseMerchant, changeEquipment, dropObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, activeMerchantCatalog, performCombatAction, performInnRest, performStaminaPostureChange, interactionInbox, respondToPlayerChallenge, challengePlayer, partyInfo, refreshPartyState, teamCombatInfo]);
+  }, [addEntry, browseMerchant, changeEquipment, dropObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, activeMerchantCatalog, performCombatAction, performInnRest, performStaminaPostureChange, interactionInbox, respondToPlayerChallenge, challengePlayer, partyInfo, refreshPartyState, teamCombatInfo, openDailyBoard, fetchDailyBoard, performDailyJob, performSupplyGather, displayedDailyBoard]);
 
   const submitQuickCommand = useCallback((rawCommand: string) => {
     setQuickCommandMode("quick");
@@ -1954,6 +2279,7 @@ export function WorldClient({
       label: string;
       ariaLabel: string;
       opensMenu: boolean;
+      disabled?: boolean;
       onSelect: () => void;
     };
     const actions: QuickAction[] = [];
@@ -1971,6 +2297,45 @@ export function WorldClient({
     const gearToEquip = inventory.filter((item) => item.equipment &&
       (item.equipment.slot === "weapon" ? equipment?.weaponItemId : equipment?.armorItemId) !== item.id);
     const readableObjects = (snapshot?.location?.objects ?? []).filter((object) => object.readable);
+    const localSources = (snapshot?.dailyActivities?.sources ?? [])
+      .filter((source) => source.locationId === snapshot?.location?.locationId);
+    const dailyCycle = snapshot?.dailyActivities?.cycle;
+    const countForSource = (sourceId: string) => snapshot?.character?.supplyCollections?.find(
+      (collection) => collection.sourceId === sourceId && collection.cycle === dailyCycle,
+    )?.count ?? 0;
+    const bulletin = snapshot?.dailyActivities?.boards[0];
+    if (bulletin) actions.push({
+      id: "jobs",
+      label: "jobs",
+      ariaLabel: `Browse ${bulletin.name}`,
+      opensMenu: false,
+      onSelect: () => { void openDailyBoard(bulletin.id); },
+    });
+    for (const source of localSources) {
+      const count = countForSource(source.id);
+      actions.push({
+        id: `gather-${source.id}`,
+        label: `gather ${source.label} ${count}/${source.dailyLimit}`,
+        ariaLabel: `Gather ${source.supply.label} at ${source.label}; ${count} of ${source.dailyLimit} collected today`,
+        opensMenu: false,
+        disabled: count >= source.dailyLimit,
+        onSelect: () => { void performSupplyGather(source.id, source.label); },
+      });
+    }
+    const fishSource = localSources.find((source) =>
+      `${source.id} ${source.label} ${source.supply.typeId} ${source.supply.label}`.toLocaleLowerCase().includes("fish"),
+    );
+    if (fishSource && fishSource.id !== localSources.find((source) => source.label.toLocaleLowerCase() === "fish")?.id) {
+      const count = countForSource(fishSource.id);
+      actions.push({
+        id: "fish",
+        label: `fish ${count}/${fishSource.dailyLimit}`,
+        ariaLabel: `Fish at ${fishSource.label}; ${count} of ${fishSource.dailyLimit} collected today`,
+        opensMenu: false,
+        disabled: count >= fishSource.dailyLimit,
+        onSelect: () => { void performSupplyGather(fishSource.id, fishSource.label); },
+      });
+    }
     if (snapshot?.character?.staminaRecovery.posture === "resting") {
       actions.push({
         id: "stand",
@@ -2091,6 +2456,8 @@ export function WorldClient({
     canFlee,
     submitQuickCommand,
     visibleCombat,
+    openDailyBoard,
+    performSupplyGather,
   ]);
   const quickCommandPages = useMemo(() => {
     const pages: (typeof quickCommandItems)[] = [];
@@ -2927,7 +3294,7 @@ export function WorldClient({
                               className="focused-quick-command"
                               onClick={action.onSelect}
                               aria-label={action.ariaLabel}
-                              disabled={pending !== null}
+                              disabled={pending !== null || action.disabled}
                             >
                               {action.label}{action.opensMenu && <span aria-hidden="true"> ›</span>}
                             </button>
@@ -2947,6 +3314,45 @@ export function WorldClient({
                       ) : null}
                     </div>
                   </section>}
+                  {displayedDailyBoard && (
+                    <DailyBoard
+                      name={displayedDailyBoard.name}
+                      cycle={displayedDailyBoard.cycle}
+                      resetsAt={displayedDailyBoard.resetsAt}
+                      jobs={displayedDailyBoard.jobs.map((job) => ({
+                        ...job,
+                        supplyLabel: snapshot.dailyActivities?.sources.find(
+                          (source) => source.supply.typeId === job.supplyTypeId,
+                        )?.supply.label,
+                      }))}
+                      pendingJobId={pendingDailyJobId}
+                      busy={pending !== null}
+                      loading={dailyBoardLoading}
+                      error={dailyBoardError || undefined}
+                      onRetry={() => { void fetchDailyBoard(displayedDailyBoard.boardId).catch(() => undefined); }}
+                      onClose={closeDailyBoard}
+                      onAccept={(jobId) => handleDailyJobAction(jobId, "accept")}
+                      onDeliver={(jobId) => handleDailyJobAction(jobId, "deliver")}
+                    />
+                  )}
+                  {!displayedDailyBoard && !dailyBoard && (dailyBoardLoading || dailyBoardError) && (
+                    <section className="focused-daily-status" aria-label="Daily bulletin status">
+                      {dailyBoardLoading ? (
+                        <p role="status">Loading daily bulletin…</p>
+                      ) : (
+                        <p role="alert">{dailyBoardError}</p>
+                      )}
+                      {!dailyBoardLoading && dailyBoardError && snapshot.dailyActivities?.boards[0] && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() => { void fetchDailyBoard(snapshot.dailyActivities!.boards[0]!.id).catch(() => undefined); }}
+                        >
+                          Retry bulletin
+                        </Button>
+                      )}
+                    </section>
+                  )}
                   {isMobileViewport && (
                     <RoomChatPanel
                       worldInstanceId={worldInstanceId}
@@ -2974,7 +3380,7 @@ export function WorldClient({
                         spellCheck={false}
                       />
                       <Button type="submit" variant="secondary" disabled={!command.trim() || pending !== null}>
-                        {pending === "look" ? "Looking" : pending === "read" ? "Reading" : pending === "take" ? "Taking" : pending === "drop" ? "Dropping" : pending === "move" ? "Moving" : pending === "talk" ? "Talking" : pending === "shop" ? "Browsing" : pending === "buy" ? "Buying" : pending === "combat" ? "Acting" : pending === "rest" ? "Resting" : pending === "equip" ? "Changing gear" : "Send"}
+                        {pending === "look" ? "Looking" : pending === "read" ? "Reading" : pending === "take" ? "Taking" : pending === "drop" ? "Dropping" : pending === "move" ? "Moving" : pending === "talk" ? "Talking" : pending === "shop" ? "Browsing" : pending === "buy" ? "Buying" : pending === "combat" ? "Acting" : pending === "rest" ? "Resting" : pending === "equip" ? "Changing gear" : pending === "daily" ? "Updating jobs" : pending === "gather" ? "Gathering" : "Send"}
                       </Button>
                     </form>
                   </section>}
@@ -3354,6 +3760,66 @@ export function WorldClient({
                     </div>
                   );
                 })}
+              </section>
+              <section className="focused-quest-journal focused-daily-journal" aria-labelledby="daily-journal-title">
+                <h2 id="daily-journal-title">Daily postings</h2>
+                {(() => {
+                  const character = snapshot?.character as (Omit<NonNullable<GameSnapshot["character"]>, "dailyJobs"> & {
+                    dailyJobs?: Array<{
+                      boardId: string;
+                      cycle: string;
+                      jobId: string;
+                      title: string;
+                      status: "active" | "completed";
+                      details?: {
+                        id: string;
+                        poster: string;
+                        title: string;
+                        supplyTypeId: string;
+                        quantity: number;
+                        gold: number;
+                        experience: number;
+                      };
+                    }>;
+                  }) | undefined;
+                  const jobs = character?.dailyJobs ?? [];
+                  const today = new Date().toISOString().slice(0, 10);
+                  if (!jobs.length) return <p className="focused-quest-empty">No daily postings accepted yet.</p>;
+                  return (
+                    <ul className="focused-daily-journal__list">
+                      {jobs.map((job) => {
+                        const expired = job.cycle < today && job.status === "active";
+                        const status = expired ? "Expired" : job.status === "completed" ? "Completed" : "Active";
+                        const carriedCount = job.details
+                          ? (character?.inventory ?? []).filter((item) =>
+                            item.typeId === job.details!.supplyTypeId &&
+                            item.questBound !== true &&
+                            item.id !== character?.equipment?.weaponItemId &&
+                            item.id !== character?.equipment?.armorItemId
+                          ).length
+                          : 0;
+                        return (
+                          <li className="focused-daily-journal__item" key={`${job.boardId}:${job.cycle}:${job.jobId}`}>
+                            <span className="focused-daily-journal__description">
+                              {job.title}
+                              <small>{job.cycle}{job.details ? ` · resets ${dailyCycleResetDate(job.cycle)}` : ""}</small>
+                              {job.details && (
+                                <>
+                                  <small>Posted by {job.details.poster}</small>
+                                  {job.status === "active" && (
+                                    <small>Bring {job.details.quantity} {job.details.supplyTypeId} · carried {carriedCount}/{job.details.quantity}</small>
+                                  )}
+                                  <small>Reward: {job.details.gold} gold · {job.details.experience} XP</small>
+                                </>
+                              )}
+                            </span>
+                            <span className={`focused-quest-status focused-quest-status--${expired ? "expired" : job.status}`}>{status}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  );
+                })()}
               </section>
               <div className="focused-log">
                 {entries.length ? (

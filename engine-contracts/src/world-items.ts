@@ -50,6 +50,12 @@ export const WorldItemClaimedEventSchema = DomainEventBaseSchema.extend({
   }).strict(),
 }).strict();
 
+/** Terminal ownership transition, written atomically with the consuming character command. */
+export const WorldItemsConsumedEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('world.items_consumed'), version: z.literal(1),
+  payload: z.object({ characterId: IdSchema, worldItemIds: z.array(IdSchema).min(1).max(20) }).strict(),
+}).strict();
+
 export const WorldCorpseRecordSchema = z.object({
   corpseId: IdSchema,
   encounterId: IdSchema,

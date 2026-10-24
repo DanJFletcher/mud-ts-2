@@ -1823,6 +1823,17 @@
 .focused-quest-objective--complete { color: var(--mudd-muted); }
 .focused-quest-objective--complete > span:first-child { color: var(--mudd-warm); }
 .focused-quest-empty { margin: 0; color: var(--mudd-muted); font-size: .86rem; }
+.focused-daily-journal { padding-top: 13px; }
+.focused-daily-journal > h2 { margin-bottom: 8px; }
+.focused-daily-journal__list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.focused-daily-journal__item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 9px; border: 1px solid var(--mudd-border); border-radius: 7px; background: var(--mudd-bg); color: var(--mudd-text); font-size: .83rem; }
+.focused-daily-journal__item > span:first-child { display: grid; gap: 2px; min-width: 0; }
+.focused-daily-journal__item small { color: var(--mudd-muted); font: 400 .65rem/1.3 "DM Mono", monospace; }
+.focused-quest-status--expired { color: var(--mudd-danger); border-color: var(--mudd-danger); }
+.focused-daily-status { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 11px; border-top: 1px solid var(--mudd-border); color: var(--mudd-muted); font-size: .78rem; }
+.focused-daily-status p { margin: 0; }
+.focused-daily-status [role="alert"] { color: var(--mudd-danger); }
+.focused-daily-status .mudd-button { min-height: 2rem; padding: .35rem .7rem; border-radius: 6px; font-size: .72rem; }
 
 .focused-log { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .focused-log .mudd-log {
