@@ -106,6 +106,22 @@ export class PostgresEventStore implements EventStorePort {
     this.streamCache.delete(key);
   }
 
+  private appendCachedStream(
+    worldInstanceId: string,
+    streamId: string,
+    expectedVersion: number,
+    appended: readonly StoredGameEvent[],
+  ) {
+    const key = this.streamKey(worldInstanceId, streamId);
+    const cached = this.streamCache.get(key);
+    if (!cached) return;
+    if (cached.revision !== expectedVersion) {
+      this.invalidateStream(worldInstanceId, streamId);
+      return;
+    }
+    this.cacheStream(key, [...cached.events, ...appended]);
+  }
+
   async readStreamRevision(worldInstanceId: string, streamId: string): Promise<number> {
     const [head] = await db.select({ revision: gameEvents.streamVersion }).from(gameEvents)
       .where(and(eq(gameEvents.worldInstanceId, worldInstanceId), eq(gameEvents.streamId, streamId)))
@@ -169,7 +185,7 @@ export class PostgresEventStore implements EventStorePort {
   }
 
   async append(request: AppendRequest): Promise<AppendOutcome> {
-    const outcome = await db.transaction(async (tx) => {
+    const outcome = await db.transaction(async (tx): Promise<AppendOutcome> => {
       // Lock command identity first so retries cannot race across different stream IDs.
       await tx.execute(sql`
         SELECT pg_advisory_xact_lock(hashtext(${request.worldInstanceId}), hashtext(${`${request.actorId}:${request.commandId}`}))`);
@@ -332,7 +348,12 @@ export class PostgresEventStore implements EventStorePort {
       return { kind: 'committed', streamId: request.streamId, events: appended, receipt };
     });
     if (outcome.kind === 'committed') {
-      this.invalidateStream(request.worldInstanceId, request.streamId);
+      this.appendCachedStream(
+        request.worldInstanceId,
+        request.streamId,
+        request.expectedVersion,
+        outcome.events,
+      );
       for (const companion of request.companions ?? []) {
         this.invalidateStream(request.worldInstanceId, companion.streamId);
       }
