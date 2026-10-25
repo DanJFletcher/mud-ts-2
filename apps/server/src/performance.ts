@@ -1,10 +1,18 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 
-type Measurements = { stages: Record<string, number>; queries: number; poolWaitMs: number; queryMs: number };
+export type QueryTiming = { fingerprint: string; durationMs: number };
+export type Measurements = {
+  stages: Record<string, number>;
+  queries: number;
+  poolWaitMs: number;
+  queryMs: number;
+  traceId?: string;
+  queryTimings: QueryTiming[];
+};
 export const requestMeasurements = new AsyncLocalStorage<Measurements>();
-export function newMeasurements(): Measurements {
-  return { stages: {}, queries: 0, poolWaitMs: 0, queryMs: 0 };
+export function newMeasurements(traceId?: string): Measurements {
+  return { stages: {}, queries: 0, poolWaitMs: 0, queryMs: 0, traceId, queryTimings: [] };
 }
 export async function measureStage<T>(stage: string, run: () => Promise<T>): Promise<T> {
   const started = performance.now();

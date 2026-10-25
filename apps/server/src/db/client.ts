@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import * as schema from './schema.js';
@@ -23,6 +24,16 @@ pool.connect = ((callback?: (...args: any[]) => void) => {
   });
 }) as typeof pool.connect;
 const instrumented = new WeakSet<object>();
+function queryFingerprint(args: any[]): string | undefined {
+  const input = args[0];
+  const text = typeof input === 'string'
+    ? input
+    : input && typeof input === 'object' && typeof input.text === 'string'
+      ? input.text
+      : undefined;
+  if (!text) return undefined;
+  return createHash('sha256').update(text.replace(/\s+/g, ' ').trim()).digest('hex').slice(0, 12);
+}
 pool.on('connect', (client) => {
   if (instrumented.has(client)) return;
   instrumented.add(client);
@@ -30,8 +41,16 @@ pool.on('connect', (client) => {
   client.query = ((...args: any[]) => {
     const metrics = requestMeasurements.getStore();
     const started = performance.now();
+    const fingerprint = metrics?.traceId ? queryFingerprint(args) : undefined;
     if (metrics) metrics.queries++;
-    const finish = () => { if (metrics) metrics.queryMs += performance.now() - started; };
+    const finish = () => {
+      if (!metrics) return;
+      const durationMs = performance.now() - started;
+      metrics.queryMs += durationMs;
+      if (fingerprint && metrics.queryTimings.length < 100) {
+        metrics.queryTimings.push({ fingerprint, durationMs: Math.round(durationMs * 10) / 10 });
+      }
+    };
     const last = args.at(-1);
     if (typeof last === 'function') {
       args[args.length - 1] = (...result: any[]) => { finish(); last(...result); };

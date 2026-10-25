@@ -161,6 +161,12 @@ export interface ClientOptions {
   basePath?: string;
 }
 
+type RequestTrace = {
+  id: string;
+  phase: 'command' | 'snapshot';
+  commandType?: string;
+};
+
 export class MuddHttpError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -194,8 +200,9 @@ export class MuddHttpClient {
     return this.request('/api/worlds', {}, WorldListSchema);
   }
 
-  async getGame(): Promise<GameSnapshot> {
-    return this.request('/api/game', {}, GameSnapshotSchema);
+  async getGame(traceId?: string): Promise<GameSnapshot> {
+    return this.request('/api/game', {}, GameSnapshotSchema,
+      traceId ? { id: traceId, phase: 'snapshot' } : undefined);
   }
 
   async heartbeatWorldSession(): Promise<RoomPresenceProjection> {
@@ -798,7 +805,13 @@ export class MuddHttpClient {
     return this.send(command);
   }
 
-  async move(characterId: string, exitId: string, expectedVersion: number, commandId = crypto.randomUUID()): Promise<CommandResponse> {
+  async move(
+    characterId: string,
+    exitId: string,
+    expectedVersion: number,
+    commandId = crypto.randomUUID(),
+    traceId?: string,
+  ): Promise<CommandResponse> {
     const command = MoveCharacterCommandSchema.parse({
       type: 'character.move',
       version: 1,
@@ -808,10 +821,16 @@ export class MuddHttpClient {
       expectedVersion,
       payload: { exitId },
     });
-    return this.send(command);
+    return this.send(command, traceId);
   }
 
-  async roadStep(characterId: string, exitId: string, expectedVersion: number, commandId = crypto.randomUUID()): Promise<CommandResponse> {
+  async roadStep(
+    characterId: string,
+    exitId: string,
+    expectedVersion: number,
+    commandId = crypto.randomUUID(),
+    traceId?: string,
+  ): Promise<CommandResponse> {
     const command = RoadStepCommandSchema.parse({
       type: 'character.road.step',
       version: 1,
@@ -821,7 +840,7 @@ export class MuddHttpClient {
       expectedVersion,
       payload: { exitId },
     });
-    return this.send(command);
+    return this.send(command, traceId);
   }
 
   async take(characterId: string, itemId: string, expectedVersion: number, commandId = crypto.randomUUID()): Promise<CommandResponse> {
@@ -899,8 +918,8 @@ export class MuddHttpClient {
     return { interactionId: payload.data.interactionId, response: payload.data.response };
   }
 
-  private async send(command: unknown): Promise<CommandResponse> {
-    const result = await this.postCommand(command);
+  private async send(command: unknown, traceId?: string): Promise<CommandResponse> {
+    const result = await this.postCommand(command, traceId);
     if (result.receipt.ok) return result;
 
     const commandDetails = VersionedCharacterCommandSchema.safeParse(command);
@@ -917,8 +936,8 @@ export class MuddHttpClient {
     const reportedCurrentVersion = Number(conflict[2]);
     let latest: GameSnapshot;
     try {
-      latest = await this.getGame();
-    } catch {
+      latest = await this.getGame(traceId);
+    } catch (error) {
       throw new Error('The world updated while you were acting. Please try again.');
     }
     const character = latest.character;
@@ -934,7 +953,7 @@ export class MuddHttpClient {
     const retried = await this.postCommand({
       ...(command as Record<string, unknown>),
       expectedVersion: character.revision,
-    });
+    }, traceId);
     if (!retried.receipt.ok) {
       if (retried.receipt.code === 'VERSION_CONFLICT') {
         throw new Error('The world updated while you were acting. Please try again.');
@@ -944,35 +963,92 @@ export class MuddHttpClient {
     return retried;
   }
 
-  private async postCommand(command: unknown): Promise<CommandResponse> {
+  private async postCommand(command: unknown, traceId?: string): Promise<CommandResponse> {
+    const commandType = command && typeof command === 'object' && 'type' in command &&
+      typeof command.type === 'string' ? command.type : undefined;
     return this.request('/api/commands', {
       method: 'POST',
       body: JSON.stringify(command),
-    }, CommandResponseSchema);
+    }, CommandResponseSchema,
+    traceId ? { id: traceId, phase: 'command', commandType } : undefined);
   }
 
   private async request<Schema extends z.ZodTypeAny>(
     path: string,
     init: RequestInit,
     schema: Schema,
+    trace?: RequestTrace,
   ): Promise<z.output<Schema>> {
-    const response = await this.fetcher(`${this.options.basePath?.replace(/\/$/, '') ?? ''}${path}`, {
-      ...init,
-      credentials: 'same-origin',
-      headers: {
-        'content-type': 'application/json',
-        'x-mudd-world-instance': this.options.worldInstanceId,
-        ...init.headers,
-      },
-    });
+    const startedAt = performance.now();
+    let response: Response;
+    try {
+      response = await this.fetcher(`${this.options.basePath?.replace(/\/$/, '') ?? ''}${path}`, {
+        ...init,
+        credentials: 'same-origin',
+        headers: {
+          'content-type': 'application/json',
+          'x-mudd-world-instance': this.options.worldInstanceId,
+          ...(trace ? {
+            'x-mudd-trace-id': trace.id,
+            'x-mudd-trace-phase': trace.phase,
+          } : {}),
+          ...init.headers,
+        },
+      });
+    } catch (error) {
+      if (trace) {
+        const completedAt = performance.now();
+        console.info('[mudd_perf_trace_request]', JSON.stringify({
+          traceId: trace.id,
+          phase: trace.phase,
+          commandType: trace.commandType,
+          status: null,
+          fetchToHeadersMs: Math.round((completedAt - startedAt) * 10) / 10,
+          bodyReadMs: 0,
+          schemaValidationMs: 0,
+          totalClientMs: Math.round((completedAt - startedAt) * 10) / 10,
+        }));
+      }
+      throw error;
+    }
+    const headersAt = performance.now();
     const body: unknown = await response.json().catch(() => undefined);
+    const bodyReadAt = performance.now();
+    const requestId = response.headers.get('x-request-id');
     if (!response.ok) {
+      if (trace) {
+        console.info('[mudd_perf_trace_request]', JSON.stringify({
+          traceId: trace.id,
+          phase: trace.phase,
+          commandType: trace.commandType,
+          serverRequestId: requestId,
+          status: response.status,
+          fetchToHeadersMs: Math.round((headersAt - startedAt) * 10) / 10,
+          bodyReadMs: Math.round((bodyReadAt - headersAt) * 10) / 10,
+          schemaValidationMs: 0,
+          totalClientMs: Math.round((bodyReadAt - startedAt) * 10) / 10,
+        }));
+      }
       const message = body && typeof body === 'object' && 'message' in body && typeof body.message === 'string'
         ? body.message
         : undefined;
       throw new MuddHttpError(message ?? `Request failed (${response.status}).`, response.status);
     }
     const parsed = schema.safeParse(body);
+    const completedAt = performance.now();
+    if (trace) {
+      console.info('[mudd_perf_trace_request]', JSON.stringify({
+        traceId: trace.id,
+        phase: trace.phase,
+        commandType: trace.commandType,
+        serverRequestId: requestId,
+        status: response.status,
+        fetchToHeadersMs: Math.round((headersAt - startedAt) * 10) / 10,
+        bodyReadMs: Math.round((bodyReadAt - headersAt) * 10) / 10,
+        schemaValidationMs: Math.round((completedAt - bodyReadAt) * 10) / 10,
+        totalClientMs: Math.round((completedAt - startedAt) * 10) / 10,
+      }));
+    }
     if (!parsed.success) throw new Error('The server returned an invalid response.');
     return parsed.data;
   }

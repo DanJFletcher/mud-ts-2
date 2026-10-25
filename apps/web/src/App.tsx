@@ -796,9 +796,13 @@ export function WorldClient({
     };
   }, [presenceCharacterId, refreshPartyState, Boolean(partyInfo?.party)]);
 
-  const refreshAfterMutation = useCallback(async (message: string, announceQuestObjectives = false) => {
+  const refreshAfterMutation = useCallback(async (
+    message: string,
+    announceQuestObjectives = false,
+    traceId?: string,
+  ) => {
     addEntry("system", message);
-    const nextSnapshot = await client.getGame();
+    const nextSnapshot = await client.getGame(traceId);
     setSnapshot(nextSnapshot);
     setConnectionError("");
     addDefaultLook(nextSnapshot.location);
@@ -1459,18 +1463,43 @@ export function WorldClient({
       addEntry("error", "That way is not open from here.");
       return;
     }
+    const traceId = new URLSearchParams(window.location.search).get("muddTrace") === "1"
+      ? crypto.randomUUID()
+      : undefined;
+    const actionStartedAt = traceId ? performance.now() : 0;
+    let snapshotReadyAt: number | undefined;
+    const logMoveTrace = (outcome: "success" | "error") => {
+      if (!traceId) return;
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+        const paintedAt = performance.now();
+        console.info("[mudd_perf_trace_action]", JSON.stringify({
+          traceId,
+          action: exit.roadId ? "character.road.step" : "character.move",
+          outcome,
+          commandAndSnapshotMs: snapshotReadyAt === undefined
+            ? null
+            : Math.round((snapshotReadyAt - actionStartedAt) * 10) / 10,
+          snapshotToPaintMs: snapshotReadyAt === undefined
+            ? null
+            : Math.round((paintedAt - snapshotReadyAt) * 10) / 10,
+          actionToPaintMs: Math.round((paintedAt - actionStartedAt) * 10) / 10,
+        }));
+      }));
+    };
     setPending("move");
     try {
       const response = exit.roadId
-        ? await client.roadStep(snapshot.character.characterId, exit.id, snapshot.location.revision)
-        : await client.move(snapshot.character.characterId, exit.id, snapshot.location.revision);
+        ? await client.roadStep(snapshot.character.characterId, exit.id, snapshot.location.revision, undefined, traceId)
+        : await client.move(snapshot.character.characterId, exit.id, snapshot.location.revision, undefined, traceId);
       const partyAmbush = response.events?.some((event) => event.type === "team.road_encounter_started");
       const nextSnapshot = await refreshAfterMutation(
         partyAmbush
           ? "A roadside ambush interrupts your travel."
           : `You travel ${exit.direction || exit.label}.`,
         true,
+        traceId,
       );
+      snapshotReadyAt = traceId ? performance.now() : undefined;
       if (partyAmbush) {
         const nextTeamInfo = await refreshTeamCombat();
         if (nextTeamInfo?.encounter) {
@@ -1481,8 +1510,10 @@ export function WorldClient({
       }
       if (!dialogueModalOpen) setActiveDialogue(null);
       setActiveMerchantCatalog(null);
+      logMoveTrace("success");
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "Unable to move.");
+      logMoveTrace("error");
     } finally {
       setPending(null);
     }

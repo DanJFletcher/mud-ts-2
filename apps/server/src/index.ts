@@ -248,7 +248,16 @@ const websocketApp = expressWs(app, undefined, { wsOptions: { maxPayload: 1024 }
 app.set('trust proxy', trustedProxyHops);
 app.use(createRequestId());
 app.use((req, res, next) => {
-  const measurements = newMeasurements();
+  const requestedTraceId = req.get('x-mudd-trace-id') ?? '';
+  const tracePhase = req.get('x-mudd-trace-phase');
+  const traceableRoute =
+    (req.method === 'POST' && req.path === '/api/commands' && tracePhase === 'command') ||
+    (req.method === 'GET' && req.path === '/api/game' && tracePhase === 'snapshot');
+  const traceId = traceableRoute && /^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i.test(requestedTraceId)
+    ? requestedTraceId
+    : undefined;
+  const measurements = newMeasurements(traceId);
+  if (traceId) res.setHeader('x-mudd-trace-id', traceId);
   const startedAt = performance.now();
   const json = res.json.bind(res);
   res.json = ((body: unknown) => {
@@ -258,22 +267,37 @@ app.use((req, res, next) => {
   }) as typeof res.json;
   res.once('finish', () => {
     const durationMs = performance.now() - startedAt;
-    if (durationMs < 250) return;
-    console.warn(JSON.stringify({
-      event: 'slow_http_request',
+    if (durationMs < 250 && !traceId) return;
+    const loggedMeasurements = {
+      stages: measurements.stages,
+      queries: measurements.queries,
+      poolWaitMs: measurements.poolWaitMs,
+      queryMs: measurements.queryMs,
+      ...(traceId ? { queryTimings: measurements.queryTimings } : {}),
+    };
+    const log = {
+      event: traceId ? 'mudd_traced_http_request' : 'slow_http_request',
       requestId: res.locals.requestId,
+      ...(traceId ? {
+        traceId,
+        tracePhase,
+        ...(tracePhase === 'command' && typeof req.body?.type === 'string'
+          ? { commandType: req.body.type }
+          : {}),
+      } : {}),
       method: req.method,
       path: req.path,
       status: res.statusCode,
       durationMs: Math.round(durationMs),
-      measurements,
+      measurements: loggedMeasurements,
       eventLoop: eventLoopDelayMs(),
       dbPool: {
         total: pool.totalCount,
         idle: pool.idleCount,
         waiting: pool.waitingCount,
       },
-    }));
+    };
+    (traceId ? console.info : console.warn)(JSON.stringify(log));
   });
   requestMeasurements.run(measurements, next);
 });

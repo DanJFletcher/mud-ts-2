@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { MuddHttpClient } from './index.js';
 import { EngineHost, InMemoryEventStore, projectQuestJournal, replayCharacter, type EnginePlugin } from '@mudd/engine-core';
 import {
@@ -309,6 +309,75 @@ describe('MuddHttpClient', () => {
     });
 
     await expect(client.getGame()).rejects.toThrow('The server returned an invalid response.');
+  });
+
+  it('correlates an opt-in movement trace with its server request', async () => {
+    const traceId = 'de305d54-75b4-431b-adb2-eb6b9e546014';
+    const requests: Array<{ path: string; headers: Headers }> = [];
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    try {
+      const client = new MuddHttpClient({
+        worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+        fetcher: async (input, init = {}) => {
+          const path = String(input);
+          requests.push({ path, headers: new Headers(init.headers) });
+          if (path === '/api/game') {
+            return Response.json({
+              player: { id: 'player-1', displayName: 'Player' },
+              character: {
+                worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+                characterId: 'character-1',
+                name: 'Fern',
+                locationId: 'mossgate-clearing',
+                revision: 2,
+              },
+            }, { headers: { 'x-request-id': 'snapshot-request-1' } });
+          }
+          return Response.json({
+            receipt: {
+              ok: true,
+              commandId: 'move-command',
+              eventIds: ['move-event'],
+              newAggregateVersion: 2,
+            },
+            streamId: 'character-1',
+            events: [],
+          }, { headers: { 'x-request-id': 'server-request-1' } });
+        },
+      });
+
+      await client.move('character-1', 'north-exit', 1, 'move-command', traceId);
+      await client.getGame(traceId);
+
+      expect(requests[0]?.headers.get('x-mudd-trace-id')).toBe(traceId);
+      expect(requests[0]?.headers.get('x-mudd-trace-phase')).toBe('command');
+      expect(requests[1]?.headers.get('x-mudd-trace-id')).toBe(traceId);
+      expect(requests[1]?.headers.get('x-mudd-trace-phase')).toBe('snapshot');
+      const traceLogs = info.mock.calls
+        .filter(([message]) => message === '[mudd_perf_trace_request]')
+        .map(([, details]) => JSON.parse(String(details)));
+      expect(traceLogs).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          traceId,
+          phase: 'command',
+          commandType: 'character.move',
+          serverRequestId: 'server-request-1',
+          status: 200,
+        }),
+        expect.objectContaining({
+          traceId,
+          phase: 'snapshot',
+          serverRequestId: 'snapshot-request-1',
+          status: 200,
+        }),
+      ]));
+      expect(traceLogs[0]).toMatchObject({
+        traceId,
+        phase: 'command',
+      });
+    } finally {
+      info.mockRestore();
+    }
   });
 
   it('refreshes and retries once when a passive character update makes a command revision stale', async () => {
