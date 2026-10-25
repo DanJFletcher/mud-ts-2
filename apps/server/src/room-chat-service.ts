@@ -2,6 +2,7 @@ import { and, asc, desc, eq, gt, isNull, notLike, or, sql } from 'drizzle-orm';
 import { db } from './db/client.js';
 import { characters, durableEffects, gameEvents, roomChatMessages, worldSessions, roomCharacterStates } from './db/schema.js';
 import { PLAYER_ROOM_MESSAGE_EFFECT } from './durable-effect-contracts.js';
+import { measureDatabaseOperation } from './performance.js';
 
 export const MAX_ROOM_CHAT_MESSAGE_LENGTH = 500;
 const INITIAL_ROOM_CHAT_LIMIT = 50;
@@ -171,7 +172,7 @@ export async function createPlayerRoomChatMessage(input: Readonly<{
   text: string;
 }>): Promise<PlayerChatSubmission> {
   const normalizedText = normalizeMessage(input.text);
-  return db.transaction(async (tx) => {
+  return measureDatabaseOperation('room_chat.player_message_submit', () => db.transaction(async (tx) => {
     await lockCharacterStream(tx, input.worldInstanceId, input.characterId);
 
     const existing = await findSubmission(tx, {
@@ -257,7 +258,7 @@ export async function createPlayerRoomChatMessage(input: Readonly<{
         }),
       }
       : { kind: 'conflict' };
-  });
+  }));
 }
 
 /**
@@ -286,12 +287,14 @@ export async function publishNpcRoomMessage(input: Readonly<{
 }
 
 export async function getRoomChatMessageById(messageId: number): Promise<RoomChatMessage | undefined> {
-  const [row] = await db.select().from(roomChatMessages).where(eq(roomChatMessages.id, messageId)).limit(1);
+  const [row] = await measureDatabaseOperation('room_chat.message_id_lookup', () =>
+    db.select().from(roomChatMessages).where(eq(roomChatMessages.id, messageId)).limit(1));
   return row ? toRoomChatMessage(row) : undefined;
 }
 
 export async function getRoomChatMessageBySourceEffectId(sourceEffectId: string): Promise<RoomChatMessage | undefined> {
-  const [row] = await db.select().from(roomChatMessages).where(eq(roomChatMessages.sourceEffectId, sourceEffectId)).limit(1);
+  const [row] = await measureDatabaseOperation('room_chat.effect_message_lookup', () =>
+    db.select().from(roomChatMessages).where(eq(roomChatMessages.sourceEffectId, sourceEffectId)).limit(1));
   return row ? toRoomChatMessage(row) : undefined;
 }
 
@@ -306,7 +309,7 @@ export async function listRoomChatMessages(input: Readonly<{
   terminalEvents: readonly TerminalRoomEvent[];
   cursor: number;
 } | undefined> {
-  return db.transaction(async (tx) => {
+  return measureDatabaseOperation('room_chat.authorized_history_read', () => db.transaction(async (tx) => {
     await lockCharacterStream(tx, input.worldInstanceId, input.characterId);
     const character = await readAuthorizedRoomCharacter(tx, input);
     if (!character) return undefined;
@@ -350,5 +353,5 @@ export async function listRoomChatMessages(input: Readonly<{
       terminalEvents: [],
       cursor: Number(latest?.id ?? 0),
     };
-  });
+  }));
 }

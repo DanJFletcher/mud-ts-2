@@ -30,6 +30,18 @@ export class InMemoryEventStore implements EventStorePort {
     return [...(this.streams.get(`${worldInstanceId}:${streamId}`) ?? [])];
   }
 
+  async readStreams(
+    worldInstanceId: string,
+    streamIds: readonly string[],
+  ): Promise<ReadonlyMap<string, readonly StoredGameEvent[]>> {
+    const uniqueStreamIds = [...new Set(streamIds)];
+    const entries = await Promise.all(uniqueStreamIds.map(async (streamId) => [
+      streamId,
+      await this.readStream(worldInstanceId, streamId),
+    ] as const));
+    return new Map(entries);
+  }
+
   async readStreamRevision(worldInstanceId: string, streamId: string): Promise<number> {
     return this.streams.get(`${worldInstanceId}:${streamId}`)?.at(-1)?.aggregateVersion ?? 0;
   }

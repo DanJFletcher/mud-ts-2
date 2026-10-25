@@ -74,6 +74,11 @@ export type AppendOutcome =
 
 export interface EventStorePort {
   readStream(worldInstanceId: string, streamId: string): Promise<readonly StoredGameEvent[]>;
+  /** Read multiple authoritative streams with a storage-optimized batch when available. */
+  readStreams?(
+    worldInstanceId: string,
+    streamIds: readonly string[],
+  ): Promise<ReadonlyMap<string, readonly StoredGameEvent[]>>;
   /** Read only the authoritative head revision when callers don't need history payloads. */
   readStreamRevision?(worldInstanceId: string, streamId: string): Promise<number>;
   lookupCommand(
@@ -151,6 +156,7 @@ export interface QueryContext {
   readonly store: EventStorePort;
   readonly world: WorldPackDraft;
   readonly characterProjection?: CharacterProjection;
+  readonly measureStage?: <T>(stage: string, run: () => Promise<T>) => Promise<T>;
 }
 
 export type CommandHandler<T = unknown> = (

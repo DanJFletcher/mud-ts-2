@@ -220,6 +220,42 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     expect(refreshed.map((event) => event.payload.index)).toEqual([1, 2]);
   });
 
+  it('batch-reads event streams and refreshes a cached batch after another store appends', async () => {
+    const streamIds = [0, 1, 2].map(() => `world-npc:${randomUUID()}`);
+    const requests: AppendRequest[] = streamIds.map((streamId, index) => ({
+      worldInstanceId,
+      streamId,
+      actorId: playerId,
+      commandId: `batch-read-${randomUUID()}`,
+      payloadHash: randomUUID(),
+      expectedVersion: 0,
+      events: [{ type: 'batch.fixture', version: 1, payload: { index } }],
+    }));
+    for (const request of requests) expect((await store.append(request)).kind).toBe('committed');
+    if (!store.readStreams) throw new Error('Event store does not support batched stream reads.');
+
+    const firstBatch = await store.readStreams(worldInstanceId, streamIds);
+    expect(streamIds.map((id) => firstBatch.get(id)?.[0]?.payload.index)).toEqual([0, 1, 2]);
+
+    const { PostgresEventStore } = await import('./persistence/postgres-event-store.js');
+    const independentStore = new PostgresEventStore();
+    const cachedBatch = await independentStore.readStreams(worldInstanceId, streamIds);
+    expect(streamIds.map((id) => cachedBatch.get(id)?.length)).toEqual([1, 1, 1]);
+
+    const changedStreamId = streamIds[1]!;
+    const changedRequest = requests[1]!;
+    expect((await store.append({
+      ...changedRequest,
+      commandId: `batch-update-${randomUUID()}`,
+      payloadHash: randomUUID(),
+      expectedVersion: 1,
+      events: [{ type: 'batch.fixture', version: 1, payload: { index: 99 } }],
+    })).kind).toBe('committed');
+
+    const refreshedBatch = await independentStore.readStreams(worldInstanceId, streamIds);
+    expect(refreshedBatch.get(changedStreamId)?.map((event) => event.payload.index)).toEqual([1, 99]);
+  });
+
   it('atomically commits shared turns and character debits, including duplicate retries and racing resources', async () => {
     const resourceStream = `resource-${randomUUID()}`;
     const firstTurn = `turn-${randomUUID()}`;

@@ -422,13 +422,33 @@ export const worldItemsPlugin: EnginePlugin = {
     },
   },
   register({ provideCapability, registerEffect }) {
+    const projectionCache = new Map<string, {
+      revision: number;
+      state: WorldItemsState;
+    }>();
     const capability: WorldItemsStateCapability = {
       async load(context) {
         const events = await context.store.readStream(
           context.worldInstanceId,
           worldItemsStreamId(context.worldInstanceId),
         );
-        return projectWorldItems(events);
+        const revision = events.at(-1)?.aggregateVersion ?? 0;
+        const cached = projectionCache.get(context.worldInstanceId);
+        if (cached?.revision === revision) {
+          projectionCache.delete(context.worldInstanceId);
+          projectionCache.set(context.worldInstanceId, cached);
+          return structuredClone(cached.state);
+        }
+
+        const state = projectWorldItems(events);
+        projectionCache.delete(context.worldInstanceId);
+        projectionCache.set(context.worldInstanceId, { revision, state: structuredClone(state) });
+        while (projectionCache.size > 16) {
+          const oldestWorldId = projectionCache.keys().next().value as string | undefined;
+          if (!oldestWorldId) break;
+          projectionCache.delete(oldestWorldId);
+        }
+        return state;
       },
     };
     provideCapability(worldItemsStateCapability, capability);

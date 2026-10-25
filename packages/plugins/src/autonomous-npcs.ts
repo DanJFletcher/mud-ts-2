@@ -121,21 +121,66 @@ export const autonomousNpcsPlugin: EnginePlugin = {
     },
   },
   register({ registerSystemCommand, provideCapability }) {
+    const positionCache = new Map<string, {
+      readonly revision: number;
+      readonly position: AutonomousNpcPosition;
+    }>();
+    const projectPosition = (
+      worldInstanceId: string,
+      npcId: string,
+      initialLocationId: string,
+      events: readonly StoredGameEvent[],
+    ) => {
+      const revision = events.at(-1)?.aggregateVersion ?? 0;
+      const cacheKey = `${worldInstanceId}\u0000${npcId}`;
+      const cached = positionCache.get(cacheKey);
+      if (cached?.revision === revision) {
+        positionCache.delete(cacheKey);
+        positionCache.set(cacheKey, cached);
+        return cached.position;
+      }
+
+      const position = Object.freeze(projectAutonomousNpcPosition(events, npcId, initialLocationId));
+      positionCache.delete(cacheKey);
+      positionCache.set(cacheKey, { revision, position });
+      while (positionCache.size > 256) {
+        const oldestKey = positionCache.keys().next().value as string | undefined;
+        if (!oldestKey) break;
+        positionCache.delete(oldestKey);
+      }
+      return position;
+    };
+
     const state: AutonomousNpcStateCapability = {
       async position(context, npcId, initialLocationId) {
         const events = await context.store.readStream(
           context.worldInstanceId,
           autonomousNpcStreamId(npcId),
         );
-        return projectAutonomousNpcPosition(events, npcId, initialLocationId);
+        return projectPosition(context.worldInstanceId, npcId, initialLocationId, events);
       },
       async atLocation(context, locationId) {
         const definitions = context.world.locations.flatMap((location) =>
           (location.npcs ?? []).map((npc) => ({ npc, initialLocationId: location.id })),
         );
-        const positions = await Promise.all(definitions
-          .filter(({ npc }) => npc.movement)
-          .map(({ npc, initialLocationId }) => state.position(context, npc.id, initialLocationId)));
+        const movingDefinitions = definitions.filter(({ npc }) => npc.movement);
+        let positions: AutonomousNpcPosition[];
+        if (context.store.readStreams) {
+          const histories = await context.store.readStreams(
+            context.worldInstanceId,
+            movingDefinitions.map(({ npc }) => autonomousNpcStreamId(npc.id)),
+          );
+          positions = movingDefinitions.map(({ npc, initialLocationId }) =>
+            projectPosition(
+              context.worldInstanceId,
+              npc.id,
+              initialLocationId,
+              histories.get(autonomousNpcStreamId(npc.id)) ?? [],
+            ));
+        } else {
+          positions = await Promise.all(movingDefinitions
+            .map(({ npc, initialLocationId }) => state.position(context, npc.id, initialLocationId)));
+        }
         const dynamicLocations = new Map(positions.map((position) => [position.npcId, position.locationId]));
         return definitions
           .filter(({ npc, initialLocationId }) =>

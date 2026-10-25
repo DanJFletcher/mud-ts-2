@@ -18,12 +18,14 @@ integrationDescribe('PostgresLocationGroupCatalogStore', () => {
   let db: typeof import('./db/client.js').db;
   let pool: typeof import('./db/client.js').pool;
   let store: LocationGroupCatalogStoragePort;
+  let independentStore: LocationGroupCatalogStoragePort;
 
   beforeAll(async () => {
     process.env.DATABASE_URL = testDatabaseUrl!;
     ({ db, pool } = await import('./db/client.js'));
     const { PostgresLocationGroupCatalogStore } = await import('./location-group-store.js');
     store = new PostgresLocationGroupCatalogStore();
+    independentStore = new PostgresLocationGroupCatalogStore();
   });
 
   afterAll(async () => {
@@ -48,6 +50,17 @@ integrationDescribe('PostgresLocationGroupCatalogStore', () => {
       groups: initialGroups,
     });
 
+    const { newMeasurements, requestMeasurements } = await import('./performance.js');
+    const warmReadMetrics = newMeasurements();
+    await requestMeasurements.run(warmReadMetrics, async () => {
+      await independentStore.read(packId, packVersion);
+      await independentStore.read(packId, packVersion);
+    });
+    expect(warmReadMetrics.databaseOperations['location_group.catalog_read']).toMatchObject({
+      calls: 2,
+      queries: 4,
+    });
+
     const editedGroups: LocationGroupDefinition[] = [{
       id: 'renamed',
       name: 'Renamed Group',
@@ -57,6 +70,25 @@ integrationDescribe('PostgresLocationGroupCatalogStore', () => {
     }];
     const updated = await store.replace(packId, packVersion, 0, editedGroups);
     expect(updated).toMatchObject({ revision: 1, groups: editedGroups });
+
+    const refreshedReadMetrics = newMeasurements();
+    await requestMeasurements.run(refreshedReadMetrics, async () => {
+      expect(await independentStore.read(packId, packVersion)).toEqual(updated);
+      await independentStore.read(packId, packVersion);
+    });
+    expect(refreshedReadMetrics.databaseOperations['location_group.catalog_read']).toMatchObject({
+      calls: 2,
+      queries: 4,
+    });
+
+    const localWriteReadMetrics = newMeasurements();
+    await requestMeasurements.run(localWriteReadMetrics, async () => {
+      expect(await store.read(packId, packVersion)).toEqual(updated);
+    });
+    expect(localWriteReadMetrics.databaseOperations['location_group.catalog_read']).toMatchObject({
+      calls: 1,
+      queries: 1,
+    });
 
     await store.initialize(packId, packVersion, initialGroups);
     expect(await store.read(packId, packVersion)).toEqual(updated);

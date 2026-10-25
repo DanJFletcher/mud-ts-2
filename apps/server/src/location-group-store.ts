@@ -10,8 +10,27 @@ import {
   worldLocationGroupMemberships,
   worldLocationGroups,
 } from './db/schema.js';
+import { measureDatabaseOperation } from './performance.js';
+
+const MAX_CACHED_CATALOGS = 32;
 
 export class PostgresLocationGroupCatalogStore implements LocationGroupCatalogStoragePort {
+  private readonly snapshots = new Map<string, LocationGroupCatalogSnapshot>();
+
+  private cacheKey(packId: string, packVersion: string): string {
+    return JSON.stringify([packId, packVersion]);
+  }
+
+  private remember(snapshot: LocationGroupCatalogSnapshot): void {
+    const key = this.cacheKey(snapshot.packId, snapshot.packVersion);
+    this.snapshots.delete(key);
+    this.snapshots.set(key, snapshot);
+    if (this.snapshots.size > MAX_CACHED_CATALOGS) {
+      const oldestKey = this.snapshots.keys().next().value;
+      if (oldestKey !== undefined) this.snapshots.delete(oldestKey);
+    }
+  }
+
   async initialize(
     packId: string,
     packVersion: string,
@@ -28,55 +47,67 @@ export class PostgresLocationGroupCatalogStore implements LocationGroupCatalogSt
   }
 
   async read(packId: string, packVersion: string): Promise<LocationGroupCatalogSnapshot> {
-    const [catalog] = await db.select({
-      revision: worldLocationGroupCatalogs.revision,
-    }).from(worldLocationGroupCatalogs).where(and(
-      eq(worldLocationGroupCatalogs.packId, packId),
-      eq(worldLocationGroupCatalogs.packVersion, packVersion),
-    )).limit(1);
-    if (!catalog) {
-      throw new Error(`Location group catalog ${packId}@${packVersion} has not been initialized.`);
-    }
+    return measureDatabaseOperation('location_group.catalog_read', async () => {
+      const [catalog] = await db.select({
+        revision: worldLocationGroupCatalogs.revision,
+      }).from(worldLocationGroupCatalogs).where(and(
+        eq(worldLocationGroupCatalogs.packId, packId),
+        eq(worldLocationGroupCatalogs.packVersion, packVersion),
+      )).limit(1);
+      if (!catalog) {
+        this.snapshots.delete(this.cacheKey(packId, packVersion));
+        throw new Error(`Location group catalog ${packId}@${packVersion} has not been initialized.`);
+      }
+      const key = this.cacheKey(packId, packVersion);
+      const cached = this.snapshots.get(key);
+      if (cached?.revision === catalog.revision) {
+        this.snapshots.delete(key);
+        this.snapshots.set(key, cached);
+        return cached;
+      }
 
-    const [groupRows, membershipRows] = await Promise.all([
-      db.select({
-        id: worldLocationGroups.id,
-        name: worldLocationGroups.name,
-        type: worldLocationGroups.type,
-        description: worldLocationGroups.description,
-        metadata: worldLocationGroups.metadata,
-      }).from(worldLocationGroups).where(and(
-        eq(worldLocationGroups.packId, packId),
-        eq(worldLocationGroups.packVersion, packVersion),
-      )),
-      db.select({
-        groupId: worldLocationGroupMemberships.groupId,
-        locationId: worldLocationGroupMemberships.locationId,
-        isPrimary: worldLocationGroupMemberships.isPrimary,
-      }).from(worldLocationGroupMemberships).where(and(
-        eq(worldLocationGroupMemberships.packId, packId),
-        eq(worldLocationGroupMemberships.packVersion, packVersion),
-      )),
-    ]);
-    const membershipsByGroup = new Map<string, LocationGroupDefinition['memberships']>();
-    for (const membership of membershipRows) {
-      const memberships = membershipsByGroup.get(membership.groupId) ?? [];
-      memberships.push({ locationId: membership.locationId, isPrimary: membership.isPrimary });
-      membershipsByGroup.set(membership.groupId, memberships);
-    }
-    return {
-      packId,
-      packVersion,
-      revision: catalog.revision,
-      groups: groupRows.map((group) => ({
-        id: group.id,
-        name: group.name,
-        type: group.type,
-        ...(group.description ? { description: group.description } : {}),
-        ...(group.metadata ? { metadata: group.metadata } : {}),
-        memberships: membershipsByGroup.get(group.id) ?? [],
-      })),
-    };
+      const [groupRows, membershipRows] = await Promise.all([
+        db.select({
+          id: worldLocationGroups.id,
+          name: worldLocationGroups.name,
+          type: worldLocationGroups.type,
+          description: worldLocationGroups.description,
+          metadata: worldLocationGroups.metadata,
+        }).from(worldLocationGroups).where(and(
+          eq(worldLocationGroups.packId, packId),
+          eq(worldLocationGroups.packVersion, packVersion),
+        )),
+        db.select({
+          groupId: worldLocationGroupMemberships.groupId,
+          locationId: worldLocationGroupMemberships.locationId,
+          isPrimary: worldLocationGroupMemberships.isPrimary,
+        }).from(worldLocationGroupMemberships).where(and(
+          eq(worldLocationGroupMemberships.packId, packId),
+          eq(worldLocationGroupMemberships.packVersion, packVersion),
+        )),
+      ]);
+      const membershipsByGroup = new Map<string, LocationGroupDefinition['memberships']>();
+      for (const membership of membershipRows) {
+        const memberships = membershipsByGroup.get(membership.groupId) ?? [];
+        memberships.push({ locationId: membership.locationId, isPrimary: membership.isPrimary });
+        membershipsByGroup.set(membership.groupId, memberships);
+      }
+      const snapshot: LocationGroupCatalogSnapshot = {
+        packId,
+        packVersion,
+        revision: catalog.revision,
+        groups: groupRows.map((group) => ({
+          id: group.id,
+          name: group.name,
+          type: group.type,
+          ...(group.description ? { description: group.description } : {}),
+          ...(group.metadata ? { metadata: group.metadata } : {}),
+          memberships: membershipsByGroup.get(group.id) ?? [],
+        })),
+      };
+      this.remember(snapshot);
+      return snapshot;
+    });
   }
 
   async replace(
@@ -85,7 +116,7 @@ export class PostgresLocationGroupCatalogStore implements LocationGroupCatalogSt
     expectedRevision: number,
     groups: readonly LocationGroupDefinition[],
   ): Promise<LocationGroupCatalogSnapshot | undefined> {
-    return db.transaction(async (tx) => {
+    const snapshot = await db.transaction(async (tx) => {
       const [updatedCatalog] = await tx.update(worldLocationGroupCatalogs).set({
         revision: sql`${worldLocationGroupCatalogs.revision} + 1`,
         updatedAt: new Date(),
@@ -108,6 +139,8 @@ export class PostgresLocationGroupCatalogStore implements LocationGroupCatalogSt
         groups: groups.map((group) => structuredClone(group)),
       };
     });
+    if (snapshot) this.remember(snapshot);
+    return snapshot;
   }
 
   private async insertGroups(

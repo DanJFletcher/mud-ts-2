@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import type { CommandReceipt } from '@mudd/contracts';
 import type {
   AppendOutcome,
@@ -10,6 +10,7 @@ import type {
 import { characters, commandReceipts, durableEffects, gameEvents, worldSessions, roomCharacterStates } from '../db/schema.js';
 import { db } from '../db/client.js';
 import { retainCharacterReplayPrefix, replayCharacter } from '@mudd/engine-core';
+import { measureDatabaseOperation } from '../performance.js';
 
 export function toStoredGameEvent(row: typeof gameEvents.$inferSelect): StoredGameEvent {
   return {
@@ -191,31 +192,72 @@ export class PostgresEventStore implements EventStorePort {
   }
 
   async readStreamRevision(worldInstanceId: string, streamId: string): Promise<number> {
-    const [head] = await db.select({ revision: gameEvents.streamVersion }).from(gameEvents)
-      .where(and(eq(gameEvents.worldInstanceId, worldInstanceId), eq(gameEvents.streamId, streamId)))
-      .orderBy(desc(gameEvents.streamVersion)).limit(1);
-    return head?.revision ?? 0;
+    return measureDatabaseOperation('event_store.stream_revision_lookup', async () => {
+      const [head] = await db.select({ revision: gameEvents.streamVersion }).from(gameEvents)
+        .where(and(eq(gameEvents.worldInstanceId, worldInstanceId), eq(gameEvents.streamId, streamId)))
+        .orderBy(desc(gameEvents.streamVersion)).limit(1);
+      return head?.revision ?? 0;
+    });
   }
 
   async readStream(worldInstanceId: string, streamId: string): Promise<readonly StoredGameEvent[]> {
-    const key = this.streamKey(worldInstanceId, streamId);
     const revision = await this.readStreamRevision(worldInstanceId, streamId);
+    return this.readStreamAtRevision(worldInstanceId, streamId, revision);
+  }
+
+  async readStreams(
+    worldInstanceId: string,
+    streamIds: readonly string[],
+  ): Promise<ReadonlyMap<string, readonly StoredGameEvent[]>> {
+    const uniqueStreamIds = [...new Set(streamIds)];
+    if (uniqueStreamIds.length === 0) return new Map();
+
+    const revisions = await measureDatabaseOperation('event_store.stream_revisions_lookup', async () => {
+      const rows = await db.select({
+        streamId: gameEvents.streamId,
+        revision: sql<number>`max(${gameEvents.streamVersion})`,
+      }).from(gameEvents).where(and(
+        eq(gameEvents.worldInstanceId, worldInstanceId),
+        inArray(gameEvents.streamId, uniqueStreamIds),
+      )).groupBy(gameEvents.streamId);
+      return new Map(rows.map((row) => [row.streamId, Number(row.revision)]));
+    });
+
+    const entries = await Promise.all(uniqueStreamIds.map(async (streamId) => [
+      streamId,
+      await this.readStreamAtRevision(worldInstanceId, streamId, revisions.get(streamId) ?? 0),
+    ] as const));
+    return new Map(entries);
+  }
+
+  private touchCachedStream(key: string) {
     const cached = this.streamCache.get(key);
-    if (cached?.revision === revision) {
+    if (cached) {
       this.streamCache.delete(key);
       this.streamCache.set(key, cached);
-      return cached.events;
     }
+    return cached;
+  }
 
-    const rows = await db.select().from(gameEvents)
-      .where(and(
-        eq(gameEvents.worldInstanceId, worldInstanceId),
-        eq(gameEvents.streamId, streamId),
-        ...(cached && revision > cached.revision
-          ? [sql`${gameEvents.streamVersion} > ${cached.revision}`]
-          : []),
-      ))
-      .orderBy(gameEvents.streamVersion);
+  private async readStreamAtRevision(
+    worldInstanceId: string,
+    streamId: string,
+    revision: number,
+  ): Promise<readonly StoredGameEvent[]> {
+    const key = this.streamKey(worldInstanceId, streamId);
+    const cached = this.touchCachedStream(key);
+    if (cached?.revision === revision) return cached.events;
+
+    const rows = await measureDatabaseOperation('event_store.stream_rows_read', () =>
+      db.select().from(gameEvents)
+        .where(and(
+          eq(gameEvents.worldInstanceId, worldInstanceId),
+          eq(gameEvents.streamId, streamId),
+          ...(cached && revision > cached.revision
+            ? [sql`${gameEvents.streamVersion} > ${cached.revision}`]
+            : []),
+        ))
+        .orderBy(gameEvents.streamVersion));
     const tail = rows.map(toStoredGameEvent);
     const events = cached && revision > cached.revision
       ? [...cached.events, ...tail]
@@ -232,11 +274,12 @@ export class PostgresEventStore implements EventStorePort {
     commandId: string,
     payloadHash: string,
   ): Promise<AppendOutcome | undefined> {
-    const [prior] = await db.select().from(commandReceipts).where(and(
-      eq(commandReceipts.worldInstanceId, worldInstanceId),
-      eq(commandReceipts.actorId, actorId),
-      eq(commandReceipts.commandId, commandId),
-    )).limit(1);
+    const [prior] = await measureDatabaseOperation('event_store.command_receipt_lookup', () =>
+      db.select().from(commandReceipts).where(and(
+        eq(commandReceipts.worldInstanceId, worldInstanceId),
+        eq(commandReceipts.actorId, actorId),
+        eq(commandReceipts.commandId, commandId),
+      )).limit(1));
     if (!prior) return undefined;
     if (prior.payloadHash === payloadHash) {
       return {
@@ -255,7 +298,7 @@ export class PostgresEventStore implements EventStorePort {
   }
 
   async append(request: AppendRequest): Promise<AppendOutcome> {
-    const outcome = await db.transaction(async (tx): Promise<AppendOutcome> => {
+    const outcome = await measureDatabaseOperation('event_store.command_append', () => db.transaction(async (tx): Promise<AppendOutcome> => {
       // Lock command identity first so retries cannot race across different stream IDs.
       await tx.execute(sql`
         SELECT pg_advisory_xact_lock(hashtext(${request.worldInstanceId}), hashtext(${`${request.actorId}:${request.commandId}`}))`);
@@ -419,7 +462,7 @@ export class PostgresEventStore implements EventStorePort {
         events: appended,
       });
       return { kind: 'committed', streamId: request.streamId, events: appended, receipt };
-    });
+    }));
     if (outcome.kind === 'committed') {
       this.appendCachedStream(
         request.worldInstanceId,

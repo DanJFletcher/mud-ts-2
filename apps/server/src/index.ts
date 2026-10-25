@@ -2,7 +2,14 @@ import express, { type Request, type Response } from 'express';
 import expressWs from 'express-ws';
 import { createRealtimeGateway } from './realtime-gateway.js';
 import { startRealtimeNotifications } from './realtime-notifications.js';
-import { requestMeasurements, newMeasurements, measureStage, eventLoopDelayMs } from './performance.js';
+import {
+  requestMeasurements,
+  newMeasurements,
+  measureStage,
+  measureDatabaseOperation,
+  formatDatabaseOperationTimings,
+  eventLoopDelayMs,
+} from './performance.js';
 import { fileURLToPath } from 'node:url';
 import cors from 'cors';
 import { getAuth, clerkMiddleware } from '@clerk/express';
@@ -113,9 +120,10 @@ const authorization = {
     return session.worldInstanceId === id && registeredWorldIds.has(id);
   },
   ownsCharacter: createCharacterOwnershipCheck(async (playerId, id) => {
-    const [row] = await db.select({ id: characters.id }).from(characters)
-      .where(and(eq(characters.id, id), eq(characters.playerId, playerId)))
-      .limit(1);
+    const [row] = await measureDatabaseOperation('character.ownership_lookup', () =>
+      db.select({ id: characters.id }).from(characters)
+        .where(and(eq(characters.id, id), eq(characters.playerId, playerId)))
+        .limit(1));
     return Boolean(row);
   }),
 };
@@ -192,7 +200,8 @@ async function runPendingEffectBatch() {
   effectBatchRunning = true;
   try {
     for (const runtime of worldRuntimes.values()) {
-      await runtime.engine.processPendingEffects(25, runtime.worldInstanceId);
+      await measureDatabaseOperation('effect_batch.process_pending', () =>
+        runtime.engine.processPendingEffects(25, runtime.worldInstanceId));
     }
   } catch {
     console.error('Could not process durable event effects.');
@@ -269,11 +278,13 @@ app.use((req, res, next) => {
   res.once('finish', () => {
     const durationMs = performance.now() - startedAt;
     if (durationMs < 250 && !traceId) return;
+    const databaseOperations = formatDatabaseOperationTimings(measurements);
     const loggedMeasurements = {
       stages: measurements.stages,
       queries: measurements.queries,
       poolWaitMs: measurements.poolWaitMs,
       queryMs: measurements.queryMs,
+      ...(databaseOperations.length > 0 ? { databaseOperations } : {}),
       ...(traceId ? { queryTimings: measurements.queryTimings } : {}),
     };
     const log = {
@@ -355,10 +366,11 @@ function selectedRuntime(response: Response): WorldRuntime {
 }
 
 async function activeSession(identity: AccountIdentity, worldInstanceId: string) {
-  const [session] = await measureStage('session', () => db.select().from(worldSessions).where(and(
-    eq(worldSessions.playerId, identity.playerId),
-    eq(worldSessions.worldInstanceId, worldInstanceId),
-  )).limit(1));
+  const [session] = await measureDatabaseOperation('world_session.active_lookup', () =>
+    measureStage('session', () => db.select().from(worldSessions).where(and(
+      eq(worldSessions.playerId, identity.playerId),
+      eq(worldSessions.worldInstanceId, worldInstanceId),
+    )).limit(1)));
   return session;
 }
 
@@ -659,6 +671,7 @@ app.get('/api/game', async (req, res, next) => {
       measureStage('locationProjection', () => selected.engine.query(query, worldContext(identity, current), {
         characterProjection: character,
         correlationId: res.locals.requestId,
+      measureStage,
       })),
       measureStage('statsProjection', () => selected.engine.query(statsQuery, worldContext(identity, current), {
         characterProjection: character,
@@ -953,13 +966,14 @@ app.post('/api/commands', createRateLimiter({ windowMs: 60_000, maxRequests: 120
         if (typeof recipientCharacterId !== 'string') {
           return res.status(400).json({ message: 'Choose a player to challenge.' });
         }
-        const [recipientSession] = await db.select({
-          characterId: worldSessions.characterId,
-          lastSeenAt: worldSessions.lastSeenAt,
-        }).from(worldSessions).where(and(
-          eq(worldSessions.worldInstanceId, current.worldInstanceId),
-          eq(worldSessions.characterId, recipientCharacterId),
-        )).limit(1);
+        const [recipientSession] = await measureDatabaseOperation('interaction.recipient_presence_lookup', () =>
+          db.select({
+            characterId: worldSessions.characterId,
+            lastSeenAt: worldSessions.lastSeenAt,
+          }).from(worldSessions).where(and(
+            eq(worldSessions.worldInstanceId, current.worldInstanceId),
+            eq(worldSessions.characterId, recipientCharacterId),
+          )).limit(1));
         if (!recipientSession || Date.now() - recipientSession.lastSeenAt.getTime() > INTERACTION_HEARTBEAT_FRESH_MS) {
           return res.status(409).json({ message: 'That player is not online right now.' });
         }

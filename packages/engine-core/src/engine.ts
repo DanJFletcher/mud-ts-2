@@ -529,7 +529,11 @@ export class EngineHost {
   async query(
     raw: unknown,
     session: SessionContext,
-    options: { characterProjection?: CharacterProjection; correlationId?: string } = {},
+    options: {
+      characterProjection?: CharacterProjection;
+      correlationId?: string;
+      measureStage?: <T>(stage: string, run: () => Promise<T>) => Promise<T>;
+    } = {},
   ): Promise<
     | { ok: true; value: unknown }
     | { ok: false; code: string; message: string; correlationId?: string }
@@ -557,6 +561,7 @@ export class EngineHost {
         store: this.store,
         world: this.world,
         ...(options.characterProjection ? { characterProjection: options.characterProjection } : {}),
+        ...(options.measureStage ? { measureStage: options.measureStage } : {}),
       };
       return { ok: true, value: await definition.handle(query, context) };
     } catch (error) {

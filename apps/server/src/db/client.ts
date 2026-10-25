@@ -2,7 +2,12 @@ import { createHash } from 'node:crypto';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import * as schema from './schema.js';
-import { requestMeasurements } from '../performance.js';
+import {
+  databaseMeasurementContext,
+  recordDatabasePoolWait,
+  recordDatabaseQueryFinish,
+  recordDatabaseQueryStart,
+} from '../performance.js';
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error('DATABASE_URL is required to run the MUDD server.');
@@ -12,14 +17,14 @@ export const pool = new Pool({ connectionString, max: 10 });
 // transaction clients. Record only durations/counts, never SQL or parameters.
 const connect = pool.connect.bind(pool);
 pool.connect = ((callback?: (...args: any[]) => void) => {
-  const metrics = requestMeasurements.getStore();
+  const context = databaseMeasurementContext();
   const started = performance.now();
   if (!callback) return connect().then((client) => {
-    if (metrics) metrics.poolWaitMs += performance.now() - started;
+    recordDatabasePoolWait(context, performance.now() - started);
     return client;
   });
   return connect((error, client, release) => {
-    if (metrics) metrics.poolWaitMs += performance.now() - started;
+    recordDatabasePoolWait(context, performance.now() - started);
     callback(error, client, release);
   });
 }) as typeof pool.connect;
@@ -39,17 +44,12 @@ pool.on('connect', (client) => {
   instrumented.add(client);
   const query = client.query.bind(client);
   client.query = ((...args: any[]) => {
-    const metrics = requestMeasurements.getStore();
+    const context = databaseMeasurementContext();
     const started = performance.now();
-    const fingerprint = metrics?.traceId ? queryFingerprint(args) : undefined;
-    if (metrics) metrics.queries++;
+    const fingerprint = context.measurements?.traceId ? queryFingerprint(args) : undefined;
+    recordDatabaseQueryStart(context);
     const finish = () => {
-      if (!metrics) return;
-      const durationMs = performance.now() - started;
-      metrics.queryMs += durationMs;
-      if (fingerprint && metrics.queryTimings.length < 100) {
-        metrics.queryTimings.push({ fingerprint, durationMs: Math.round(durationMs * 10) / 10 });
-      }
+      recordDatabaseQueryFinish(context, performance.now() - started, fingerprint);
     };
     const last = args.at(-1);
     if (typeof last === 'function') {

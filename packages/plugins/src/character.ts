@@ -774,7 +774,11 @@ export const characterPlugin: EnginePlugin = {
     });
 
     registerQuery('location.describe', LocationDescribeQuerySchema, async (query, context) => {
-      const character = await state.load(context, query.characterId);
+      const measureQuery = <T>(stage: string, run: () => Promise<T>) =>
+        context.measureStage
+          ? context.measureStage(`location.describe.${stage}`, run)
+          : run();
+      const character = await measureQuery('characterState', () => state.load(context, query.characterId));
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
       const requestedLocationId = query.payload.locationId;
       if (requestedLocationId && requestedLocationId !== character.locationId) {
@@ -782,12 +786,13 @@ export const characterPlugin: EnginePlugin = {
       }
       const location = context.world.locations.find((item) => item.id === character.locationId);
       if (!location) throw new Error('The character location is not present in this world version.');
-      const roomNpcs = autonomousNpcs
-        ? await autonomousNpcs.atLocation(context, location.id)
-        : location.npcs ?? [];
+      const roomNpcs = await measureQuery('npcPositions', async () =>
+        autonomousNpcs
+          ? autonomousNpcs.atLocation(context, location.id)
+          : location.npcs ?? []);
       const locationState = resolveLocationState(location, character.locationStateId);
       const availableExits = exitsForLocationState(location, locationState?.id);
-      const sharedState = await worldItems.load(context);
+      const sharedState = await measureQuery('sharedItems', () => worldItems.load(context));
       const sharedItems = sharedState.items
         .filter((item) => item.locationId === character.locationId);
       const roomCorpses = sharedState.corpses
@@ -866,7 +871,7 @@ export const characterPlugin: EnginePlugin = {
         location.id,
       );
       const displayName = resolveLocationDisplayName(shortName, locationGroups);
-      return LocationProjectionSchema.parse({
+      return measureQuery('assembleProjection', async () => LocationProjectionSchema.parse({
         worldInstanceId: context.worldInstanceId,
         locationId: location.id,
         ...(locationState ? { locationStateId: locationState.id } : {}),
@@ -972,7 +977,7 @@ export const characterPlugin: EnginePlugin = {
             })),
           }
           : {}),
-      });
+      }));
     });
 
     registerQuery('object.read', ObjectReadQuerySchema, async (query, context) => {

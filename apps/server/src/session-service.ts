@@ -4,6 +4,7 @@ import type { SessionContext } from '@mudd/contracts';
 import { DEMO_WORLD_INSTANCE_ID } from '@mudd/world-demo';
 import { db } from './db/client.js';
 import { characters, players, sessions } from './db/schema.js';
+import { measureDatabaseOperation } from './performance.js';
 
 const secret = process.env.SESSION_SECRET;
 if (!secret) throw new Error('SESSION_SECRET is required to preserve existing guest accounts.');
@@ -57,7 +58,7 @@ export async function getAccountIdentity(
       )).limit(1).then((rows) => rows[0])
     : undefined;
 
-  const guest = await guestPlayer();
+  const guest = await measureDatabaseOperation('account.guest_session_lookup', async () => await guestPlayer());
   if (!auth.userId) {
     if (!guest) return undefined;
     return {
@@ -76,51 +77,53 @@ export async function getAccountIdentity(
     };
   }
 
-  const findAccount = () => db.select({
-    id: players.id,
-    displayName: players.displayName,
-  }).from(players).where(eq(players.clerkUserId, auth.userId!)).limit(1);
+  const findAccount = () => measureDatabaseOperation('account.clerk_profile_lookup', () =>
+    db.select({
+      id: players.id,
+      displayName: players.displayName,
+    }).from(players).where(eq(players.clerkUserId, auth.userId!)).limit(1));
 
   let [account] = await findAccount();
 
   if (!account) {
     const newId = guest?.id ?? randomUUID();
     try {
-      account = await db.transaction(async (tx) => {
-        const [existing] = await tx.select({
-          id: players.id,
-          displayName: players.displayName,
-        }).from(players).where(eq(players.clerkUserId, auth.userId!)).limit(1);
-        if (existing) return existing;
-
-        if (guest) {
-          const [claimed] = await tx.update(players)
-            .set({ clerkUserId: auth.userId! })
-            .where(and(eq(players.id, guest.id), isNull(players.clerkUserId)))
-            .returning({ id: players.id, displayName: players.displayName });
-          if (claimed) {
-            await tx.delete(sessions).where(eq(sessions.playerId, claimed.id));
-            return claimed;
-          }
-          const [raced] = await tx.select({
+      account = await measureDatabaseOperation('account.profile_ensure', () =>
+        db.transaction(async (tx) => {
+          const [existing] = await tx.select({
             id: players.id,
             displayName: players.displayName,
           }).from(players).where(eq(players.clerkUserId, auth.userId!)).limit(1);
-          if (raced) return raced;
-        }
+          if (existing) return existing;
 
-        await tx.insert(players).values({
-          id: newId,
-          displayName: `Traveler ${newId.slice(0, 4).toUpperCase()}`,
-          clerkUserId: auth.userId!,
-        }).onConflictDoNothing();
-        const [created] = await tx.select({
-          id: players.id,
-          displayName: players.displayName,
-        }).from(players).where(eq(players.clerkUserId, auth.userId!)).limit(1);
-        if (!created) throw new Error('Could not create the account profile.');
-        return created;
-      });
+          if (guest) {
+            const [claimed] = await tx.update(players)
+              .set({ clerkUserId: auth.userId! })
+              .where(and(eq(players.id, guest.id), isNull(players.clerkUserId)))
+              .returning({ id: players.id, displayName: players.displayName });
+            if (claimed) {
+              await tx.delete(sessions).where(eq(sessions.playerId, claimed.id));
+              return claimed;
+            }
+            const [raced] = await tx.select({
+              id: players.id,
+              displayName: players.displayName,
+            }).from(players).where(eq(players.clerkUserId, auth.userId!)).limit(1);
+            if (raced) return raced;
+          }
+
+          await tx.insert(players).values({
+            id: newId,
+            displayName: `Traveler ${newId.slice(0, 4).toUpperCase()}`,
+            clerkUserId: auth.userId!,
+          }).onConflictDoNothing();
+          const [created] = await tx.select({
+            id: players.id,
+            displayName: players.displayName,
+          }).from(players).where(eq(players.clerkUserId, auth.userId!)).limit(1);
+          if (!created) throw new Error('Could not create the account profile.');
+          return created;
+        }));
     } catch (error) {
       [account] = await findAccount();
       if (!account) throw error;
@@ -128,14 +131,15 @@ export async function getAccountIdentity(
   }
 
   if (guest && guest.id !== account.id) {
-    await db.transaction(async (tx) => {
-      const [unclaimed] = await tx.select({ id: players.id }).from(players)
-        .where(and(eq(players.id, guest.id), isNull(players.clerkUserId))).limit(1);
-      if (!unclaimed) return;
-      await tx.update(characters).set({ playerId: account!.id }).where(eq(characters.playerId, guest.id));
-      await tx.delete(sessions).where(eq(sessions.playerId, guest.id));
-      await tx.delete(players).where(and(eq(players.id, guest.id), isNull(players.clerkUserId)));
-    });
+    await measureDatabaseOperation('account.guest_profile_migration', () =>
+      db.transaction(async (tx) => {
+        const [unclaimed] = await tx.select({ id: players.id }).from(players)
+          .where(and(eq(players.id, guest.id), isNull(players.clerkUserId))).limit(1);
+        if (!unclaimed) return;
+        await tx.update(characters).set({ playerId: account!.id }).where(eq(characters.playerId, guest.id));
+        await tx.delete(sessions).where(eq(sessions.playerId, guest.id));
+        await tx.delete(players).where(and(eq(players.id, guest.id), isNull(players.clerkUserId)));
+      }));
   }
 
   return {
@@ -161,17 +165,18 @@ export async function createGuestIdentity(request: { headers: { cookie?: string 
   const existingToken = readGuestToken(request);
   const existingHash = existingToken ? hashToken(existingToken) : undefined;
   if (existingHash) {
-    const [existing] = await db.select({
-      id: players.id,
-      displayName: players.displayName,
-      sessionId: sessions.id,
-    }).from(sessions)
-      .innerJoin(players, eq(sessions.playerId, players.id))
-      .where(and(
-        eq(sessions.tokenHash, existingHash),
-        gt(sessions.expiresAt, new Date()),
-        isNull(players.clerkUserId),
-      )).limit(1);
+    const [existing] = await measureDatabaseOperation('account.guest_session_lookup', () =>
+      db.select({
+        id: players.id,
+        displayName: players.displayName,
+        sessionId: sessions.id,
+      }).from(sessions)
+        .innerJoin(players, eq(sessions.playerId, players.id))
+        .where(and(
+          eq(sessions.tokenHash, existingHash),
+          gt(sessions.expiresAt, new Date()),
+          isNull(players.clerkUserId),
+        )).limit(1));
     if (existing) {
       return {
         identity: {
@@ -199,15 +204,16 @@ export async function createGuestIdentity(request: { headers: { cookie?: string 
   const displayName = `Traveler ${playerId.slice(0, 4).toUpperCase()}`;
   const expiresAt = new Date(Date.now() + GUEST_SESSION_TTL_SECONDS * 1000);
 
-  await db.transaction(async (tx) => {
-    await tx.insert(players).values({ id: playerId, displayName, clerkUserId: null });
-    await tx.insert(sessions).values({
-      id: sessionId,
-      playerId,
-      tokenHash,
-      expiresAt,
-    });
-  });
+  await measureDatabaseOperation('account.guest_identity_create', () =>
+    db.transaction(async (tx) => {
+      await tx.insert(players).values({ id: playerId, displayName, clerkUserId: null });
+      await tx.insert(sessions).values({
+        id: sessionId,
+        playerId,
+        tokenHash,
+        expiresAt,
+      });
+    }));
 
   return {
     identity: {
