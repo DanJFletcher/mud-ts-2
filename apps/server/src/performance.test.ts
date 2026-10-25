@@ -70,6 +70,27 @@ describe('database operation measurements', () => {
     }]);
   });
 
+  it('keeps lazy database query thenables inside their operation measurement context', async () => {
+    const measurements = newMeasurements();
+    await requestMeasurements.run(measurements, async () => {
+      await measureDatabaseOperation('room_presence.heartbeat_update', () => ({
+        then(resolve: (value: void) => void) {
+          const context = databaseMeasurementContext();
+          recordDatabaseQueryStart(context);
+          recordDatabaseQueryFinish(context, 2.5);
+          resolve();
+        },
+      }) as unknown as Promise<void>);
+    });
+
+    expect(measurements.databaseOperations['room_presence.heartbeat_update']).toMatchObject({
+      calls: 1,
+      queries: 1,
+      queryMs: 2.5,
+      maxQueryMs: 2.5,
+    });
+  });
+
   it('rejects operation labels that could contain request-specific data', async () => {
     const measurements = newMeasurements();
     await requestMeasurements.run(measurements, async () => {

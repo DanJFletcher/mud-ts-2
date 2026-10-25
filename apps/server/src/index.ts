@@ -262,7 +262,8 @@ app.use((req, res, next) => {
   const tracePhase = req.get('x-mudd-trace-phase');
   const traceableRoute =
     (req.method === 'POST' && req.path === '/api/commands' && tracePhase === 'command') ||
-    (req.method === 'GET' && req.path === '/api/game' && tracePhase === 'snapshot');
+    (req.method === 'GET' && req.path === '/api/game' && tracePhase === 'snapshot') ||
+    (req.method === 'POST' && req.path === '/api/world-session/heartbeat' && tracePhase === 'heartbeat');
   const traceId = traceableRoute && /^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i.test(requestedTraceId)
     ? requestedTraceId
     : undefined;
@@ -588,7 +589,8 @@ app.post('/api/world-session/heartbeat', createRateLimiter({ windowMs: 60_000, m
     const current = await activeSession(identity, selected.worldInstanceId);
     if (!current) return res.status(409).json({ message: 'Enter the world with a character before sending presence.' });
 
-    const character = replayCharacter(await store.readStream(current.worldInstanceId, current.characterId));
+    const character = await measureStage('heartbeat.characterReplay', async () =>
+      replayCharacter(await store.readStream(current.worldInstanceId, current.characterId)));
     if (!character || character.archived) {
       return res.status(409).json({ message: 'Enter the world with an active character before sending presence.' });
     }
@@ -597,26 +599,29 @@ app.post('/api/world-session/heartbeat', createRateLimiter({ windowMs: 60_000, m
     }
 
     const wasStale = Date.now() - current.lastSeenAt.getTime() > INTERACTION_HEARTBEAT_FRESH_MS;
-    const refreshed = await touchWorldSessionPresence(
-      identity.playerId,
-      current.worldInstanceId,
-      current.id,
-    );
+    const refreshed = await measureStage('heartbeat.sessionTouch', () =>
+      touchWorldSessionPresence(
+        identity.playerId,
+        current.worldInstanceId,
+        current.id,
+      ));
     if (!refreshed) return res.status(409).json({ message: 'Your world session is no longer active.' });
     if (wasStale) {
-      const reset = await resetStaminaRecoveryAnchor(selected, current.characterId);
+      const reset = await measureStage('heartbeat.staminaAnchorReset', () =>
+        resetStaminaRecoveryAnchor(selected, current.characterId));
       if (!reset) return res.status(409).json({ message: 'Your character is no longer available.' });
     }
 
     return res.json({
       worldInstanceId: current.worldInstanceId,
       locationId: character.locationId,
-      occupants: await listRoomOccupants(
-        store,
-        current.worldInstanceId,
-        character.locationId,
-        current.characterId,
-      ),
+      occupants: await measureStage('heartbeat.roomOccupants', () =>
+        listRoomOccupants(
+          store,
+          current.worldInstanceId,
+          character.locationId,
+          current.characterId,
+        )),
     });
   } catch (error) {
     next(error);

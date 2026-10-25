@@ -98,7 +98,7 @@ export async function measureDatabaseOperation<T>(operation: string, run: () => 
   };
   const started = performance.now();
   try {
-    return await databaseOperation.run(active, run);
+    return await databaseOperation.run(active, async () => await run());
   } finally {
     if (active.queries > 0 || active.poolWaitMs > 0) {
       const name = metrics.databaseOperations[operation]
