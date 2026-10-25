@@ -654,6 +654,14 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     }
     expect(retrySubmission.message.id).toBe(firstSubmission.message.id);
     expect(retrySubmission.effectId).toBe(firstSubmission.effectId);
+    const authorHistory = await listRoomChatMessages({
+      worldInstanceId: chatWorldInstanceId,
+      playerId,
+      characterId: chatCharacterId,
+      roomId: 'mossgate-clearing',
+    });
+    expect(authorHistory?.messages.find((message) => message.id === firstSubmission.message.id))
+      .toMatchObject({ submissionId });
     const chatEffects = await db.select().from(durableEffects).where(
       (await import('drizzle-orm')).eq(durableEffects.worldInstanceId, chatWorldInstanceId),
     );

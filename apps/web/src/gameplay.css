@@ -896,6 +896,19 @@
 .focused-room-chat__pending-content { display: grid; gap: .35rem; min-width: 0; }
 .focused-room-chat__pending-status { max-width: 100%; padding: .3rem .45rem; font-size: .65rem; }
 .focused-room-chat__pending-status .mudd-pending-action__detail { font-size: .6rem; }
+.focused-room-chat__retry {
+  justify-self: start;
+  min-height: 1.8rem;
+  padding: .25rem .55rem;
+  border: 1px solid var(--mudd-border);
+  border-radius: .4rem;
+  color: var(--mudd-text);
+  background: var(--mudd-surface-raised);
+  font: inherit;
+  font-size: .7rem;
+}
+.focused-pending-action { padding: .35rem .75rem; }
+.focused-pending-action__status { width: 100%; }
 
 .focused-room-chat__message p {
   min-width: 0;

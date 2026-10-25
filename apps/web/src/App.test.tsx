@@ -1159,6 +1159,150 @@ describe('single-character world session client', () => {
     timers.mockRestore();
   });
 
+  it('shows movement intent before the server responds without changing the confirmed room', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    let releaseMove!: (response: Response) => void;
+    apiFetch.mockImplementation((path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as { type?: string };
+        if (body.type === 'character.move') {
+          return new Promise<Response>((resolve) => { releaseMove = resolve; });
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    quickGo('north');
+
+    expect(await screen.findByText('Traveling north…')).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Mossgate Clearing' })).toBeInTheDocument();
+    const command = apiFetch.mock.calls.find(([path, init]) =>
+      path === '/api/commands' && init?.method === 'POST' &&
+      JSON.parse(String(init.body)).type === 'character.move'
+    );
+    expect(command).toBeDefined();
+    await act(async () => {
+      releaseMove(await original(command![0], command![1]));
+    });
+
+    expect(await screen.findByRole('heading', { name: 'Glasswater Bridge' })).toBeInTheDocument();
+    expect(screen.queryByText('Traveling north…')).not.toBeInTheDocument();
+  });
+
+  it('reuses the same movement command ID after an ambiguous server failure', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation((path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as { type?: string };
+        if (body.type === 'character.move') {
+          return Promise.resolve(Response.json({ message: 'Temporary server issue.' }, { status: 503 }));
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    quickGo('north');
+    expect(await screen.findByText('Move status is unconfirmed.')).toBeVisible();
+    quickGo('north');
+    await waitFor(() => {
+      const commands = apiFetch.mock.calls
+        .filter(([path, init]) => path === '/api/commands' && init?.method === 'POST')
+        .map(([, init]) => JSON.parse(String(init?.body)) as { type?: string; commandId?: string })
+        .filter((command) => command.type === 'character.move');
+      expect(commands).toHaveLength(2);
+      expect(commands[1]?.commandId).toBe(commands[0]?.commandId);
+    });
+  });
+
+  it('shows an uncertain PvP challenge and reuses its command ID when retried', async () => {
+    roomOccupants = [{ id: 'mira-character', displayName: 'Mira' }];
+    heartbeatOccupants = [{ id: 'mira-character', displayName: 'Mira' }];
+    const original = apiFetch.getMockImplementation()!;
+    const releases: Array<(response: Response) => void> = [];
+    apiFetch.mockImplementation((path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as { type?: string };
+        if (body.type === 'interaction.request') {
+          return new Promise<Response>((resolve) => { releases.push(resolve); });
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('attack Mira');
+    expect(await screen.findByText('Sending challenge to Mira…')).toBeVisible();
+    await act(async () => {
+      releases[0]!(Response.json({ message: 'Temporary server issue.' }, { status: 503 }));
+    });
+    expect(await screen.findByText('Challenge status is unconfirmed.')).toBeVisible();
+
+    submitWorldCommand('attack Mira');
+    expect(await screen.findByText('Sending challenge to Mira…')).toBeVisible();
+    const challengeCommands = apiFetch.mock.calls
+      .filter(([path, init]) => path === '/api/commands' && init?.method === 'POST')
+      .map(([, init]) => JSON.parse(String(init?.body)) as { type?: string; commandId?: string })
+      .filter((command) => command.type === 'interaction.request');
+    expect(challengeCommands).toHaveLength(2);
+    expect(challengeCommands[1]?.commandId).toBe(challengeCommands[0]?.commandId);
+    await act(async () => {
+      releases[1]!(Response.json({ message: 'Challenge rejected.' }, { status: 400 }));
+    });
+  });
+
+  it('shows an uncertain PvP response and reuses its command ID when retried', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    const incomingRequest = {
+      requestId: 'incoming-challenge',
+      kind: 'pvp.challenge',
+      initiatorCharacterId: 'mira-character',
+      initiatorName: 'Mira',
+      recipientCharacterId: characterId,
+      recipientName: 'Rowan',
+      status: 'pending' as const,
+      createdAt: '2026-10-25T12:00:00.000Z',
+      expiresAt: '2026-10-25T12:05:00.000Z',
+    };
+    const inbox = { requests: [incomingRequest], encounter: null } satisfies InteractionInbox;
+    const releases: Array<(response: Response) => void> = [];
+    apiFetch.mockImplementation((path, init) => {
+      if (path === '/api/interactions') return Promise.resolve(json(inbox));
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as { type?: string };
+        if (body.type === 'interaction.respond') {
+          return new Promise<Response>((resolve) => { releases.push(resolve); });
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('accept incoming-challenge');
+    expect(await screen.findByText('Sending your accept…')).toBeVisible();
+    await act(async () => {
+      releases[0]!(Response.json({ message: 'Temporary server issue.' }, { status: 503 }));
+    });
+    expect(await screen.findByText('Response status is unconfirmed.')).toBeVisible();
+
+    submitWorldCommand('accept incoming-challenge');
+    expect(await screen.findByText('Sending your accept…')).toBeVisible();
+    const responseCommands = apiFetch.mock.calls
+      .filter(([path, init]) => path === '/api/commands' && init?.method === 'POST')
+      .map(([, init]) => JSON.parse(String(init?.body)) as { type?: string; commandId?: string })
+      .filter((command) => command.type === 'interaction.respond');
+    expect(responseCommands).toHaveLength(2);
+    expect(responseCommands[1]?.commandId).toBe(responseCommands[0]?.commandId);
+    await act(async () => {
+      releases[1]!(Response.json({ message: 'Challenge response rejected.' }, { status: 400 }));
+    });
+  });
+
   it('shows only available quick commands with no more than four actions per page', async () => {
     render(<WorldClient onLeaveWorld={async () => undefined} />);
 
@@ -1657,7 +1801,7 @@ describe('single-character world session client', () => {
     const history = await screen.findByRole('region', { name: 'Terminal output' });
 
     fireEvent.keyDown(document, { key: 'ArrowUp', shiftKey: true });
-    await waitFor(() => expect(history).toHaveTextContent('You travel up.'));
+    await waitFor(() => expect(history).toHaveTextContent('The move was accepted. Waiting for the current room to update.'));
     const upCommand = JSON.parse(
       apiFetch.mock.calls.find(([path]) => path === '/api/commands')?.[1].body as string,
     );
@@ -1779,7 +1923,7 @@ describe('single-character world session client', () => {
       target: { value: 'The way is clear.' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Send room message' }));
-    expect(await screen.findByText('The way is clear.')).toBeVisible();
+    await waitFor(() => expect(screen.getByText('The way is clear.')).toBeVisible());
     const sentMessage = apiFetch.mock.calls.find(([path, init]) =>
       path === '/api/chat' && init?.method === 'POST'
     );
@@ -2382,7 +2526,7 @@ describe('single-character world session client', () => {
       expect(history).toHaveTextContent('> quests 1');
       expect(history).toHaveTextContent('Mara: The marker points east to the Old Bell Tower.');
     });
-    expect(screen.getByRole('dialog', { name: 'Conversation with Mara' })).toHaveTextContent(
+    expect(await screen.findByRole('dialog', { name: 'Conversation with Mara' })).toHaveTextContent(
       'The marker points east to the Old Bell Tower.',
     );
   });

@@ -72,7 +72,9 @@ function pendingActionPresentation(action: PendingAction) {
       label: state === "sending" ? `Traveling ${action.details.direction}…`
         : state === "acknowledged" ? "Move accepted; updating the room…"
           : "Move status is unconfirmed.",
-      detail: state === "uncertain" ? "The current room will update when the server confirms it." : undefined,
+      detail: state === "uncertain"
+        ? "Repeat the same direction to safely retry with the same command ID."
+        : undefined,
     } as const;
   }
   if (action.details.kind === "pvp.challenge") {
@@ -81,7 +83,9 @@ function pendingActionPresentation(action: PendingAction) {
       label: state === "sending" ? `Sending challenge to ${action.details.recipientName}…`
         : state === "acknowledged" ? "Challenge sent; confirming the request…"
           : "Challenge status is unconfirmed.",
-      detail: state === "uncertain" ? "Checking the server’s interaction inbox." : undefined,
+      detail: state === "uncertain"
+        ? "Repeat the same challenge command to safely retry with the same command ID."
+        : undefined,
     } as const;
   }
   if (action.details.kind === "pvp.respond") {
@@ -90,7 +94,9 @@ function pendingActionPresentation(action: PendingAction) {
       label: state === "sending" ? `Sending your ${action.details.response}…`
         : state === "acknowledged" ? "Response sent; confirming the result…"
           : "Response status is unconfirmed.",
-      detail: state === "uncertain" ? "The challenge’s authoritative status will appear when the inbox refreshes." : undefined,
+      detail: state === "uncertain"
+        ? "Repeat the same response command to safely retry with the same command ID."
+        : undefined,
     } as const;
   }
   return {
@@ -356,12 +362,12 @@ export function WorldClient({
     client.pendingActions.getSnapshot,
     client.pendingActions.getSnapshot,
   );
-  const foregroundPendingAction = pendingActionSnapshot.find((action) =>
+  const foregroundPendingAction = pendingActionSnapshot.filter((action) =>
     action.scope.worldInstanceId === worldInstanceId &&
     action.scope.characterId === snapshot?.character?.characterId &&
     action.details.kind !== "chat.send" &&
     (action.state === "sending" || action.state === "acknowledged" || action.state === "uncertain")
-  );
+  ).at(-1);
   const refreshGate = useRef(new ActionRefreshGate());
   const actionTiming = useRef<{ name: string; started: number } | null>(null);
   const setPending = useCallback((value: typeof pending) => {
@@ -573,12 +579,13 @@ export function WorldClient({
         (action.state !== "sending" && action.state !== "acknowledged" && action.state !== "uncertain")
       ) return;
 
-      if (action.details.kind === "pvp.challenge") {
-        const priorIds = new Set(action.details.priorRequestIds);
+      const details = action.details;
+      if (details.kind === "pvp.challenge") {
+        const priorIds = new Set(details.priorRequestIds);
         const request = interactionInbox.requests.find((candidate) =>
           !priorIds.has(candidate.requestId) &&
           candidate.initiatorCharacterId === characterId &&
-          candidate.recipientCharacterId === action.details.recipientCharacterId
+          candidate.recipientCharacterId === details.recipientCharacterId
         );
         if (!request) return;
         client.pendingActions.confirm(action.id);
@@ -590,10 +597,10 @@ export function WorldClient({
               ? `${request.recipientName} declined your challenge.`
               : `The challenge to ${request.recipientName} ${request.status}.`, true);
       } else if (
-        action.details.kind === "pvp.respond" &&
+        details.kind === "pvp.respond" &&
         interactionInbox.requests.some((request) =>
-          request.requestId === action.details.requestId &&
-          request.status === (action.details.response === "accept" ? "accepted" : "declined")
+          request.requestId === details.requestId &&
+          request.status === (details.response === "accept" ? "accepted" : "declined")
         )
       ) {
         client.pendingActions.confirm(action.id);
@@ -1602,8 +1609,17 @@ export function WorldClient({
       addEntry("error", "That way is not open from here.");
       return;
     }
-    const commandId = crypto.randomUUID();
     const fromLocationId = snapshot.location.locationId;
+    const characterId = snapshot.character.characterId;
+    const retryAction = client.pendingActions.getSnapshot().filter((action) =>
+      action.scope.worldInstanceId === worldInstanceId &&
+      action.scope.characterId === characterId &&
+      action.details.kind === "character.move" &&
+      action.details.fromLocationId === fromLocationId &&
+      action.details.exitId === exit.id &&
+      (action.state === "uncertain" || action.state === "acknowledged")
+    ).at(-1);
+    const commandId = (retryAction?.id ?? crypto.randomUUID()) as ReturnType<Crypto["randomUUID"]>;
     const traceId = new URLSearchParams(window.location.search).get("muddTrace") === "1"
       ? crypto.randomUUID()
       : undefined;
@@ -1629,8 +1645,8 @@ export function WorldClient({
     };
     client.pendingActions.begin({
       id: commandId,
-      scope: { worldInstanceId, characterId: snapshot.character.characterId },
-      details: {
+      scope: { worldInstanceId, characterId, roomId: fromLocationId },
+      details: retryAction?.details ?? {
         kind: "character.move",
         fromLocationId,
         exitId: exit.id,
@@ -1937,7 +1953,15 @@ export function WorldClient({
 
   const challengePlayer = useCallback(async (recipientCharacterId: string, recipientName: string) => {
     if (!snapshot?.character || pending) return;
-    const commandId = crypto.randomUUID();
+    const characterId = snapshot.character.characterId;
+    const retryAction = client.pendingActions.getSnapshot().filter((action) =>
+      action.scope.worldInstanceId === worldInstanceId &&
+      action.scope.characterId === characterId &&
+      action.details.kind === "pvp.challenge" &&
+      action.details.recipientCharacterId === recipientCharacterId &&
+      (action.state === "uncertain" || action.state === "acknowledged")
+    ).at(-1);
+    const commandId = (retryAction?.id ?? crypto.randomUUID()) as ReturnType<Crypto["randomUUID"]>;
     const traceId = new URLSearchParams(window.location.search).get("muddTrace") === "1"
       ? commandId
       : undefined;
@@ -1946,11 +1970,14 @@ export function WorldClient({
     client.pendingActions.begin({
       id: commandId,
       scope: { worldInstanceId, characterId: snapshot.character.characterId },
-      details: {
+      details: retryAction?.details ?? {
         kind: "pvp.challenge",
         recipientCharacterId,
         recipientName,
-        priorRequestIds: [...knownInteractionStatusesRef.current.keys()],
+        priorRequestIds: [...new Set([
+          ...knownInteractionStatusesRef.current.keys(),
+          ...(interactionInbox?.requests.map((request) => request.requestId) ?? []),
+        ])],
       },
     });
     setPending("combat");
@@ -1970,11 +1997,20 @@ export function WorldClient({
     } finally {
       setPending(null);
     }
-  }, [addEntry, pending, snapshot, worldInstanceId]);
+  }, [addEntry, interactionInbox, pending, snapshot, worldInstanceId]);
 
   const respondToPlayerChallenge = useCallback(async (requestId: string, response: "accept" | "decline") => {
     if (!snapshot?.character || pending) return;
-    const commandId = crypto.randomUUID();
+    const characterId = snapshot.character.characterId;
+    const retryAction = client.pendingActions.getSnapshot().filter((action) =>
+      action.scope.worldInstanceId === worldInstanceId &&
+      action.scope.characterId === characterId &&
+      action.details.kind === "pvp.respond" &&
+      action.details.requestId === requestId &&
+      action.details.response === response &&
+      (action.state === "uncertain" || action.state === "acknowledged")
+    ).at(-1);
+    const commandId = (retryAction?.id ?? crypto.randomUUID()) as ReturnType<Crypto["randomUUID"]>;
     const traceId = new URLSearchParams(window.location.search).get("muddTrace") === "1"
       ? commandId
       : undefined;
@@ -1983,7 +2019,7 @@ export function WorldClient({
     client.pendingActions.begin({
       id: commandId,
       scope: { worldInstanceId, characterId: snapshot.character.characterId },
-      details: {
+      details: retryAction?.details ?? {
         kind: "pvp.respond",
         requestId,
         response,
@@ -3550,6 +3586,14 @@ export function WorldClient({
                       ) : null}
                     </section>
                   ) : null}
+                  {foregroundPendingAction && (
+                    <div className="focused-pending-action" data-optimistic-feedback>
+                      <PendingActionStatus
+                        {...pendingActionPresentation(foregroundPendingAction)}
+                        className="focused-pending-action__status"
+                      />
+                    </div>
+                  )}
                   {!isAnyCombatActive && !visiblePvp && (
                     <NavigationControls
                       exits={exits}
@@ -4062,6 +4106,8 @@ export function WorldClient({
                       realtimeClient={client}
                       actionPending={Boolean(pending)}
                       worldInstanceId={worldInstanceId}
+                      characterId={snapshot.character?.characterId}
+                      characterName={snapshot.character?.name || "You"}
                       roomId={snapshot.location.locationId}
                       fullscreen={chatFullscreen}
                       onFullscreenChange={handleChatFullscreenChange}
@@ -4096,6 +4142,8 @@ export function WorldClient({
                     realtimeClient={client}
                     actionPending={Boolean(pending)}
                     worldInstanceId={worldInstanceId}
+                    characterId={snapshot.character?.characterId}
+                    characterName={snapshot.character?.name || "You"}
                     roomId={snapshot.location.locationId}
                     fullscreen={chatFullscreen}
                     onFullscreenChange={handleChatFullscreenChange}

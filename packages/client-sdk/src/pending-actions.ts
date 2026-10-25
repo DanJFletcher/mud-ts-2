@@ -107,7 +107,10 @@ export class PendingActionCoordinator {
       if (!sameScope(existing.scope, input.scope)) {
         throw new Error("A pending action ID cannot be reused in another scope.");
       }
-      if (existing.state === "uncertain") {
+      if (JSON.stringify(existing.details) !== JSON.stringify(input.details)) {
+        throw new Error("A pending action ID cannot be reused for different action details.");
+      }
+      if (existing.state === "uncertain" || existing.state === "acknowledged") {
         return this.transition(input.id, "sending") ?? existing;
       }
       return existing;

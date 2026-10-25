@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { PendingActionCoordinator } from '@mudd/client-sdk';
 import { RoomChatPanel, type RoomChatMessage } from './RoomChatPanel.js';
 
 const worldInstanceId = 'orraveth-test-instance';
@@ -124,7 +125,7 @@ describe('RoomChatPanel message polling', () => {
     });
     fireEvent.change(screen.getByRole('textbox', { name: 'Message the room' }), { target: { value: 'Hello' } });
     fireEvent.submit(screen.getByRole('textbox', { name: 'Message the room' }).closest('form')!);
-    expect(await screen.findByText('Hello')).toBeVisible();
+    await waitFor(() => expect(screen.getByText('Hello')).toBeVisible());
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
     expect(intervals[0]).toBeDefined();
@@ -199,7 +200,7 @@ describe('RoomChatPanel message polling', () => {
     fireEvent.change(textbox, { target: { value: 'Hello Bellwold' } });
     fireEvent.submit(textbox.closest('form')!);
 
-    expect(await screen.findByText('Hello Bellwold')).toBeVisible();
+    await waitFor(() => expect(screen.getByText('Hello Bellwold')).toBeVisible());
     const post = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST');
     expect(post).toBeDefined();
     expect(new Headers(post?.[1]?.headers).get('x-mudd-world-instance')).toBe(worldInstanceId);
@@ -214,9 +215,94 @@ describe('RoomChatPanel message polling', () => {
     fireEvent.submit(textbox.closest('form')!);
     expect(await screen.findByText('Temporary failure.')).toBeVisible();
 
-    fireEvent.submit(textbox.closest('form')!);
-    expect(await screen.findByText('Hello again')).toBeVisible();
+    fireEvent.change(textbox, { target: { value: 'Keep this draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.getByText('Hello again')).toBeVisible());
     expect(postedSubmissionIds).toHaveLength(2);
     expect(postedSubmissionIds[1]).toBe(postedSubmissionIds[0]);
+    expect(textbox).toHaveValue('Keep this draft');
+  });
+
+  it('shows a pending message before the post acknowledgement and reconciles it without a duplicate', async () => {
+    const coordinator = new PendingActionCoordinator();
+    let resolvePost!: (response: Response) => void;
+    const originalFetch = fetchMock.getMockImplementation() as typeof fetch;
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        return new Promise<Response>((resolve) => { resolvePost = resolve; });
+      }
+      return Promise.resolve(originalFetch(input, init));
+    });
+    render(
+      <RoomChatPanel
+        pendingActionCoordinator={coordinator}
+        worldInstanceId={worldInstanceId}
+        characterId="fern"
+        characterName="Fern"
+        roomId="test-room"
+        fullscreen={false}
+        onFullscreenChange={vi.fn()}
+      />,
+    );
+    const textbox = await screen.findByRole('textbox', { name: 'Message the room' });
+    fireEvent.change(textbox, { target: { value: 'The bridge is clear.' } });
+    fireEvent.submit(textbox.closest('form')!);
+
+    expect(await screen.findByText('The bridge is clear.')).toBeVisible();
+    expect(screen.getByText('Sending…')).toBeVisible();
+    expect(coordinator.getSnapshot()[0]?.state).toBe('sending');
+
+    await act(async () => {
+      resolvePost(new Response(JSON.stringify({
+        message: {
+          id: 20,
+          roomId: 'test-room',
+          speakerType: 'player',
+          speakerName: 'Fern',
+          text: 'The bridge is clear.',
+          createdAt: '2026-10-18T12:00:03.000Z',
+        },
+      }), { status: 201, headers: { 'content-type': 'application/json' } }));
+    });
+    await waitFor(() => expect(coordinator.getSnapshot()[0]?.state).toBe('confirmed'));
+    expect(screen.getAllByText('The bridge is clear.')).toHaveLength(1);
+    coordinator.clearWhere(() => true);
+  });
+
+  it('reconciles an uncertain post from its author-only history submission ID', async () => {
+    failedPostRequests = 1;
+    const coordinator = new PendingActionCoordinator();
+    render(
+      <RoomChatPanel
+        pendingActionCoordinator={coordinator}
+        worldInstanceId={worldInstanceId}
+        characterId="fern"
+        roomId="test-room"
+        fullscreen={false}
+        onFullscreenChange={vi.fn()}
+      />,
+    );
+    const textbox = await screen.findByRole('textbox', { name: 'Message the room' });
+    fireEvent.change(textbox, { target: { value: 'Checking the river.' } });
+    fireEvent.submit(textbox.closest('form')!);
+    expect(await screen.findByText('Temporary failure.')).toBeVisible();
+
+    const submissionId = postedSubmissionIds[0]!;
+    expect(coordinator.getSnapshot()[0]?.state).toBe('uncertain');
+    storedMessages.push({
+      id: 21,
+      roomId: 'test-room',
+      speakerType: 'player',
+      speakerName: 'Fern',
+      text: 'Checking the river.',
+      createdAt: '2026-10-18T12:00:04.000Z',
+      submissionId,
+    });
+    await act(async () => { intervals[0]?.(); });
+
+    await waitFor(() => expect(coordinator.getSnapshot()[0]?.state).toBe('confirmed'));
+    expect(screen.getAllByText('Checking the river.')).toHaveLength(1);
+    expect(screen.queryByText('Delivery is unconfirmed. Retry to check safely.')).not.toBeInTheDocument();
+    coordinator.clearWhere(() => true);
   });
 });

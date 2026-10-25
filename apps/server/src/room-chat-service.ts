@@ -338,7 +338,7 @@ export async function listRoomChatMessages(input: Readonly<{
         messages: rows
           .filter((row) => !row.sourceEffectId?.startsWith(NPC_MOVEMENT_MESSAGE_SOURCE_PREFIX))
           .map((row) => toRoomChatMessage(row, input.characterId)),
-        terminalEvents: movementRows.map(toRoomChatMessage),
+        terminalEvents: movementRows.map((row) => toRoomChatMessage(row)),
         cursor: rows.at(-1)?.id ?? input.afterId,
       };
     }

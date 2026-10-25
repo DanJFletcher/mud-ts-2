@@ -543,36 +543,42 @@ describe('MuddHttpClient', () => {
       name: 'Mara',
       activityDescription: 'watching the northern trail',
       canChallenge: false,
+      combatDisposition: 'passive',
       canShop: false,
     }, {
       id: 'mossgate-training-sentinel',
       name: 'Practice Sentinel',
       activityDescription: 'lifting its padded arms in a steady rhythm',
       canChallenge: true,
+      combatDisposition: 'passive',
       canShop: false,
     }, {
       id: 'mossgate-practice-mauler',
       name: 'Practice Mauler',
       activityDescription: 'pivoting slowly through a broad sparring swing',
       canChallenge: true,
+      combatDisposition: 'passive',
       canShop: false,
     }, {
       id: 'mossgate-practice-guardian',
       name: 'Practice Guardian',
       activityDescription: 'holding a round shield over its center',
       canChallenge: true,
+      combatDisposition: 'passive',
       canShop: false,
     }, {
       id: 'mossgate-wandering-villager',
       name: 'Wandering Villager',
       activityDescription: 'walking by with hands clasped behind their back',
       canChallenge: false,
+      combatDisposition: 'passive',
       canShop: false,
     }, {
       id: 'mossgate-patrolling-guard',
       name: 'Patrolling Guard',
       activityDescription: 'patrolling with eyes on the surroundings',
       canChallenge: false,
+      combatDisposition: 'passive',
       canShop: false,
     }]);
     const explicitlyLookedRoom = await client.look(
