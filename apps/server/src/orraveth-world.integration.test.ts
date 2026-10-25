@@ -1000,7 +1000,11 @@ describe('Orraveth Bellwold settlement', () => {
     for (const npcId of bellwoldResidentIds) {
       const npc = residents.get(npcId);
       expect(npc, `${npcId} should exist in Orraveth`).toBeDefined();
-      expect(npc!.dialogue?.choices.map(({ label }) => label)).toEqual(
+      const choices = npc!.dialogue?.choices ?? [];
+      const minimumChoiceCount = npcId === 'anwen-marr' ? 8 : npcId === 'orin-vale' ? 6 : 5;
+      expect(choices.length).toBeGreaterThanOrEqual(minimumChoiceCount);
+      expect(new Set(choices.map(({ label }) => label)).size).toBe(choices.length);
+      expect(choices.map(({ label }) => label)).toEqual(
         expect.arrayContaining(['Who are you?', 'What are you doing?', 'What is Bellwold like?']),
       );
     }

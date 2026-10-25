@@ -52,6 +52,7 @@ function bellwoldSmallTalkChoices(
   identity: string,
   activity: string,
   town: string,
+  additionalQuestions: Array<{ id: string; label: string; response: string }> = [],
 ) {
   return [
     {
@@ -72,6 +73,12 @@ function bellwoldSmallTalkChoices(
       response: town,
       progressFlagId: `${npcId}-asked-about-town`,
     },
+    ...additionalQuestions.map(({ id, label, response }) => ({
+      id: `${npcId}-${id}`,
+      label,
+      response,
+      progressFlagId: `${npcId}-asked-${id}`,
+    })),
   ];
 }
 
@@ -189,6 +196,18 @@ const draft = {
               '“I’m Linnet Reed. I run errands around town and usually find someone to talk to along the way.”',
               '“I’m carrying a few things between the square and the well. I have not decided which I’ll reach first.”',
               '“Bellwold is small enough that an errand can turn into a conversation, then another errand. I like that about it.”',
+              [
+                {
+                  id: 'market-rhythm',
+                  label: 'When is the square busiest?',
+                  response: '“Early, when the stalls are opening. By noon most folk have gone to their own work, and the square belongs to whoever still has an errand.”',
+                },
+                {
+                  id: 'people-to-ask',
+                  label: 'Who should I ask about the village?',
+                  response: '“Seli knows cloth, Aven knows the grain tally, and Enna keeps the public notes. Ask each what they can show you; none of us sees the whole town.”',
+                },
+              ],
             ),
           },
           movement: {
@@ -234,6 +253,18 @@ const draft = {
               '“Taren Voss. I watch the village roads and crossings.”',
               '“I’m making my circuit through the square and the public lanes. I look for trouble before it reaches someone’s door.”',
               '“Bellwold is a working village near a frontier. Most days are quiet, but quiet roads still need watching.”',
+              [
+                {
+                  id: 'patrol-route',
+                  label: 'Where does your patrol go?',
+                  response: '“From the tower road through the square, down to the Common House and Well Court, then back along the public lanes. I check crossings as I go.”',
+                },
+                {
+                  id: 'beyond-the-frontier',
+                  label: 'What do you hear about places beyond Bellwold?',
+                  response: '“Reports speak of merchant city-states, mountain assemblies, river councils, and communities with no central ruler. I guard this circuit; I can’t vouch for every report.”',
+                },
+              ],
             ),
           },
           movement: {
@@ -273,6 +304,18 @@ const draft = {
                 '“Orin Vale. I have spent more of my life beside the river than I planned to.”',
                 '“I walk between the square and the south bridge, watching the current and checking the line when I can.”',
                 '“Bellwold suits me. The river is close, and there is usually someone in the square who will share a word.”',
+                [
+                  {
+                    id: 'bridge-fish',
+                    label: 'What fish live under the bridge?',
+                    response: '“Smallmouth bass, carp, and trout. The river gives no promise that any one of them will take your line.”',
+                  },
+                  {
+                    id: 'fishing-advice',
+                    label: 'Any advice for fishing here?',
+                    response: '“Watch where the current slows beside the stones. Then be patient. If you rush the line, you’ll only hear the water laugh at you.”',
+                  },
+                ],
               ),
               {
                 id: 'accept-old-rod',
@@ -359,6 +402,18 @@ const draft = {
               '“Tomas. I keep the rooms and common table at the Kindly Roof.”',
               '“I’m tending the inn and listening for travelers’ news. I try to keep what I hear separate from what I know.”',
               '“Bellwold is a place where the roads bring fresh faces through, but most of the work is still done by the people who live here.”',
+              [
+                {
+                  id: 'traveler-reports',
+                  label: 'What do travelers say about the wider world?',
+                  response: '“Different things, depending on which road they came by. I can repeat their accounts, but I haven’t walked those places myself.”',
+                },
+                {
+                  id: 'professor-venn',
+                  label: 'What happened to Professor Venn?',
+                  response: '“She was studying the old bell, then disappeared near Bellwold. I’ve heard no reliable account of what happened after. I won’t dress a gap in the story as an answer.”',
+                },
+              ],
             ),
           },
         },
@@ -465,6 +520,13 @@ const draft = {
                 '“Anwen Marr. I run this shop and keep notes on measurements that do not quite add up.”',
                 '“I’m checking a scale against its weights and recording the readings before I draw any conclusions.”',
                 '“Bellwold gets by on practical exchange. That makes honest measures and clear records important, even when they raise more questions.”',
+                [
+                  {
+                    id: 'scale-readings',
+                    label: 'What do the scale readings tell you?',
+                    response: '“They repeat often enough to deserve attention. That tells me the pattern is real; it does not tell me what causes it.”',
+                  },
+                ],
               ),
               {
                 id: 'ask-anwen-about-mill',
@@ -560,6 +622,18 @@ const draft = {
               '“Ilya Fen. I tend this workroom and help with the ordinary aches and cuts people bring through the door.”',
               '“I’m sorting plants and preparing clean cloth. I keep track of what I have actually tried.”',
               '“Bellwold is neighborly in a practical way. People bring one another news, herbs, and a hand when work piles up.”',
+              [
+                {
+                  id: 'herb-knowledge',
+                  label: 'How do you know which herbs help?',
+                  response: '“I keep notes on what I have used and what changed. A plant’s reputation is not proof, so I won’t promise more than I have seen.”',
+                },
+                {
+                  id: 'new-healing',
+                  label: 'What are healers trying elsewhere?',
+                  response: '“I hear researchers are testing plant, mineral, and cooperative approaches that use less Essence. Some results sound promising, but they are costly and still uncertain.”',
+                },
+              ],
             ),
           },
         },
@@ -596,6 +670,18 @@ const draft = {
               '“Darric Holt. I mend tools, hinges, blades, and whatever else survives the forge.”',
               '“I’m repairing a farm fitting. It is easier to find the fault while the metal is still warm.”',
               '“Bellwold holds together because people repair what they have. New work matters, but so does keeping a gate on its hinges.”',
+              [
+                {
+                  id: 'silent-bell',
+                  label: 'What do you know about the silent bell?',
+                  response: '“I know how metal wears. I don’t know why that bell fell silent while Professor Venn was measuring it.”',
+                },
+                {
+                  id: 'sevenfold-workshop',
+                  label: 'What is the Sevenfold Workshop?',
+                  response: '“Some tell creation as a workshop shaped by seven artisans. It is a story about craft, not an answer to every question about the world.”',
+                },
+              ],
             ),
           },
         },
@@ -654,6 +740,18 @@ const draft = {
               '“Rell Soven. My family has made and mended wheels here for as long as I can remember.”',
               '“I’m checking a cart wheel for a wobble before I fit it back to the axle.”',
               '“Bellwold’s lanes are rough on carts. That keeps my yard busy, and it means the village can keep moving its goods.”',
+              [
+                {
+                  id: 'mill-wheel',
+                  label: 'Have you worked on the old mill wheel?',
+                  response: '“No. I can tell you what a wheel should sound like, but I haven’t inspected that one. I won’t pretend a familiar shape explains why it might move.”',
+                },
+                {
+                  id: 'trade-routes',
+                  label: 'How do goods travel beyond Bellwold?',
+                  response: '“By whatever route can carry them. I hear river communities negotiate access together, while guilds shape a lot of trade in Merefall.”',
+                },
+              ],
             ),
           },
         },
@@ -691,6 +789,18 @@ const draft = {
               '“Seli Tor. I weave cloth and mend the things people need to carry or wear.”',
               '“I’m working a length of cloth at the loom. If I stop halfway through, I lose the line.”',
               '“Bellwold’s lanes are close, so people notice one another’s work. Most neighbors are willing to lend a hand when it is needed.”',
+              [
+                {
+                  id: 'wattle-row',
+                  label: 'What is Wattle Row like?',
+                  response: '“Close-set doors and everyone keeping their own hours. You can usually tell who is awake by the sound of their work.”',
+                },
+                {
+                  id: 'traveling-patterns',
+                  label: 'What do travelers teach you about cloth?',
+                  response: '“They bring different ways to wrap, mend, and mark their belongings. I ask what a pattern means before I decide it belongs to a family or a faith.”',
+                },
+              ],
             ),
           },
         },
@@ -733,6 +843,18 @@ const draft = {
               '“Aven Rusk. I keep the grain store’s tally and check what comes in and goes out.”',
               '“I’m comparing the chalk marks on these bins with the ledger before I update the count.”',
               '“Bellwold shares stores when it has to. Clear records help us know what is here without pretending to predict what comes next.”',
+              [
+                {
+                  id: 'grain-tally',
+                  label: 'How do you keep the grain tally?',
+                  response: '“The chalk marks sort bins by season, not by owner. I record what comes in and what leaves; the tally cannot tell me what next season will bring.”',
+                },
+                {
+                  id: 'regional-records',
+                  label: 'Do other places keep different records?',
+                  response: '“That is what I hear. Guilds weigh heavily on accounts in Merefall; along the Rillward rivers, communities record agreements about access.”',
+                },
+              ],
             ),
           },
         },
@@ -770,6 +892,18 @@ const draft = {
               '“Enna Pell. I keep the Common House records and copy notices people bring in.”',
               '“I’m writing down the wording of a public notice so the next meeting can check it.”',
               '“Bellwold is held together by small agreements. I try to record what people actually decided, not what I think they meant.”',
+              [
+                {
+                  id: 'common-house-meetings',
+                  label: 'What gets discussed at the Common House?',
+                  response: '“Repairs, water use, and market-day concerns. The notes record what was agreed, not what everyone hoped would be agreed.”',
+                },
+                {
+                  id: 'bell-account',
+                  label: 'What do the records say about the old bell?',
+                  response: '“One account says it rang without stopping while seventeen villagers disappeared. It gives no cause, and I won’t write one into the minutes.”',
+                },
+              ],
             ),
           },
         },
@@ -837,6 +971,18 @@ const draft = {
               '“Sella Nettlemere. I keep this house and bake when there is flour to spare.”',
               '“I’m kneading a little dough and keeping an ear on the kettle. It tends to complain before it boils over.”',
               '“Bellwold is a place where a warm loaf can bring half the lane to the door. People share what they can.”',
+              [
+                {
+                  id: 'shared-meals',
+                  label: 'What do people eat around here?',
+                  response: '“Flour comes through the market, and folks add what their gardens have. More often than not, someone brings a dish because a neighbor needs help.”',
+                },
+                {
+                  id: 'lane-neighbors',
+                  label: 'Do you know the people on this lane?',
+                  response: '“Well enough to know whose door to knock on when a roof leaks or a pot goes missing. We manage to return most things.”',
+                },
+              ],
             ),
           },
         },
@@ -869,6 +1015,18 @@ const draft = {
               '“Tovin Ashdown. I weave cloth here and patch it when it wears through.”',
               '“I’m working the shuttle across the loom. I need to finish this row before I can check the loose thread.”',
               '“Bellwold’s houses grew around the jobs people had to do. The lanes are practical, even if they can be hard to navigate at first.”',
+              [
+                {
+                  id: 'cloth-use',
+                  label: 'What do you make with the cloth?',
+                  response: '“Mostly repairs: clothes, sacks, and covers for goods on the road. A sturdy patch can save someone a long walk back to town.”',
+                },
+                {
+                  id: 'town-lanes',
+                  label: 'Why are the lanes laid out this way?',
+                  response: '“People put doors close to their work. The paths followed those needs, not some grand plan, so a few turns lead nowhere special.”',
+                },
+              ],
             ),
           },
         },
@@ -912,6 +1070,18 @@ const draft = {
               '“Renna Kell. I mend boards, shutters, and the small things that keep a house dry.”',
               '“I’m trimming a warped plank so it will sit straight against the frame.”',
               '“Bellwold’s lower lanes are full of people fixing one another’s roofs and doors. A good board is worth more than a grand promise.”',
+              [
+                {
+                  id: 'common-repairs',
+                  label: 'What do people ask you to repair?',
+                  response: '“Loose steps and split shutters, mostly. Best to mend them before the next rain makes a small fault expensive.”',
+                },
+                {
+                  id: 'lower-row',
+                  label: 'What is Lower Row like?',
+                  response: '“Quiet until someone starts fixing something. Then the whole lane has an opinion, and someone usually brings a second pair of hands.”',
+                },
+              ],
             ),
           },
         },
@@ -956,6 +1126,18 @@ const draft = {
               '“Pella Wren. I grow herbs in pots and trade what I can spare.”',
               '“I’m sorting thyme for drying. It keeps its scent better if I handle it gently.”',
               '“Bellwold has room for little gardens between the houses. People trade cuttings and stories over the fence.”',
+              [
+                {
+                  id: 'garden-herbs',
+                  label: 'What grows in your pots?',
+                  response: '“Thyme, mostly, and a few other useful plants. I’ll tell you what I’ve tried myself; the rest I leave to better notes.”',
+                },
+                {
+                  id: 'neighborly-life',
+                  label: 'What is daily life like in Bellwold?',
+                  response: '“Someone borrows a tool, forgets to return it, then helps mend the fence anyway. It’s not grand, but it works.”',
+                },
+              ],
             ),
           },
         },
@@ -991,6 +1173,18 @@ const draft = {
               '“Sergeant Nera Vail. I oversee this jail and keep its records.”',
               '“I’m checking the keys and making sure the holding cell is in order.”',
               '“Bellwold needs a watch, but a claim is not proof. I keep the record clear and let the facts speak for themselves.”',
+              [
+                {
+                  id: 'holding-cell',
+                  label: 'What is the holding cell for?',
+                  response: '“To keep someone safe while a matter is heard. It is not a sentence, and I don’t decide a dispute without a record.”',
+                },
+                {
+                  id: 'street-watch',
+                  label: 'Who watches the streets?',
+                  response: '“Taren covers the public routes. I keep this room and its keys. The jobs overlap when someone needs help, but they aren’t the same.”',
+                },
+              ],
             ),
           },
         },
@@ -1044,6 +1238,18 @@ const draft = {
               '“Mira Dell. I care for the library and help readers find the records they need.”',
               '“I’m sorting pamphlets and putting the copied records back where readers can find them.”',
               '“Bellwold’s past is scattered across notes, tallies, and people’s memories. This library keeps the pieces available without pretending they make one complete story.”',
+              [
+                {
+                  id: 'library-shelves',
+                  label: 'Where should I look for a record?',
+                  response: '“Notices and minutes are on the left, field and mill accounts in the center, and travel records and maps on the right. Ask before taking a bound volume.”',
+                },
+                {
+                  id: 'museum-collection',
+                  label: 'What is kept in the museum?',
+                  response: '“Objects residents lent or found nearby. The labels tell you what is known about each one, and leave the uncertain parts open.”',
+                },
+              ],
             ),
           },
         },
