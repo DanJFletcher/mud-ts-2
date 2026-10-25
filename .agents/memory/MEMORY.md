@@ -19,3 +19,4 @@
 - [Daily town quests](daily-town-quests.md) — Resident bulletin-board jobs refresh daily, award gold and experience, and remain independently available to each character.
 - [Gameplay replay policy](gameplay-replay-policy.md) — Cache only adapter-owned immutable histories; retain replay deduplication state and distinguish local benchmarks from production latency.
 - [Timed gameplay actions](timed-gameplay-actions.md) — Persist timed action progress and server-side random outcomes; clients schedule updates but never own gameplay rolls.
+- [Database tracing contexts](database-tracing-context.md) — Consume lazy database thenables inside their async measurement context so operation-level timings stay attributable.
