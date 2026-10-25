@@ -26,6 +26,7 @@ import {
   RestoreCharacterCommandSchema,
   RenameCharacterCommandSchema,
   LocationProjectionSchema,
+  MovementResultProjectionSchema,
   InteractionInboxSchema,
   PvpEncounterProjectionSchema,
   PartyInfoProjectionSchema,
@@ -479,6 +480,92 @@ async function locationWithRoomPresence(
   return LocationProjectionSchema.parse({ ...projection, occupants });
 }
 
+type GameProjectionResult =
+  | { ok: true; value: ReturnType<typeof MovementResultProjectionSchema.parse> }
+  | { ok: false; status: number; code: string; message: string };
+
+async function buildGameProjection(
+  identity: AccountIdentity,
+  runtime: WorldRuntime,
+  session: typeof worldSessions.$inferSelect,
+  requestId: string,
+): Promise<GameProjectionResult> {
+  const events = await store.readStream(session.worldInstanceId, session.characterId);
+  const replayedCharacter = replayCharacter(events);
+  if (!replayedCharacter || replayedCharacter.archived) {
+    return { ok: false, status: 409, code: 'CHARACTER_UNAVAILABLE', message: 'That character is no longer available.' };
+  }
+  const character = await ensureCharacterWallet(identity, session, replayedCharacter);
+  const query = LocationDescribeQuerySchema.parse({
+    type: 'location.describe',
+    version: 1,
+    queryId: globalThis.crypto.randomUUID(),
+    worldInstanceId: session.worldInstanceId,
+    characterId: session.characterId,
+    payload: {},
+  });
+  const statsQuery = CharacterStatsQuerySchema.parse({
+    type: 'character.stats',
+    version: 1,
+    queryId: globalThis.crypto.randomUUID(),
+    worldInstanceId: session.worldInstanceId,
+    characterId: session.characterId,
+    payload: {},
+  });
+  const [result, statsResult, locationGroupCatalog] = await Promise.all([
+    measureStage('locationProjection', () => runtime.engine.query(query, worldContext(identity, session), {
+      characterProjection: character,
+      correlationId: requestId,
+      measureStage,
+    })),
+    measureStage('statsProjection', () => runtime.engine.query(statsQuery, worldContext(identity, session), {
+      characterProjection: character,
+      correlationId: requestId,
+    })),
+    measureStage('locationGroupCatalog', () => runtime.locationGroupsFeature.catalog.read()),
+  ]);
+  if (!result.ok) {
+    const status = result.code === 'INTERNAL_ERROR' ? 500 : result.code === 'NOT_FOUND' ? 404 : 403;
+    return { ok: false, status, code: result.code, message: result.message };
+  }
+  if (!statsResult.ok) {
+    const status = statsResult.code === 'INTERNAL_ERROR' ? 500 : statsResult.code === 'NOT_FOUND' ? 404 : 403;
+    return { ok: false, status, code: statsResult.code, message: statsResult.message };
+  }
+
+  const location = await locationWithRoomPresence(
+    result.value,
+    session.worldInstanceId,
+    session.characterId,
+    locationGroupCatalog.groups,
+  );
+  const currentWorldLocation = runtime.world.locations.find((entry) => entry.id === character.locationId);
+  const currentStateId = character.locationStateId ?? currentWorldLocation?.defaultStateId;
+  return {
+    ok: true,
+    value: MovementResultProjectionSchema.parse({
+      character,
+      stats: statsResult.value,
+      location,
+      map: projectWorldMap(character, runtime.world, locationGroupCatalog.groups),
+      questJournal: projectQuestJournal(character, runtime.world),
+      availableFishingSpots: runtime.world.fishingSpots
+        .filter((spot) => spot.locationId === character.locationId &&
+          (!spot.stateId || spot.stateId === currentStateId))
+        .map(({ id, label }) => ({ id, label })),
+      availableWoodcuttingTrees: runtime.world.woodcuttingTrees
+        .filter((tree) => tree.locationId === character.locationId)
+        .map(({ id, label }) => ({ id, label })),
+      dailyActivities: {
+        cycle: new Date().toISOString().slice(0, 10),
+        boards: runtime.world.dailyBoards.filter((board) => board.locationId === character.locationId)
+          .map(({ id, name }) => ({ id, name })),
+        sources: runtime.world.supplySources.filter((source) => source.locationId === character.locationId),
+      },
+    }),
+  };
+}
+
 app.get('/api/worlds', (_req, res) => {
   return res.json(registeredWorlds.map(toWorldSummary));
 });
@@ -650,66 +737,15 @@ app.get('/api/game', async (req, res, next) => {
     const selected = selectedRuntime(res);
     const current = await activeSession(identity, selected.worldInstanceId);
     if (!current) return res.status(409).json({ message: 'Choose a character before entering the world.' });
-    const events = await store.readStream(current.worldInstanceId, current.characterId);
-    const replayedCharacter = replayCharacter(events);
-    if (!replayedCharacter || replayedCharacter.archived) {
-      return res.status(409).json({ message: 'That character is no longer available.' });
-    }
-    const character = await ensureCharacterWallet(identity, current, replayedCharacter);
-    const query = LocationDescribeQuerySchema.parse({
-      type: 'location.describe',
-      version: 1,
-      queryId: globalThis.crypto.randomUUID(),
-      worldInstanceId: current.worldInstanceId,
-      characterId: current.characterId,
-      payload: {},
-    });
-    const statsQuery = CharacterStatsQuerySchema.parse({
-      type: 'character.stats',
-      version: 1,
-      queryId: globalThis.crypto.randomUUID(),
-      worldInstanceId: current.worldInstanceId,
-      characterId: current.characterId,
-      payload: {},
-    });
-    const [result, statsResult, locationGroupCatalog] = await Promise.all([
-      measureStage('locationProjection', () => selected.engine.query(query, worldContext(identity, current), {
-        characterProjection: character,
-        correlationId: res.locals.requestId,
-      measureStage,
-      })),
-      measureStage('statsProjection', () => selected.engine.query(statsQuery, worldContext(identity, current), {
-        characterProjection: character,
-        correlationId: res.locals.requestId,
-      })),
-      selected.locationGroupsFeature.catalog.read(),
-    ]);
-    if (!result.ok) {
-      const status = result.code === 'INTERNAL_ERROR' ? 500 : result.code === 'NOT_FOUND' ? 404 : 403;
-      return res.status(status).json({
-        message: result.message,
-        ...(result.code === 'INTERNAL_ERROR' ? { requestId: result.correlationId ?? res.locals.requestId } : {}),
+    const projection = await buildGameProjection(identity, selected, current, res.locals.requestId);
+    if (!projection.ok) {
+      return res.status(projection.status).json({
+        message: projection.message,
+        ...(projection.status === 500 ? { requestId: res.locals.requestId } : {}),
       });
     }
-    if (!statsResult.ok) {
-      const status = statsResult.code === 'INTERNAL_ERROR' ? 500 : statsResult.code === 'NOT_FOUND' ? 404 : 403;
-      return res.status(status).json({
-        message: statsResult.message,
-        ...(statsResult.code === 'INTERNAL_ERROR' ? { requestId: statsResult.correlationId ?? res.locals.requestId } : {}),
-      });
-    }
-    const location = await locationWithRoomPresence(
-      result.value,
-      current.worldInstanceId,
-      current.characterId,
-      locationGroupCatalog.groups,
-    );
-    const currentWorldLocation = selected.world.locations.find((entry) => entry.id === character.locationId);
-    const currentStateId = character.locationStateId ?? currentWorldLocation?.defaultStateId;
     return res.json({
       player: { id: identity.playerId, displayName: identity.displayName },
-      character,
-      stats: statsResult.value,
       ...(selected.world.currency
         ? {
           currency: {
@@ -719,22 +755,7 @@ app.get('/api/game', async (req, res, next) => {
           },
         }
         : {}),
-      location,
-      availableFishingSpots: selected.world.fishingSpots
-        .filter((spot) => spot.locationId === character.locationId &&
-          (!spot.stateId || spot.stateId === currentStateId))
-        .map(({ id, label }) => ({ id, label })),
-      availableWoodcuttingTrees: selected.world.woodcuttingTrees
-        .filter((tree) => tree.locationId === character.locationId)
-        .map(({ id, label }) => ({ id, label })),
-      map: projectWorldMap(character, selected.world, locationGroupCatalog.groups),
-      questJournal: projectQuestJournal(character, selected.world),
-      dailyActivities: {
-        cycle: new Date().toISOString().slice(0, 10),
-        boards: selected.world.dailyBoards.filter((board) => board.locationId === character.locationId)
-          .map(({ id, name }) => ({ id, name })),
-        sources: selected.world.supplySources.filter((source) => source.locationId === character.locationId),
-      },
+      ...projection.value,
     });
   } catch (error) {
     next(error);
@@ -864,6 +885,7 @@ app.post('/api/commands', createRateLimiter({ windowMs: 60_000, maxRequests: 120
     }
 
     let context = { ...identity.session, worldInstanceId: selected.worldInstanceId };
+    let commandSession: typeof worldSessions.$inferSelect | undefined;
     if (command?.type === 'character.archive' && typeof command.characterId === 'string') {
       const current = await activeSession(identity, selected.worldInstanceId);
       if (current?.characterId === command.characterId) {
@@ -885,6 +907,7 @@ app.post('/api/commands', createRateLimiter({ windowMs: 60_000, maxRequests: 120
     if (!characterCommand) {
       const current = await activeSession(identity, selected.worldInstanceId);
       if (!current) return res.status(409).json({ message: 'Enter the world with a character before taking world actions.' });
+      commandSession = current;
       if (typeof command?.characterId === 'string' && command.characterId !== current.characterId) {
         return res.status(403).json({ message: 'This world session is bound to a different character.' });
       }
@@ -997,7 +1020,38 @@ app.post('/api/commands', createRateLimiter({ windowMs: 60_000, maxRequests: 120
         requestId: res.locals.requestId,
       });
     }
-    return res.json(result);
+    let movementProjection;
+    if (
+      result.receipt.ok &&
+      (command.type === 'character.move' || command.type === 'character.road.step') &&
+      commandSession
+    ) {
+      try {
+        const projection = await measureStage('movementProjection', () =>
+          buildGameProjection(identity, selected, commandSession!, res.locals.requestId));
+        if (projection.ok) {
+          movementProjection = projection.value;
+        } else {
+          console.warn(JSON.stringify({
+            event: 'movement_projection_unavailable',
+            requestId: res.locals.requestId,
+            commandId: result.receipt.commandId,
+            code: projection.code,
+          }));
+        }
+      } catch (error) {
+        console.warn(JSON.stringify({
+          event: 'movement_projection_unavailable',
+          requestId: res.locals.requestId,
+          commandId: result.receipt.commandId,
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+        }));
+      }
+    }
+    return res.json({
+      ...result,
+      ...(movementProjection ? { movementProjection } : {}),
+    });
   } catch (error) {
     next(error);
   }

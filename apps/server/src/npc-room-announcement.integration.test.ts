@@ -125,41 +125,8 @@ vi.mock('@clerk/shared/keys', () => ({
   publishableKeyFromHost: () => 'test-publishable-key',
 }));
 
-vi.mock('@mudd/contracts', async () => {
-  const { z } = await import('zod');
-  const unusedSchema = { safeParse: () => ({ success: false }), parse: () => ({}) };
-  return {
-    ArchiveCharacterCommandSchema: unusedSchema,
-    CreateCharacterCommandSchema: unusedSchema,
-    IdSchema: z.string(),
-    InteractionInboxSchema: unusedSchema,
-    PvpEncounterProjectionSchema: { safeParse: () => ({ success: false }) },
-    PartyInfoProjectionSchema: { safeParse: (value: unknown) => ({ success: true, data: value }) },
-    TeamCombatInfoProjectionSchema: { safeParse: (value: unknown) => ({ success: true, data: value }) },
-    InitializeCharacterWalletCommandSchema: { parse: (value: unknown) => value },
-    LocationDescribeQuerySchema: unusedSchema,
-    LocationGroupsListQuerySchema: unusedSchema,
-    LocationProjectionSchema: { parse: (value: unknown) => value },
-    WorldMapProjectionSchema: { parse: (value: unknown) => value },
-    locationGroupMembershipsForLocation: () => [],
-    resolveLocationDisplayName: (shortName: string) => ({
-      shortName,
-      qualifiedName: shortName,
-    }),
-    MerchantCatalogQuerySchema: unusedSchema,
-    NpcTalkQuerySchema: unusedSchema,
-    WorldNpcMovedEventSchema: { shape: { payload: unusedSchema } },
-    ObjectReadQuerySchema: unusedSchema,
-    ObjectInspectQuerySchema: unusedSchema,
-    RestoreCharacterCommandSchema: unusedSchema,
-    RenameCharacterCommandSchema: unusedSchema,
-    WorldPackDraftSchema: { parse: (value: unknown) => value },
-    CharacterClassCatalogSchema: { parse: (value: unknown) => value },
-    validateDraftWorldGraph: () => [],
-  };
-});
-
-vi.mock('@mudd/core-plugins', () => ({
+vi.mock('@mudd/core-plugins', async () => ({
+  ...await vi.importActual<typeof import('@mudd/core-plugins')>('@mudd/core-plugins'),
   createLocationGroupsPlugin: () => ({
     plugin: {},
     catalog: {
@@ -1006,6 +973,18 @@ describe('NPC room announcements through the server', () => {
 
     const arrival = await move('mover', 'character-mover', 'to-arrival-room');
     expect(arrival.status).toBe(200);
+    const movementResult = await arrival.json() as {
+      movementProjection?: {
+        character?: { locationId?: string };
+        location?: { locationId?: string };
+        map?: { currentLocationId?: string };
+      };
+    };
+    expect(movementResult.movementProjection).toMatchObject({
+      character: { locationId: 'arrival-room' },
+      location: { locationId: 'arrival-room' },
+      map: { currentLocationId: 'arrival-room' },
+    });
     const arrivalChat = await readRoom('mover', 'arrival-room');
     expect(arrivalChat.body.messages).toEqual([expect.objectContaining({
       speakerType: 'npc',

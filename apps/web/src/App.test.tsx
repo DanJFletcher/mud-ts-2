@@ -1207,6 +1207,44 @@ describe('single-character world session client', () => {
     expect(screen.queryByText('Traveling north…')).not.toBeInTheDocument();
   });
 
+  it('uses the movement response projection without fetching a second game snapshot', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation(async (path, init) => {
+      const response = await original(path, init);
+      if (path !== '/api/commands' || init?.method !== 'POST') return response;
+      const command = JSON.parse(String(init.body)) as { type?: string };
+      if (command.type !== 'character.move' && command.type !== 'character.road.step') return response;
+
+      const commandResult = await response.json() as Record<string, unknown>;
+      const gameResponse = await original('/api/game', {});
+      const game = await gameResponse.json() as Record<string, unknown>;
+      const projection = {
+        character: game.character,
+        stats: game.stats,
+        location: game.location,
+        map: game.map,
+        questJournal: game.questJournal ?? [],
+        availableFishingSpots: game.availableFishingSpots ?? [],
+        availableWoodcuttingTrees: game.availableWoodcuttingTrees ?? [],
+        dailyActivities: game.dailyActivities ?? { cycle: '2000-01-01', boards: [], sources: [] },
+      };
+      return Response.json({ ...commandResult, movementProjection: projection });
+    });
+
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const gameRequestCountBeforeMove = apiFetch.mock.calls.filter(([path]) => path === '/api/game').length;
+
+    quickGo('north');
+
+    expect(await screen.findByRole('heading', { name: 'Glasswater Bridge' })).toBeVisible();
+    await waitFor(() => expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'character.move'
+    )).toBe(true));
+    expect(apiFetch.mock.calls.filter(([path]) => path === '/api/game')).toHaveLength(gameRequestCountBeforeMove);
+  });
+
   it('reuses the same movement command ID after an ambiguous server failure', async () => {
     const original = apiFetch.getMockImplementation()!;
     apiFetch.mockImplementation((path, init) => {

@@ -6,6 +6,7 @@ export * from './classes.js';
 export * from './ids.js';
 export * from './protocol.js';
 export * from './movement.js';
+export * from './movement-projection.js';
 export * from './world.js';
 export * from './session.js';
 export * from './chat.js';

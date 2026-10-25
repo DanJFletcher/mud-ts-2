@@ -1691,6 +1691,7 @@ export function WorldClient({
       : undefined;
     const actionStartedAt = performance.now();
     let snapshotReadyAt: number | undefined;
+    let projectionSource: "command-response" | "snapshot-fallback" | undefined;
     const logMoveTrace = (outcome: "success" | "error" | "uncertain") => {
       if (!traceId) return;
       window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
@@ -1699,10 +1700,11 @@ export function WorldClient({
           traceId,
           action: exit.roadId ? "character.road.step" : "character.move",
           outcome,
-          commandAndSnapshotMs: snapshotReadyAt === undefined
+          commandAndProjectionMs: snapshotReadyAt === undefined
             ? null
             : Math.round((snapshotReadyAt - actionStartedAt) * 10) / 10,
-          snapshotToPaintMs: snapshotReadyAt === undefined
+          projectionSource: projectionSource ?? null,
+          projectionToPaintMs: snapshotReadyAt === undefined
             ? null
             : Math.round((paintedAt - snapshotReadyAt) * 10) / 10,
           actionToPaintMs: Math.round((paintedAt - actionStartedAt) * 10) / 10,
@@ -1741,7 +1743,10 @@ export function WorldClient({
       client.pendingActions.acknowledge(commandId);
       commandAccepted = true;
       const partyAmbush = response.events?.some((event) => event.type === "team.road_encounter_started");
-      const nextSnapshot = await client.getGame(traceId);
+      const nextSnapshot = response.movementProjection
+        ? { ...snapshot, ...response.movementProjection }
+        : await client.getGame(traceId);
+      projectionSource = response.movementProjection ? "command-response" : "snapshot-fallback";
       snapshotReadyAt = traceId ? performance.now() : undefined;
       setSnapshot(nextSnapshot);
       setConnectionError("");

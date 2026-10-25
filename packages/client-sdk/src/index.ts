@@ -17,6 +17,7 @@ import {
   NpcTalkQuerySchema,
   ObjectInspectQuerySchema,
   MoveCharacterCommandSchema,
+  MovementResultProjectionSchema,
   RoadStepCommandSchema,
   TakeCharacterItemCommandSchema,
   DropCharacterItemCommandSchema,
@@ -148,6 +149,7 @@ export const CommandResponseSchema = z.object({
   receipt: CommandReceiptSchema,
   streamId: IdSchema.optional(),
   events: z.array(z.object({ type: z.string().min(1), payload: z.unknown().optional() })).optional(),
+  movementProjection: MovementResultProjectionSchema.optional(),
 });
 export type CommandResponse = z.infer<typeof CommandResponseSchema>;
 const VersionedCharacterCommandSchema = z.object({
