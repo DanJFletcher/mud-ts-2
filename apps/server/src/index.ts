@@ -1045,6 +1045,9 @@ app.post('/api/commands', createRateLimiter({ windowMs: 60_000, maxRequests: 120
           requestId: res.locals.requestId,
           commandId: result.receipt.commandId,
           errorName: error instanceof Error ? error.name : 'UnknownError',
+          ...(error instanceof z.ZodError
+            ? { schemaIssues: error.issues.map((issue) => ({ path: issue.path.join('.'), code: issue.code })) }
+            : {}),
         }));
       }
     }

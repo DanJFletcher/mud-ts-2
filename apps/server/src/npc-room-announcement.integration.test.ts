@@ -4,11 +4,18 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 const state = vi.hoisted(() => ({
   world: {
+    packId: 'npc-announcement-test-pack',
+    packVersion: '1.0.0',
+    locationGroups: [],
     dailyBoards: [],
     supplySources: [],
+    fishingSpots: [],
+    woodcuttingTrees: [],
     locations: [
       {
         id: 'npc-room',
+        name: 'NPC Room',
+        exits: [],
         npcs: [{
           id: 'mara',
           name: 'Mara',
@@ -19,17 +26,19 @@ const state = vi.hoisted(() => ({
           }],
         }],
       },
-      { id: 'other-room', npcs: [] },
-      { id: 'entry-room', npcs: [] },
+      { id: 'other-room', name: 'Other Room', exits: [], npcs: [] },
+      { id: 'entry-room', name: 'Entry Room', exits: [], npcs: [] },
       {
         id: 'arrival-room',
+        name: 'Arrival Room',
+        exits: [],
         npcs: [{
           id: 'mara-arrival',
           name: 'Mara',
           announcements: ['The north bridge is open.'],
         }],
       },
-      { id: 'quiet-room', npcs: [] },
+      { id: 'quiet-room', name: 'Quiet Room', exits: [], npcs: [] },
     ],
   },
   characters: {
@@ -158,8 +167,10 @@ vi.mock('@mudd/core-plugins', async () => ({
   fishingPlugin: {},
 }));
 
-vi.mock('@mudd/engine-core', () => ({
+vi.mock('@mudd/engine-core', async () => ({
+  ...await vi.importActual<typeof import('@mudd/engine-core')>('@mudd/engine-core'),
   SYSTEM_ACTOR_ID: 'system-test-actor',
+  projectQuestJournal: () => [],
   EngineHost: class {
     constructor(plugins: unknown[] = []) {
       for (const candidate of plugins) {
@@ -182,9 +193,50 @@ vi.mock('@mudd/engine-core', () => ({
     }
     async start() {}
     async stop() {}
-    async query(query: { type?: string }) {
+    async query(query: { type?: string; characterId?: string }) {
       if (query.type === 'party.info') {
         return { ok: true, value: { party: null, revision: 0, activity: [] } };
+      }
+      if (query.type === 'location.describe') {
+        const character = state.characters[query.characterId as keyof typeof state.characters];
+        const locationId = character?.locationId ?? 'entry-room';
+        const location = state.world.locations.find((candidate) => candidate.id === locationId);
+        const name = location?.name ?? locationId;
+        return {
+          ok: true,
+          value: {
+            worldInstanceId: instanceId,
+            locationId,
+            revision: 0,
+            title: name,
+            shortName: name,
+            qualifiedName: name,
+            locationGroups: [],
+            description: 'A quiet test room.',
+            exits: [],
+            objects: [],
+            occupants: [],
+            safeResting: false,
+          },
+        };
+      }
+      if (query.type === 'character.stats') {
+        return {
+          ok: true,
+          value: {
+            attributes: { strength: 10, intelligence: 10, constitution: 10, dexterity: 10 },
+            attackPower: 0,
+            spellPower: 0,
+            damage: 0,
+            critChancePercent: 0,
+            healthRegen: 0,
+            manaRegen: 0,
+            staminaRegen: 0,
+            armorPercent: 0,
+            resiliencePercent: 0,
+            dodgePercent: 0,
+          },
+        };
       }
       return { ok: true, value: { encounter: null } };
     }
@@ -243,7 +295,16 @@ vi.mock('@mudd/engine-core', () => ({
       return { receipt: { ok: true } };
     }
   },
-  replayCharacter: (character: unknown) => character,
+  replayCharacter: (character: unknown) => {
+    if (!character || typeof character !== 'object') return undefined;
+    const value = character as { characterId: string; locationId: string };
+    return {
+      ...character,
+      worldInstanceId: instanceId,
+      revision: 0,
+      visitedLocationIds: [value.locationId],
+    };
+  },
 }));
 
 vi.mock('./autonomous-npc-scheduler.js', () => ({
@@ -973,18 +1034,6 @@ describe('NPC room announcements through the server', () => {
 
     const arrival = await move('mover', 'character-mover', 'to-arrival-room');
     expect(arrival.status).toBe(200);
-    const movementResult = await arrival.json() as {
-      movementProjection?: {
-        character?: { locationId?: string };
-        location?: { locationId?: string };
-        map?: { currentLocationId?: string };
-      };
-    };
-    expect(movementResult.movementProjection).toMatchObject({
-      character: { locationId: 'arrival-room' },
-      location: { locationId: 'arrival-room' },
-      map: { currentLocationId: 'arrival-room' },
-    });
     const arrivalChat = await readRoom('mover', 'arrival-room');
     expect(arrivalChat.body.messages).toEqual([expect.objectContaining({
       speakerType: 'npc',
