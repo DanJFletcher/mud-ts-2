@@ -243,11 +243,25 @@ function currentLocation(includeNpcDescriptions = false) {
       label: 'North to Glasswater Bridge',
       direction: 'north',
       available: true,
+      destinationPreview: {
+        locationId: 'glasswater-bridge',
+        title: 'Glasswater Bridge',
+        shortName: 'Glasswater Bridge',
+        qualifiedName: 'Glasswater Bridge',
+        description: 'A stone bridge crosses clear water.',
+      },
     }] : room === 'bridge' ? [{
       id: 'bridge-to-clearing',
       label: 'South to Mossgate Clearing',
       direction: 'south',
       available: true,
+      destinationPreview: {
+        locationId: 'mossgate-clearing',
+        title: 'Mossgate Clearing',
+        shortName: 'Mossgate Clearing',
+        qualifiedName: 'Mossgate Clearing',
+        description: 'A circle of pale stones breaks through the moss. A narrow path runs north, while a weathered marker points east.',
+      },
     }] : room === 'market' ? [{
       id: 'reedbank-to-bridge',
       label: 'South to Glasswater Bridge',
@@ -1159,7 +1173,7 @@ describe('single-character world session client', () => {
     timers.mockRestore();
   });
 
-  it('shows movement intent before the server responds without changing the confirmed room', async () => {
+  it('shows the destination room immediately without request-status messages', async () => {
     const original = apiFetch.getMockImplementation()!;
     let releaseMove!: (response: Response) => void;
     apiFetch.mockImplementation((path, init) => {
@@ -1176,8 +1190,10 @@ describe('single-character world session client', () => {
 
     quickGo('north');
 
-    expect(await screen.findByText('Traveling north…')).toBeVisible();
-    expect(screen.getByRole('heading', { name: 'Mossgate Clearing' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Glasswater Bridge' })).toBeVisible();
+    expect(screen.getByText('A stone bridge crosses clear water.')).toBeVisible();
+    expect(screen.queryByText('Traveling north…')).not.toBeInTheDocument();
+    expect(screen.queryByText('The move was accepted. Waiting for the current room to update.')).not.toBeInTheDocument();
     const command = apiFetch.mock.calls.find(([path, init]) =>
       path === '/api/commands' && init?.method === 'POST' &&
       JSON.parse(String(init.body)).type === 'character.move'
@@ -1206,7 +1222,11 @@ describe('single-character world session client', () => {
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
 
     quickGo('north');
-    expect(await screen.findByText('Move status is unconfirmed.')).toBeVisible();
+    await waitFor(() => expect(apiFetch.mock.calls.filter(([path, init]) =>
+      path === '/api/commands' && init?.method === 'POST'
+    )).toHaveLength(1));
+    expect(screen.queryByText('Move status is unconfirmed.')).not.toBeInTheDocument();
+    expect(screen.queryByText('The move result is not confirmed yet. Your room will update when the server responds.')).not.toBeInTheDocument();
     quickGo('north');
     await waitFor(() => {
       const commands = apiFetch.mock.calls
@@ -1788,11 +1808,11 @@ describe('single-character world session client', () => {
 
     await act(async () => { fireEvent.keyDown(document, { key: 'ArrowUp' }); });
     await screen.findByRole('heading', { name: 'Glasswater Bridge' });
-    expect(history).toHaveTextContent('You travel north.');
+    expect(history).not.toHaveTextContent('You travel north.');
 
     await act(async () => { fireEvent.keyDown(document, { key: 'ArrowDown' }); });
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
-    expect(history).toHaveTextContent('You travel south.');
+    expect(history).not.toHaveTextContent('You travel south.');
   });
 
   it('maps Shift+Down to the vertical down direction and preserves ambiguous exit choices', async () => {
@@ -1801,7 +1821,11 @@ describe('single-character world session client', () => {
     const history = await screen.findByRole('region', { name: 'Terminal output' });
 
     fireEvent.keyDown(document, { key: 'ArrowUp', shiftKey: true });
-    await waitFor(() => expect(history).toHaveTextContent('The move was accepted. Waiting for the current room to update.'));
+    await waitFor(() => expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' && init?.method === 'POST' &&
+      JSON.parse(String(init.body)).type === 'character.move'
+    )).toBe(true));
+    expect(history).not.toHaveTextContent('The move was accepted. Waiting for the current room to update.');
     const upCommand = JSON.parse(
       apiFetch.mock.calls.find(([path]) => path === '/api/commands')?.[1].body as string,
     );
@@ -2060,7 +2084,7 @@ describe('single-character world session client', () => {
     expect(quickNavigation.nextElementSibling).toHaveClass('focused-quick-commands');
     fireEvent.click(within(quickNavigation).getByRole('button', { name: 'North' }));
     await screen.findByRole('heading', { name: 'Glasswater Bridge' });
-    expect(history).toHaveTextContent('You travel north.');
+    expect(history).not.toHaveTextContent('You travel north.');
     expect(history).toHaveTextContent('A stone bridge crosses clear water.');
     const command = JSON.parse(apiFetch.mock.calls.find(([path]) => path === '/api/commands')?.[1].body as string);
     expect(command).toMatchObject({
@@ -2071,7 +2095,7 @@ describe('single-character world session client', () => {
     });
 
     await openInfoSection('Field notes');
-    expect(screen.getByText('You travel north.')).toBeVisible();
+    expect(screen.queryByText('You travel north.')).not.toBeInTheDocument();
   });
 
   it('keeps refresh errors in the terminal without a duplicate error banner', async () => {
@@ -2768,7 +2792,7 @@ describe('single-character world session client', () => {
     const quickNavigation = screen.getByRole('navigation', { name: 'Quick navigation' });
     fireEvent.click(within(quickNavigation).getByRole('button', { name: 'North' }));
     await screen.findByRole('heading', { name: 'Glasswater Bridge' });
-    expect(history).toHaveTextContent('You travel north.');
+    expect(history).not.toHaveTextContent('You travel north.');
     expect(within(screen.getByRole('navigation', { name: 'Quick navigation' }))
       .getByRole('button', { name: 'South' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Show look targets' })).toBeVisible();

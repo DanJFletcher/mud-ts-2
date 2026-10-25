@@ -890,15 +890,48 @@ export const characterPlugin: EnginePlugin = {
           ...interactableRoomDescriptions,
           ...roomNpcDescriptions,
         ].join('\n\n'),
-        exits: availableExits.map((exit) => ({
-          id: exit.id,
-          label: exit.label,
-          direction: exit.direction,
-          available: !exit.requiredInteractionId || character.itemUseObservations.some((observation) =>
-            observation.interactionId === exit.requiredInteractionId && observation.locationId === location.id,
-          ),
-          roadId: exit.roadId,
-        })),
+        exits: availableExits.map((exit) => {
+          const destination = context.world.locations.find((candidate) =>
+            candidate.id === exit.toLocationId,
+          );
+          const interactionAvailable = !exit.requiredInteractionId ||
+            character.itemUseObservations.some((observation) =>
+              observation.interactionId === exit.requiredInteractionId &&
+              observation.locationId === location.id,
+            );
+          const destinationAvailable = Boolean(destination) &&
+            (!destination?.requiredVisitedLocationId ||
+              character.visitedLocationIds.includes(destination.requiredVisitedLocationId));
+          const isAvailable = interactionAvailable && destinationAvailable;
+          const destinationState = destination
+            ? resolveLocationState(destination, exit.toStateId)
+            : undefined;
+          const destinationShortName = destinationState?.name ?? destination?.name;
+          const destinationGroups = destination
+            ? locationGroupMembershipsForLocation(context.world.locationGroups, destination.id)
+            : [];
+          const destinationDisplayName = destinationShortName
+            ? resolveLocationDisplayName(destinationShortName, destinationGroups)
+            : undefined;
+
+          return {
+            id: exit.id,
+            label: exit.label,
+            direction: exit.direction,
+            available: isAvailable,
+            roadId: exit.roadId,
+            ...(isAvailable && destination && destinationDisplayName ? {
+              destinationPreview: {
+                locationId: destination.id,
+                ...(destinationState ? { locationStateId: destinationState.id } : {}),
+                title: destinationDisplayName.qualifiedName,
+                shortName: destinationDisplayName.shortName,
+                qualifiedName: destinationDisplayName.qualifiedName,
+                description: destinationState?.description ?? destination.description,
+              },
+            } : {}),
+          };
+        }),
         objects: [
           ...(location.readables ?? []).map(({ id, label, description }) => ({
             id, label, description, readable: true, takeable: false,

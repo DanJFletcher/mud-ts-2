@@ -640,6 +640,16 @@ describe('Orraveth Bellwold settlement', () => {
       }, h.session, { characterProjection: atCommon });
       if (!room.ok) throw new Error(room.message);
       const projection = LocationProjectionSchema.parse(room.value);
+      expect(projection.exits).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          id: 'south-common-to-square',
+          available: true,
+          destinationPreview: expect.objectContaining({
+            locationId: 'bellwold-market-square',
+            description: expect.stringContaining('Stalls and handcarts'),
+          }),
+        }),
+      ]));
       expect(projection.npcs.map(({ id }) => id)).toEqual(
         expect.arrayContaining(['linnet-reed', 'taren-voss']),
       );

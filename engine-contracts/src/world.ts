@@ -714,12 +714,23 @@ export const NpcDialogueProjectionSchema = z.object({
   }).strict()).max(8),
 }).strict();
 
+export const LocationTravelPreviewSchema = z.object({
+  locationId: IdSchema,
+  locationStateId: IdSchema.optional(),
+  title: z.string().min(1).max(400),
+  shortName: z.string().min(1).max(160),
+  qualifiedName: z.string().min(1).max(400),
+  description: z.string(),
+}).strict();
+
 export const ExitProjectionSchema = z.object({
   id: IdSchema,
   label: z.string(),
   direction: z.string().optional(),
   available: z.boolean(),
   roadId: IdSchema.optional(),
+  /** Static, safe-to-present destination text for responsive travel UI. */
+  destinationPreview: LocationTravelPreviewSchema.optional(),
 }).strict();
 
 export const RoomOccupantProjectionSchema = z.object({
@@ -818,6 +829,7 @@ export const WorldMapProjectionSchema = z.object({
 export type ExitDefinition = z.infer<typeof ExitDefinitionSchema>;
 export type MapPosition = z.infer<typeof MapPositionSchema>;
 export type LocationDefinition = z.infer<typeof LocationDefinitionSchema>;
+export type LocationTravelPreview = z.infer<typeof LocationTravelPreviewSchema>;
 export type WorldPackDraft = z.infer<typeof WorldPackDraftSchema>;
 export type WorldPackDraftInput = z.input<typeof WorldPackDraftSchema>;
 export type RoadDefinition = z.infer<typeof RoadDefinitionSchema>;

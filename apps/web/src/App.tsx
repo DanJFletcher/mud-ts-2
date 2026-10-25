@@ -66,17 +66,6 @@ function pendingActionPresentation(action: PendingAction) {
   const state = action.state === "acknowledged" || action.state === "uncertain"
     ? action.state
     : "sending";
-  if (action.details.kind === "character.move") {
-    return {
-      state,
-      label: state === "sending" ? `Traveling ${action.details.direction}…`
-        : state === "acknowledged" ? "Move accepted; updating the room…"
-          : "Move status is unconfirmed.",
-      detail: state === "uncertain"
-        ? "Repeat the same direction to safely retry with the same command ID."
-        : undefined,
-    } as const;
-  }
   if (action.details.kind === "pvp.challenge") {
     return {
       state,
@@ -122,6 +111,20 @@ type MerchantCatalog = Awaited<ReturnType<MuddHttpClient["getMerchantCatalog"]>>
 type Screen = "play" | "vitals" | "items" | "equipment" | "stats" | "notes" | "codex";
 type WorldClientProps = { onLeaveWorld: () => Promise<void>; worldInstanceId?: string };
 type VisibleNpc = NonNullable<NonNullable<GameSnapshot["location"]>["npcs"]>[number];
+type DestinationRoomPreview = NonNullable<
+  NonNullable<GameSnapshot["location"]>["exits"][number]["destinationPreview"]
+>;
+type OptimisticTravel = Readonly<{
+  commandId: string;
+  exitId: string;
+  fromLocationId: string;
+  preview: DestinationRoomPreview;
+  entryIds: readonly string[];
+}>;
+type RoomLookPreview = Pick<
+  NonNullable<GameSnapshot["location"]>,
+  "locationId" | "title" | "description"
+>;
 
 function findObjectMatches<T extends { id: string; label: string }>(
   target: string,
@@ -343,6 +346,8 @@ export function WorldClient({
   worldInstanceId = window.localStorage.getItem("mudd-world-instance-id") ?? "mudd-demo-instance",
 }: WorldClientProps) {
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
+  const [optimisticTravel, setOptimisticTravel] = useState<OptimisticTravel | null>(null);
+  const optimisticTravelRef = useRef<OptimisticTravel | null>(null);
   const activeLocationIdRef = useRef<string | undefined>(snapshot?.location?.locationId);
   activeLocationIdRef.current = snapshot?.location?.locationId;
   const [classCatalog, setClassCatalog] = useState<ClassCatalogSummary | undefined>();
@@ -366,6 +371,7 @@ export function WorldClient({
     action.scope.worldInstanceId === worldInstanceId &&
     action.scope.characterId === snapshot?.character?.characterId &&
     action.details.kind !== "chat.send" &&
+    action.details.kind !== "character.move" &&
     (action.state === "sending" || action.state === "acknowledged" || action.state === "uncertain")
   ).at(-1);
   const refreshGate = useRef(new ActionRefreshGate());
@@ -538,7 +544,9 @@ export function WorldClient({
     locationId = activeLocationIdRef.current,
   ) => {
     terminalFollowsLatestRef.current = !preserveScroll;
-    setEntries((current) => [...current, makeEntry(kind, text, locationId)]);
+    const entry = makeEntry(kind, text, locationId);
+    setEntries((current) => [...current, entry]);
+    return entry.id;
   }, []);
   const addNpcTerminalEvent = useCallback((message: RoomChatMessage) => {
     addEntry("narration", `${message.speakerName}: ${message.text}`, true);
@@ -627,13 +635,65 @@ export function WorldClient({
     }
   }, [addEntry]);
 
-  const addDefaultLook = useCallback((location: GameSnapshot["location"]) => {
-    if (!location || lastRoomLookIdRef.current === location.locationId) return;
+  const addDefaultLook = useCallback((location: RoomLookPreview | null | undefined): string[] => {
+    if (!location || lastRoomLookIdRef.current === location.locationId) return [];
     lastRoomLookIdRef.current = location.locationId;
-    addEntry("system", "> look");
-    addEntry("location", location.title, false, location.locationId);
-    addEntry("narration", location.description, false, location.locationId);
+    return [
+      addEntry("system", "> look", false, location.locationId),
+      addEntry("location", location.title, false, location.locationId),
+      addEntry("narration", location.description, false, location.locationId),
+    ];
   }, [addEntry]);
+  const rollbackOptimisticTravel = useCallback((commandId?: string) => {
+    const travel = optimisticTravelRef.current;
+    if (!travel || (commandId && travel.commandId !== commandId)) return;
+    const optimisticEntryIds = new Set(travel.entryIds);
+    setEntries((current) => current.filter((entry) => !optimisticEntryIds.has(entry.id)));
+    lastRoomLookIdRef.current = travel.fromLocationId;
+    optimisticTravelRef.current = null;
+    setOptimisticTravel(null);
+    setPending(null);
+  }, [setPending]);
+  const reconcileOptimisticTravel = useCallback((
+    location: NonNullable<GameSnapshot["location"]>,
+    commandId?: string,
+  ) => {
+    const travel = optimisticTravelRef.current;
+    if (!travel || (commandId && travel.commandId !== commandId)) return false;
+
+    if (location.locationId !== travel.preview.locationId) {
+      rollbackOptimisticTravel(travel.commandId);
+      addDefaultLook(location);
+      return true;
+    }
+
+    const optimisticDescription = travel.preview.description.trim();
+    const authoritativeDescription = location.description.trim();
+    if (authoritativeDescription === optimisticDescription) {
+      // The eagerly loaded static room description is already in the terminal.
+    } else if (authoritativeDescription.startsWith(`${optimisticDescription}\n\n`)) {
+      const roomDetails = authoritativeDescription.slice(optimisticDescription.length).trim();
+      if (roomDetails) addEntry("narration", roomDetails, false, location.locationId);
+    } else {
+      rollbackOptimisticTravel(travel.commandId);
+      addDefaultLook(location);
+      return true;
+    }
+
+    optimisticTravelRef.current = null;
+    setOptimisticTravel(null);
+    setPending(null);
+    return true;
+  }, [addDefaultLook, addEntry, rollbackOptimisticTravel, setPending]);
+  useEffect(() => {
+    const travel = optimisticTravelRef.current;
+    const location = snapshot?.location;
+    if (
+      travel &&
+      location &&
+      location.locationId !== travel.fromLocationId
+    ) reconcileOptimisticTravel(location, travel.commandId);
+  }, [reconcileOptimisticTravel, snapshot?.location?.locationId]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -1610,6 +1670,12 @@ export function WorldClient({
       return;
     }
     const fromLocationId = snapshot.location.locationId;
+    const existingOptimisticTravel = optimisticTravelRef.current;
+    if (
+      existingOptimisticTravel &&
+      (existingOptimisticTravel.fromLocationId !== fromLocationId ||
+        existingOptimisticTravel.exitId !== exit.id)
+    ) return;
     const characterId = snapshot.character.characterId;
     const retryAction = client.pendingActions.getSnapshot().filter((action) =>
       action.scope.worldInstanceId === worldInstanceId &&
@@ -1653,27 +1719,42 @@ export function WorldClient({
         direction: exit.direction || exit.label,
       },
     });
+    if (exit.destinationPreview && !existingOptimisticTravel) {
+      const entryIds = addDefaultLook(exit.destinationPreview);
+      const travel: OptimisticTravel = {
+        commandId,
+        exitId: exit.id,
+        fromLocationId,
+        preview: exit.destinationPreview,
+        entryIds,
+      };
+      optimisticTravelRef.current = travel;
+      setOptimisticTravel(travel);
+    }
     setPending("move");
     traceFirstFeedbackPaint(traceId, "character.move", actionStartedAt);
+    let commandAccepted = false;
     try {
       const response = exit.roadId
         ? await client.roadStep(snapshot.character.characterId, exit.id, snapshot.location.revision, commandId, traceId)
         : await client.move(snapshot.character.characterId, exit.id, snapshot.location.revision, commandId, traceId);
       client.pendingActions.acknowledge(commandId);
+      commandAccepted = true;
       const partyAmbush = response.events?.some((event) => event.type === "team.road_encounter_started");
       const nextSnapshot = await client.getGame(traceId);
       snapshotReadyAt = traceId ? performance.now() : undefined;
       setSnapshot(nextSnapshot);
       setConnectionError("");
       if (nextSnapshot.location?.locationId !== fromLocationId) {
-        addDefaultLook(nextSnapshot.location);
+        const reconciled = nextSnapshot.location
+          ? reconcileOptimisticTravel(nextSnapshot.location, commandId)
+          : false;
+        if (!reconciled) addDefaultLook(nextSnapshot.location);
         announceNewQuestObjectives(nextSnapshot);
         const currentAction = client.pendingActions.getSnapshot().find((action) => action.id === commandId);
         if (currentAction?.state !== "confirmed") {
           client.pendingActions.confirm(commandId);
-          addEntry("system", partyAmbush
-            ? "A roadside ambush interrupts your travel."
-            : `You travel ${exit.direction || exit.label}.`);
+          if (partyAmbush) addEntry("system", "A roadside ambush interrupts your travel.");
         }
         if (partyAmbush) {
           const nextTeamInfo = await refreshTeamCombat();
@@ -1687,23 +1768,30 @@ export function WorldClient({
         setActiveMerchantCatalog(null);
         logMoveTrace("success");
       } else {
-        client.pendingActions.markUncertain(commandId, "The server accepted the move, but the room has not updated yet.");
-        addEntry("system", "The move was accepted. Waiting for the current room to update.");
+        client.pendingActions.markUncertain(commandId, "Awaiting the authoritative room update.");
         logMoveTrace("uncertain");
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to move.";
-      if (isRejectedAction(error)) {
+      if (isRejectedAction(error) && !commandAccepted) {
         client.pendingActions.reject(commandId, message);
+        rollbackOptimisticTravel(commandId);
         addEntry("error", message);
         logMoveTrace("error");
       } else {
-        client.pendingActions.markUncertain(commandId, "The move result is not confirmed yet.");
-        addEntry("system", "The move result is not confirmed yet. Your room will update when the server responds.");
+        client.pendingActions.markUncertain(commandId, "Awaiting the authoritative room update.");
+        if (!commandAccepted) rollbackOptimisticTravel(commandId);
         logMoveTrace("uncertain");
       }
     } finally {
-      setPending(null);
+      if (optimisticTravelRef.current?.commandId === commandId) {
+        // Let realtime and fallback snapshots reconcile the optimistic room while
+        // keeping other actions locked against the still-authoritative source room.
+        refreshGate.current.end();
+        setPendingState("move");
+      } else {
+        setPending(null);
+      }
     }
   }, [
     addDefaultLook,
@@ -1711,7 +1799,9 @@ export function WorldClient({
     announceNewQuestObjectives,
     dialogueModalOpen,
     pending,
+    reconcileOptimisticTravel,
     refreshTeamCombat,
+    rollbackOptimisticTravel,
     snapshot,
     worldInstanceId,
   ]);
@@ -3299,24 +3389,26 @@ export function WorldClient({
             ) : snapshot?.location ? (
               <>
                 <TerminalPanel
-                  title={snapshot.location.title}
+                  title={optimisticTravel?.preview.title ?? snapshot.location.title}
                   busy={pending !== null}
                   expandRequest={terminalExpandRequest}
                   mobileViewport={isMobileViewport}
                 >
-                    <div className="focused-room-presence" role="group" aria-label="Players in this room">
-                      <Users size={14} aria-hidden="true" />
-                      <span>
-                        {snapshot.location.occupants.length > 0
-                          ? `Here now: ${snapshot.location.occupants.map((occupant) => occupant.displayName).join(", ")}`
-                          : "No other players here"}
-                      </span>
-                      {presenceStale && (
-                        <span className="focused-room-presence__status" role="status">
-                          Presence may be out of date.
+                    {!optimisticTravel && (
+                      <div className="focused-room-presence" role="group" aria-label="Players in this room">
+                        <Users size={14} aria-hidden="true" />
+                        <span>
+                          {snapshot.location.occupants.length > 0
+                            ? `Here now: ${snapshot.location.occupants.map((occupant) => occupant.displayName).join(", ")}`
+                            : "No other players here"}
                         </span>
-                      )}
-                    </div>
+                        {presenceStale && (
+                          <span className="focused-room-presence__status" role="status">
+                            Presence may be out of date.
+                          </span>
+                        )}
+                      </div>
+                    )}
                     {snapshot.character?.health && !isAnyCombatActive && !visiblePvp && (
                       <div className="focused-terminal-vitals" role="group" aria-label="Character vitals">
                         <span className="focused-terminal-vital" role="group" aria-label="Character health" title="Health">
@@ -3351,10 +3443,10 @@ export function WorldClient({
                           <ActivityLog
                             entries={entries}
                             label="Terminal transcript"
-                            currentLocationId={snapshot.location?.locationId}
-                            lookTargets={terminalLookTargets}
+                            currentLocationId={optimisticTravel?.preview.locationId ?? snapshot.location?.locationId}
+                            lookTargets={optimisticTravel ? [] : terminalLookTargets}
                             onLookTarget={handleTerminalLookTarget}
-                            actionsDisabled={pending !== null}
+                            actionsDisabled={pending !== null || optimisticTravel !== null}
                           />
                         )}
                       </div>
@@ -4132,7 +4224,7 @@ export function WorldClient({
                         spellCheck={false}
                       />
                       <Button type="submit" variant="secondary" disabled={!command.trim() || pending !== null}>
-                        {pending === "look" ? "Looking" : pending === "read" ? "Reading" : pending === "take" ? "Taking" : pending === "drop" ? "Dropping" : pending === "move" ? "Moving" : pending === "talk" ? "Talking" : pending === "shop" ? "Browsing" : pending === "buy" ? "Buying" : pending === "combat" ? "Acting" : pending === "rest" ? "Resting" : pending === "equip" ? "Changing gear" : pending === "daily" ? "Updating jobs" : pending === "gather" ? "Gathering" : "Send"}
+                        {pending === "look" ? "Looking" : pending === "read" ? "Reading" : pending === "take" ? "Taking" : pending === "drop" ? "Dropping" : pending === "move" ? "Send" : pending === "talk" ? "Talking" : pending === "shop" ? "Browsing" : pending === "buy" ? "Buying" : pending === "combat" ? "Acting" : pending === "rest" ? "Resting" : pending === "equip" ? "Changing gear" : pending === "daily" ? "Updating jobs" : pending === "gather" ? "Gathering" : "Send"}
                       </Button>
                     </form>
                   </section>}
@@ -4140,7 +4232,7 @@ export function WorldClient({
                 {!isMobileViewport && (
                   <RoomChatPanel
                     realtimeClient={client}
-                    actionPending={Boolean(pending)}
+                    actionPending={Boolean(pending || optimisticTravel)}
                     worldInstanceId={worldInstanceId}
                     characterId={snapshot.character?.characterId}
                     characterName={snapshot.character?.name || "You"}
@@ -4151,7 +4243,9 @@ export function WorldClient({
                   />
                 )}
                 <WorldMapPanel
-                  map={snapshot.map}
+                  map={optimisticTravel && snapshot.map
+                    ? { ...snapshot.map, currentLocationId: optimisticTravel.preview.locationId }
+                    : snapshot.map}
                   fullscreen={mapFullscreen}
                   onFullscreenChange={handleMapFullscreenChange}
                 />
