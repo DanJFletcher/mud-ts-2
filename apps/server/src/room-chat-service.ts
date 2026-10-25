@@ -19,6 +19,8 @@ export type RoomChatMessage = Readonly<{
   speakerName: string;
   text: string;
   createdAt: string;
+  /** Returned only to the author so uncertain client submissions can reconcile by id. */
+  submissionId?: string;
 }>;
 
 export type TerminalRoomEvent = RoomChatMessage;
@@ -50,7 +52,10 @@ function normalizeMessage(value: string): string {
   return message;
 }
 
-function toRoomChatMessage(row: typeof roomChatMessages.$inferSelect): RoomChatMessage {
+function toRoomChatMessage(
+  row: typeof roomChatMessages.$inferSelect,
+  viewerCharacterId?: string,
+): RoomChatMessage {
   return {
     id: row.id,
     roomId: row.roomId,
@@ -58,6 +63,9 @@ function toRoomChatMessage(row: typeof roomChatMessages.$inferSelect): RoomChatM
     speakerName: row.speakerName,
     text: row.message,
     createdAt: row.createdAt.toISOString(),
+    ...(row.speakerType === 'player' && row.speakerId === viewerCharacterId && row.submissionId
+      ? { submissionId: row.submissionId }
+      : {}),
   };
 }
 
@@ -329,7 +337,7 @@ export async function listRoomChatMessages(input: Readonly<{
       return {
         messages: rows
           .filter((row) => !row.sourceEffectId?.startsWith(NPC_MOVEMENT_MESSAGE_SOURCE_PREFIX))
-          .map(toRoomChatMessage),
+          .map((row) => toRoomChatMessage(row, input.characterId)),
         terminalEvents: movementRows.map(toRoomChatMessage),
         cursor: rows.at(-1)?.id ?? input.afterId,
       };
@@ -349,7 +357,7 @@ export async function listRoomChatMessages(input: Readonly<{
       .orderBy(desc(roomChatMessages.id))
       .limit(INITIAL_ROOM_CHAT_LIMIT);
     return {
-      messages: rows.reverse().map(toRoomChatMessage),
+      messages: rows.reverse().map((row) => toRoomChatMessage(row, input.characterId)),
       terminalEvents: [],
       cursor: Number(latest?.id ?? 0),
     };

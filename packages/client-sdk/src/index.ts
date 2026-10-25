@@ -76,7 +76,16 @@ import {
 } from '@mudd/contracts';
 import { z } from 'zod';
 import { MuddRealtimeTransport } from './realtime.js';
+import { PendingActionCoordinator } from './pending-actions.js';
 export { MuddRealtimeTransport } from './realtime.js';
+export {
+  PendingActionCoordinator,
+  type BeginPendingAction,
+  type PendingAction,
+  type PendingActionDetails,
+  type PendingActionScope,
+  type PendingActionState,
+} from './pending-actions.js';
 
 export const GameSnapshotSchema = z.object({
   availableFishingSpots: z.array(z.object({
@@ -174,9 +183,17 @@ export class MuddHttpError extends Error {
   }
 }
 
+export class MuddCommandError extends Error {
+  constructor(message: string, readonly code?: string) {
+    super(message);
+    this.name = 'MuddCommandError';
+  }
+}
+
 export class MuddHttpClient {
   private readonly fetcher: typeof fetch;
   private realtime: MuddRealtimeTransport;
+  readonly pendingActions = new PendingActionCoordinator();
 
   constructor(private readonly options: ClientOptions) {
     this.fetcher = options.fetcher ?? fetch.bind(globalThis);
@@ -192,6 +209,7 @@ export class MuddHttpClient {
 
   setWorldInstanceId(worldInstanceId: string): void {
     if (!worldInstanceId.trim()) throw new Error('Choose a valid world.');
+    this.pendingActions.clearWhere((action) => action.scope.worldInstanceId !== worldInstanceId);
     this.realtime.dispose();
     this.options.worldInstanceId = worldInstanceId;
   }
@@ -588,11 +606,12 @@ export class MuddHttpClient {
     characterId: string,
     recipientCharacterId: string,
     kind = 'pvp.challenge',
+    commandId = crypto.randomUUID(),
   ): Promise<CommandResponse> {
     return this.send(InteractionRequestCommandSchema.parse({
       type: 'interaction.request',
       version: 1,
-      commandId: crypto.randomUUID(),
+      commandId,
       worldInstanceId: this.options.worldInstanceId,
       characterId,
       payload: { kind, recipientCharacterId },
@@ -603,11 +622,12 @@ export class MuddHttpClient {
     characterId: string,
     requestId: string,
     response: 'accept' | 'decline',
+    commandId = crypto.randomUUID(),
   ): Promise<CommandResponse> {
     return this.send(InteractionRespondCommandSchema.parse({
       type: 'interaction.respond',
       version: 1,
-      commandId: crypto.randomUUID(),
+      commandId,
       worldInstanceId: this.options.worldInstanceId,
       characterId,
       payload: { requestId, response },
@@ -929,7 +949,7 @@ export class MuddHttpClient {
       !commandDetails.success ||
       !conflict
     ) {
-      throw new Error(result.receipt.message);
+      throw new MuddCommandError(result.receipt.message, result.receipt.code);
     }
 
     const expectedVersion = Number(conflict[1]);
@@ -937,8 +957,8 @@ export class MuddHttpClient {
     let latest: GameSnapshot;
     try {
       latest = await this.getGame(traceId);
-    } catch (error) {
-      throw new Error('The world updated while you were acting. Please try again.');
+    } catch {
+      throw new MuddCommandError('The world updated while you were acting. Please try again.', 'VERSION_CONFLICT');
     }
     const character = latest.character;
     if (
@@ -947,7 +967,7 @@ export class MuddHttpClient {
       character.revision < reportedCurrentVersion ||
       character.revision <= expectedVersion
     ) {
-      throw new Error('The world updated while you were acting. Please try again.');
+      throw new MuddCommandError('The world updated while you were acting. Please try again.', 'VERSION_CONFLICT');
     }
 
     const retried = await this.postCommand({
@@ -956,9 +976,9 @@ export class MuddHttpClient {
     }, traceId);
     if (!retried.receipt.ok) {
       if (retried.receipt.code === 'VERSION_CONFLICT') {
-        throw new Error('The world updated while you were acting. Please try again.');
+        throw new MuddCommandError('The world updated while you were acting. Please try again.', 'VERSION_CONFLICT');
       }
-      throw new Error(retried.receipt.message);
+      throw new MuddCommandError(retried.receipt.message, retried.receipt.code);
     }
     return retried;
   }

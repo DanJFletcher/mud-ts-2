@@ -892,6 +892,10 @@
 }
 
 .focused-room-chat__message--npc .focused-room-chat__speaker { color: var(--mudd-accent); }
+.focused-room-chat__message--pending { opacity: .78; }
+.focused-room-chat__pending-content { display: grid; gap: .35rem; min-width: 0; }
+.focused-room-chat__pending-status { max-width: 100%; padding: .3rem .45rem; font-size: .65rem; }
+.focused-room-chat__pending-status .mudd-pending-action__detail { font-size: .6rem; }
 
 .focused-room-chat__message p {
   min-width: 0;

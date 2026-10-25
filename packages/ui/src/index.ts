@@ -33,3 +33,5 @@ export { StaminaStatus } from './components/StaminaStatus.js';
 export type { StaminaStatusProps } from './components/StaminaStatus.js';
 export { DailyBoard } from './components/DailyBoard.js';
 export type { DailyBoardProps, DailyBoardJobView } from './components/DailyBoard.js';
+export { PendingActionStatus } from './components/PendingActionStatus.js';
+export type { PendingActionStatusProps, PendingActionStatusState } from './components/PendingActionStatus.js';

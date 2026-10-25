@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, ChevronUp, Maximize2, X } from 'lucide-react';
-import { Button, DisclosureButton } from '@mudd/ui';
+import { Button, DisclosureButton, PendingActionStatus } from '@mudd/ui';
 import { trapDialogTab } from './dialog-focus.js';
-import type { MuddHttpClient } from '@mudd/client-sdk';
+import { MuddHttpClient, PendingActionCoordinator, type PendingAction, type PendingActionState } from '@mudd/client-sdk';
+
+const emptyActionCoordinator = new PendingActionCoordinator();
 
 export type RoomChatMessage = Readonly<{
   id: number;
@@ -12,11 +14,14 @@ export type RoomChatMessage = Readonly<{
   speakerName: string;
   text: string;
   createdAt: string;
+  submissionId?: string | null;
 }>;
 
 type RoomChatPanelProps = Readonly<{
   realtimeClient?: MuddHttpClient;
   worldInstanceId: string;
+  characterId?: string;
+  characterName?: string;
   roomId: string;
   fullscreen: boolean;
   onFullscreenChange: (fullscreen: boolean) => void;
@@ -39,6 +44,12 @@ function errorMessage(body: unknown, fallback: string) {
   return fallback;
 }
 
+function chatPendingStatus(state: PendingActionState) {
+  if (state === 'uncertain') return 'uncertain' as const;
+  if (state === 'acknowledged') return 'acknowledged' as const;
+  return 'sending' as const;
+}
+
 function mergeMessages(current: readonly RoomChatMessage[], incoming: readonly RoomChatMessage[]) {
   const messages = new Map(current.map((message) => [message.id, message]));
   incoming.forEach((message) => messages.set(message.id, message));
@@ -48,6 +59,8 @@ function mergeMessages(current: readonly RoomChatMessage[], incoming: readonly R
 export function RoomChatPanel({
   realtimeClient,
   worldInstanceId,
+  characterId,
+  characterName = 'You',
   roomId,
   fullscreen,
   onFullscreenChange,
@@ -55,6 +68,12 @@ export function RoomChatPanel({
   actionPending = false,
   onTerminalEvent,
 }: RoomChatPanelProps) {
+  const actionCoordinator = realtimeClient?.pendingActions ?? emptyActionCoordinator;
+  const pendingActionSnapshot = useSyncExternalStore(
+    actionCoordinator.subscribe,
+    actionCoordinator.getSnapshot,
+    actionCoordinator.getSnapshot,
+  );
   const [messages, setMessages] = useState<readonly RoomChatMessage[]>([]);
   const actionPendingRef = useRef(actionPending);
   actionPendingRef.current = actionPending;
@@ -68,7 +87,7 @@ export function RoomChatPanel({
   const [fullscreenClosing, setFullscreenClosing] = useState(false);
   const messagesRef = useRef<HTMLDivElement>(null);
   const followsLatestRef = useRef(true);
-  const scope = JSON.stringify([worldInstanceId, roomId]);
+  const scope = JSON.stringify([worldInstanceId, characterId, roomId]);
   const currentScopeRef = useRef(scope);
   const lastMessageIdRef = useRef(0);
   const pendingSubmissionRef = useRef<{ text: string; id: string } | null>(null);
@@ -76,6 +95,13 @@ export function RoomChatPanel({
   const expandButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const wasFullscreenRef = useRef(false);
+  const pendingChatActions = pendingActionSnapshot.filter((action) =>
+    action.details.kind === 'chat.send' &&
+    action.scope.worldInstanceId === worldInstanceId &&
+    action.scope.roomId === roomId &&
+    (characterId === undefined || action.scope.characterId === characterId) &&
+    ['sending', 'acknowledged', 'uncertain'].includes(action.state)
+  );
 
   currentScopeRef.current = scope;
 
@@ -167,6 +193,20 @@ export function RoomChatPanel({
           );
           setMessages((current) => mergeMessages(current, body.messages));
         }
+        const confirmedSubmissionIds = new Set(
+          body.messages.flatMap((message) => message.submissionId ? [message.submissionId] : []),
+        );
+        if (confirmedSubmissionIds.size) {
+          actionCoordinator.getSnapshot().forEach((action) => {
+            if (
+              action.details.kind === 'chat.send' &&
+              action.scope.worldInstanceId === worldInstanceId &&
+              action.scope.roomId === roomId &&
+              action.details.clientMessageId &&
+              confirmedSubmissionIds.has(action.details.clientMessageId)
+            ) actionCoordinator.confirm(action.id);
+          });
+        }
         body.terminalEvents?.forEach((message) => onTerminalEvent?.(message));
         setLoading(false);
         setLoadError('');
@@ -190,7 +230,7 @@ export function RoomChatPanel({
       stopRealtime?.();
       document.removeEventListener('visibilitychange', visible);
     };
-  }, [onTerminalEvent, roomId, worldInstanceId, realtimeClient]);
+  }, [actionCoordinator, characterId, onTerminalEvent, roomId, worldInstanceId, realtimeClient]);
 
   useEffect(() => {
     const messagesElement = messagesRef.current;
@@ -207,8 +247,25 @@ export function RoomChatPanel({
     if (!pendingSubmissionRef.current || pendingSubmissionRef.current.text !== text) {
       pendingSubmissionRef.current = { text, id: globalThis.crypto.randomUUID() };
     }
+    const submission = pendingSubmissionRef.current;
+    actionCoordinator.begin({
+      id: submission.id,
+      scope: {
+        worldInstanceId,
+        roomId,
+        ...(characterId ? { characterId } : {}),
+      },
+      details: {
+        kind: 'chat.send',
+        roomId,
+        clientMessageId: submission.id,
+        text,
+        speakerName: characterName,
+      },
+    });
     setSending(true);
     setSendError('');
+    let explicitlyRejected = false;
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -220,28 +277,47 @@ export function RoomChatPanel({
         body: JSON.stringify({
           roomId,
           text,
-          clientMessageId: pendingSubmissionRef.current.id,
+          clientMessageId: submission.id,
         }),
       });
       const body = await response.json() as unknown;
-      if (!response.ok) throw new Error(errorMessage(body, 'Could not send room message.'));
+      if (!response.ok) {
+        explicitlyRejected = true;
+        actionCoordinator.reject(submission.id, errorMessage(body, 'Could not send room message.'));
+        pendingSubmissionRef.current = null;
+        throw new Error(errorMessage(body, 'Could not send room message.'));
+      }
       const payload = body as MessageResponse;
       if (
         !payload.message ||
         payload.message.roomId !== roomId ||
         (payload.npcMessage && (payload.npcMessage.roomId !== roomId || payload.npcMessage.speakerType !== 'npc'))
       ) {
+        actionCoordinator.markUncertain(submission.id);
         throw new Error('The room chat response was invalid.');
       }
-      if (currentScopeRef.current !== scope) return;
+      if (currentScopeRef.current !== scope) {
+        actionCoordinator.confirm(submission.id);
+        return;
+      }
 
-      const incomingMessages = [payload.message, ...(payload.npcMessage ? [payload.npcMessage] : [])];
+      actionCoordinator.acknowledge(submission.id);
+      const incomingMessages = [
+        { ...payload.message, submissionId: submission.id },
+        ...(payload.npcMessage ? [payload.npcMessage] : []),
+      ];
       setMessages((current) => mergeMessages(current, incomingMessages));
+      actionCoordinator.confirm(submission.id);
       setDraft('');
       pendingSubmissionRef.current = null;
     } catch (error) {
       if (currentScopeRef.current === scope) {
-        setSendError(error instanceof Error ? error.message : 'Could not send room message.');
+        if (!explicitlyRejected) {
+          actionCoordinator.markUncertain(submission.id, 'Delivery is not confirmed yet.');
+          setSendError('Delivery is unconfirmed. Retry to check safely; the same message ID will be reused.');
+        } else {
+          setSendError(error instanceof Error ? error.message : 'Could not send room message.');
+        }
       }
     } finally {
       if (currentScopeRef.current === scope) setSending(false);
@@ -311,13 +387,36 @@ export function RoomChatPanel({
         {messages.map((message) => (
           <div
             className={`focused-room-chat__message focused-room-chat__message--${message.speakerType}`}
-            key={message.id}
+            key={message.submissionId ? `submission-${message.submissionId}` : `message-${message.id}`}
           >
             <span className="focused-room-chat__speaker">{message.speakerName}</span>
             <p>{message.text}</p>
           </div>
         ))}
-        {!messages.length && (
+        {pendingChatActions.map((action) => {
+          if (action.details.kind !== 'chat.send') return null;
+          const status: PendingActionState = action.state;
+          const statusView = chatPendingStatus(status);
+          return (
+            <div
+              className="focused-room-chat__message focused-room-chat__message--player focused-room-chat__message--pending"
+              key={`submission-${action.details.clientMessageId}`}
+            >
+              <span className="focused-room-chat__speaker">{action.details.speakerName}</span>
+              <div className="focused-room-chat__pending-content">
+                <p>{action.details.text}</p>
+                <PendingActionStatus
+                  state={statusView}
+                  label={status === 'sending' ? 'Sending…'
+                    : status === 'acknowledged' ? 'Sent; waiting for room history…'
+                      : 'Delivery is unconfirmed. Retry to check safely.'}
+                  className="focused-room-chat__pending-status"
+                />
+              </div>
+            </div>
+          );
+        })}
+        {!messages.length && !pendingChatActions.length && (
           <p className="focused-room-chat__empty">
             {loadError ? 'Room chat is unavailable. Retrying…' : loading ? 'Connecting to room…' : 'No room messages yet.'}
           </p>

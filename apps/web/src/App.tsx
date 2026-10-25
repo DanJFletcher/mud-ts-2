@@ -5,10 +5,19 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type FormEvent,
   type TouchEvent as ReactTouchEvent,
 } from "react";
-import { GameSnapshotSchema, MuddHttpClient, type CommandResponse, type GameSnapshot } from "@mudd/client-sdk";
+import {
+  GameSnapshotSchema,
+  MuddCommandError,
+  MuddHttpClient,
+  MuddHttpError,
+  type CommandResponse,
+  type GameSnapshot,
+  type PendingAction,
+} from "@mudd/client-sdk";
 import { FLEE_STAMINA_COST, type InteractionInbox } from "@mudd/contracts";
 import {
   ActivityLog,
@@ -21,6 +30,7 @@ import {
   NavigationControls,
   NpcDialogueDialog,
   Panel,
+  PendingActionStatus,
   Text,
   TextInput,
   type ActivityEntry,
@@ -46,6 +56,61 @@ type ClassAwareCharacter = NonNullable<GameSnapshot["character"]> & {
 };
 const classCharacter = (character: GameSnapshot["character"]): ClassAwareCharacter | undefined =>
   character as ClassAwareCharacter | undefined;
+
+function isRejectedAction(error: unknown): boolean {
+  return error instanceof MuddCommandError ||
+    (error instanceof MuddHttpError && error.status >= 400 && error.status < 500);
+}
+
+function pendingActionPresentation(action: PendingAction) {
+  const state = action.state === "acknowledged" || action.state === "uncertain"
+    ? action.state
+    : "sending";
+  if (action.details.kind === "character.move") {
+    return {
+      state,
+      label: state === "sending" ? `Traveling ${action.details.direction}…`
+        : state === "acknowledged" ? "Move accepted; updating the room…"
+          : "Move status is unconfirmed.",
+      detail: state === "uncertain" ? "The current room will update when the server confirms it." : undefined,
+    } as const;
+  }
+  if (action.details.kind === "pvp.challenge") {
+    return {
+      state,
+      label: state === "sending" ? `Sending challenge to ${action.details.recipientName}…`
+        : state === "acknowledged" ? "Challenge sent; confirming the request…"
+          : "Challenge status is unconfirmed.",
+      detail: state === "uncertain" ? "Checking the server’s interaction inbox." : undefined,
+    } as const;
+  }
+  if (action.details.kind === "pvp.respond") {
+    return {
+      state,
+      label: state === "sending" ? `Sending your ${action.details.response}…`
+        : state === "acknowledged" ? "Response sent; confirming the result…"
+          : "Response status is unconfirmed.",
+      detail: state === "uncertain" ? "The challenge’s authoritative status will appear when the inbox refreshes." : undefined,
+    } as const;
+  }
+  return {
+    state,
+    label: state === "sending" ? "Sending message…"
+      : state === "acknowledged" ? "Message sent; confirming…"
+        : "Message delivery is unconfirmed.",
+  } as const;
+}
+
+function traceFirstFeedbackPaint(traceId: string | undefined, action: string, startedAt: number): void {
+  if (!traceId) return;
+  window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+    console.info("[mudd_perf_trace_feedback]", JSON.stringify({
+      traceId,
+      action,
+      actionToFirstFeedbackPaintMs: Math.round((performance.now() - startedAt) * 10) / 10,
+    }));
+  }));
+}
 type DialogueProjection = Awaited<ReturnType<MuddHttpClient["talk"]>>;
 type MerchantCatalog = Awaited<ReturnType<MuddHttpClient["getMerchantCatalog"]>>;
 type Screen = "play" | "vitals" | "items" | "equipment" | "stats" | "notes" | "codex";
@@ -286,6 +351,17 @@ export function WorldClient({
   const [presenceStale, setPresenceStale] = useState(false);
   const [loading, setLoading] = useState(true);
   const [pending, setPendingState] = useState<"look" | "read" | "take" | "use" | "drop" | "move" | "talk" | "shop" | "buy" | "combat" | "rest" | "stand" | "equip" | "party" | "daily" | "gather" | null>(null);
+  const pendingActionSnapshot = useSyncExternalStore(
+    client.pendingActions.subscribe,
+    client.pendingActions.getSnapshot,
+    client.pendingActions.getSnapshot,
+  );
+  const foregroundPendingAction = pendingActionSnapshot.find((action) =>
+    action.scope.worldInstanceId === worldInstanceId &&
+    action.scope.characterId === snapshot?.character?.characterId &&
+    action.details.kind !== "chat.send" &&
+    (action.state === "sending" || action.state === "acknowledged" || action.state === "uncertain")
+  );
   const refreshGate = useRef(new ActionRefreshGate());
   const actionTiming = useRef<{ name: string; started: number } | null>(null);
   const setPending = useCallback((value: typeof pending) => {
@@ -461,6 +537,69 @@ export function WorldClient({
   const addNpcTerminalEvent = useCallback((message: RoomChatMessage) => {
     addEntry("narration", `${message.speakerName}: ${message.text}`, true);
   }, [addEntry]);
+  useEffect(() => {
+    const characterId = snapshot?.character?.characterId;
+    if (!characterId) return;
+    client.pendingActions.clearOutsideScope({ worldInstanceId, characterId });
+  }, [snapshot?.character?.characterId, worldInstanceId]);
+
+  useEffect(() => {
+    const characterId = snapshot?.character?.characterId;
+    const locationId = snapshot?.location?.locationId;
+    if (!characterId || !locationId) return;
+    pendingActionSnapshot.forEach((action) => {
+      if (
+        action.details.kind === "character.move" &&
+        action.scope.worldInstanceId === worldInstanceId &&
+        action.scope.characterId === characterId &&
+        action.details.fromLocationId !== locationId &&
+        (action.state === "acknowledged" || action.state === "uncertain")
+      ) client.pendingActions.confirm(action.id);
+    });
+  }, [
+    pendingActionSnapshot,
+    snapshot?.character?.characterId,
+    snapshot?.location?.locationId,
+    worldInstanceId,
+  ]);
+
+  useEffect(() => {
+    const characterId = snapshot?.character?.characterId;
+    if (!characterId || !interactionInbox) return;
+    pendingActionSnapshot.forEach((action) => {
+      if (
+        action.scope.worldInstanceId !== worldInstanceId ||
+        action.scope.characterId !== characterId ||
+        (action.state !== "sending" && action.state !== "acknowledged" && action.state !== "uncertain")
+      ) return;
+
+      if (action.details.kind === "pvp.challenge") {
+        const priorIds = new Set(action.details.priorRequestIds);
+        const request = interactionInbox.requests.find((candidate) =>
+          !priorIds.has(candidate.requestId) &&
+          candidate.initiatorCharacterId === characterId &&
+          candidate.recipientCharacterId === action.details.recipientCharacterId
+        );
+        if (!request) return;
+        client.pendingActions.confirm(action.id);
+        addEntry("system", request.status === "pending"
+          ? `Challenge sent to ${request.recipientName}. Waiting for a response.`
+          : request.status === "accepted"
+            ? `${request.recipientName} accepted your challenge.`
+            : request.status === "declined"
+              ? `${request.recipientName} declined your challenge.`
+              : `The challenge to ${request.recipientName} ${request.status}.`, true);
+      } else if (
+        action.details.kind === "pvp.respond" &&
+        interactionInbox.requests.some((request) =>
+          request.requestId === action.details.requestId &&
+          request.status === (action.details.response === "accept" ? "accepted" : "declined")
+        )
+      ) {
+        client.pendingActions.confirm(action.id);
+      }
+    });
+  }, [addEntry, interactionInbox, pendingActionSnapshot, snapshot?.character?.characterId, worldInstanceId]);
 
   const rememberCompletedQuestObjectives = useCallback((nextSnapshot: GameSnapshot) => {
     for (const key of completedQuestObjectiveKeys(nextSnapshot)) {
@@ -1463,12 +1602,14 @@ export function WorldClient({
       addEntry("error", "That way is not open from here.");
       return;
     }
+    const commandId = crypto.randomUUID();
+    const fromLocationId = snapshot.location.locationId;
     const traceId = new URLSearchParams(window.location.search).get("muddTrace") === "1"
       ? crypto.randomUUID()
       : undefined;
-    const actionStartedAt = traceId ? performance.now() : 0;
+    const actionStartedAt = performance.now();
     let snapshotReadyAt: number | undefined;
-    const logMoveTrace = (outcome: "success" | "error") => {
+    const logMoveTrace = (outcome: "success" | "error" | "uncertain") => {
       if (!traceId) return;
       window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
         const paintedAt = performance.now();
@@ -1486,38 +1627,78 @@ export function WorldClient({
         }));
       }));
     };
+    client.pendingActions.begin({
+      id: commandId,
+      scope: { worldInstanceId, characterId: snapshot.character.characterId },
+      details: {
+        kind: "character.move",
+        fromLocationId,
+        exitId: exit.id,
+        direction: exit.direction || exit.label,
+      },
+    });
     setPending("move");
+    traceFirstFeedbackPaint(traceId, "character.move", actionStartedAt);
     try {
       const response = exit.roadId
-        ? await client.roadStep(snapshot.character.characterId, exit.id, snapshot.location.revision, undefined, traceId)
-        : await client.move(snapshot.character.characterId, exit.id, snapshot.location.revision, undefined, traceId);
+        ? await client.roadStep(snapshot.character.characterId, exit.id, snapshot.location.revision, commandId, traceId)
+        : await client.move(snapshot.character.characterId, exit.id, snapshot.location.revision, commandId, traceId);
+      client.pendingActions.acknowledge(commandId);
       const partyAmbush = response.events?.some((event) => event.type === "team.road_encounter_started");
-      const nextSnapshot = await refreshAfterMutation(
-        partyAmbush
-          ? "A roadside ambush interrupts your travel."
-          : `You travel ${exit.direction || exit.label}.`,
-        true,
-        traceId,
-      );
+      const nextSnapshot = await client.getGame(traceId);
       snapshotReadyAt = traceId ? performance.now() : undefined;
-      if (partyAmbush) {
-        const nextTeamInfo = await refreshTeamCombat();
-        if (nextTeamInfo?.encounter) {
-          addEntry("narration", `${nextTeamInfo.encounter.lastNarration} Round ${nextTeamInfo.encounter.round}.`);
+      setSnapshot(nextSnapshot);
+      setConnectionError("");
+      if (nextSnapshot.location?.locationId !== fromLocationId) {
+        addDefaultLook(nextSnapshot.location);
+        announceNewQuestObjectives(nextSnapshot);
+        const currentAction = client.pendingActions.getSnapshot().find((action) => action.id === commandId);
+        if (currentAction?.state !== "confirmed") {
+          client.pendingActions.confirm(commandId);
+          addEntry("system", partyAmbush
+            ? "A roadside ambush interrupts your travel."
+            : `You travel ${exit.direction || exit.label}.`);
         }
-      } else if (response.events?.some((event) => event.type === "character.combat_encounter_started")) {
-        addEntry("narration", nextSnapshot.character?.combat?.lastNarration ?? "A roadside opponent blocks your way.");
+        if (partyAmbush) {
+          const nextTeamInfo = await refreshTeamCombat();
+          if (nextTeamInfo?.encounter) {
+            addEntry("narration", `${nextTeamInfo.encounter.lastNarration} Round ${nextTeamInfo.encounter.round}.`);
+          }
+        } else if (response.events?.some((event) => event.type === "character.combat_encounter_started")) {
+          addEntry("narration", nextSnapshot.character?.combat?.lastNarration ?? "A roadside opponent blocks your way.");
+        }
+        if (!dialogueModalOpen) setActiveDialogue(null);
+        setActiveMerchantCatalog(null);
+        logMoveTrace("success");
+      } else {
+        client.pendingActions.markUncertain(commandId, "The server accepted the move, but the room has not updated yet.");
+        addEntry("system", "The move was accepted. Waiting for the current room to update.");
+        logMoveTrace("uncertain");
       }
-      if (!dialogueModalOpen) setActiveDialogue(null);
-      setActiveMerchantCatalog(null);
-      logMoveTrace("success");
     } catch (error) {
-      addEntry("error", error instanceof Error ? error.message : "Unable to move.");
-      logMoveTrace("error");
+      const message = error instanceof Error ? error.message : "Unable to move.";
+      if (isRejectedAction(error)) {
+        client.pendingActions.reject(commandId, message);
+        addEntry("error", message);
+        logMoveTrace("error");
+      } else {
+        client.pendingActions.markUncertain(commandId, "The move result is not confirmed yet.");
+        addEntry("system", "The move result is not confirmed yet. Your room will update when the server responds.");
+        logMoveTrace("uncertain");
+      }
     } finally {
       setPending(null);
     }
-  }, [addEntry, dialogueModalOpen, pending, refreshAfterMutation, refreshTeamCombat, snapshot]);
+  }, [
+    addDefaultLook,
+    addEntry,
+    announceNewQuestObjectives,
+    dialogueModalOpen,
+    pending,
+    refreshTeamCombat,
+    snapshot,
+    worldInstanceId,
+  ]);
 
   const browseMerchant = useCallback(async (merchantNpcId: string) => {
     if (!snapshot?.character || pending) return;
@@ -1756,36 +1937,85 @@ export function WorldClient({
 
   const challengePlayer = useCallback(async (recipientCharacterId: string, recipientName: string) => {
     if (!snapshot?.character || pending) return;
+    const commandId = crypto.randomUUID();
+    const traceId = new URLSearchParams(window.location.search).get("muddTrace") === "1"
+      ? commandId
+      : undefined;
+    const actionStartedAt = performance.now();
     addEntry("system", `> attack ${recipientName}`);
+    client.pendingActions.begin({
+      id: commandId,
+      scope: { worldInstanceId, characterId: snapshot.character.characterId },
+      details: {
+        kind: "pvp.challenge",
+        recipientCharacterId,
+        recipientName,
+        priorRequestIds: [...knownInteractionStatusesRef.current.keys()],
+      },
+    });
     setPending("combat");
+    traceFirstFeedbackPaint(traceId, "interaction.request", actionStartedAt);
     try {
-      await client.requestInteraction(snapshot.character.characterId, recipientCharacterId);
-      addEntry("narration", `Challenge sent to ${recipientName}. Waiting for a response.`);
+      await client.requestInteraction(snapshot.character.characterId, recipientCharacterId, "pvp.challenge", commandId);
+      client.pendingActions.acknowledge(commandId);
       setInteractionInbox(await client.getInteractionInbox());
     } catch (error) {
-      addEntry("error", error instanceof Error ? error.message : "The challenge could not be sent.");
+      const message = error instanceof Error ? error.message : "The challenge could not be sent.";
+      if (isRejectedAction(error)) {
+        client.pendingActions.reject(commandId, message);
+        addEntry("error", message);
+      } else {
+        client.pendingActions.markUncertain(commandId, "Challenge status is not confirmed yet.");
+      }
     } finally {
       setPending(null);
     }
-  }, [addEntry, pending, snapshot]);
+  }, [addEntry, pending, snapshot, worldInstanceId]);
 
   const respondToPlayerChallenge = useCallback(async (requestId: string, response: "accept" | "decline") => {
     if (!snapshot?.character || pending) return;
+    const commandId = crypto.randomUUID();
+    const traceId = new URLSearchParams(window.location.search).get("muddTrace") === "1"
+      ? commandId
+      : undefined;
+    const actionStartedAt = performance.now();
+    const requestBefore = interactionInbox?.requests.find((candidate) => candidate.requestId === requestId);
+    client.pendingActions.begin({
+      id: commandId,
+      scope: { worldInstanceId, characterId: snapshot.character.characterId },
+      details: {
+        kind: "pvp.respond",
+        requestId,
+        response,
+        otherCharacterName: requestBefore?.initiatorName ?? "the other player",
+      },
+    });
     setPending("combat");
+    traceFirstFeedbackPaint(traceId, "interaction.respond", actionStartedAt);
     try {
-      await client.respondToInteraction(snapshot.character.characterId, requestId, response);
+      await client.respondToInteraction(snapshot.character.characterId, requestId, response, commandId);
+      client.pendingActions.acknowledge(commandId);
       const inbox = await client.getInteractionInbox();
       setInteractionInbox(inbox);
       const request = inbox.requests.find((candidate) => candidate.requestId === requestId);
-      addEntry("system", response === "accept"
-        ? `You accept ${request?.initiatorName ?? "the challenge"}’s challenge.`
-        : `You decline ${request?.initiatorName ?? "the challenge"}’s challenge.`);
+      if (request?.status === (response === "accept" ? "accepted" : "declined")) {
+        client.pendingActions.confirm(commandId);
+        addEntry("system", response === "accept"
+          ? `You accept ${request.initiatorName}’s challenge.`
+          : `You decline ${request.initiatorName}’s challenge.`);
+      }
     } catch (error) {
-      addEntry("error", error instanceof Error ? error.message : "You could not respond to that challenge.");
+      const message = error instanceof Error ? error.message : "You could not respond to that challenge.";
+      if (isRejectedAction(error)) {
+        client.pendingActions.reject(commandId, message);
+        addEntry("error", message);
+      } else {
+        client.pendingActions.markUncertain(commandId, "Your response status is not confirmed yet.");
+      }
     } finally {
       setPending(null);
     }
-  }, [addEntry, pending, snapshot]);
+  }, [addEntry, interactionInbox, pending, snapshot, worldInstanceId]);
 
   const performPvpAction = useCallback(async (
     action: "attack" | "defend" | "flee" | "use-item",
