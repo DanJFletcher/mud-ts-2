@@ -75,6 +75,66 @@ describe('autonomous NPC scheduler and room movement messages', () => {
     await engine.stop();
   });
 
+  it('enforces at least one minute between rooms even when authored movement is faster', async () => {
+    let now = new Date('2026-10-21T12:00:00.000Z');
+    const fastWorld = structuredClone(demoWorld);
+    for (const location of fastWorld.locations) {
+      for (const npc of location.npcs ?? []) {
+        if (npc.movement) npc.movement.intervalMs = 5_000;
+      }
+    }
+    const store = new InMemoryEventStore();
+    const engine = new EngineHost(
+      [autonomousNpcsPlugin],
+      store,
+      authorization,
+      fastWorld,
+      () => globalThis.crypto.randomUUID(),
+      () => now,
+      { roll: (sides) => sides },
+    );
+    await engine.start();
+
+    const scheduler = createAutonomousNpcScheduler({
+      engine,
+      store,
+      world: fastWorld,
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      now: () => now,
+    });
+    expect(await scheduler.tick()).toBe(2);
+
+    now = new Date(now.getTime() + 5_000);
+    expect(await scheduler.tick()).toBe(0);
+    const directTick = await engine.dispatchSystem({
+      type: 'world.npc.tick',
+      version: 1,
+      commandId: 'too-soon-direct-npc-tick',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      npcId: 'mossgate-patrolling-guard',
+    }, AUTONOMOUS_NPC_SYSTEM_ACTOR_ID);
+    expect(directTick.receipt.ok).toBe(false);
+
+    const resumedScheduler = createAutonomousNpcScheduler({
+      engine,
+      store,
+      world: fastWorld,
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      now: () => now,
+    });
+    now = new Date(now.getTime() + 54_999);
+    expect(await resumedScheduler.tick()).toBe(0);
+    now = new Date(now.getTime() + 1);
+    expect(await resumedScheduler.tick()).toBe(2);
+
+    const guardEvents = await store.readStream(
+      DEMO_WORLD_INSTANCE_ID,
+      autonomousNpcStreamId('mossgate-patrolling-guard'),
+    );
+    expect(guardEvents).toHaveLength(2);
+    await engine.stop();
+  });
+
   it('publishes deduplicated departure and arrival narratives with actual reverse-exit directions', async () => {
     const now = new Date('2026-10-21T12:00:00.000Z');
     const store = new InMemoryEventStore();

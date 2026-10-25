@@ -9,7 +9,7 @@ export type { PanelProps } from './components/Panel.js';
 export { TextInput } from './components/TextInput.js';
 export type { TextInputProps } from './components/TextInput.js';
 export { ActivityLog } from './components/ActivityLog.js';
-export type { ActivityEntry, ActivityLogProps } from './components/ActivityLog.js';
+export type { ActivityEntry, ActivityLogProps, ActivityLogTarget } from './components/ActivityLog.js';
 export { RoomDescription } from './components/RoomDescription.js';
 export type { RoomDescriptionProps, RoomExit } from './components/RoomDescription.js';
 export { NavigationControls } from './components/NavigationControls.js';

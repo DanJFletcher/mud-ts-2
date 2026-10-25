@@ -97,6 +97,24 @@
 .mudd-log__entry { padding-left: 0.85rem; border-left: 2px solid var(--mudd-border); color: var(--mudd-text); line-height: 1.5; }
 .mudd-log__entry--system { border-color: var(--mudd-warm); color: var(--mudd-muted); }
 .mudd-log__entry--error { border-color: var(--mudd-error); color: var(--mudd-error); }
+.mudd-log__interactive-target {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  text-decoration: underline dotted;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.16em;
+  cursor: pointer;
+}
+.mudd-log__interactive-target:hover:not(:disabled) { text-decoration-style: solid; }
+.mudd-log__interactive-target:focus-visible { outline: 2px solid var(--mudd-warm); outline-offset: 2px; }
+.mudd-log__interactive-target:disabled { cursor: wait; }
 .mudd-log__empty { margin: 0; color: var(--mudd-muted); font-size: 0.9rem; }
 
 .mudd-daily-board { display: grid; gap: .55rem; padding: .7rem; border-top: 1px solid var(--mudd-border); background: var(--mudd-surface); color: var(--mudd-text); }

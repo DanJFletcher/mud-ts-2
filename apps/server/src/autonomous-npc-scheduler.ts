@@ -1,5 +1,6 @@
 import {
   autonomousNpcStreamId,
+  effectiveAutonomousNpcMovementIntervalMs,
   mobileNpcDefinitions,
   projectAutonomousNpcPosition,
 } from '@mudd/core-plugins';
@@ -36,9 +37,10 @@ export function createAutonomousNpcScheduler(input: Readonly<{
           );
           const position = projectAutonomousNpcPosition(events, npc.id, initialLocationId);
           const currentTime = now();
+        const movementIntervalMs = effectiveAutonomousNpcMovementIntervalMs(npc.movement.intervalMs);
           if (
             position.lastAttemptAt &&
-            currentTime.getTime() - Date.parse(position.lastAttemptAt) < npc.movement.intervalMs
+            currentTime.getTime() - Date.parse(position.lastAttemptAt) < movementIntervalMs
           ) continue;
 
           const result = await input.engine.dispatchSystem({

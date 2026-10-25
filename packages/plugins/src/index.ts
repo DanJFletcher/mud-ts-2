@@ -7,8 +7,10 @@ export { characterPlugin } from './character.js';
 export { movementPlugin } from './movement.js';
 export { autonomousNpcsPlugin, autonomousNpcStateCapability } from './autonomous-npcs.js';
 export {
+  effectiveAutonomousNpcMovementIntervalMs,
   autonomousNpcStreamId,
   mobileNpcDefinitions,
+  MIN_AUTONOMOUS_NPC_MOVEMENT_INTERVAL_MS,
   projectAutonomousNpcPosition,
 } from './autonomous-npcs.js';
 export type { AutonomousNpcStateCapability, AutonomousNpcPosition } from './autonomous-npcs.js';

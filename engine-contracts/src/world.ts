@@ -37,6 +37,12 @@ export const ExitDefinitionSchema = z.object({
   mapLineGapAtLocationId: IdSchema.optional(),
 }).strict();
 
+export const WorldLocationEnteredEffectSchema = z.object({
+  characterId: IdSchema,
+  fromLocationId: IdSchema,
+  toLocationId: IdSchema,
+}).strict();
+
 export const LocationStateDefinitionSchema = z.object({
   id: IdSchema,
   name: z.string().min(1).max(160).optional(),
@@ -286,6 +292,8 @@ export const NpcDialogueDefinitionSchema = z.object({
   });
 });
 
+export const NpcCombatDispositionSchema = z.enum(['passive', 'hostile']);
+
 export const NpcDefinitionSchema = z.object({
   id: IdSchema,
   name: z.string().min(1).max(120),
@@ -299,10 +307,20 @@ export const NpcDefinitionSchema = z.object({
   announcements: z.array(z.string().min(1).max(500)).max(24).optional(),
   roomChatReactions: z.array(NpcRoomChatReactionDefinitionSchema).max(24).optional(),
   movement: NpcMovementBehaviorSchema.optional(),
+  /** Omitted disposition is passive: the player must choose to begin combat. */
+  combatDisposition: NpcCombatDispositionSchema.optional(),
   combatProfile: NpcCombatProfileSchema.optional(),
   loot: CombatLootDefinitionSchema.optional(),
   shop: MerchantCatalogDefinitionSchema.optional(),
-}).strict();
+}).strict().superRefine((npc, context) => {
+  if (npc.combatDisposition === 'hostile' && !npc.combatProfile) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['combatProfile'],
+      message: 'Hostile NPCs require a combat profile.',
+    });
+  }
+});
 
 export const NpcPresenceProjectionSchema = z.object({
   id: IdSchema,
@@ -310,6 +328,7 @@ export const NpcPresenceProjectionSchema = z.object({
   activityDescription: z.string().min(1).max(240).optional(),
   description: z.string().min(1).max(1000).optional(),
   canChallenge: z.boolean().default(false),
+  combatDisposition: NpcCombatDispositionSchema.default('passive'),
   canShop: z.boolean().default(false),
 }).strict();
 
@@ -812,6 +831,7 @@ export type TakeableObjectDefinition = z.infer<typeof TakeableObjectDefinitionSc
 export type InteractableObjectDefinition = z.infer<typeof InteractableObjectDefinitionSchema>;
 export type ItemUseInteractionDefinition = z.infer<typeof ItemUseInteractionDefinitionSchema>;
 export type NpcDefinition = z.infer<typeof NpcDefinitionSchema>;
+export type NpcCombatDisposition = z.infer<typeof NpcCombatDispositionSchema>;
 export type NpcDialogueDefinition = z.infer<typeof NpcDialogueDefinitionSchema>;
 export type NpcQuestResponseDefinition = z.infer<typeof NpcQuestResponseDefinitionSchema>;
 export type NpcRoomChatReactionDefinition = z.infer<typeof NpcRoomChatReactionDefinitionSchema>;

@@ -22,6 +22,7 @@ import {
   Text,
   TextInput,
   type ActivityEntry,
+  type ActivityLogTarget,
   type AvailableClassAction,
   type CharacterClassDefinition,
 } from "@mudd/ui";
@@ -231,8 +232,13 @@ function currentScreen(): Screen {
   return "play";
 }
 
-function makeEntry(kind: ActivityEntry["kind"], text: string): ActivityEntry {
-  return { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, kind, text };
+function makeEntry(kind: ActivityEntry["kind"], text: string, locationId?: string): ActivityEntry {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    kind,
+    text,
+    ...(locationId ? { locationId } : {}),
+  };
 }
 
 function dailyCycleResetDate(cycle: string): string {
@@ -258,6 +264,8 @@ export function WorldClient({
   worldInstanceId = window.localStorage.getItem("mudd-world-instance-id") ?? "mudd-demo-instance",
 }: WorldClientProps) {
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
+  const activeLocationIdRef = useRef<string | undefined>(snapshot?.location?.locationId);
+  activeLocationIdRef.current = snapshot?.location?.locationId;
   const [classCatalog, setClassCatalog] = useState<ClassCatalogSummary | undefined>();
   const [classCatalogError, setClassCatalogError] = useState<string>();
   const [classChoiceId, setClassChoiceId] = useState("");
@@ -435,9 +443,10 @@ export function WorldClient({
     kind: ActivityEntry["kind"],
     text: string,
     preserveScroll = false,
+    locationId = activeLocationIdRef.current,
   ) => {
     terminalFollowsLatestRef.current = !preserveScroll;
-    setEntries((current) => [...current, makeEntry(kind, text)]);
+    setEntries((current) => [...current, makeEntry(kind, text, locationId)]);
   }, []);
   const addNpcTerminalEvent = useCallback((message: RoomChatMessage) => {
     addEntry("narration", `${message.speakerName}: ${message.text}`, true);
@@ -466,8 +475,8 @@ export function WorldClient({
     if (!location || lastRoomLookIdRef.current === location.locationId) return;
     lastRoomLookIdRef.current = location.locationId;
     addEntry("system", "> look");
-    addEntry("location", location.title);
-    addEntry("narration", location.description);
+    addEntry("location", location.title, false, location.locationId);
+    addEntry("narration", location.description, false, location.locationId);
   }, [addEntry]);
 
   useEffect(() => {
@@ -1774,8 +1783,8 @@ export function WorldClient({
       setSnapshot(nextSnapshot);
       setConnectionError("");
       addEntry("narration", posture === "rest"
-        ? "You settle into a free resting posture. Health, stamina, and mana each recover by 6% of their maximum every two seconds."
-        : "You stand. Health, stamina, and mana each recover by 2% of their maximum every two seconds, and you can travel again.");
+        ? "You ease into a resting posture. The surface beneath you feels cool and firm; your breathing slows as nearby sounds soften."
+        : "You rise, stretching the stiffness from your limbs. Your clothes rustle as your feet find steady ground.");
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "You could not change your resting posture.");
     } finally {
@@ -2439,6 +2448,19 @@ export function WorldClient({
       ...(snapshot?.location?.npcs ?? []).map(({ id, name }) => ({ id, label: name })),
     ];
   }, [snapshot?.location?.npcs, snapshot?.location?.objects]);
+  const terminalLookTargets = useMemo<ActivityLogTarget[]>(() => {
+    const location = snapshot?.location;
+    if (!location) return [];
+    return [
+      ...location.objects.map(({ id, label }) => ({ id, label })),
+      ...(location.npcs ?? []).map(({ id, name }) => ({ id, label: name })),
+      ...(snapshot.character?.inventory ?? []).map(({ id, label }) => ({
+        id: `inventory:${id}`,
+        label,
+      })),
+      { id: `room:${location.locationId}`, label: location.title },
+    ];
+  }, [snapshot?.character?.inventory, snapshot?.location]);
   const quickTakeableObjects = useMemo(
     () => (snapshot?.location?.objects ?? []).filter((object) => object.takeable),
     [snapshot?.location?.objects],
@@ -2919,7 +2941,18 @@ export function WorldClient({
                           setTerminalCanScrollDown(distanceFromLatest > 32);
                         }}
                       >
-                        {entries.length > 0 && <ActivityLog entries={entries} label="Terminal transcript" />}
+                        {entries.length > 0 && (
+                          <ActivityLog
+                            entries={entries}
+                            label="Terminal transcript"
+                            currentLocationId={snapshot.location?.locationId}
+                            lookTargets={terminalLookTargets}
+                            onLookTarget={(target) => submitQuickCommand(
+                              target.id.startsWith("room:") ? "look" : `look ${target.label}`,
+                            )}
+                            actionsDisabled={pending !== null}
+                          />
+                        )}
                       </div>
                       {terminalCanScrollDown && (
                         <button

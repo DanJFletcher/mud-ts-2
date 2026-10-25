@@ -10,8 +10,9 @@ import {
   CombatActionResolvedEventV3Schema,
   FLEE_STAMINA_COST,
   InnRestCommandSchema,
+  WorldLocationEnteredEffectSchema,
 } from '@mudd/contracts';
-import type { EnginePlugin, ProposedDomainEvent, ProposedEventEffect } from '@mudd/engine-core';
+import type { EnginePlugin, EventEffectContext, ProposedDomainEvent, ProposedEventEffect } from '@mudd/engine-core';
 import type {
   CombatLootDefinition,
   CharacterProjection,
@@ -20,7 +21,7 @@ import type {
   WorldPackDraft,
 } from '@mudd/contracts';
 import type { EngineCommandContext } from '@mudd/engine-core';
-import { RuleViolationError } from '@mudd/engine-core';
+import { replayCharacter, RuleViolationError, SYSTEM_ACTOR_ID } from '@mudd/engine-core';
 import {
   assertCharacterAlive,
   assertCharacterStanding,
@@ -34,6 +35,7 @@ import { interactionPolicyRegistry } from './interactions.js';
 import { calculateCharacterStats, characterAttackDamage, maximumHealthForLevel, levelAfterExperience } from './character-stats.js';
 import { createWorldCorpseEffect } from './world-items.js';
 import { classAdoptionGuards, classCombatPolicyCapability, type ClassCombatPolicy } from './classes.js';
+import { z } from 'zod';
 
 const VICTORY_EXPERIENCE_REWARD = 10;
 
@@ -98,6 +100,82 @@ function findCombatOpponent(
   return undefined;
 }
 
+async function startHostileNpcEncounter(
+  payload: z.infer<typeof WorldLocationEnteredEffectSchema>,
+  context: EventEffectContext,
+) {
+  const commandId = `hostile-npc-entry:${context.effectId}`;
+  const payloadHash = JSON.stringify({
+    effectId: context.effectId,
+    characterId: payload.characterId,
+    toLocationId: payload.toLocationId,
+  });
+  const prior = await context.store.lookupCommand(
+    context.worldInstanceId,
+    SYSTEM_ACTOR_ID,
+    commandId,
+    payloadHash,
+  );
+  if (prior) {
+    if (!prior.receipt.ok) throw new Error('A hostile encounter entry command was reused with a different payload.');
+    return;
+  }
+
+  const history = await context.store.readStream(context.worldInstanceId, payload.characterId);
+  const character = replayCharacter(history);
+  if (
+    !character ||
+    character.archived ||
+    character.locationId !== payload.toLocationId ||
+    character.combat?.status === 'active'
+  ) return;
+
+  const location = context.world.locations.find((candidate) => candidate.id === payload.toLocationId);
+  const opponent = location?.npcs?.find((candidate) =>
+    candidate.combatDisposition === 'hostile' && candidate.combatProfile,
+  );
+  if (!opponent?.combatProfile) return;
+
+  const playerMaxHealth = maximumHealthForLevel(
+    character.advancement?.level ?? 1,
+    character.attributes.constitution,
+  );
+  const playerHealth = Math.min(character.health?.current ?? playerMaxHealth, playerMaxHealth);
+  if (playerHealth <= 0) return;
+
+  const encounter = {
+    encounterId: context.effectId,
+    locationId: payload.toLocationId,
+    opponentNpcId: opponent.id,
+    opponentName: opponent.name,
+    opponentStyle: opponent.combatProfile.style ?? 'steady',
+    round: 0,
+    playerHealth,
+    playerMaxHealth,
+    opponentHealth: opponent.combatProfile.maxHealth,
+    opponentMaxHealth: opponent.combatProfile.maxHealth,
+    status: 'active',
+    lastAction: 'encounter',
+    lastNarration: `${opponent.name} rushes you as you enter.`,
+  };
+  const eventPayload = CharacterCombatEncounterStartedEventSchema.shape.payload.parse({
+    characterId: character.characterId,
+    encounter,
+  });
+  const result = await context.store.append({
+    worldInstanceId: context.worldInstanceId,
+    streamId: character.characterId,
+    actorId: SYSTEM_ACTOR_ID,
+    commandId,
+    payloadHash,
+    expectedVersion: history.at(-1)?.aggregateVersion ?? 0,
+    events: [{ type: 'character.combat_encounter_started', version: 1, payload: eventPayload }],
+  });
+  if (!result.receipt.ok) {
+    throw new Error(`Could not start hostile encounter: ${result.receipt.code}.`);
+  }
+}
+
 export const combatPlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.combat',
@@ -117,8 +195,14 @@ export const combatPlugin: EnginePlugin = {
     },
   },
   register(pluginContext) {
-    const { registerCommand, registerQuery, requireCapability, optionalCapability } = pluginContext;
+    const { registerCommand, registerQuery, registerEffect, requireCapability, optionalCapability } = pluginContext;
     const characterState = requireCapability<CharacterStateCapability>(characterStateCapability);
+    registerEffect(
+      'combat.hostile-npc-entry',
+      1,
+      WorldLocationEnteredEffectSchema,
+      startHostileNpcEncounter,
+    );
     requireCapability(interactionPolicyRegistry);
     registerPvpCombat(pluginContext, characterState);
 

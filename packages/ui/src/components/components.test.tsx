@@ -70,6 +70,42 @@ describe('@mudd/ui components', () => {
     expect(link.querySelector('img')).toBeNull();
   });
 
+  it('links only known interactables from the current room in terminal prose', () => {
+    const onLookTarget = vi.fn();
+    render(
+      <ActivityLog
+        entries={[
+          {
+            id: 'current',
+            kind: 'narration',
+            locationId: 'grove',
+            text: 'A brown squirrel watches the weathered marker.',
+          },
+          {
+            id: 'previous',
+            kind: 'narration',
+            locationId: 'market',
+            text: 'A brown squirrel watches the weathered marker.',
+          },
+        ]}
+        currentLocationId="grove"
+        lookTargets={[
+          { id: 'squirrel', label: 'Brown Squirrel' },
+          { id: 'marker', label: 'Weathered marker' },
+        ]}
+        onLookTarget={onLookTarget}
+      />,
+    );
+
+    const squirrel = screen.getByRole('button', { name: 'Look at Brown Squirrel in terminal' });
+    const marker = screen.getByRole('button', { name: 'Look at Weathered marker in terminal' });
+    expect(squirrel).toHaveTextContent('brown squirrel');
+    expect(marker).toHaveTextContent('weathered marker');
+    expect(screen.getAllByRole('button')).toHaveLength(2);
+    fireEvent.click(marker);
+    expect(onLookTarget).toHaveBeenCalledWith({ id: 'marker', label: 'Weathered marker' });
+  });
+
   it('uses heading hierarchy and renders world introduction as text', () => {
     render(<WorldHero name="The Waystone Path" summary="An old road." introduction={['Listen for the bells.']} />);
     expect(screen.getByRole('heading', { level: 1, name: 'The Waystone Path' })).toBeInTheDocument();

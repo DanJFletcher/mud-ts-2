@@ -120,6 +120,26 @@ beforeEach(() => {
 });
 
 describe('world lobby and explicit character entry', () => {
+  it('keeps account navigation in a collapsible header menu', async () => {
+    const { container } = open();
+    const toggle = container.querySelector<HTMLButtonElement>('.lobby-mobile-menu-toggle');
+    const navigation = container.querySelector<HTMLElement>('#account-navigation');
+    expect(toggle).not.toBeNull();
+    expect(navigation).not.toBeNull();
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(toggle!);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(navigation).toHaveClass('is-open');
+    expect(within(navigation!).getByRole('link', { name: 'Worlds' })).toBeInTheDocument();
+    expect(within(navigation!).getByRole('link', { name: 'Codex' })).toBeInTheDocument();
+    expect(within(navigation!).getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(navigation).not.toHaveClass('is-open');
+  });
+
   it('orders real recent history ahead of legacy nulls without auto-entering an active session', async () => {
     sessions = [{ id: sessionId, characterId: one, worldInstanceId: demo }];
     open();

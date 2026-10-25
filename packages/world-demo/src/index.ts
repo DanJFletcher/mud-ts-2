@@ -299,7 +299,7 @@ const draft = {
           unknownTopicResponse: 'The villager smiles and continues on their way.',
           movement: {
             strategy: 'wander',
-            intervalMs: 45_000,
+            intervalMs: 60_000,
             stayChancePercent: 20,
             allowedLocationIds: ['mossgate-clearing', 'glasswater-approach', 'glasswater-bridge'],
             narrative: {

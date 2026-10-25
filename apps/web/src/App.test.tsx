@@ -1314,7 +1314,7 @@ describe('single-character world session client', () => {
     expect(initialTranscript.indexOf('Mossgate Clearing')).toBeLessThan(
       initialTranscript.indexOf('A circle of pale stones breaks through the moss.'),
     );
-    expect(within(history).getByText('Mossgate Clearing')).toHaveClass('mudd-log__entry--location');
+    expect(within(history).getByRole('button', { name: 'Look at Mossgate Clearing in terminal' })).toBeInTheDocument();
     expect(history).not.toHaveTextContent('A path keeper stands beside the weathered marker');
     expect(screen.queryByText(/World activity|\b\d+\s+events?\b/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Look around' })).not.toBeInTheDocument();
@@ -2129,7 +2129,11 @@ describe('single-character world session client', () => {
 
     clickQuickAction('Paid immediate inn recovery at Willowrest Inn for 5 moss marks');
 
-    await screen.findByText(/You rest at Willowrest Inn, restore 2 health, \d+ stamina, and \d+ mana, and pay 5 moss marks/);
+    await waitFor(() => {
+      expect(screen.getByRole('region', { name: 'Terminal output' })).toHaveTextContent(
+        /You rest at Willowrest Inn, restore 2 health, \d+ stamina, and \d+ mana, and pay 5 moss marks/,
+      );
+    });
     expect(screen.getByLabelText('Character health')).toHaveTextContent('6/6');
     expect(walletBalance).toBe(7);
     expect(apiFetch.mock.calls.some(([path, init]) => {
@@ -2154,7 +2158,7 @@ describe('single-character world session client', () => {
     fireEvent.change(commandInput, { target: { value: 'rest' } });
     fireEvent.submit(commandInput.closest('form')!);
 
-    await screen.findByText(/You settle into a free resting posture/i);
+    await screen.findByText(/You ease into a resting posture/i);
     expect(apiFetch.mock.calls.some(([path, init]) => {
       if (path !== '/api/commands') return false;
       return JSON.parse(String(init?.body ?? '{}')).type === 'character.rest';
@@ -2163,7 +2167,7 @@ describe('single-character world session client', () => {
 
     fireEvent.change(commandInput, { target: { value: 'stand' } });
     fireEvent.submit(commandInput.closest('form')!);
-    await screen.findByText(/You stand\. Health, stamina, and mana each recover/i);
+    await screen.findByText(/You rise, stretching the stiffness from your limbs/i);
     expect(apiFetch.mock.calls.some(([path, init]) => {
       if (path !== '/api/commands') return false;
       return JSON.parse(String(init?.body ?? '{}')).type === 'character.stand';
@@ -2190,7 +2194,7 @@ describe('single-character world session client', () => {
     const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
     fireEvent.change(commandInput, { target: { value: 'rest' } });
     fireEvent.submit(commandInput.closest('form')!);
-    await screen.findByText(/You settle into a free resting posture/i);
+    await screen.findByText(/You ease into a resting posture/i);
     expect(apiFetch.mock.calls.some(([path, init]) =>
       path === '/api/commands' &&
       JSON.parse(String(init?.body ?? '{}')).type === 'character.rest' &&
@@ -2199,7 +2203,7 @@ describe('single-character world session client', () => {
 
     fireEvent.change(commandInput, { target: { value: 'stand' } });
     fireEvent.submit(commandInput.closest('form')!);
-    await screen.findByText(/You stand\. Health, stamina, and mana each recover/i);
+    await screen.findByText(/You rise, stretching the stiffness from your limbs/i);
     expect(apiFetch.mock.calls.some(([path, init]) =>
       path === '/api/commands' &&
       JSON.parse(String(init?.body ?? '{}')).type === 'character.stand' &&
@@ -2290,10 +2294,15 @@ describe('single-character world session client', () => {
     const history = screen.getByRole('region', { name: 'Terminal output' });
     const chat = screen.getByRole('region', { name: 'Room chat' });
     const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
+    const markerResponse = 'Mara: The marker points east to the Old Bell Tower. Its direction is still true.';
+    const markerResponseCount = () => [...history.querySelectorAll('li')]
+      .filter((entry) => entry.textContent === markerResponse).length;
 
     fireEvent.change(commandInput, { target: { value: 'talk Mara' } });
     fireEvent.submit(commandInput.closest('form')!);
-    await screen.findByText('Mara: The old paths still have their stories. What would you like to ask?');
+    await waitFor(() => {
+      expect(history).toHaveTextContent('Mara: The old paths still have their stories. What would you like to ask?');
+    });
     expect(history).toHaveTextContent('> talk Mara');
     expect(chat).not.toHaveTextContent('What would you like to ask?');
     expect(screen.getByRole('group', { name: 'Mara dialogue choices' })).toHaveTextContent('Ask about the marker');
@@ -2308,7 +2317,9 @@ describe('single-character world session client', () => {
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Ask about the marker' }));
-    await screen.findByText('Mara: The marker points east to the Old Bell Tower. Its direction is still true.');
+    await waitFor(() => {
+      expect(history).toHaveTextContent('Mara: The marker points east to the Old Bell Tower. Its direction is still true.');
+    });
     const remainingChoices = screen.getByRole('group', { name: 'Mara dialogue choices' });
     expect(remainingChoices).toHaveTextContent('Ask about the bell tower');
     expect(remainingChoices).not.toHaveTextContent('Ask about the marker');
@@ -2316,13 +2327,15 @@ describe('single-character world session client', () => {
 
     fireEvent.change(commandInput, { target: { value: 'talk Mara about bell' } });
     fireEvent.submit(commandInput.closest('form')!);
-    await screen.findByText('Mara: The bell has not rung in years. The tower stands east of this clearing.');
+    await waitFor(() => {
+      expect(history).toHaveTextContent('Mara: The bell has not rung in years. The tower stands east of this clearing.');
+    });
 
     clickQuickAction('Show people to talk to');
     fireEvent.click(screen.getByRole('button', { name: 'Talk to Mara' }));
     expect(screen.getByRole('group', { name: /^Quick commands, page \d+$/ })).toBeVisible();
     await waitFor(() => {
-      expect(screen.getAllByText('Mara: The marker points east to the Old Bell Tower. Its direction is still true.')).toHaveLength(2);
+      expect(markerResponseCount()).toBe(2);
     });
 
     quickGo('north');
@@ -2332,7 +2345,7 @@ describe('single-character world session client', () => {
     fireEvent.change(commandInput, { target: { value: 'talk Mara' } });
     fireEvent.submit(commandInput.closest('form')!);
     await waitFor(() => {
-      expect(screen.getAllByText('Mara: The marker points east to the Old Bell Tower. Its direction is still true.')).toHaveLength(3);
+      expect(markerResponseCount()).toBe(3);
     });
 
     quickGo('north');
@@ -2367,6 +2380,29 @@ describe('single-character world session client', () => {
     fireEvent.change(commandInput, { target: { value: 'look marker' } });
     fireEvent.submit(commandInput.closest('form')!);
     await screen.findByText('You do not see anything called “marker” here.');
+  });
+
+  it('runs a look command when a known person, place, or object is clicked in the terminal', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+    const terminal = history.closest('.focused-terminal')!;
+    const markerLink = await screen.findByRole('button', { name: 'Look at Weathered marker in terminal' });
+
+    fireEvent.click(markerLink);
+
+    await screen.findByText('A weathered stone marker, its carved arrow worn but still pointing east.');
+    expect(history).toHaveTextContent('> look Weathered marker');
+    await waitFor(() => expect(terminal).toHaveAttribute('aria-busy', 'false'));
+    expect(apiFetch.mock.calls.some(([path, init]) => {
+      if (path !== '/api/queries') return false;
+      const query = JSON.parse(String(init?.body ?? '{}'));
+      return query.type === 'object.inspect' && query.payload?.objectId === 'mossgate-marker';
+    })).toBe(true);
+
+    quickGo('north');
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    expect(screen.queryByRole('button', { name: 'Look at Weathered marker' })).not.toBeInTheDocument();
   });
 
   it('records reading a current-room marker as a character action', async () => {
@@ -2628,8 +2664,8 @@ describe('single-character world session client', () => {
     expect(itemsToTake).toContainElement(screen.getByRole('button', { name: 'Take Lost feather' }));
     fireEvent.click(screen.getByRole('button', { name: 'Take all available items' }));
 
-    await screen.findByText('You pick up the loose stone.');
-    await screen.findByText('You pick up the lost feather.');
+    await waitFor(() => expect(history).toHaveTextContent('You pick up the loose stone.'));
+    await waitFor(() => expect(history).toHaveTextContent('You pick up the lost feather.'));
     expect(history).toHaveTextContent('> take all');
     expect(quickActionVisibleAnywhere('Show items to take')).toBe(false);
 
@@ -2786,7 +2822,9 @@ describe('single-character world session client', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Buy Brass lantern' }));
     await screen.findByRole('button', { name: 'Purchased Brass lantern for 8 moss mark' });
     expect(screen.getByText('Balance: 4 moss mark')).toBeVisible();
-    expect(screen.getByText('You buy the brass lantern for 8 moss marks.')).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Terminal output' })).toHaveTextContent(
+      'You buy the brass lantern for 8 moss marks.',
+    );
     expect(quickActionVisibleAnywhere('Show items to buy')).toBe(false);
     const purchaseRequest = apiFetch.mock.calls.find(([path, init]) =>
       path === '/api/commands' &&

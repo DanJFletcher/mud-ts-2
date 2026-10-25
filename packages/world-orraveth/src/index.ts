@@ -156,7 +156,7 @@ const draft = {
           unknownTopicResponse: '“I’m just on an errand. Try the market or the well if you need directions.”',
           movement: {
             strategy: 'wander',
-            intervalMs: 45_000,
+            intervalMs: 60_000,
             stayChancePercent: 20,
             allowedLocationIds: [
               'bellwold-market-square',
@@ -241,7 +241,7 @@ const draft = {
           },
           movement: {
             strategy: 'route',
-            intervalMs: 20_000,
+            intervalMs: 60_000,
             routeLocationIds: [
               'bellwold-market-square',
               'bellwold-south-common',

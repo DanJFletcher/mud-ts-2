@@ -16,6 +16,11 @@ import { RuleViolationError } from '@mudd/engine-core';
 import { exitsForLocationState } from './location-state.js';
 
 export const AUTONOMOUS_NPC_STREAM_PREFIX = 'world-npc:';
+export const MIN_AUTONOMOUS_NPC_MOVEMENT_INTERVAL_MS = 60_000;
+
+export function effectiveAutonomousNpcMovementIntervalMs(authoredIntervalMs: number): number {
+  return Math.max(MIN_AUTONOMOUS_NPC_MOVEMENT_INTERVAL_MS, authoredIntervalMs);
+}
 
 export function autonomousNpcStreamId(npcId: string): string {
   return `${AUTONOMOUS_NPC_STREAM_PREFIX}${npcId}`;
@@ -155,9 +160,10 @@ export const autonomousNpcsPlugin: EnginePlugin = {
         }
 
         const attemptedAt = context.now();
+        const movementIntervalMs = effectiveAutonomousNpcMovementIntervalMs(movement.intervalMs);
         if (
           position.lastAttemptAt &&
-          attemptedAt.getTime() - Date.parse(position.lastAttemptAt) < movement.intervalMs
+          attemptedAt.getTime() - Date.parse(position.lastAttemptAt) < movementIntervalMs
         ) {
           throw new RuleViolationError('This NPC is not due to move yet.');
         }

@@ -961,12 +961,13 @@ export const characterPlugin: EnginePlugin = {
         } : {}),
         ...(roomNpcs.length
           ? {
-            npcs: roomNpcs.map(({ id, name, description, activityDescription, combatProfile, shop }) => ({
+            npcs: roomNpcs.map(({ id, name, description, activityDescription, combatProfile, combatDisposition, shop }) => ({
               id,
               name,
               ...(activityDescription ? { activityDescription } : {}),
               ...(includeNpcDescriptions ? { description } : {}),
               canChallenge: Boolean(combatProfile),
+              combatDisposition: combatDisposition ?? 'passive',
               canShop: Boolean(shop),
             })),
           }

@@ -1,6 +1,7 @@
 import {
   CharacterMovedEventSchema,
   MoveCharacterCommandSchema,
+  WorldLocationEnteredEffectSchema,
 } from '@mudd/contracts';
 import type { CapabilityToken, WorldPackDraft } from '@mudd/contracts';
 import type { EnginePlugin } from '@mudd/engine-core';
@@ -106,15 +107,28 @@ export function createMovementPlan(
       recoveryEvent,
       { type: 'character.moved', version: 1, payload },
     ],
-    effects: exit.toLocationId === character.locationId ? [] : [{
-      type: 'world.location.entered',
-      version: 1,
-      payload: {
-        characterId: character.characterId,
-        fromLocationId: character.locationId,
-        toLocationId: exit.toLocationId,
-      },
-    }],
+    effects: exit.toLocationId === character.locationId
+      ? []
+      : [
+        {
+          type: 'world.location.entered',
+          version: 1,
+          payload: WorldLocationEnteredEffectSchema.parse({
+            characterId: character.characterId,
+            fromLocationId: character.locationId,
+            toLocationId: exit.toLocationId,
+          }),
+        },
+        {
+          type: 'combat.hostile-npc-entry',
+          version: 1,
+          payload: WorldLocationEnteredEffectSchema.parse({
+            characterId: character.characterId,
+            fromLocationId: character.locationId,
+            toLocationId: exit.toLocationId,
+          }),
+        },
+      ],
   };
 }
 

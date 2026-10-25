@@ -1,9 +1,11 @@
 .lobby-shell { min-height: 100dvh; height: auto; overflow: visible; padding-bottom: 3rem; background: var(--mudd-bg); color: var(--mudd-text); }
-.lobby-header { max-width: 1160px; margin: auto; padding: 1.1rem 1.5rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-bottom: 1px solid var(--mudd-border); }
+.lobby-header { position: relative; z-index: 10; max-width: 1160px; margin: auto; padding: 1.1rem 1.5rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-bottom: 1px solid var(--mudd-border); }
 .lobby-brand { display: inline-flex; align-items: center; gap: .65rem; font-family: "DM Mono", monospace; font-weight: 600; letter-spacing: .14em; text-decoration: none; }
 .lobby-brand img { width: 30px; height: 30px; }
+.lobby-mobile-menu-toggle { display: none; }
 .lobby-header nav { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; font-size: .88rem; }
 .lobby-header nav a { padding-block: .6rem; text-decoration: none; }
+.lobby-theme-label { display: none; }
 .lobby-header a:hover, .lobby-back:hover { color: var(--mudd-accent); }
 .lobby-content { width: min(100%, 1080px); box-sizing: border-box; margin: auto; padding: 2.5rem 1.5rem; }
 .lobby-content h1, .lobby-content h2, .lobby-content h3 { font-family: Literata, Georgia, serif; font-weight: 500; line-height: 1.25; }
@@ -40,17 +42,67 @@
 .character-options[open] > div { position: absolute; z-index: 2; right: 0; background: var(--mudd-surface-raised); border: 1px solid var(--mudd-border); border-radius: .6rem; padding: .4rem; box-shadow: var(--mudd-shadow); display: grid; }
 .lobby-leave-error { position: fixed; inset: 1rem 1rem auto; z-index: 100; background: var(--mudd-surface); color: var(--mudd-error); padding: 1rem; border: 1px solid currentColor; }
 @media (max-width: 700px) {
-  .lobby-header { padding: .7rem 1rem; gap: .5rem; }
-  .lobby-header nav { gap: .7rem; font-size: .8rem; }
+  .lobby-header { padding: .6rem 1rem; gap: .5rem; }
   .lobby-brand { font-size: .85rem; gap: .4rem; }
   .lobby-brand img { width: 24px; height: 24px; }
+  .lobby-mobile-menu-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    flex: 0 0 auto;
+    border: 1px solid var(--mudd-border);
+    border-radius: .65rem;
+    color: var(--mudd-text);
+    background: var(--mudd-surface);
+    cursor: pointer;
+  }
+  .lobby-mobile-menu-toggle:focus-visible {
+    outline: 2px solid var(--mudd-accent);
+    outline-offset: 3px;
+  }
+  .lobby-header nav {
+    display: none;
+    position: absolute;
+    top: calc(100% + 1px);
+    left: 0;
+    right: 0;
+    z-index: 20;
+    flex-direction: column;
+    align-items: stretch;
+    gap: .2rem;
+    padding: .5rem;
+    border: 1px solid var(--mudd-border);
+    border-top: 0;
+    border-radius: 0 0 .8rem .8rem;
+    background: var(--mudd-surface-raised);
+    box-shadow: var(--mudd-shadow);
+    font-size: .95rem;
+  }
+  .lobby-header nav.is-open { display: flex; }
+  .lobby-header nav > a,
+  .lobby-header nav > button,
+  .lobby-header nav .pwa-install-action,
+  .lobby-header nav .pwa-install-action > button {
+    width: 100%;
+    min-height: 44px;
+    box-sizing: border-box;
+  }
+  .lobby-header nav > a,
+  .lobby-header nav > button,
+  .lobby-header nav .pwa-install-action > button {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: .7rem;
+    padding: .65rem .75rem;
+    text-align: left;
+  }
+  .lobby-theme-label { display: inline; }
   .lobby-content { padding: 1.5rem 1rem; }
   .lobby-intro { margin-bottom: 1.6rem; }
   .lobby-grid { display: flex; flex-direction: column; gap: 2rem; }
   .lobby-worlds, .lobby-recent { width: 100%; min-width: 0; }
   .lobby-recent { order: -1; }
-}
-@media (max-width: 360px) {
-  .lobby-header { flex-wrap: wrap; }
-  .lobby-header nav { width: 100%; justify-content: space-between; }
 }

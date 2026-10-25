@@ -56,7 +56,10 @@ const roadPartyRosterPlugin: EnginePlugin = {
   },
 };
 
-function roadWorld(encounterChancePercent: number) {
+function roadWorld(
+  encounterChancePercent: number,
+  deerDisposition?: 'passive' | 'hostile',
+) {
   return WorldPackDraftSchema.parse({
     formatVersion: 1,
     packId: 'road-test',
@@ -105,6 +108,16 @@ function roadWorld(encounterChancePercent: number) {
               price: 2,
             }],
           },
+        }, {
+          id: 'wild-deer',
+          name: 'Wild Deer',
+          description: 'A lean deer with a russet coat and a dark line along its back.',
+          activityDescription: 'browses the verge, ears twitching',
+          greeting: 'The deer watches you quietly.',
+          topics: [],
+          unknownTopicResponse: 'The deer flicks its ears and keeps grazing.',
+          ...(deerDisposition ? { combatDisposition: deerDisposition } : {}),
+          combatProfile: { maxHealth: 10, attackDamage: 1 },
         }],
         exits: [
           { id: 'segment-to-start', fromLocationId: 'road-segment', toLocationId: 'road-start', label: 'Back', roadId: 'test-road' },
@@ -134,8 +147,12 @@ function roadWorld(encounterChancePercent: number) {
   });
 }
 
-function makeRoadEngine(encounterChancePercent: number, rolls: number[]) {
-  const world = roadWorld(encounterChancePercent);
+function makeRoadEngine(
+  encounterChancePercent: number,
+  rolls: number[],
+  deerDisposition?: 'passive' | 'hostile',
+) {
+  const world = roadWorld(encounterChancePercent, deerDisposition);
   const store = new InMemoryEventStore();
   let id = 0;
   const rng = {
@@ -329,10 +346,17 @@ describe('stepwise road travel', () => {
           id: 'road-segment-fallen-token',
           takeable: true,
         })],
-        npcs: [expect.objectContaining({
-          id: 'roadside-trader',
-          canShop: true,
-        })],
+        npcs: [
+          expect.objectContaining({
+            id: 'roadside-trader',
+            canShop: true,
+          }),
+          expect.objectContaining({
+            id: 'wild-deer',
+            canChallenge: true,
+            combatDisposition: 'passive',
+          }),
+        ],
       },
     });
 
@@ -379,6 +403,78 @@ describe('stepwise road travel', () => {
         { id: 'road-segment-fallen-token' },
         { id: 'item-roadside-bandage' },
       ],
+    });
+    await engine.stop();
+  });
+
+  it('requires combat stats for an authored hostile creature', () => {
+    const world = roadWorld(0, 'hostile');
+    const deer = world.locations.find(({ id }) => id === 'road-segment')?.npcs?.find(({ id }) => id === 'wild-deer');
+    expect(deer).toBeDefined();
+    delete deer!.combatProfile;
+    expect(() => WorldPackDraftSchema.parse(world)).toThrow('Hostile NPCs require a combat profile.');
+  });
+
+  it('keeps passive creatures out of combat until the player attacks them', async () => {
+    const { engine, store } = makeRoadEngine(0, [1]);
+    await engine.start();
+    const characterId = await createRoadCharacter(engine);
+    const travel = await engine.dispatch({
+      type: 'character.road.step',
+      version: 1,
+      commandId: 'road-step-beside-deer',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 1,
+      payload: { exitId: 'start-to-segment' },
+    }, session);
+    expect(travel.receipt.ok).toBe(true);
+    await engine.processPendingEffects();
+
+    let character = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId));
+    expect(character).toMatchObject({ locationId: 'road-segment' });
+    expect(character?.combat).toBeUndefined();
+
+    const attack = await engine.dispatch({
+      type: 'combat.action',
+      version: 1,
+      commandId: 'attack-passive-deer',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: character!.revision,
+      payload: { action: 'attack', targetNpcId: 'wild-deer' },
+    }, session);
+    expect(attack.receipt.ok).toBe(true);
+    character = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId));
+    expect(character?.combat).toMatchObject({ status: 'active', opponentNpcId: 'wild-deer' });
+    await engine.stop();
+  });
+
+  it('starts combat when a hostile creature is present on room entry', async () => {
+    const { engine, store } = makeRoadEngine(0, [1], 'hostile');
+    await engine.start();
+    const characterId = await createRoadCharacter(engine);
+    const travel = await engine.dispatch({
+      type: 'character.road.step',
+      version: 1,
+      commandId: 'road-step-into-hostile-room',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 1,
+      payload: { exitId: 'start-to-segment' },
+    }, session);
+    expect(travel.receipt.ok).toBe(true);
+
+    await engine.processPendingEffects();
+    const character = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId));
+    expect(character).toMatchObject({
+      locationId: 'road-segment',
+      combat: {
+        status: 'active',
+        opponentNpcId: 'wild-deer',
+        lastAction: 'encounter',
+        lastNarration: 'Wild Deer rushes you as you enter.',
+      },
     });
     await engine.stop();
   });
