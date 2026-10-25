@@ -17,11 +17,14 @@ import {
   ClassChoice,
   DailyBoard,
   DisclosureButton,
+  InteractionOptionsDialog,
   NavigationControls,
+  NpcDialogueDialog,
   Panel,
   Text,
   TextInput,
   type ActivityEntry,
+  type ActivityLogAction,
   type ActivityLogTarget,
   type AvailableClassAction,
   type CharacterClassDefinition,
@@ -95,6 +98,10 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
     "Usage: party [help|info|list|create|join <id>|quests|quest start <id>|leave|close]",
     "Manage a public party of up to four players, start shared quests, and coordinate cooperative encounters.",
   ],
+  quests: [
+    "Usage: quests | quests <number or choice>",
+    "After talking to an NPC, list and select one of their dialogue choices.",
+  ],
   jobs: [
     "Usage: jobs [browse|accept <id>|deliver <id>]",
     "Browse today’s local bulletin, accept a posting, or deliver its carried supplies.",
@@ -132,8 +139,8 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
     "Travel through an available exit. Use the Go quick action to choose from current exits.",
   ],
   read: [
-    "Usage: read <object>",
-    "Read written text on an object in the current room.",
+    "Usage: read <object> | read bulletin",
+    "Read written text in this room or open its daily bulletin.",
   ],
   take: [
     "Usage: take <item> | take all",
@@ -189,6 +196,7 @@ const GENERAL_HELP = [
   "Commands",
   "help [command] — List commands or show instructions for one.",
   "party [help|info|list|create|join <id>|quests|quest start <id>|leave|close] — Manage your party and its quests.",
+  "quests [number or choice] — List or select a reply in the current NPC dialogue.",
   "jobs [browse|accept <id>|deliver <id>] — Browse the local daily bulletin and fulfil postings.",
   "gather <source> — Collect a local supply source; use a fishing rod to fish.",
   "talk <npc> [about <topic>] — Speak privately with someone in the current room.",
@@ -196,7 +204,7 @@ const GENERAL_HELP = [
   "buy <item> — Purchase an item from the open merchant catalog.",
   "look [at] <object> — Describe the room or inspect an object here or in your inventory.",
   "go <direction> — Travel through an available exit.",
-  "read <object> — Read text on an object in the current room.",
+  "read <object> | read bulletin — Read room text or open the local daily bulletin.",
   "take <item> | take all — Pick up one or all items in the current room.",
   "equip <item> — Equip a carried weapon or armor item.",
   "unequip <weapon|armor> — Remove equipped gear from a slot.",
@@ -311,6 +319,8 @@ export function WorldClient({
   const [collapsedQuestGroups, setCollapsedQuestGroups] = useState({ active: false, completed: false });
   const [collapsedQuestCards, setCollapsedQuestCards] = useState<Set<string>>(() => new Set());
   const [activeDialogue, setActiveDialogue] = useState<DialogueProjection | null>(null);
+  const [dialogueModalOpen, setDialogueModalOpen] = useState(false);
+  const [activeInteractionTarget, setActiveInteractionTarget] = useState<ActivityLogTarget | null>(null);
   const [activeMerchantCatalog, setActiveMerchantCatalog] = useState<MerchantCatalog | null>(null);
   const [dailyBoard, setDailyBoard] = useState<Awaited<ReturnType<MuddHttpClient["dailyBoard"]>> | null>(null);
   const [dailyBoardContext, setDailyBoardContext] = useState<{
@@ -1281,7 +1291,8 @@ export function WorldClient({
     try {
       const dialogue = await client.talk(snapshot.character.characterId, npcId, topic);
       addEntry("narration", `${dialogue.npcName}: ${dialogue.text}`);
-      setActiveDialogue(dialogue.choices.length ? dialogue : null);
+      setActiveDialogue(dialogue);
+      setDialogueModalOpen((isOpen) => isOpen || dialogue.choices.length > 0);
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "That person does not answer.");
     } finally {
@@ -1289,13 +1300,13 @@ export function WorldClient({
     }
   }, [addEntry, pending, snapshot]);
 
-  const chooseDialogueReply = useCallback(async (choiceId: string) => {
+  const chooseDialogueReply = useCallback(async (choiceId: string, announceChoice = true) => {
     if (!snapshot?.character || !activeDialogue || pending) return;
     const choice = activeDialogue.choices.find((candidate) => candidate.id === choiceId);
     if (!choice) return;
 
     setPending("talk");
-    addEntry("system", `> ${choice.label}`);
+    if (announceChoice) addEntry("system", `> ${choice.label}`);
     try {
       await client.chooseNpcDialogue(
         snapshot.character.characterId,
@@ -1310,7 +1321,8 @@ export function WorldClient({
       rememberCompletedQuestObjectives(nextSnapshot);
       setSnapshot(nextSnapshot);
       setConnectionError("");
-      setActiveDialogue(dialogue.choices.length ? dialogue : null);
+      setActiveDialogue(dialogue);
+      setDialogueModalOpen((isOpen) => isOpen || dialogue.choices.length > 0);
       addEntry("narration", `${dialogue.npcName}: ${dialogue.text}`);
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "That reply is no longer available.");
@@ -1467,14 +1479,14 @@ export function WorldClient({
       } else if (response.events?.some((event) => event.type === "character.combat_encounter_started")) {
         addEntry("narration", nextSnapshot.character?.combat?.lastNarration ?? "A roadside opponent blocks your way.");
       }
-      setActiveDialogue(null);
+      if (!dialogueModalOpen) setActiveDialogue(null);
       setActiveMerchantCatalog(null);
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "Unable to move.");
     } finally {
       setPending(null);
     }
-  }, [addEntry, pending, refreshAfterMutation, refreshTeamCombat, snapshot]);
+  }, [addEntry, dialogueModalOpen, pending, refreshAfterMutation, refreshTeamCombat, snapshot]);
 
   const browseMerchant = useCallback(async (merchantNpcId: string) => {
     if (!snapshot?.character || pending) return;
@@ -1853,6 +1865,36 @@ export function WorldClient({
       for (const line of getCommandHelp(target)) addEntry("narration", line);
       return;
     }
+    if (verb.toLocaleLowerCase() === "quests") {
+      addEntry("system", `> ${value}`);
+      const choices = activeDialogue?.choices ?? [];
+      if (!activeDialogue || choices.length === 0) {
+        addEntry("error", 'Talk to an NPC first with “talk <name>”; there are no dialogue choices to select.');
+        return;
+      }
+      if (!target) {
+        addEntry("narration", `Replies from ${activeDialogue.npcName}:`);
+        choices.forEach((choice, index) => addEntry("narration", `${index + 1}. ${choice.label}`));
+        addEntry("narration", "Choose a reply with “quests <number>”.");
+        return;
+      }
+
+      const index = /^\d+$/.test(target) ? Number(target) : 0;
+      const exactMatches = choices.filter(
+        (choice) => choice.label.toLocaleLowerCase() === target.toLocaleLowerCase(),
+      );
+      const choice = index > 0
+        ? choices[index - 1]
+        : exactMatches.length === 1
+          ? exactMatches[0]
+          : undefined;
+      if (!choice) {
+        addEntry("error", `Choose a number from 1 to ${choices.length}, or enter a reply exactly as shown. Type “quests” to list replies.`);
+        return;
+      }
+      await chooseDialogueReply(choice.id, false);
+      return;
+    }
     if (verb.toLowerCase() === "jobs") {
       addEntry("system", `> ${value}`);
       const commandArgs = target.split(/\s+/).filter(Boolean);
@@ -2207,7 +2249,17 @@ export function WorldClient({
     if (verb.toLowerCase() === "read") {
       addEntry("system", `> ${value}`);
       if (!target) {
-        addEntry("error", "Read what? Try “read marker”.");
+        addEntry("error", "Read what? Try “read marker” or “read bulletin”.");
+        return;
+      }
+      const bulletinTarget = target.replace(/^the\s+/i, "").trim().toLocaleLowerCase();
+      if (/^(?:daily\s+)?(?:bulletin|notice)(?:\s+board)?$/.test(bulletinTarget)) {
+        const bulletin = snapshot?.dailyActivities?.boards[0];
+        if (!bulletin) {
+          addEntry("error", "There is no bulletin board here.");
+          return;
+        }
+        await openDailyBoard(bulletin.id);
         return;
       }
       const readableObjects = (snapshot?.location?.objects ?? []).filter((object) => object.readable);
@@ -2394,7 +2446,7 @@ export function WorldClient({
     }
     addEntry("system", `> ${value}`);
     addEntry("error", 'Unknown command. Try "help" for the command list.');
-  }, [addEntry, browseMerchant, changeEquipment, dropObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, performFishingCast, performWoodcuttingStart, activeMerchantCatalog, performCombatAction, performInnRest, performStaminaPostureChange, interactionInbox, respondToPlayerChallenge, challengePlayer, partyInfo, refreshPartyState, teamCombatInfo, openDailyBoard, fetchDailyBoard, performDailyJob, performSupplyGather, displayedDailyBoard]);
+  }, [activeDialogue, addEntry, browseMerchant, changeEquipment, chooseDialogueReply, dropObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, performFishingCast, performWoodcuttingStart, activeMerchantCatalog, performCombatAction, performInnRest, performStaminaPostureChange, interactionInbox, respondToPlayerChallenge, challengePlayer, partyInfo, refreshPartyState, teamCombatInfo, openDailyBoard, fetchDailyBoard, performDailyJob, performSupplyGather, displayedDailyBoard]);
 
   const submitQuickCommand = useCallback((rawCommand: string) => {
     setQuickCommandMode("quick");
@@ -2448,19 +2500,6 @@ export function WorldClient({
       ...(snapshot?.location?.npcs ?? []).map(({ id, name }) => ({ id, label: name })),
     ];
   }, [snapshot?.location?.npcs, snapshot?.location?.objects]);
-  const terminalLookTargets = useMemo<ActivityLogTarget[]>(() => {
-    const location = snapshot?.location;
-    if (!location) return [];
-    return [
-      ...location.objects.map(({ id, label }) => ({ id, label })),
-      ...(location.npcs ?? []).map(({ id, name }) => ({ id, label: name })),
-      ...(snapshot.character?.inventory ?? []).map(({ id, label }) => ({
-        id: `inventory:${id}`,
-        label,
-      })),
-      { id: `room:${location.locationId}`, label: location.title },
-    ];
-  }, [snapshot?.character?.inventory, snapshot?.location]);
   const quickTakeableObjects = useMemo(
     () => (snapshot?.location?.objects ?? []).filter((object) => object.takeable),
     [snapshot?.location?.objects],
@@ -2580,6 +2619,84 @@ export function WorldClient({
     return !isAnyCombatActive &&
       (snapshot?.location?.objects ?? []).some((object) => !object.readable && !object.takeable);
   });
+  const terminalLookTargets = useMemo<ActivityLogTarget[]>(() => {
+    const location = snapshot?.location;
+    if (!location) return [];
+    const look: ActivityLogAction = { id: "look", label: "Look" };
+    const inventory = snapshot?.character?.inventory ?? [];
+    const equipment = snapshot?.character?.equipment;
+    const usableItemIds = new Set(quickUseItems.map((item) => item.id));
+
+    return [
+      ...location.objects.map((object) => ({
+        id: object.id,
+        label: object.label,
+        actions: [
+          look,
+          ...(object.readable ? [{ id: "read", label: "Read" }] : []),
+          ...(object.takeable ? [{ id: "take", label: "Take" }] : []),
+        ],
+      })),
+      ...(location.npcs ?? []).map((npc) => ({
+        id: npc.id,
+        label: npc.name,
+        actions: [
+          look,
+          { id: "talk", label: "Talk" },
+          ...(npc.canShop ? [{ id: "shop", label: "Shop" }] : []),
+          ...(npc.canChallenge ? [{ id: "attack", label: "Attack" }] : []),
+        ],
+      })),
+      ...inventory.map((item) => {
+        const equippedSlot = item.id === equipment?.weaponItemId
+          ? "weapon"
+          : item.id === equipment?.armorItemId
+            ? "armor"
+            : undefined;
+        const actions: ActivityLogAction[] = [{ id: "look", label: "Look" }];
+        if (item.questBound !== true && !equippedSlot) actions.push({ id: "drop", label: "Drop" });
+        if (item.equipment && !equippedSlot) actions.push({ id: "equip", label: "Equip" });
+        if (equippedSlot) actions.push({ id: `unequip-${equippedSlot}`, label: `Unequip ${equippedSlot}` });
+        if (usableItemIds.has(item.id)) actions.push({ id: "use", label: "Use" });
+        return { id: `inventory:${item.id}`, label: item.label, actions };
+      }),
+      { id: `room:${location.locationId}`, label: location.title, actions: [look] },
+    ];
+  }, [quickUseItems, snapshot?.character?.equipment, snapshot?.character?.inventory, snapshot?.location]);
+  const performTerminalTargetAction = (target: ActivityLogTarget, actionId: string) => {
+    setActiveInteractionTarget(null);
+    const label = target.label;
+    if (actionId === "use" && target.id.startsWith("inventory:")) {
+      const itemId = target.id.slice("inventory:".length);
+      const item = snapshot?.character?.inventory.find((candidate) => candidate.id === itemId);
+      if (!item) return;
+      if (item.fishingRod || item.consumable?.effect === "heal") {
+        submitQuickCommand(`use ${label}`);
+      } else {
+        setQuickUseItemId(item.id);
+        setQuickCommandMode("use-target");
+      }
+      return;
+    }
+
+    const command = actionId === "look"
+      ? target.id.startsWith("room:") ? "look" : `look ${label}`
+      : actionId === "unequip-weapon"
+        ? "unequip weapon"
+        : actionId === "unequip-armor"
+          ? "unequip armor"
+          : ["read", "take", "talk", "shop", "attack", "drop", "equip"].includes(actionId)
+            ? `${actionId} ${label}`
+            : undefined;
+    if (command) submitQuickCommand(command);
+  };
+  const handleTerminalLookTarget = (target: ActivityLogTarget) => {
+    if ((target.actions?.length ?? 1) > 1) {
+      setActiveInteractionTarget(target);
+      return;
+    }
+    performTerminalTargetAction(target, target.actions?.[0]?.id ?? "look");
+  };
   const quickCommandItems = useMemo(() => {
     type QuickAction = {
       id: string;
@@ -2611,13 +2728,6 @@ export function WorldClient({
       (collection) => collection.sourceId === sourceId && collection.cycle === dailyCycle,
     )?.count ?? 0;
     const bulletin = snapshot?.dailyActivities?.boards[0];
-    if (bulletin) actions.push({
-      id: "jobs",
-      label: "jobs",
-      ariaLabel: `Browse ${bulletin.name}`,
-      opensMenu: false,
-      onSelect: () => { void openDailyBoard(bulletin.id); },
-    });
     for (const source of localSources) {
       const count = countForSource(source.id);
       actions.push({
@@ -2648,7 +2758,7 @@ export function WorldClient({
     }
 
     addMode("look", "look", "Show look targets");
-    if (readableObjects.length > 0) addMode("read", "read", "Show readable objects");
+    if (readableObjects.length > 0 || bulletin) addMode("read", "read", "Show readable objects");
     if (unequippedInventory.length > 0) addMode("drop", "drop", "Show items to drop");
     if (quickTakeableObjects.length > 0) addMode("take", "take", "Show items to take");
     if (quickUseItems.length > 0) {
@@ -2751,7 +2861,6 @@ export function WorldClient({
     canFlee,
     submitQuickCommand,
     visibleCombat,
-    openDailyBoard,
     performSupplyGather,
     performFishingCast,
     pending,
@@ -2947,9 +3056,7 @@ export function WorldClient({
                             label="Terminal transcript"
                             currentLocationId={snapshot.location?.locationId}
                             lookTargets={terminalLookTargets}
-                            onLookTarget={(target) => submitQuickCommand(
-                              target.id.startsWith("room:") ? "look" : `look ${target.label}`,
-                            )}
+                            onLookTarget={handleTerminalLookTarget}
                             actionsDisabled={pending !== null}
                           />
                         )}
@@ -3011,7 +3118,7 @@ export function WorldClient({
                       </div>
                     </section>
                   ) : null}
-                  {!isAnyCombatActive && !visiblePvp && activeDialogue?.choices.length ? (
+                  {!dialogueModalOpen && !isAnyCombatActive && !visiblePvp && activeDialogue?.choices.length ? (
                     <div className="focused-terminal-dialogue">
                       <div
                         className="focused-terminal-dialogue__choices"
@@ -3317,19 +3424,34 @@ export function WorldClient({
                           >
                             ‹
                           </button>
-                          {(snapshot.location.objects ?? []).filter((object) => object.readable).length ? (
-                            (snapshot.location.objects ?? []).filter((object) => object.readable).map((object) => (
-                              <button
-                                key={object.id}
-                                type="button"
-                                className="focused-quick-command"
-                                onClick={() => submitQuickCommand(`read ${object.label}`)}
-                                aria-label={`Read ${object.label}`}
-                                disabled={pending !== null}
-                              >
-                                {object.label.toLocaleLowerCase()}
-                              </button>
-                            ))
+                          {snapshot?.dailyActivities?.boards[0] ||
+                          (snapshot?.location?.objects ?? []).some((object) => object.readable) ? (
+                            <>
+                              {snapshot?.dailyActivities?.boards[0] && (
+                                <button
+                                  key={snapshot.dailyActivities.boards[0].id}
+                                  type="button"
+                                  className="focused-quick-command"
+                                  onClick={() => submitQuickCommand("read bulletin")}
+                                  aria-label={`Read ${snapshot.dailyActivities.boards[0].name}`}
+                                  disabled={pending !== null}
+                                >
+                                  bulletin
+                                </button>
+                              )}
+                              {(snapshot?.location?.objects ?? []).filter((object) => object.readable).map((object) => (
+                                <button
+                                  key={object.id}
+                                  type="button"
+                                  className="focused-quick-command"
+                                  onClick={() => submitQuickCommand(`read ${object.label}`)}
+                                  aria-label={`Read ${object.label}`}
+                                  disabled={pending !== null}
+                                >
+                                  {object.label.toLocaleLowerCase()}
+                                </button>
+                              ))}
+                            </>
                           ) : <span className="focused-quick-commands__empty">Nothing readable here</span>}
                         </>
                       ) : quickCommandMode === "drop" ? (
@@ -3631,12 +3753,12 @@ export function WorldClient({
                       ) : null}
                     </div>
                   </section>}
-                  {displayedDailyBoard && (
+                  {(displayedDailyBoard || dailyBoardLoading || dailyBoardError) && (
                     <DailyBoard
-                      name={displayedDailyBoard.name}
-                      cycle={displayedDailyBoard.cycle}
-                      resetsAt={displayedDailyBoard.resetsAt}
-                      jobs={displayedDailyBoard.jobs.map((job) => ({
+                      name={displayedDailyBoard?.name ?? snapshot?.dailyActivities?.boards[0]?.name ?? "Daily bulletin"}
+                      cycle={displayedDailyBoard?.cycle ?? snapshot?.dailyActivities?.cycle ?? "today"}
+                      resetsAt={displayedDailyBoard?.resetsAt}
+                      jobs={(displayedDailyBoard?.jobs ?? []).map((job) => ({
                         ...job,
                         supplyLabel: snapshot.dailyActivities?.sources.find(
                           (source) => source.supply.typeId === job.supplyTypeId,
@@ -3646,30 +3768,34 @@ export function WorldClient({
                       busy={pending !== null}
                       loading={dailyBoardLoading}
                       error={dailyBoardError || undefined}
-                      onRetry={() => { void fetchDailyBoard(displayedDailyBoard.boardId).catch(() => undefined); }}
+                      onRetry={() => {
+                        const boardId = displayedDailyBoard?.boardId ?? snapshot?.dailyActivities?.boards[0]?.id;
+                        if (boardId) void fetchDailyBoard(boardId).catch(() => undefined);
+                      }}
                       onClose={closeDailyBoard}
                       onAccept={(jobId) => handleDailyJobAction(jobId, "accept")}
                       onDeliver={(jobId) => handleDailyJobAction(jobId, "deliver")}
                     />
                   )}
-                  {!displayedDailyBoard && !dailyBoard && (dailyBoardLoading || dailyBoardError) && (
-                    <section className="focused-daily-status" aria-label="Daily bulletin status">
-                      {dailyBoardLoading ? (
-                        <p role="status">Loading daily bulletin…</p>
-                      ) : (
-                        <p role="alert">{dailyBoardError}</p>
-                      )}
-                      {!dailyBoardLoading && dailyBoardError && snapshot.dailyActivities?.boards[0] && (
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          onClick={() => { void fetchDailyBoard(snapshot.dailyActivities!.boards[0]!.id).catch(() => undefined); }}
-                        >
-                          Retry bulletin
-                        </Button>
-                      )}
-                    </section>
+                  {activeInteractionTarget && (
+                    <InteractionOptionsDialog
+                      targetLabel={activeInteractionTarget.label}
+                      options={activeInteractionTarget.actions ?? [{ id: "look", label: "Look" }]}
+                      busy={pending !== null}
+                      onSelect={(actionId) => performTerminalTargetAction(activeInteractionTarget, actionId)}
+                      onClose={() => setActiveInteractionTarget(null)}
+                    />
                   )}
+                  {dialogueModalOpen && activeDialogue ? (
+                    <NpcDialogueDialog
+                      npcName={activeDialogue.npcName}
+                      dialogue={activeDialogue.text}
+                      choices={activeDialogue.choices}
+                      busy={pending === "talk"}
+                      onSelect={(choiceId) => void chooseDialogueReply(choiceId)}
+                      onClose={() => setDialogueModalOpen(false)}
+                    />
+                  ) : null}
                   {isMobileViewport && (
                     <RoomChatPanel
                       realtimeClient={client}

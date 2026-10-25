@@ -47,10 +47,38 @@ function bulletinTopic(dailyJobResponses: NpcDailyJobResponseDefinition[]) {
   };
 }
 
+function bellwoldSmallTalkChoices(
+  npcId: string,
+  identity: string,
+  activity: string,
+  town: string,
+) {
+  return [
+    {
+      id: `${npcId}-who-are-you`,
+      label: 'Who are you?',
+      response: identity,
+      progressFlagId: `${npcId}-asked-who`,
+    },
+    {
+      id: `${npcId}-what-are-you-doing`,
+      label: 'What are you doing?',
+      response: activity,
+      progressFlagId: `${npcId}-asked-activity`,
+    },
+    {
+      id: `${npcId}-about-bellwold`,
+      label: 'What is Bellwold like?',
+      response: town,
+      progressFlagId: `${npcId}-asked-about-town`,
+    },
+  ];
+}
+
 const draft = {
   formatVersion: 1,
   packId: 'orraveth.bellwold',
-  packVersion: '1.11.0',
+  packVersion: '1.12.0',
   displayName: 'Orraveth: Bellwold',
   dailyBoards: [{
     id: 'bellwold-notice-board', locationId: 'bellwold-south-common', name: 'South Common bulletin board',
@@ -154,6 +182,15 @@ const draft = {
             { id: 'old-bell', keywords: ['seventeen villagers', 'storm warnings', 'old bell history'], response: '“My family says the bell warned of storms. I heard the account of seventeen people disappearing while it rang, but nobody in my family could tell me why.”' },
           ],
           unknownTopicResponse: '“I’m just on an errand. Try the market or the well if you need directions.”',
+          dialogue: {
+            prompt: '“I was headed to the well. Or the square. I’ll know when I get there.”',
+            choices: bellwoldSmallTalkChoices(
+              'linnet-reed',
+              '“I’m Linnet Reed. I run errands around town and usually find someone to talk to along the way.”',
+              '“I’m carrying a few things between the square and the well. I have not decided which I’ll reach first.”',
+              '“Bellwold is small enough that an errand can turn into a conversation, then another errand. I like that about it.”',
+            ),
+          },
           movement: {
             strategy: 'wander',
             intervalMs: 60_000,
@@ -190,6 +227,15 @@ const draft = {
             { id: 'other-regions', keywords: ['Merefall League', 'Sareth Cantons', 'Rillward Freeholds', 'Uncrowned Lands'], response: '“The reports describe different authorities: merchant city-states, mountain assemblies, river councils, and communities beyond centralized rule. I guard this circuit, not the whole continent.”' },
           ],
           unknownTopicResponse: '“I’m on patrol. Keep to the marked paths and speak plainly if there’s trouble.”',
+          dialogue: {
+            prompt: '“Keep the road clear and let people pass. That is most of the work.”',
+            choices: bellwoldSmallTalkChoices(
+              'taren-voss',
+              '“Taren Voss. I watch the village roads and crossings.”',
+              '“I’m making my circuit through the square and the public lanes. I look for trouble before it reaches someone’s door.”',
+              '“Bellwold is a working village near a frontier. Most days are quiet, but quiet roads still need watching.”',
+            ),
+          },
           movement: {
             strategy: 'route',
             intervalMs: 60_000,
@@ -221,23 +267,31 @@ const draft = {
           unknownTopicResponse: '“I’m headed back toward the bridge. The river is the only thing I know well.”',
           dialogue: {
             prompt: 'Orin turns a worn fishing rod in his hands. “I’ve no use for this old thing now. Would you like it?”',
-            choices: [{
-              id: 'accept-old-rod',
-              label: 'Accept the old rod',
-              response: '“Here you are. The cork is worn, but the line still holds. Cast from the south bridge and wait for a bite.”',
-              progressFlagId: 'received-old-fishing-rod',
-              itemReward: {
-                id: 'old-fishing-rod',
-                typeId: 'fishing-rod',
-                label: 'old rod',
-                description: 'A weathered fishing rod with a worn cork handle and a serviceable length of line.',
-                fishingRod: {
-                  qualityId: 'old',
-                  biteChancePercent: 10,
-                  waitSeconds: 10,
+            choices: [
+              ...bellwoldSmallTalkChoices(
+                'orin-vale',
+                '“Orin Vale. I have spent more of my life beside the river than I planned to.”',
+                '“I walk between the square and the south bridge, watching the current and checking the line when I can.”',
+                '“Bellwold suits me. The river is close, and there is usually someone in the square who will share a word.”',
+              ),
+              {
+                id: 'accept-old-rod',
+                label: 'Accept the old rod',
+                response: '“Here you are. The cork is worn, but the line still holds. Cast from the south bridge and wait for a bite.”',
+                progressFlagId: 'received-old-fishing-rod',
+                itemReward: {
+                  id: 'old-fishing-rod',
+                  typeId: 'fishing-rod',
+                  label: 'old rod',
+                  description: 'A weathered fishing rod with a worn cork handle and a serviceable length of line.',
+                  fishingRod: {
+                    qualityId: 'old',
+                    biteChancePercent: 10,
+                    waitSeconds: 10,
+                  },
                 },
               },
-            }],
+            ],
           },
           movement: {
             strategy: 'route',
@@ -298,6 +352,15 @@ const draft = {
             { id: 'beyond-bellwold', keywords: ['Merefall League', 'Veyrun Concord', 'Sareth Cantons', 'Rillward Freeholds'], response: '“Travelers describe a continent of different arrangements: guild-influenced city-states in Merefall, temple and civic authority in Veyrun, mountain assemblies in Sareth, and negotiated river rights in Rillward. I repeat what they tell me; I have not walked every road myself.”' },
           ],
           unknownTopicResponse: '“I keep rooms and hear travelers. I don’t claim to know every answer.”',
+          dialogue: {
+            prompt: '“Come in and warm yourself. If you want the road news, ask who saw it and when.”',
+            choices: bellwoldSmallTalkChoices(
+              'tomas-innkeeper',
+              '“Tomas. I keep the rooms and common table at the Kindly Roof.”',
+              '“I’m tending the inn and listening for travelers’ news. I try to keep what I hear separate from what I know.”',
+              '“Bellwold is a place where the roads bring fresh faces through, but most of the work is still done by the people who live here.”',
+            ),
+          },
         },
       ],
     },
@@ -397,6 +460,12 @@ const draft = {
           dialogue: {
             prompt: 'Anwen sets her pencil beside the ledger. “What would you like to ask?”',
             choices: [
+              ...bellwoldSmallTalkChoices(
+                'anwen-marr',
+                '“Anwen Marr. I run this shop and keep notes on measurements that do not quite add up.”',
+                '“I’m checking a scale against its weights and recording the readings before I draw any conclusions.”',
+                '“Bellwold gets by on practical exchange. That makes honest measures and clear records important, even when they raise more questions.”',
+              ),
               {
                 id: 'ask-anwen-about-mill',
                 label: 'Ask about the watermill',
@@ -447,11 +516,11 @@ const draft = {
     {
       id: 'bellwold-south-common',
       name: 'Bellwold South Common',
-      description: 'Benches stand beside drying lines and a public notice board. Voices and footsteps carry across the grass. The market square is north, the Green Mortar west, Blackwater Forge east, and Well Court south.',
+      description: 'Benches stand beside drying lines and a bulletin board. Voices and footsteps carry across the grass. The market square is north, the Green Mortar west, Blackwater Forge east, and Well Court south.',
       readables: [{
-        id: 'bellwold-daily-notice', label: 'Daily supply notices',
-        description: 'Small handwritten requests are pinned beneath a heading: “Supplies wanted.”',
-        text: 'Seli Tor requests deer hides for stitching; deer can be found along the south road. Tomas seeks river fish, caught from the Bellwold River Bridge with a fishing rod. Fallen branches beside Southbound Track can be bundled for the kitchen and forge. Read the bulletin for today’s quantities and rewards. Each traveler may deliver each posting once before the notices change at midnight UTC. Use jobs here to browse; gather at the marked sources, then return here to deliver.',
+        id: 'bellwold-daily-notice', label: 'Bulletin board',
+        description: 'A broad plank board holds handwritten notices in uneven rows.',
+        text: 'Residents post daily jobs and requests here. Read the bulletin to see current postings and rewards. Accept a posting, then follow its instructions to complete it. New postings appear with each daily refresh.',
       }],
       mapPosition: { x: 0, y: -1, terrain: 'pasture' },
       exits: [
@@ -484,6 +553,15 @@ const draft = {
             { id: 'unbinding', keywords: ['Unbinding Initiative', 'essence-free healing', 'experimental healing'], response: '“Researchers are testing plant, mineral, and cooperative approaches to healing. They are promising in some cases, but costly and not yet easy to provide everywhere.”' },
           ],
           unknownTopicResponse: '“I can speak about the care I have seen here. Ask me something specific.”',
+          dialogue: {
+            prompt: '“Tell me what you noticed and when. A careful account is a better beginning than a guess.”',
+            choices: bellwoldSmallTalkChoices(
+              'ilya-fen',
+              '“Ilya Fen. I tend this workroom and help with the ordinary aches and cuts people bring through the door.”',
+              '“I’m sorting plants and preparing clean cloth. I keep track of what I have actually tried.”',
+              '“Bellwold is neighborly in a practical way. People bring one another news, herbs, and a hand when work piles up.”',
+            ),
+          },
         },
       ],
     },
@@ -511,6 +589,15 @@ const draft = {
             { id: 'heskar-property', keywords: ['Heskar property law', 'boundary mark', 'land claim'], response: '“A boundary mark can matter as much as a fence under Heskar law. A smith can mend the hinge; settling the claim is someone else’s work.”' },
           ],
           unknownTopicResponse: '“Ask about the work here. I am not a keeper of every local story.”',
+          dialogue: {
+            prompt: '“If something is broken, show me where it failed. If it is only a rumor, I have work to finish.”',
+            choices: bellwoldSmallTalkChoices(
+              'darric-holt',
+              '“Darric Holt. I mend tools, hinges, blades, and whatever else survives the forge.”',
+              '“I’m repairing a farm fitting. It is easier to find the fault while the metal is still warm.”',
+              '“Bellwold holds together because people repair what they have. New work matters, but so does keeping a gate on its hinges.”',
+            ),
+          },
         },
       ],
     },
@@ -560,6 +647,15 @@ const draft = {
             { id: 'regional-trade', keywords: ['Merefall League', 'Rillward Freeholds', 'river rights', 'trade routes'], response: '“A cart takes the road it can pass. In the river settlements, access is negotiated with councils; in Merefall, guilds shape much of the trade. The route depends on who has agreed to carry what.”' },
           ],
           unknownTopicResponse: '“Ask me about wheels or the work in this yard.”',
+          dialogue: {
+            prompt: '“A wheel tells you where it is failing if you watch it turn.”',
+            choices: bellwoldSmallTalkChoices(
+              'rell-soven',
+              '“Rell Soven. My family has made and mended wheels here for as long as I can remember.”',
+              '“I’m checking a cart wheel for a wobble before I fit it back to the axle.”',
+              '“Bellwold’s lanes are rough on carts. That keeps my yard busy, and it means the village can keep moving its goods.”',
+            ),
+          },
         },
       ],
     },
@@ -588,6 +684,15 @@ const draft = {
             { id: 'travelers-and-customs', keywords: ['customs', 'travelers', 'farther roads'], response: '“People passing through carry different ways of wrapping, mending, and marking their things. I ask what a pattern means before I assume it belongs to a faith or a family.”' },
           ],
           unknownTopicResponse: '“I am happy to talk, but the loom will not wait forever.”',
+          dialogue: {
+            prompt: '“Mind the loose thread by the door. It has already caught two sleeves today.”',
+            choices: bellwoldSmallTalkChoices(
+              'seli-tor',
+              '“Seli Tor. I weave cloth and mend the things people need to carry or wear.”',
+              '“I’m working a length of cloth at the loom. If I stop halfway through, I lose the line.”',
+              '“Bellwold’s lanes are close, so people notice one another’s work. Most neighbors are willing to lend a hand when it is needed.”',
+            ),
+          },
         },
       ],
     },
@@ -621,6 +726,15 @@ const draft = {
             { id: 'records', keywords: ['record', 'records', 'tally'], response: '“I write down what comes in and what leaves. A neat ledger is useful, but it cannot explain every loss.”' },
           ],
           unknownTopicResponse: '“Ask about the storehouse or its records, and I will check what I know.”',
+          dialogue: {
+            prompt: '“If you need the store, tell me what you are looking for. I keep the tally, not the harvest.”',
+            choices: bellwoldSmallTalkChoices(
+              'aven-rusk',
+              '“Aven Rusk. I keep the grain store’s tally and check what comes in and goes out.”',
+              '“I’m comparing the chalk marks on these bins with the ledger before I update the count.”',
+              '“Bellwold shares stores when it has to. Clear records help us know what is here without pretending to predict what comes next.”',
+            ),
+          },
         },
       ],
     },
@@ -649,6 +763,15 @@ const draft = {
             { id: 'founding-and-law', keywords: ['founding date', 'town history', 'Heskar jurisdiction'], response: '“Our public book records decisions and shared work, not a complete founding story. Bellwold lies near Heskar’s frontier, but these minutes do not establish the village’s legal status.”' },
           ],
           unknownTopicResponse: '“Ask about the public notices or the records kept here.”',
+          dialogue: {
+            prompt: '“The notes are public. If something is missing, tell me what you saw and when.”',
+            choices: bellwoldSmallTalkChoices(
+              'enna-pell',
+              '“Enna Pell. I keep the Common House records and copy notices people bring in.”',
+              '“I’m writing down the wording of a public notice so the next meeting can check it.”',
+              '“Bellwold is held together by small agreements. I try to record what people actually decided, not what I think they meant.”',
+            ),
+          },
         },
       ],
     },
@@ -707,6 +830,15 @@ const draft = {
             { id: 'bellwold-meals', keywords: ['food', 'bread', 'meals'], response: '“The market brings flour through town, but people still trade favors and whatever their own gardens produce.”' },
           ],
           unknownTopicResponse: '“I can tell you about this lane, if that’s what you came to ask.”',
+          dialogue: {
+            prompt: '“Come in out of the lane. Just mind the kettle.”',
+            choices: bellwoldSmallTalkChoices(
+              'sella-nettlemere',
+              '“Sella Nettlemere. I keep this house and bake when there is flour to spare.”',
+              '“I’m kneading a little dough and keeping an ear on the kettle. It tends to complain before it boils over.”',
+              '“Bellwold is a place where a warm loaf can bring half the lane to the door. People share what they can.”',
+            ),
+          },
         },
       ],
     },
@@ -730,6 +862,15 @@ const draft = {
             { id: 'town-lanes', keywords: ['town', 'houses', 'alleys', 'lanes'], response: '“These lanes grew where people needed a door close to their work. They don’t all lead somewhere grand.”' },
           ],
           unknownTopicResponse: '“Ask me about the loom or the people on this row.”',
+          dialogue: {
+            prompt: '“If you’re here about the cloth, give me a moment to finish this row.”',
+            choices: bellwoldSmallTalkChoices(
+              'tovin-ashdown',
+              '“Tovin Ashdown. I weave cloth here and patch it when it wears through.”',
+              '“I’m working the shuttle across the loom. I need to finish this row before I can check the loose thread.”',
+              '“Bellwold’s houses grew around the jobs people had to do. The lanes are practical, even if they can be hard to navigate at first.”',
+            ),
+          },
         },
       ],
     },
@@ -764,6 +905,15 @@ const draft = {
             { id: 'lower-row', keywords: ['Lower Row', 'neighbors', 'houses'], response: '“The row is quiet until someone starts fixing something. Then the whole lane has an opinion.”' },
           ],
           unknownTopicResponse: '“If it’s about wood or the lane, ask directly.”',
+          dialogue: {
+            prompt: '“Close the door behind you; the sawdust gets everywhere.”',
+            choices: bellwoldSmallTalkChoices(
+              'renna-kell',
+              '“Renna Kell. I mend boards, shutters, and the small things that keep a house dry.”',
+              '“I’m trimming a warped plank so it will sit straight against the frame.”',
+              '“Bellwold’s lower lanes are full of people fixing one another’s roofs and doors. A good board is worth more than a grand promise.”',
+            ),
+          },
         },
       ],
     },
@@ -799,6 +949,15 @@ const draft = {
             { id: 'town-life', keywords: ['Bellwold', 'town', 'life'], response: '“People here borrow tools, return them late, and argue about whose turn it is to mend the fence. Then they help anyway.”' },
           ],
           unknownTopicResponse: '“I can tell you what grows in my pots, or what I’ve seen on the lane.”',
+          dialogue: {
+            prompt: '“There’s enough room by the table if you need to sit.”',
+            choices: bellwoldSmallTalkChoices(
+              'pella-wren',
+              '“Pella Wren. I grow herbs in pots and trade what I can spare.”',
+              '“I’m sorting thyme for drying. It keeps its scent better if I handle it gently.”',
+              '“Bellwold has room for little gardens between the houses. People trade cuttings and stories over the fence.”',
+            ),
+          },
         },
       ],
     },
@@ -825,6 +984,15 @@ const draft = {
             { id: 'records', keywords: ['records', 'charges', 'law'], response: '“I write down what each person says and who witnessed it. A written claim is not the same thing as a proven one.”' },
           ],
           unknownTopicResponse: '“Keep your account specific. I can’t act on a story with no place or time attached.”',
+          dialogue: {
+            prompt: '“If you have a concern, state what happened and when. I keep the record plain.”',
+            choices: bellwoldSmallTalkChoices(
+              'sergeant-nera-vail',
+              '“Sergeant Nera Vail. I oversee this jail and keep its records.”',
+              '“I’m checking the keys and making sure the holding cell is in order.”',
+              '“Bellwold needs a watch, but a claim is not proof. I keep the record clear and let the facts speak for themselves.”',
+            ),
+          },
         },
       ],
     },
@@ -869,6 +1037,15 @@ const draft = {
             { id: 'bellwold-history', keywords: ['Bellwold history', 'town history', 'old records'], response: '“There is no complete town chronicle here. We have notices, tallies, and pieces of older accounts. They do not all answer the same questions.”' },
           ],
           unknownTopicResponse: '“Tell me what you are trying to find. I may know which shelf to check.”',
+          dialogue: {
+            prompt: '“The shelves are open. If you need a particular record, tell me what it concerns.”',
+            choices: bellwoldSmallTalkChoices(
+              'mira-dell',
+              '“Mira Dell. I care for the library and help readers find the records they need.”',
+              '“I’m sorting pamphlets and putting the copied records back where readers can find them.”',
+              '“Bellwold’s past is scattered across notes, tallies, and people’s memories. This library keeps the pieces available without pretending they make one complete story.”',
+            ),
+          },
         },
       ],
     },

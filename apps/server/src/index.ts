@@ -16,26 +16,18 @@ import {
   CharacterStatsQuerySchema,
   IdSchema,
   LocationDescribeQuerySchema,
-  NpcTalkQuerySchema,
-  ObjectReadQuerySchema,
-  ObjectInspectQuerySchema,
   RestoreCharacterCommandSchema,
   RenameCharacterCommandSchema,
-  MerchantCatalogQuerySchema,
   LocationProjectionSchema,
   InteractionInboxSchema,
   PvpEncounterProjectionSchema,
-  PartyInfoQuerySchema,
   PartyInfoProjectionSchema,
-  PartyListQuerySchema,
-  PartyQuestJournalQuerySchema,
-  TeamCombatInfoQuerySchema,
   TeamCombatInfoProjectionSchema,
-  LocationGroupsListQuerySchema,
   locationGroupMembershipsForLocation,
   resolveLocationDisplayName,
   type LocationGroupDefinition,
 } from '@mudd/contracts';
+import { WorldQuerySchema } from './world-query-schema.js';
 import { projectQuestJournal, replayCharacter as reconstructCharacter, SYSTEM_ACTOR_ID } from '@mudd/engine-core';
 import {
   interactionStreamId,
@@ -969,38 +961,9 @@ app.post('/api/queries', async (req, res, next) => {
   try {
     const identity = await accountFor(req, res);
     if (!identity) return;
-    const locationQuery = LocationDescribeQuerySchema.safeParse(req.body);
-    const objectReadQuery = ObjectReadQuerySchema.safeParse(req.body);
-    const objectInspectQuery = ObjectInspectQuerySchema.safeParse(req.body);
-    const npcTalkQuery = NpcTalkQuerySchema.safeParse(req.body);
-    const merchantCatalogQuery = MerchantCatalogQuerySchema.safeParse(req.body);
-    const partyListQuery = PartyListQuerySchema.safeParse(req.body);
-    const partyInfoQuery = PartyInfoQuerySchema.safeParse(req.body);
-    const partyQuestsQuery = PartyQuestJournalQuerySchema.safeParse(req.body);
-    const teamCombatInfoQuery = TeamCombatInfoQuerySchema.safeParse(req.body);
-    const locationGroupsQuery = LocationGroupsListQuerySchema.safeParse(req.body);
-    let query:
-      | z.infer<typeof LocationDescribeQuerySchema>
-      | z.infer<typeof ObjectReadQuerySchema>
-      | z.infer<typeof ObjectInspectQuerySchema>
-      | z.infer<typeof NpcTalkQuerySchema>
-      | z.infer<typeof MerchantCatalogQuerySchema>
-      | z.infer<typeof PartyListQuerySchema>
-      | z.infer<typeof PartyInfoQuerySchema>
-      | z.infer<typeof PartyQuestJournalQuerySchema>
-      | z.infer<typeof TeamCombatInfoQuerySchema>
-      | z.infer<typeof LocationGroupsListQuerySchema>;
-    if (locationQuery.success) query = locationQuery.data;
-    else if (objectReadQuery.success) query = objectReadQuery.data;
-    else if (objectInspectQuery.success) query = objectInspectQuery.data;
-    else if (npcTalkQuery.success) query = npcTalkQuery.data;
-    else if (merchantCatalogQuery.success) query = merchantCatalogQuery.data;
-    else if (partyListQuery.success) query = partyListQuery.data;
-    else if (partyInfoQuery.success) query = partyInfoQuery.data;
-    else if (partyQuestsQuery.success) query = partyQuestsQuery.data;
-    else if (teamCombatInfoQuery.success) query = teamCombatInfoQuery.data;
-    else if (locationGroupsQuery.success) query = locationGroupsQuery.data;
-    else return res.status(400).json({ message: 'Invalid world query.' });
+    const parsedQuery = WorldQuerySchema.safeParse(req.body);
+    if (!parsedQuery.success) return res.status(400).json({ message: 'Invalid world query.' });
+    const query = parsedQuery.data;
     const selected = selectedRuntime(res);
     const current = await activeSession(identity, selected.worldInstanceId);
     if (!current) return res.status(409).json({ message: 'Enter the world with a character before making a query.' });

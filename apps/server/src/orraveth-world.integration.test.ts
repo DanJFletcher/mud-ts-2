@@ -899,7 +899,7 @@ describe('Orraveth Bellwold settlement', () => {
         return LocationProjectionSchema.parse(result.value);
       };
       let talkQuerySequence = 0;
-      const talk = async (npcId: string, topic: string) => {
+      const talk = async (npcId: string, topic?: string) => {
         const character = await h.loadCharacter(characterId);
         const result = await h.engine.query({
           type: 'npc.talk',
@@ -907,7 +907,7 @@ describe('Orraveth Bellwold settlement', () => {
           queryId: `expanded-talk-${npcId}-${character.revision}-${talkQuerySequence++}`,
           worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
           characterId,
-          payload: { npcId, topic },
+          payload: { npcId, ...(topic ? { topic } : {}) },
         }, h.session, { characterProjection: character });
         if (!result.ok) throw new Error(result.message);
         return NpcDialogueProjectionSchema.parse(result.value);
@@ -920,6 +920,10 @@ describe('Orraveth Bellwold settlement', () => {
         expectedDetail?: string,
       ) => {
         expect((await describe()).npcs.map(({ id }) => id)).toContain(npcId);
+        const conversation = await talk(npcId);
+        expect(conversation.choices.map(({ label }) => label)).toEqual(
+          expect.arrayContaining(['Who are you?', 'What are you doing?', 'What is Bellwold like?']),
+        );
         const dialogue = await talk(npcId, topic);
         expect(dialogue.npcName).toBe(name);
         expect(dialogue.text.length).toBeGreaterThan(0);
@@ -931,9 +935,13 @@ describe('Orraveth Bellwold settlement', () => {
 
       await expectResident('linnet-reed', 'Seli Tor', 'Linnet Reed', 'Aven Rusk', 'grain tally');
       await expectResident('taren-voss', 'Heskar', 'Taren Voss', 'Merefall League', 'merchant city-states');
+      await expectResident('orin-vale', 'fishing', 'Orin Vale');
       await move('square-to-inn');
       await expectResident('tomas-innkeeper', 'road', 'Tomas', 'Merefall League', 'guild-influenced city-states');
       await move('inn-to-square');
+      await move('square-to-shop');
+      await expectResident('anwen-marr', 'scale', 'Anwen Marr', 'Age of Measures', 'Age of Measures');
+      await move('shop-to-square');
 
       await move('square-to-south-common');
       await move('south-common-to-blackwater-forge');
@@ -957,9 +965,54 @@ describe('Orraveth Bellwold settlement', () => {
       await move('wattle-row-to-well-court');
       await move('well-court-to-grain-house');
       await expectResident('aven-rusk', 'stores', 'Aven Rusk', 'regional records', 'different accounts');
+
     } finally {
       await h.engine.stop();
     }
+  });
+
+  it('offers identity, activity, and town questions for every Bellwold resident', () => {
+    const residents = new Map(
+      orravethWorld.locations.flatMap((location) =>
+        (location.npcs ?? []).map((npc) => [npc.id, npc] as const),
+      ),
+    );
+    const bellwoldResidentIds = [
+      'linnet-reed',
+      'taren-voss',
+      'orin-vale',
+      'tomas-innkeeper',
+      'anwen-marr',
+      'ilya-fen',
+      'darric-holt',
+      'rell-soven',
+      'seli-tor',
+      'aven-rusk',
+      'enna-pell',
+      'sella-nettlemere',
+      'tovin-ashdown',
+      'renna-kell',
+      'pella-wren',
+      'sergeant-nera-vail',
+      'mira-dell',
+    ];
+
+    for (const npcId of bellwoldResidentIds) {
+      const npc = residents.get(npcId);
+      expect(npc, `${npcId} should exist in Orraveth`).toBeDefined();
+      expect(npc!.dialogue?.choices.map(({ label }) => label)).toEqual(
+        expect.arrayContaining(['Who are you?', 'What are you doing?', 'What is Bellwold like?']),
+      );
+    }
+    expect(residents.get('orin-vale')?.dialogue?.choices.map(({ id }) => id))
+      .toContain('accept-old-rod');
+    expect(residents.get('anwen-marr')?.dialogue?.choices.map(({ id }) => id))
+      .toEqual(expect.arrayContaining([
+        'ask-anwen-about-mill',
+        'ask-anwen-about-church-sword',
+        'report-mill-ledger',
+        'return-church-sword-to-anwen',
+      ]));
   });
 
   it('keeps NPC look text observable while preserving background in supported interactions', () => {

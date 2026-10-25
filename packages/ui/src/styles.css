@@ -117,7 +117,28 @@
 .mudd-log__interactive-target:disabled { cursor: wait; }
 .mudd-log__empty { margin: 0; color: var(--mudd-muted); font-size: 0.9rem; }
 
-.mudd-daily-board { display: grid; gap: .55rem; padding: .7rem; border-top: 1px solid var(--mudd-border); background: var(--mudd-surface); color: var(--mudd-text); }
+.mudd-daily-board-dialog { width: min(42rem, calc(100vw - 1rem)); max-width: none; max-height: min(85dvh, 48rem); margin: auto; padding: 0; overflow: hidden; border: 1px solid var(--mudd-border); border-radius: .8rem; background: var(--mudd-surface); color: var(--mudd-text); }
+.mudd-daily-board-dialog::backdrop { background: color-mix(in srgb, var(--mudd-bg) 76%, transparent); }
+.mudd-daily-board { display: grid; gap: .55rem; max-height: inherit; overflow-y: auto; overscroll-behavior: contain; padding: .85rem; background: var(--mudd-surface); color: var(--mudd-text); }
+.mudd-interaction-options-dialog { width: min(24rem, calc(100vw - 1rem)); max-width: none; max-height: min(85dvh, 40rem); margin: auto; padding: 0; overflow: hidden; border: 1px solid var(--mudd-border); border-radius: .8rem; background: var(--mudd-surface); color: var(--mudd-text); box-shadow: 0 1.5rem 4rem rgb(0 0 0 / .36); }
+.mudd-interaction-options-dialog::backdrop { background: color-mix(in srgb, var(--mudd-bg) 76%, transparent); }
+.mudd-interaction-options { display: grid; gap: .85rem; max-height: inherit; overflow-y: auto; overscroll-behavior: contain; padding: 1rem; }
+.mudd-interaction-options__header { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; }
+.mudd-interaction-options__header h2 { margin: 0; font-size: 1.05rem; line-height: 1.35; }
+.mudd-interaction-options__list { display: grid; gap: .5rem; }
+.mudd-interaction-options__action { width: 100%; justify-content: flex-start; }
+.mudd-npc-dialogue-dialog { width: min(34rem, calc(100vw - 1rem)); max-width: none; max-height: min(85dvh, 48rem); margin: auto; padding: 0; overflow: hidden; border: 1px solid var(--mudd-border); border-radius: .8rem; background: var(--mudd-surface); color: var(--mudd-text); box-shadow: 0 1.5rem 4rem color-mix(in srgb, var(--mudd-bg) 50%, transparent); }
+.mudd-npc-dialogue-dialog::backdrop { background: color-mix(in srgb, var(--mudd-bg) 76%, transparent); }
+.mudd-npc-dialogue { display: grid; gap: 1rem; max-height: inherit; overflow-y: auto; overscroll-behavior: contain; padding: 1rem; }
+.mudd-npc-dialogue__header { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; }
+.mudd-npc-dialogue__header h2 { margin: 0; font-size: 1.15rem; line-height: 1.35; }
+.mudd-npc-dialogue__speech { display: grid; gap: .35rem; padding: .85rem; border: 1px solid var(--mudd-border); border-radius: .6rem; background: var(--mudd-surface-raised); line-height: 1.55; }
+.mudd-npc-dialogue__speech p { margin: 0; }
+.mudd-npc-dialogue__speaker { color: var(--mudd-accent); font-weight: 700; }
+.mudd-npc-dialogue__choices { display: grid; gap: .5rem; }
+.mudd-npc-dialogue__choice { width: 100%; min-height: 2.75rem; justify-content: flex-start; text-align: left; white-space: normal; }
+.mudd-npc-dialogue__farewells { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; padding-top: .25rem; border-top: 1px solid var(--mudd-border); }
+.mudd-npc-dialogue__end { margin: 0; color: var(--mudd-text-muted); }
 .mudd-daily-board__header { display: flex; align-items: center; justify-content: space-between; gap: .8rem; }
 .mudd-daily-board__header-side { display: flex; align-items: center; gap: .45rem; }
 .mudd-daily-board__close { min-height: 2rem; padding: .25rem .45rem; color: var(--mudd-muted); font-size: .68rem; }
@@ -147,6 +168,14 @@
 .mudd-daily-board__loading span:nth-child(3) { width: 64%; }
 @keyframes mudd-board-shimmer { from { opacity: .45; } to { opacity: .9; } }
 @media (max-width: 440px) {
+  .mudd-daily-board-dialog { width: calc(100vw - 1rem); max-height: calc(100dvh - 1rem); border-radius: .75rem; }
+  .mudd-daily-board { padding: .7rem; }
+  .mudd-daily-board__header { align-items: flex-start; }
+  .mudd-daily-board__header-side { flex-direction: column-reverse; align-items: flex-end; }
+  .mudd-interaction-options-dialog { width: calc(100vw - 1rem); max-height: calc(100dvh - 1rem); border-radius: .75rem; }
+  .mudd-interaction-options { padding: .8rem; }
+  .mudd-npc-dialogue-dialog { width: calc(100vw - 1rem); max-height: calc(100dvh - 1rem); border-radius: .75rem; }
+  .mudd-npc-dialogue { padding: .8rem; }
   .mudd-daily-board__job { align-items: flex-start; }
   .mudd-daily-board__job-side { max-width: 8rem; }
   .mudd-daily-board__reward { white-space: normal; text-align: right; }

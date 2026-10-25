@@ -763,7 +763,7 @@ beforeEach(() => {
             : maraChoice === 'ask-tower'
               ? 'The bell has been silent for years. I still hope to hear it ring again.'
               : 'The old paths still have their stories. What would you like to ask?';
-        const choices = topic
+        const choices = topic || maraChoice === 'ask-tower'
           ? []
           : [
             ...(maraChoice !== 'ask-marker' ? [{ id: 'ask-marker', label: 'Ask about the marker' }] : []),
@@ -2305,7 +2305,10 @@ describe('single-character world session client', () => {
     });
     expect(history).toHaveTextContent('> talk Mara');
     expect(chat).not.toHaveTextContent('What would you like to ask?');
-    expect(screen.getByRole('group', { name: 'Mara dialogue choices' })).toHaveTextContent('Ask about the marker');
+    const conversation = screen.getByRole('dialog', { name: 'Conversation with Mara' });
+    expect(conversation).toHaveTextContent('The old paths still have their stories. What would you like to ask?');
+    expect(screen.getByRole('group', { name: 'Mara response options' })).toHaveTextContent('Ask about the marker');
+    expect(screen.queryByRole('group', { name: 'Mara dialogue choices' })).not.toBeInTheDocument();
     const greetingRequest = apiFetch.mock.calls.find(([path, init]) =>
       path === '/api/queries' &&
       JSON.parse(String(init?.body ?? '{}')).type === 'npc.talk'
@@ -2320,17 +2323,19 @@ describe('single-character world session client', () => {
     await waitFor(() => {
       expect(history).toHaveTextContent('Mara: The marker points east to the Old Bell Tower. Its direction is still true.');
     });
-    const remainingChoices = screen.getByRole('group', { name: 'Mara dialogue choices' });
+    expect(conversation).toHaveTextContent('The marker points east to the Old Bell Tower. Its direction is still true.');
+    const remainingChoices = screen.getByRole('group', { name: 'Mara response options' });
     expect(remainingChoices).toHaveTextContent('Ask about the bell tower');
     expect(remainingChoices).not.toHaveTextContent('Ask about the marker');
     expect(chat).not.toHaveTextContent('The marker points east to the Old Bell Tower. Its direction is still true.');
 
+    fireEvent.click(screen.getByRole('button', { name: 'Close conversation' }));
     fireEvent.change(commandInput, { target: { value: 'talk Mara about bell' } });
     fireEvent.submit(commandInput.closest('form')!);
     await waitFor(() => {
       expect(history).toHaveTextContent('Mara: The bell has not rung in years. The tower stands east of this clearing.');
     });
-
+    expect(screen.queryByRole('dialog', { name: 'Conversation with Mara' })).not.toBeInTheDocument();
     clickQuickAction('Show people to talk to');
     fireEvent.click(screen.getByRole('button', { name: 'Talk to Mara' }));
     expect(screen.getByRole('group', { name: /^Quick commands, page \d+$/ })).toBeVisible();
@@ -2338,6 +2343,7 @@ describe('single-character world session client', () => {
       expect(markerResponseCount()).toBe(2);
     });
 
+    fireEvent.click(screen.getByRole('button', { name: 'Close conversation' }));
     quickGo('north');
     await screen.findByRole('heading', { name: 'Glasswater Bridge' });
     quickGo('south');
@@ -2348,11 +2354,55 @@ describe('single-character world session client', () => {
       expect(markerResponseCount()).toBe(3);
     });
 
+    fireEvent.click(screen.getByRole('button', { name: 'Close conversation' }));
     quickGo('north');
     await screen.findByRole('heading', { name: 'Glasswater Bridge' });
     fireEvent.change(commandInput, { target: { value: 'talk Mara' } });
     fireEvent.submit(commandInput.closest('form')!);
     await screen.findByText('You do not see anyone called “Mara” here.');
+  });
+
+  it('lists and selects NPC dialogue choices with the quests command', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+
+    submitWorldCommand('talk Mara');
+    await waitFor(() => expect(history).toHaveTextContent('Mara: The old paths still have their stories.'));
+    expect(screen.getByRole('dialog', { name: 'Conversation with Mara' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Close conversation' }));
+
+    submitWorldCommand('quests');
+    await waitFor(() => expect(history).toHaveTextContent('1. Ask about the marker'));
+    expect(history).toHaveTextContent('2. Ask about the bell tower');
+    expect(history).toHaveTextContent('Choose a reply with “quests <number>”.');
+
+    submitWorldCommand('quests 1');
+    await waitFor(() => {
+      expect(history).toHaveTextContent('> quests 1');
+      expect(history).toHaveTextContent('Mara: The marker points east to the Old Bell Tower.');
+    });
+    expect(screen.getByRole('dialog', { name: 'Conversation with Mara' })).toHaveTextContent(
+      'The marker points east to the Old Bell Tower.',
+    );
+  });
+
+  it('keeps an open NPC dialogue modal visible after the final reply until the player closes it', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('talk Mara');
+
+    const dialog = await screen.findByRole('dialog', { name: 'Conversation with Mara' });
+    fireEvent.click(screen.getByRole('button', { name: 'Ask about the marker' }));
+    await waitFor(() => expect(dialog).toHaveTextContent('The marker points east to the Old Bell Tower.'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ask about the bell tower' }));
+    await waitFor(() => expect(dialog).toHaveTextContent('The bell has been silent for years.'));
+    expect(dialog).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Mara response options' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close conversation' }));
+    expect(screen.queryByRole('dialog', { name: 'Conversation with Mara' })).not.toBeInTheDocument();
   });
 
   it('looks at visible objects by target and only while they are in the current room', async () => {
@@ -2387,9 +2437,13 @@ describe('single-character world session client', () => {
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     const history = screen.getByRole('region', { name: 'Terminal output' });
     const terminal = history.closest('.focused-terminal')!;
-    const markerLink = await screen.findByRole('button', { name: 'Look at Weathered marker in terminal' });
+    const markerLink = await screen.findByRole('button', { name: 'Choose an action for Weathered marker in terminal' });
 
     fireEvent.click(markerLink);
+    const actionDialog = await screen.findByRole('dialog', { name: 'Choose an action for Weathered marker' });
+    expect(actionDialog).toHaveTextContent('Read');
+    expect(actionDialog).toHaveTextContent('Look');
+    fireEvent.click(screen.getByRole('button', { name: 'Look' }));
 
     await screen.findByText('A weathered stone marker, its carved arrow worn but still pointing east.');
     expect(history).toHaveTextContent('> look Weathered marker');
@@ -2840,7 +2894,7 @@ describe('single-character world session client', () => {
     dailyFeatureEnabled = true;
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
-    submitWorldCommand('jobs');
+    submitWorldCommand('read bulletin');
 
     const board = await screen.findByRole('region', { name: 'Reedbank Bulletin' });
     expect(board).toHaveTextContent('Sella');
@@ -2848,6 +2902,7 @@ describe('single-character world session client', () => {
     expect(board).toHaveTextContent('river-mint: 0/1 carried');
     expect(board).toHaveTextContent('15 gold · 9 XP');
     const terminal = screen.getByRole('region', { name: 'Terminal output' });
+    expect(terminal).toHaveTextContent('> read bulletin');
     expect(terminal).toHaveTextContent('Resets at');
     expect(terminal).toHaveTextContent('Sella: Bring river mint.');
 
@@ -2862,12 +2917,13 @@ describe('single-character world session client', () => {
     ]));
   });
 
-  it('uses bulletin buttons for accept and deliver and lets travelers close the inline panel', async () => {
+  it('lists the bulletin in read quick actions and supports accepting and delivering jobs', async () => {
     dailyFeatureEnabled = true;
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
 
-    clickQuickAction('Browse Reedbank Bulletin');
+    clickQuickAction('Show readable objects');
+    clickQuickAction('Read Reedbank Bulletin');
     await waitFor(() => expect(dailyBoardQueryCount).toBe(1));
     const board = await screen.findByRole('region', { name: 'Reedbank Bulletin' });
     fireEvent.click(within(board).getByRole('button', { name: 'Accept' }));

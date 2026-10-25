@@ -1,6 +1,8 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ActivityLog } from './ActivityLog.js';
+import { InteractionOptionsDialog } from './InteractionOptionsDialog.js';
+import { NpcDialogueDialog } from './NpcDialogueDialog.js';
 import { Button } from './Button.js';
 import { DisclosureButton } from './DisclosureButton.js';
 import { NavigationControls } from './NavigationControls.js';
@@ -105,6 +107,75 @@ describe('@mudd/ui components', () => {
     fireEvent.click(marker);
     expect(onLookTarget).toHaveBeenCalledWith({ id: 'marker', label: 'Weathered marker' });
   });
+
+  it('shows supported actions in a closeable target dialog', () => {
+    const onSelect = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <InteractionOptionsDialog
+        targetLabel="Bulletin board"
+        options={[
+          { id: 'look', label: 'Look' },
+          { id: 'read', label: 'Read' },
+        ]}
+        onSelect={onSelect}
+        onClose={onClose}
+      />,
+    );
+
+    expect(screen.getByRole('dialog', { name: 'Choose an action for Bulletin board' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Read' }));
+    expect(onSelect).toHaveBeenCalledWith('read');
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('shows NPC speech and response choices in a closeable conversation dialog', () => {
+    const onSelect = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <NpcDialogueDialog
+        npcName="Mara"
+        dialogue="The old paths still have their stories."
+        choices={[
+          { id: 'marker', label: 'Ask about the marker' },
+          { id: 'tower', label: 'Ask about the bell tower' },
+        ]}
+        onSelect={onSelect}
+        onClose={onClose}
+      />,
+    );
+
+    const dialog = screen.getByRole('dialog', { name: 'Conversation with Mara' });
+    expect(dialog).toHaveTextContent('The old paths still have their stories.');
+    expect(screen.getByRole('group', { name: 'Mara response options' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Ask about the marker' }));
+    expect(onSelect).toHaveBeenCalledWith('marker');
+    fireEvent.click(screen.getByRole('button', { name: 'Close conversation' }));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it.each(['Goodbye', 'I should get going'])(
+    'closes the NPC conversation from the “%s” farewell without submitting a dialogue choice',
+    (farewell) => {
+      const onSelect = vi.fn();
+      const onClose = vi.fn();
+      render(
+        <NpcDialogueDialog
+          npcName="Mara"
+          dialogue="The old paths still have their stories."
+          choices={[{ id: 'marker', label: 'Ask about the marker' }]}
+          onSelect={onSelect}
+          onClose={onClose}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: farewell }));
+
+      expect(onClose).toHaveBeenCalledOnce();
+      expect(onSelect).not.toHaveBeenCalled();
+    },
+  );
 
   it('uses heading hierarchy and renders world introduction as text', () => {
     render(<WorldHero name="The Waystone Path" summary="An old road." introduction={['Listen for the bells.']} />);
@@ -266,9 +337,10 @@ describe('@mudd/ui components', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Loading class actions');
   });
 
-  it('shows compact posting requirements and sends accessible board actions', () => {
+  it('shows the board in a closeable modal and sends accessible posting actions', () => {
     const onAccept = vi.fn();
     const onDeliver = vi.fn();
+    const onClose = vi.fn();
     render(<DailyBoard
       name="Reedbank Bulletin"
       cycle="2026-10-23"
@@ -280,7 +352,9 @@ describe('@mudd/ui components', () => {
       ]}
       onAccept={onAccept}
       onDeliver={onDeliver}
+      onClose={onClose}
     />);
+    expect(screen.getByRole('dialog', { name: 'Reedbank Bulletin' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Reedbank Bulletin' })).toBeInTheDocument();
     expect(screen.getByText('River mint: 1/3 carried · 2 needed')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
@@ -290,12 +364,14 @@ describe('@mudd/ui components', () => {
     expect(deliverButtons[1]).toBeEnabled();
     fireEvent.click(deliverButtons[1]!);
     expect(onDeliver).toHaveBeenCalledWith('flowers');
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   it('offers a retry control in the inline board error state', () => {
     const onRetry = vi.fn();
     render(<DailyBoard name="Board" cycle="2026-10-23" resetsAt="2026-10-24T00:00:00.000Z"
-      jobs={[]} error="Bulletin unavailable." onRetry={onRetry} onAccept={vi.fn()} onDeliver={vi.fn()} />);
+      jobs={[]} error="Bulletin unavailable." onRetry={onRetry} onAccept={vi.fn()} onDeliver={vi.fn()} onClose={vi.fn()} />);
     expect(screen.getByRole('alert')).toHaveTextContent('Bulletin unavailable.');
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(onRetry).toHaveBeenCalledOnce();

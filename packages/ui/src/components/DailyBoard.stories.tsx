@@ -15,6 +15,7 @@ const meta = {
     ],
     onAccept: () => undefined,
     onDeliver: () => undefined,
+    onClose: () => undefined,
   },
 } satisfies Meta<typeof DailyBoard>;
 export default meta;
