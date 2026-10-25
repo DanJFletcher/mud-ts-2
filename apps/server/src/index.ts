@@ -53,6 +53,7 @@ import {
   getAccountIdentity,
   type AccountIdentity,
 } from './session-service.js';
+import { createCharacterOwnershipCheck } from './character-authorization.js';
 import { CLERK_PROXY_PATH, clerkProxyMiddleware, getClerkProxyHost } from './middlewares/clerkProxyMiddleware.js';
 import {
   createPlayerRoomChatMessage,
@@ -111,12 +112,12 @@ const authorization = {
   async canAccessInstance(session: { worldInstanceId: string }, id: string) {
     return session.worldInstanceId === id && registeredWorldIds.has(id);
   },
-  async ownsCharacter(session: { playerId: string }, id: string) {
+  ownsCharacter: createCharacterOwnershipCheck(async (playerId, id) => {
     const [row] = await db.select({ id: characters.id }).from(characters)
-      .where(and(eq(characters.id, id), eq(characters.playerId, session.playerId)))
+      .where(and(eq(characters.id, id), eq(characters.playerId, playerId)))
       .limit(1);
     return Boolean(row);
-  },
+  }),
 };
 const worldRuntimes = createWorldRuntimes(store, authorization);
 await startWorldRuntimes(worldRuntimes);
@@ -869,14 +870,24 @@ app.post('/api/commands', createRateLimiter({ windowMs: 60_000, maxRequests: 120
       if (typeof command?.characterId === 'string' && command.characterId !== current.characterId) {
         return res.status(403).json({ message: 'This world session is bound to a different character.' });
       }
-      const currentCharacter = replayCharacter(await store.readStream(current.worldInstanceId, current.characterId));
+      const [currentCharacter, interactionEvents, teamCombatInfo] = await measureStage(
+        'commandGuardReads',
+        () => Promise.all([
+          store.readStream(current.worldInstanceId, current.characterId).then(replayCharacter),
+          store.readStream(current.worldInstanceId, interactionStreamId(current.worldInstanceId)),
+          selected.engine.query({
+            type: 'team.combat.info',
+            version: 1,
+            queryId: `guard:${res.locals.requestId}`,
+            worldInstanceId: current.worldInstanceId,
+            characterId: current.characterId,
+            payload: {},
+          }, worldContext(identity, current)),
+        ]),
+      );
       if (currentCharacter?.combat?.status === 'defeat' || currentCharacter?.health?.current === 0) {
         return res.status(409).json({ message: 'Your character has died. Start a new character to begin again.' });
       }
-      const interactionEvents = await store.readStream(
-        current.worldInstanceId,
-        interactionStreamId(current.worldInstanceId),
-      );
       const latestEncounter = PvpEncounterProjectionSchema.safeParse(
         projectCharacterInteractions(interactionEvents, current.characterId).encounter);
       const characterInPvp = latestEncounter.success &&
@@ -912,14 +923,6 @@ app.post('/api/commands', createRateLimiter({ windowMs: 60_000, maxRequests: 120
           return res.status(409).json({ message: 'Use the cooperative encounter controls to begin combat with your party.' });
         }
       }
-      const teamCombatInfo = await selected.engine.query({
-        type: 'team.combat.info',
-        version: 1,
-        queryId: `guard:${res.locals.requestId}`,
-        worldInstanceId: current.worldInstanceId,
-        characterId: current.characterId,
-        payload: {},
-      }, worldContext(identity, current));
       const parsedTeamCombatInfo = teamCombatInfo.ok
         ? TeamCombatInfoProjectionSchema.safeParse(teamCombatInfo.value)
         : undefined;
