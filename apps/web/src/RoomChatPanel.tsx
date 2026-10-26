@@ -109,7 +109,7 @@ export function RoomChatPanel({
   const [sending, setSending] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [sendError, setSendError] = useState('');
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(embedded);
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
   const [fullscreenPresent, setFullscreenPresent] = useState(fullscreen);
   const [fullscreenClosing, setFullscreenClosing] = useState(false);

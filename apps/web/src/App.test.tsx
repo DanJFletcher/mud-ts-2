@@ -2055,10 +2055,15 @@ describe('single-character world session client', () => {
       const quickActions = document.querySelector('.focused-quick-commands');
 
       expect(chat).toHaveClass('focused-room-chat--embedded');
+      expect(chat).toHaveClass('focused-room-chat--collapsed');
       expect(chat.closest('.focused-terminal')).not.toBeNull();
       expect(chat.closest('.focused-terminal-body')).not.toBeNull();
       expect(quickActions).not.toBeNull();
       expect(Boolean(quickActions!.compareDocumentPosition(chat) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+      expect(screen.getByRole('button', { name: 'Expand room chat' })).toBeVisible();
+      expect(screen.getByRole('textbox', { name: 'Message the room' })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Expand room chat' }));
+      expect(chat).not.toHaveClass('focused-room-chat--collapsed');
       expect(screen.getByRole('textbox', { name: 'Message the room' })).toBeVisible();
     } finally {
       view.unmount();
