@@ -357,7 +357,7 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-color: var(--terminal-border) transparent;
-  padding: 9px 16px;
+  padding: 9px 16px 48px;
   outline-offset: -3px;
 }
 
