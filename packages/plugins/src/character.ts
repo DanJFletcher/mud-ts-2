@@ -553,6 +553,7 @@ export const characterPlugin: EnginePlugin = {
             stackable: inventoryItem.stackable,
             ...(inventoryItem.quantity !== undefined ? { quantity: inventoryItem.quantity } : {}),
           } : {}),
+          ...(inventoryItem.usesRemaining !== undefined ? { usesRemaining: inventoryItem.usesRemaining } : {}),
           ...(inventoryItem.consumable ? { consumable: inventoryItem.consumable } : {}),
           ...(inventoryItem.equipment ? { equipment: inventoryItem.equipment } : {}),
           ...(inventoryItem.fishingRod ? { fishingRod: inventoryItem.fishingRod } : {}),

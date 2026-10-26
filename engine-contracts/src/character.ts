@@ -11,6 +11,7 @@ import { CharacterClassSnapshotSchema, AvailableClassActionSchema } from './clas
 import { DailyJobStateSchema, SupplyCollectionStateSchema } from './daily-jobs.js';
 import { FishCatchMetadataSchema, FishingCastStateSchema, FishingRodDefinitionSchema } from './fishing.js';
 import { WoodcuttingAxeDefinitionSchema, WoodcuttingActionStateSchema, WoodcuttingSkillSchema } from './woodcutting.js';
+import { CraftingSkillSchema } from './crafting-skill.js';
 
 export const ConsumableItemSchema = z.object({
   effect: z.literal('heal'),
@@ -45,6 +46,7 @@ export const InventoryItemProjectionSchema = z.object({
   woodcuttingAxe: WoodcuttingAxeDefinitionSchema.optional(),
   stackable: z.boolean().optional(),
   quantity: PositiveIntSchema.max(2_147_483_647).optional(),
+  usesRemaining: PositiveIntSchema.max(1000).optional(),
 }).strict().superRefine((item, context) => {
   if (item.sharedItemId && item.sharedItemId !== item.id) {
     context.addIssue({
@@ -72,6 +74,13 @@ export const InventoryItemProjectionSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['quantity'],
       message: 'Stackable items must specify their quantity.',
+    });
+  }
+  if (item.usesRemaining !== undefined && item.stackable) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['usesRemaining'],
+      message: 'Charge-based items cannot be stackable.',
     });
   }
 });
@@ -519,6 +528,7 @@ export const CharacterProjectionSchema = z.object({
   wallet: CharacterWalletSchema.optional(),
   advancement: CharacterAdvancementProjectionSchema.optional(),
   woodcutting: WoodcuttingSkillSchema.optional(),
+  crafting: CraftingSkillSchema.optional(),
   activeWoodcutting: WoodcuttingActionStateSchema.optional(),
   health: CharacterHealthSchema.optional(),
   combat: CombatEncounterProjectionSchema.optional(),

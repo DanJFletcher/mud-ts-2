@@ -27,6 +27,8 @@ import {
   FishingCastAdvancedEventSchema,
   WoodcuttingActionStartedEventSchema,
   WoodcuttingActionAdvancedEventSchema,
+  CharacterCraftingCompletedEventSchema,
+  type InventoryItemProjection,
   DEFAULT_CHARACTER_RESOURCES,
   resolveStaminaRecovery,
   resolveVitalRecovery,
@@ -346,7 +348,7 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
     } else if (event.type === 'character.merchant_item_purchased') {
       if (!state) throw new Error('Merchant purchase encountered before character creation.');
       const purchased = MerchantItemPurchasedEventSchema.parse(publicEvent);
-      const { characterId, locationId, currencyId, listingId, price, item } = purchased.payload;
+      const { characterId, locationId, currencyId, listingId, price, item, repeatable } = purchased.payload;
       if (
         characterId !== state.characterId ||
         locationId !== state.locationId ||
@@ -354,7 +356,7 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
         state.wallet.currencyId !== currencyId ||
         state.wallet.balance < price ||
         state.inventory.some((candidate) => candidate.id === item.id) ||
-        state.purchasedMerchantListingIds.includes(listingId)
+        (!repeatable && state.purchasedMerchantListingIds.includes(listingId))
       ) {
         throw new Error(`Invalid merchant purchase at revision ${event.aggregateVersion}.`);
       }
@@ -363,7 +365,122 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
         wallet: { ...state.wallet, balance: state.wallet.balance - price },
         inventory: [...state.inventory, item],
         itemLocations: [...state.itemLocations, { item, locationId: null }],
-        purchasedMerchantListingIds: [...state.purchasedMerchantListingIds, listingId],
+        purchasedMerchantListingIds: repeatable
+          ? state.purchasedMerchantListingIds
+          : [...state.purchasedMerchantListingIds, listingId],
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.crafting_completed') {
+      if (!state) throw new Error('Crafting completion encountered before character creation.');
+      const crafted = CharacterCraftingCompletedEventSchema.parse(publicEvent).payload;
+      const { recipe, quantity, materialConsumptions, outputItems } = crafted;
+      const materialAmounts = new Map<string, number>();
+      const replacements = new Map<string, InventoryItemProjection | null>();
+      const consumedItemIds = new Set<string>();
+      const validOutputs = outputItems.every((item) =>
+        item.typeId === recipe.outputTypeId &&
+        item.label === recipe.outputLabel &&
+        item.description === recipe.outputDescription &&
+        Object.keys(item).every((key) => ['id', 'typeId', 'label', 'description'].includes(key)),
+      );
+      for (const consumption of materialConsumptions) {
+        const item = state.inventory.find((candidate) => candidate.id === consumption.itemId);
+        const itemLocation = state.itemLocations.find((entry) => entry.item.id === consumption.itemId);
+        const ingredient = recipe.ingredients.find((candidate) => candidate.typeId === consumption.typeId);
+        if (
+          !item ||
+          (itemLocation !== undefined && itemLocation.locationId !== null) ||
+          item.typeId !== consumption.typeId ||
+          !ingredient ||
+          consumedItemIds.has(consumption.itemId) ||
+          consumption.kind !== (ingredient.consumeUses ? 'uses' : 'quantity')
+        ) {
+          throw new Error(`Invalid crafting material at revision ${event.aggregateVersion}.`);
+        }
+        consumedItemIds.add(consumption.itemId);
+        materialAmounts.set(
+          consumption.typeId,
+          (materialAmounts.get(consumption.typeId) ?? 0) + consumption.amount,
+        );
+        if (consumption.kind === 'uses') {
+          if ((item.usesRemaining ?? 0) < consumption.amount) {
+            throw new Error(`Insufficient item uses at revision ${event.aggregateVersion}.`);
+          }
+          const usesRemaining = item.usesRemaining! - consumption.amount;
+          replacements.set(consumption.itemId, usesRemaining > 0 ? { ...item, usesRemaining } : null);
+        } else if (item.stackable) {
+          if ((item.quantity ?? 0) < consumption.amount) {
+            throw new Error(`Insufficient material quantity at revision ${event.aggregateVersion}.`);
+          }
+          const quantityRemaining = item.quantity! - consumption.amount;
+          replacements.set(consumption.itemId, quantityRemaining > 0
+            ? { ...item, quantity: quantityRemaining }
+            : null);
+        } else if (consumption.amount === 1) {
+          replacements.set(consumption.itemId, null);
+        } else {
+          throw new Error(`Invalid unstackable material quantity at revision ${event.aggregateVersion}.`);
+        }
+      }
+      const experienceAwardedHundredths = Math.round(recipe.experience * 100) * quantity;
+      const totalExperienceHundredths =
+        (state.crafting?.experienceHundredths ?? 0) + experienceAwardedHundredths;
+      let expectedLevel = 1;
+      while (expectedLevel < 99 && totalExperienceHundredths >= 2500 * expectedLevel * expectedLevel) {
+        expectedLevel += 1;
+      }
+      const hasRequiredTools = recipe.toolTypeIds.every((typeId) =>
+        state!.inventory.some((item) => item.typeId === typeId && !consumedItemIds.has(item.id)),
+      );
+      if (
+        crafted.characterId !== state.characterId ||
+        crafted.locationId !== state.locationId ||
+        state.combat?.status === 'active' ||
+        state.activeFishing ||
+        state.activeWoodcutting ||
+        (state.health && state.health.current <= 0) ||
+        (state.crafting?.level ?? 1) < recipe.requiredLevel ||
+        !hasRequiredTools ||
+        !validOutputs ||
+        outputItems.length !== quantity ||
+        new Set(outputItems.map((item) => item.id)).size !== outputItems.length ||
+        outputItems.some((item) =>
+          state!.inventory.some((existing) => existing.id === item.id) ||
+          state!.itemLocations.some((entry) => entry.item.id === item.id),
+        ) ||
+        recipe.ingredients.some((ingredient) =>
+          (materialAmounts.get(ingredient.typeId) ?? 0) !== ingredient.quantityPerCraft * quantity,
+        ) ||
+        [...materialAmounts.keys()].some((typeId) =>
+          !recipe.ingredients.some((ingredient) => ingredient.typeId === typeId),
+        ) ||
+        crafted.experienceAwardedHundredths !== experienceAwardedHundredths ||
+        crafted.totalExperienceHundredths !== totalExperienceHundredths ||
+        crafted.level !== expectedLevel
+      ) {
+        throw new Error(`Invalid crafting completion at revision ${event.aggregateVersion}.`);
+      }
+      const inventory = state.inventory.flatMap((item) => {
+        if (!replacements.has(item.id)) return [item];
+        const replacement = replacements.get(item.id);
+        return replacement ? [replacement] : [];
+      });
+      const itemLocations = state.itemLocations.flatMap((entry) => {
+        if (!replacements.has(entry.item.id)) return [entry];
+        const replacement = replacements.get(entry.item.id);
+        return replacement ? [{ ...entry, item: replacement }] : [];
+      });
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        crafting: {
+          experienceHundredths: crafted.totalExperienceHundredths,
+          level: crafted.level,
+        },
+        inventory: [...inventory, ...outputItems],
+        itemLocations: [
+          ...itemLocations,
+          ...outputItems.map((item) => ({ item, locationId: null })),
+        ],
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'character.inn_rest_completed') {

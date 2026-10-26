@@ -3,6 +3,7 @@ import {
   DailyBoardQuerySchema, DailyBoardProjectionSchema, DailyJobCommandSchema, GatherSupplyCommandSchema, SupplySourceDefinitionSchema,
   FishingCastCommandSchema, FishingAdvanceCommandSchema,
   StartWoodcuttingCommandSchema, AdvanceWoodcuttingCommandSchema,
+  CraftingCatalogProjectionSchema, CraftingCatalogQuerySchema, CraftingCommandSchema,
   CharacterProjectionSchema,
   CharacterStatsProjectionSchema,
   CommandReceiptSchema,
@@ -473,6 +474,41 @@ export class MuddHttpClient {
     return this.send(AdvanceWoodcuttingCommandSchema.parse({
       type: 'woodcutting.advance', version: 1, commandId, worldInstanceId: this.options.worldInstanceId,
       characterId, expectedVersion, payload: { actionId },
+    }));
+  }
+
+  async getCraftingCatalog(characterId: string, queryId = crypto.randomUUID()) {
+    const query = CraftingCatalogQuerySchema.parse({
+      type: 'crafting.catalog',
+      version: 1,
+      queryId,
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      payload: {},
+    });
+    const result = await this.request('/api/queries', {
+      method: 'POST',
+      body: JSON.stringify(query),
+    }, queryResultSchema(CraftingCatalogProjectionSchema));
+    if (!result.ok || !result.value) throw new Error(result.message ?? 'Unable to list craftable items.');
+    return result.value;
+  }
+
+  async craft(
+    characterId: string,
+    expectedVersion: number,
+    recipeId: string,
+    quantity: 1 | 5 | 10,
+    commandId = crypto.randomUUID(),
+  ) {
+    return this.send(CraftingCommandSchema.parse({
+      type: 'crafting.craft',
+      version: 1,
+      commandId,
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      expectedVersion,
+      payload: { recipeId, quantity },
     }));
   }
 

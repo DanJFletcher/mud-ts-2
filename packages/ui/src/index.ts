@@ -12,6 +12,11 @@ export { ActivityLog } from './components/ActivityLog.js';
 export type { ActivityEntry, ActivityLogAction, ActivityLogProps, ActivityLogTarget } from './components/ActivityLog.js';
 export { InteractionOptionsDialog } from './components/InteractionOptionsDialog.js';
 export type { InteractionOptionsDialogProps } from './components/InteractionOptionsDialog.js';
+export { CraftingQuantityDialog } from './components/CraftingQuantityDialog.js';
+export type {
+  CraftingQuantityChoice,
+  CraftingQuantityDialogProps,
+} from './components/CraftingQuantityDialog.js';
 export { NpcDialogueDialog } from './components/NpcDialogueDialog.js';
 export type { NpcDialogueChoice, NpcDialogueDialogProps } from './components/NpcDialogueDialog.js';
 export { RoomDescription } from './components/RoomDescription.js';

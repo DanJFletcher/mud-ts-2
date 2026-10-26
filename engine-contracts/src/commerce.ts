@@ -32,6 +32,7 @@ export const MerchantListingDefinitionSchema = z.object({
   id: IdSchema,
   item: InventoryItemProjectionSchema,
   price: PositiveIntSchema.max(MAX_CURRENCY_AMOUNT),
+  repeatable: z.boolean().default(false),
 }).strict();
 
 export const MerchantCatalogDefinitionSchema = z.object({
@@ -69,6 +70,7 @@ export const MerchantCatalogProjectionSchema = z.object({
     item: InventoryItemProjectionSchema,
     price: PositiveIntSchema.max(MAX_CURRENCY_AMOUNT),
     purchased: z.boolean(),
+    repeatable: z.boolean().default(false),
   }).strict()).max(24),
 }).strict();
 
@@ -90,6 +92,7 @@ export const MerchantItemPurchasedEventSchema = DomainEventBaseSchema.extend({
     listingId: IdSchema,
     currencyId: IdSchema,
     price: PositiveIntSchema.max(MAX_CURRENCY_AMOUNT),
+    repeatable: z.boolean().default(false),
     item: InventoryItemProjectionSchema,
   }).strict(),
 }).strict();

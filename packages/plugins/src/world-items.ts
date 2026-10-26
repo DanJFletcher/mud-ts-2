@@ -138,6 +138,7 @@ export function createWorldCorpseEffect(
         description: template.description,
         ...(template.consumable ? { consumable: template.consumable } : {}),
         ...(template.equipment ? { equipment: template.equipment } : {}),
+        ...(template.usesRemaining !== undefined ? { usesRemaining: template.usesRemaining } : {}),
       }),
     };
   });

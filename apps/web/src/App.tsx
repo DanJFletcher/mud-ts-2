@@ -24,6 +24,7 @@ import {
   Button,
   ClassAbilityList,
   ClassChoice,
+  CraftingQuantityDialog,
   DailyBoard,
   DisclosureButton,
   InteractionOptionsDialog,
@@ -54,6 +55,7 @@ type ClassAwareCharacter = NonNullable<GameSnapshot["character"]> & {
   characterClass?: CharacterClassSnapshot;
   availableClassActions?: AvailableClassAction[];
 };
+type CraftingRecipeOption = Awaited<ReturnType<MuddHttpClient["getCraftingCatalog"]>>["recipes"][number];
 const classCharacter = (character: GameSnapshot["character"]): ClassAwareCharacter | undefined =>
   character as ClassAwareCharacter | undefined;
 
@@ -248,6 +250,10 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
     "Usage: buy <item>",
     "Buy an item from a merchant catalog you have opened in this room.",
   ],
+  craft: [
+    "Usage: craft | craft <item> | craft <item> <1|2|3>",
+    "Craft at a workbench. Choose 1 for one item, 2 for five, or 3 for ten. Crafting level and materials are checked by the server.",
+  ],
   look: [
     "Usage: look | look [at] <object>",
     "Look describes the current room. Add an object to inspect it here or in your inventory.",
@@ -328,6 +334,7 @@ const GENERAL_HELP = [
   "talk <npc> [about <topic>] — Speak privately with someone in the current room.",
   "shop <merchant> — Browse a merchant’s goods and your balance.",
   "buy <item> — Purchase an item from the open merchant catalog.",
+  "craft [item] [1|2|3] — List craftable items, choose a recipe, or craft 1, 5, or 10 at a workbench.",
   "look [at] <object> — Describe the room or inspect an object here or in your inventory.",
   "go <direction> — Travel through an available exit.",
   "read <object> | read bulletin — Read room text or open the local daily bulletin.",
@@ -417,7 +424,7 @@ export function WorldClient({
   teamPollingActive.current = Boolean(partyInfo?.party || teamCombatInfo?.encounter?.status === "active");
   const [presenceStale, setPresenceStale] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [pending, setPendingState] = useState<"look" | "read" | "take" | "use" | "drop" | "put" | "move" | "talk" | "shop" | "buy" | "combat" | "rest" | "stand" | "equip" | "party" | "daily" | "gather" | null>(null);
+  const [pending, setPendingState] = useState<"look" | "read" | "take" | "use" | "drop" | "put" | "move" | "talk" | "shop" | "buy" | "craft" | "combat" | "rest" | "stand" | "equip" | "party" | "daily" | "gather" | null>(null);
   const pendingActionSnapshot = useSyncExternalStore(
     client.pendingActions.subscribe,
     client.pendingActions.getSnapshot,
@@ -466,6 +473,7 @@ export function WorldClient({
   const [dialogueModalOpen, setDialogueModalOpen] = useState(false);
   const [activeInteractionTarget, setActiveInteractionTarget] = useState<ActivityLogTarget | null>(null);
   const [activeMerchantCatalog, setActiveMerchantCatalog] = useState<MerchantCatalog | null>(null);
+  const [activeCraftingPrompt, setActiveCraftingPrompt] = useState<CraftingRecipeOption | null>(null);
   const [dailyBoard, setDailyBoard] = useState<Awaited<ReturnType<MuddHttpClient["dailyBoard"]>> | null>(null);
   const [dailyBoardContext, setDailyBoardContext] = useState<{
     characterId: string;
@@ -2029,6 +2037,125 @@ export function WorldClient({
     }
   }, [activeMerchantCatalog, addEntry, pending, snapshot]);
 
+  const performCrafting = useCallback(async (
+    recipeId: string,
+    outputLabel: string,
+    quantity: 1 | 5 | 10,
+    recordCommand = false,
+  ) => {
+    if (!snapshot?.character || pending) return false;
+    if (recordCommand) {
+      const choice = ([1, 5, 10] as const).indexOf(quantity) + 1;
+      addEntry("system", `> craft ${outputLabel.toLocaleLowerCase()} ${choice}`);
+    }
+    setPending("craft");
+    try {
+      await client.craft(
+        snapshot.character.characterId,
+        snapshot.character.revision,
+        recipeId,
+        quantity,
+      );
+      addEntry("narration", `You craft ${quantity} × ${outputLabel.toLocaleLowerCase()}.`);
+      try {
+        setSnapshot(await client.getGame());
+      } catch {
+        setConnectionError("Crafting succeeded, but the character view could not refresh.");
+      }
+      return true;
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "Crafting could not be completed.");
+      return false;
+    } finally {
+      setPending(null);
+    }
+  }, [addEntry, pending, snapshot]);
+
+  const craftingCommand = useCallback(async (rawTarget: string) => {
+    if (!snapshot?.character) {
+      addEntry("error", "Choose a character before crafting.");
+      return;
+    }
+    const targetParts = rawTarget.trim().split(/\s+/).filter(Boolean);
+    const lastPart = targetParts.at(-1);
+    const selection = lastPart && /^\d+$/.test(lastPart) ? Number(lastPart) : undefined;
+    if (selection !== undefined && (selection < 1 || selection > 3)) {
+      addEntry("error", "Choose option 1, 2, or 3. These make 1, 5, or 10 items.");
+      return;
+    }
+    const itemTarget = selection === undefined ? rawTarget.trim() : targetParts.slice(0, -1).join(" ");
+    if (selection !== undefined && !itemTarget) {
+      addEntry("error", "Name an item to craft before choosing a quantity.");
+      return;
+    }
+
+    try {
+      const catalog = await client.getCraftingCatalog(snapshot.character.characterId);
+      if (!itemTarget) {
+        if (catalog.recipes.length === 0) {
+          addEntry("narration", "Nothing is craftable with your current materials and Crafting level.");
+          return;
+        }
+        addEntry("narration", "You can craft:");
+        catalog.recipes.forEach((recipe) => {
+          addEntry("narration", `${recipe.outputLabel} — Crafting level ${recipe.requiredLevel}, ${recipe.experience} XP each`);
+        });
+        if (!catalog.atWorkbench) addEntry("narration", "Travel to a workbench to craft one of these items.");
+        return;
+      }
+      if (!catalog.atWorkbench) {
+        addEntry("error", "You need to be at a workbench to craft.");
+        return;
+      }
+      const normalizedTarget = itemTarget.toLocaleLowerCase();
+      const exactMatches = catalog.recipes.filter((recipe) =>
+        recipe.recipeId.toLocaleLowerCase() === normalizedTarget ||
+        recipe.outputLabel.toLocaleLowerCase() === normalizedTarget);
+      const matches = exactMatches.length > 0
+        ? exactMatches
+        : catalog.recipes.filter((recipe) =>
+          recipe.outputLabel.toLocaleLowerCase().includes(normalizedTarget));
+      if (matches.length === 0) {
+        addEntry("error", `You cannot craft “${itemTarget}” with your current materials and Crafting level.`);
+        return;
+      }
+      if (matches.length > 1) {
+        addEntry("narration", "Choose an item to craft:");
+        matches.forEach((recipe) => addEntry("narration", recipe.outputLabel));
+        return;
+      }
+      const recipe = matches[0]!;
+      if (selection !== undefined) {
+        const quantity = ([1, 5, 10] as const)[selection - 1]!;
+        if (recipe.maxCraftable < quantity) {
+          addEntry("error", `You have enough materials to craft at most ${recipe.maxCraftable}.`);
+          return;
+        }
+        await performCrafting(recipe.recipeId, recipe.outputLabel, quantity);
+        return;
+      }
+
+      addEntry("narration", "How many?");
+      addEntry("narration", `1) ${recipe.outputLabel} x1`);
+      addEntry("narration", `2) ${recipe.outputLabel} x5`);
+      addEntry("narration", `3) ${recipe.outputLabel} x10`);
+      setActiveCraftingPrompt(recipe);
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "Unable to read the available crafting recipes.");
+    }
+  }, [addEntry, performCrafting, snapshot]);
+
+  const selectCraftingQuantity = useCallback(async (quantity: 1 | 5 | 10) => {
+    if (!activeCraftingPrompt) return;
+    const crafted = await performCrafting(
+      activeCraftingPrompt.recipeId,
+      activeCraftingPrompt.outputLabel,
+      quantity,
+      true,
+    );
+    if (crafted) setActiveCraftingPrompt(null);
+  }, [activeCraftingPrompt, performCrafting]);
+
   const performCombatAction = useCallback(async (
     action: "attack" | "defend" | "flee" | "use-item",
     targetNpcId?: string,
@@ -2427,6 +2554,11 @@ export function WorldClient({
     if (verb.toLowerCase() === "help") {
       addEntry("system", `> ${value}`);
       for (const line of getCommandHelp(target)) addEntry("narration", line);
+      return;
+    }
+    if (verb.toLocaleLowerCase() === "craft") {
+      addEntry("system", `> ${value}`);
+      await craftingCommand(target);
       return;
     }
     if (verb.toLocaleLowerCase() === "quests") {
@@ -3071,7 +3203,7 @@ export function WorldClient({
     }
     addEntry("system", `> ${value}`);
     addEntry("error", 'Unknown command. Try "help" for the command list.');
-  }, [activeDialogue, addEntry, browseMerchant, changeEquipment, chooseDialogueReply, dropObject, putObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, performFishingCast, performWoodcuttingStart, activeMerchantCatalog, performCombatAction, performInnRest, performStaminaPostureChange, interactionInbox, respondToPlayerChallenge, challengePlayer, partyInfo, refreshPartyState, teamCombatInfo, openDailyBoard, fetchDailyBoard, performDailyJob, performSupplyGather, displayedDailyBoard]);
+  }, [activeDialogue, addEntry, browseMerchant, changeEquipment, chooseDialogueReply, craftingCommand, dropObject, putObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, performFishingCast, performWoodcuttingStart, activeMerchantCatalog, performCombatAction, performInnRest, performStaminaPostureChange, interactionInbox, respondToPlayerChallenge, challengePlayer, partyInfo, refreshPartyState, teamCombatInfo, openDailyBoard, fetchDailyBoard, performDailyJob, performSupplyGather, displayedDailyBoard]);
 
   const submitQuickCommand = useCallback((rawCommand: string) => {
     setQuickCommandMode("quick");
@@ -4437,6 +4569,18 @@ export function WorldClient({
                       onClose={() => setActiveInteractionTarget(null)}
                     />
                   )}
+                  {activeCraftingPrompt && (
+                    <CraftingQuantityDialog
+                      itemLabel={activeCraftingPrompt.outputLabel}
+                      choices={([1, 5, 10] as const).map((quantity) => ({
+                        quantity,
+                        disabled: quantity > activeCraftingPrompt.maxCraftable,
+                      }))}
+                      busy={pending !== null}
+                      onSelect={(quantity) => void selectCraftingQuantity(quantity)}
+                      onClose={() => setActiveCraftingPrompt(null)}
+                    />
+                  )}
                   {dialogueModalOpen && activeDialogue ? (
                     <NpcDialogueDialog
                       npcName={activeDialogue.npcName}
@@ -4656,11 +4800,11 @@ export function WorldClient({
                               <button
                                 type="button"
                                 className="focused-inventory-item"
-                                aria-label={`Inspect ${item.label}${item.stackable && (item.quantity ?? 1) > 1 ? ` quantity ${item.quantity}` : ""}`}
+                                aria-label={`Inspect ${item.label}${item.stackable && (item.quantity ?? 1) > 1 ? ` quantity ${item.quantity}` : ""}${item.usesRemaining !== undefined ? `, ${item.usesRemaining} uses remaining` : ""}`}
                                 disabled={pending !== null}
                                 onClick={() => void inspectCarriedItem(item)}
                               >
-                                {item.label}{item.stackable && (item.quantity ?? 1) > 1 ? ` ×${item.quantity}` : ""}
+                                {item.label}{item.stackable && (item.quantity ?? 1) > 1 ? ` ×${item.quantity}` : ""}{item.usesRemaining !== undefined ? ` · ${item.usesRemaining} uses` : ""}
                               </button>
                               {item.equipment && (
                                 <span className="focused-item-tag">
@@ -4760,6 +4904,12 @@ export function WorldClient({
                       <span>Woodcutting</span>
                       <strong>
                         Level {snapshot.character?.woodcutting?.level ?? 1} · {snapshot.character?.woodcutting?.experience ?? 0} XP
+                      </strong>
+                    </div>
+                    <div className="focused-stat">
+                      <span>Crafting</span>
+                      <strong>
+                        Level {snapshot.character?.crafting?.level ?? 1} · {((snapshot.character?.crafting?.experienceHundredths ?? 0) / 100).toFixed(2).replace(/\.?0+$/, "")} XP
                       </strong>
                     </div>
                   </div>

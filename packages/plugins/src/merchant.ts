@@ -61,7 +61,7 @@ export const merchantPlugin: EnginePlugin = {
         },
         listings: (merchant.shop?.listings ?? []).map((listing) => ({
           ...listing,
-          purchased: character.purchasedMerchantListingIds.includes(listing.id),
+          purchased: !listing.repeatable && character.purchasedMerchantListingIds.includes(listing.id),
         })),
       });
     });
@@ -78,10 +78,13 @@ export const merchantPlugin: EnginePlugin = {
       }
       const listing = merchant.shop?.listings.find((candidate) => candidate.id === command.payload.listingId);
       if (!listing) throw new RuleViolationError('That item is not for sale here.');
-      if (character.purchasedMerchantListingIds.includes(listing.id)) {
+      if (!listing.repeatable && character.purchasedMerchantListingIds.includes(listing.id)) {
         throw new RuleViolationError('You have already bought that item from this merchant.');
       }
-      if (character.inventory.some((item) => item.id === listing.item.id)) {
+      const item = listing.repeatable
+        ? { ...listing.item, id: `merchant-${context.makeId()}` }
+        : listing.item;
+      if (character.inventory.some((candidate) => candidate.id === item.id)) {
         throw new RuleViolationError('You already carry that item.');
       }
       if (character.wallet.balance < listing.price) {
@@ -94,7 +97,8 @@ export const merchantPlugin: EnginePlugin = {
         listingId: listing.id,
         currencyId: currency.id,
         price: listing.price,
-        item: listing.item,
+        repeatable: listing.repeatable,
+        item,
       };
       MerchantItemPurchasedEventSchema.shape.payload.parse(payload);
       return {

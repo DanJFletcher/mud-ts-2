@@ -223,6 +223,7 @@ export const npcDialoguePlugin: EnginePlugin = {
           ...(reward.consumable ? { consumable: reward.consumable } : {}),
           ...(reward.equipment ? { equipment: reward.equipment } : {}),
           ...(reward.fishingRod ? { fishingRod: reward.fishingRod } : {}),
+          ...(reward.usesRemaining !== undefined ? { usesRemaining: reward.usesRemaining } : {}),
         };
         const grantPayload = { characterId: character.characterId, item, sourceId: `dialogue-${npc.id}-${choice.id}` };
         CharacterItemGrantedEventSchema.shape.payload.parse(grantPayload);

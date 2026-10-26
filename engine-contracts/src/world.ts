@@ -1,13 +1,14 @@
 /** PROPOSED v0.1: portable definitions vs runtime, read-only player projections. */
 import { z } from 'zod';
 import { ClientCommandBaseSchema, ClientQueryBaseSchema } from './protocol.js';
-import { ContractVersionSchema, IdSchema, NonNegativeIntSchema } from './ids.js';
+import { ContractVersionSchema, IdSchema, NonNegativeIntSchema, PositiveIntSchema } from './ids.js';
 import { ConsumableItemSchema, InventoryEquipmentSchema } from './character.js';
 import { WoodcuttingAxeDefinitionSchema } from './woodcutting.js';
 import { QuestDefinitionSchema, QuestDialogueActionSchema } from './quests.js';
 import { DailyBoardDefinitionSchema, NpcDailyJobResponseDefinitionSchema, SupplySourceDefinitionSchema } from './daily-jobs.js';
 import { FishingRodDefinitionSchema, FishingSpotDefinitionSchema } from './fishing.js';
 import { WoodcuttingTreeDefinitionSchema } from './woodcutting.js';
+import { CraftingRecipeDefinitionSchema } from './crafting.js';
 import {
   InnDefinitionSchema,
   InnProjectionSchema,
@@ -97,6 +98,7 @@ export const TakeableObjectDefinitionSchema = z.object({
   equipment: InventoryEquipmentSchema.optional(),
   fishingRod: FishingRodDefinitionSchema.optional(),
   woodcuttingAxe: WoodcuttingAxeDefinitionSchema.optional(),
+  usesRemaining: PositiveIntSchema.max(1000).optional(),
 }).strict().superRefine((item, context) => {
   if (item.quantity !== undefined && item.stackable !== true) {
     context.addIssue({
@@ -110,6 +112,13 @@ export const TakeableObjectDefinitionSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['quantity'],
       message: 'Stackable items must specify their quantity.',
+    });
+  }
+  if (item.usesRemaining !== undefined && item.stackable) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['usesRemaining'],
+      message: 'Charge-based items cannot be stackable.',
     });
   }
   if (item.consumable && item.equipment) {
@@ -404,6 +413,8 @@ export const WorldPackDraftSchema = z.object({
   supplySources: z.array(SupplySourceDefinitionSchema).default([]),
   fishingSpots: z.array(FishingSpotDefinitionSchema).default([]),
   woodcuttingTrees: z.array(WoodcuttingTreeDefinitionSchema).max(1000).default([]),
+  craftingWorkbenchLocationIds: z.array(IdSchema).max(500).default([]),
+  craftingRecipes: z.array(CraftingRecipeDefinitionSchema).max(100).default([]),
 }).strict().superRefine((world, context) => {
   if (
     world.respawn &&
@@ -418,6 +429,35 @@ export const WorldPackDraftSchema = z.object({
   const locationIds = new Set(world.locations.map(({ id }) => id));
   const fishingSpotIds = new Set<string>();
   const woodcuttingTreeIds = new Set<string>();
+  const craftingWorkbenchLocationIds = new Set<string>();
+  world.craftingWorkbenchLocationIds.forEach((locationId, index) => {
+    if (craftingWorkbenchLocationIds.has(locationId)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['craftingWorkbenchLocationIds', index],
+        message: 'Crafting workbench locations must be unique.',
+      });
+    }
+    if (!locationIds.has(locationId)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['craftingWorkbenchLocationIds', index],
+        message: 'Crafting workbench location must exist in this world.',
+      });
+    }
+    craftingWorkbenchLocationIds.add(locationId);
+  });
+  const craftingRecipeIds = new Set<string>();
+  world.craftingRecipes.forEach((recipe, index) => {
+    if (craftingRecipeIds.has(recipe.id)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['craftingRecipes', index, 'id'],
+        message: 'Crafting recipe IDs must be unique.',
+      });
+    }
+    craftingRecipeIds.add(recipe.id);
+  });
   for (const [treeIndex, tree] of world.woodcuttingTrees.entries()) {
     if (woodcuttingTreeIds.has(tree.id)) {
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['woodcuttingTrees', treeIndex, 'id'], message: 'Woodcutting tree IDs must be unique.' });

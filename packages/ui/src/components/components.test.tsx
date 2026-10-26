@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ActivityLog } from './ActivityLog.js';
 import { InteractionOptionsDialog } from './InteractionOptionsDialog.js';
+import { CraftingQuantityDialog } from './CraftingQuantityDialog.js';
 import { NpcDialogueDialog } from './NpcDialogueDialog.js';
 import { Button } from './Button.js';
 import { DisclosureButton } from './DisclosureButton.js';
@@ -126,6 +127,30 @@ describe('@mudd/ui components', () => {
     expect(screen.getByRole('dialog', { name: 'Choose an action for Bulletin board' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Read' }));
     expect(onSelect).toHaveBeenCalledWith('read');
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('offers only available crafting batch sizes in an accessible quantity dialog', () => {
+    const onSelect = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <CraftingQuantityDialog
+        itemLabel="Leather gloves"
+        choices={[
+          { quantity: 1 },
+          { quantity: 5, disabled: true },
+          { quantity: 10, disabled: true },
+        ]}
+        onSelect={onSelect}
+        onClose={onClose}
+      />,
+    );
+
+    expect(screen.getByRole('dialog', { name: 'How many?' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Leather gloves ×1' }));
+    expect(onSelect).toHaveBeenCalledWith(1);
+    expect(screen.getByRole('button', { name: 'Leather gloves ×5' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(onClose).toHaveBeenCalledOnce();
   });

@@ -11,7 +11,9 @@ import {
   autonomousNpcStreamId,
   characterPlugin,
   createClassRulesetPlugin,
+  craftingPlugin,
   fishingPlugin,
+  merchantPlugin,
   woodcuttingPlugin,
   WOODCUTTING_TREES_STREAM_ID,
   movementPlugin,
@@ -44,9 +46,11 @@ function makeHarness(options: Readonly<{
       autonomousNpcsPlugin,
       characterPlugin,
       movementPlugin,
+      merchantPlugin,
       npcDialoguePlugin,
       fishingPlugin,
       woodcuttingPlugin,
+      craftingPlugin,
       worldEventEffectsPlugin,
     ],
     store,
@@ -1280,5 +1284,133 @@ describe('Orraveth Bellwold settlement', () => {
 
     await runCast('Lucky Angler', 1, 1_000, 'caught');
     await runCast('Patient Angler', 100, 10_000, 'no-bite');
+  });
+
+  it('requires a workbench, reuses a needle, consumes thread uses, and records crafting skill', async () => {
+    const world = structuredClone(orravethWorld);
+    if (!world.currency) throw new Error('Orraveth must have its gold currency.');
+    world.currency.startingBalance = 100;
+    const shopIndex = world.locations.findIndex(({ id }) => id === 'marrs-general-goods');
+    if (shopIndex < 0) throw new Error('Marr’s General Goods is missing.');
+    const [shop] = world.locations.splice(shopIndex, 1);
+    if (!shop) throw new Error('Marr’s General Goods is missing.');
+    shop.exits = [
+      ...shop.exits,
+      {
+        id: 'craft-test-to-workshop',
+        fromLocationId: shop.id,
+        toLocationId: 'bellwold-milepost-workshop',
+        label: 'north',
+        direction: 'north',
+      },
+    ];
+    shop.takeables = [
+      ...(shop.takeables ?? []),
+      {
+        id: 'craft-test-tanned-hide',
+        typeId: 'tanned-deer-hide',
+        label: 'Tanned deer hide',
+        description: 'Test material for the crafting integration.',
+        stackable: true,
+        quantity: 10,
+      },
+    ];
+    world.locations.unshift(shop);
+    const h = makeHarness({ world });
+    await h.engine.start();
+    const client = new MuddHttpClient({
+      worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+      fetcher: async (input, init = {}) => {
+        const body = JSON.parse(String(init.body ?? '{}')) as unknown;
+        const result = String(input).endsWith('/commands')
+          ? await h.engine.dispatch(body, h.session)
+          : await h.engine.query(body, h.session);
+        return Response.json(result);
+      },
+    });
+    try {
+      const created = await client.createCharacter('Leatherworker', 'crafting-create', 'orraveth.scout');
+      const characterId = created.streamId!;
+      h.owners.set(characterId, h.session.playerId);
+      let character = await h.loadCharacter(characterId);
+      if (!character.wallet) {
+        await h.dispatch(characterId, {
+          type: 'character.wallet.initialize',
+          version: 1,
+          commandId: 'crafting-wallet',
+          expectedVersion: character.revision,
+          payload: {},
+        });
+        character = await h.loadCharacter(characterId);
+      }
+      const buy = async (listingId: string, commandId: string) => {
+        character = await h.loadCharacter(characterId);
+        await h.dispatch(characterId, {
+          type: 'merchant.purchase',
+          version: 1,
+          commandId,
+          expectedVersion: character.revision,
+          payload: { merchantNpcId: 'anwen-marr', listingId },
+        });
+      };
+      await buy('marr-crafting-needle', 'crafting-buy-needle');
+      await buy('marr-spool-of-thread', 'crafting-buy-thread-a');
+      await buy('marr-spool-of-thread', 'crafting-buy-thread-b');
+      character = await h.loadCharacter(characterId);
+      expect(character.inventory.filter((item) => item.typeId === 'spool-of-thread')).toHaveLength(2);
+      expect(character.inventory.filter((item) => item.typeId === 'spool-of-thread')
+        .every((item) => item.usesRemaining === 5)).toBe(true);
+
+      await h.dispatch(characterId, {
+        type: 'character.take',
+        version: 1,
+        commandId: 'crafting-take-hide',
+        expectedVersion: character.revision,
+        payload: { itemId: 'craft-test-tanned-hide' },
+      });
+      character = await h.loadCharacter(characterId);
+      const outsideWorkbench = await h.engine.dispatch({
+        type: 'crafting.craft',
+        version: 1,
+        commandId: 'crafting-reject-outside-workbench',
+        worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+        characterId,
+        expectedVersion: character.revision,
+        payload: { recipeId: 'leather-gloves', quantity: 1 },
+      }, h.session);
+      expect(outsideWorkbench.receipt.ok).toBe(false);
+
+      await h.dispatch(characterId, {
+        type: 'character.move',
+        version: 1,
+        commandId: 'crafting-enter-workshop',
+        expectedVersion: character.revision,
+        payload: { exitId: 'craft-test-to-workshop' },
+      });
+      character = await h.loadCharacter(characterId);
+      const catalog = await client.getCraftingCatalog(characterId);
+      expect(catalog.atWorkbench).toBe(true);
+      expect(catalog.recipes.find(({ recipeId }) => recipeId === 'leather-gloves')).toMatchObject({
+        maxCraftable: 10,
+        experience: 13.8,
+      });
+
+      const craftCommandId = 'crafting-five-gloves';
+      await client.craft(characterId, character.revision, 'leather-gloves', 5, craftCommandId);
+      await client.craft(characterId, character.revision, 'leather-gloves', 5, craftCommandId);
+      const crafted = await h.loadCharacter(characterId);
+      expect(crafted.inventory.filter((item) => item.typeId === 'leather-gloves')).toHaveLength(5);
+      expect(crafted.inventory.filter((item) => item.typeId === 'leather-gloves')
+        .every((item) => !item.equipment)).toBe(true);
+      expect(crafted.inventory.find((item) => item.typeId === 'tanned-deer-hide')).toMatchObject({
+        stackable: true,
+        quantity: 5,
+      });
+      expect(crafted.inventory.filter((item) => item.typeId === 'spool-of-thread')).toHaveLength(1);
+      expect(crafted.inventory.find((item) => item.typeId === 'spool-of-thread')?.usesRemaining).toBe(5);
+      expect(crafted.crafting).toEqual({ experienceHundredths: 6900, level: 2 });
+    } finally {
+      await h.engine.stop();
+    }
   });
 });

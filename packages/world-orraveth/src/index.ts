@@ -85,7 +85,7 @@ function bellwoldSmallTalkChoices(
 const draft = {
   formatVersion: 1,
   packId: 'orraveth.bellwold',
-  packVersion: '1.13.0',
+  packVersion: '1.14.0',
   displayName: 'Orraveth: Bellwold',
   dailyBoards: [{
     id: 'bellwold-notice-board', locationId: 'bellwold-south-common', name: 'South Common bulletin board',
@@ -117,6 +117,16 @@ const draft = {
     experiencePerLog: 25,
     baseChancePercent: 10,
   }],
+  craftingWorkbenchLocationIds: ['bellwold-milepost-workshop'],
+  craftingRecipes: [
+    { id: 'leather-gloves', outputTypeId: 'leather-gloves', outputLabel: 'Leather gloves', outputDescription: 'A small pair of soft, hand-stitched leather gloves.', requiredLevel: 1, experience: 13.8, toolTypeIds: ['crafting-needle'], ingredients: [{ typeId: 'tanned-deer-hide', label: 'tanned deer hide', quantityPerCraft: 1 }, { typeId: 'spool-of-thread', label: 'Spool of Thread', quantityPerCraft: 1, consumeUses: true }] },
+    { id: 'leather-boots', outputTypeId: 'leather-boots', outputLabel: 'Leather boots', outputDescription: 'A pair of sturdy leather boots, cut and stitched by hand.', requiredLevel: 1, experience: 16.25, toolTypeIds: ['crafting-needle'], ingredients: [{ typeId: 'tanned-deer-hide', label: 'tanned deer hide', quantityPerCraft: 1 }, { typeId: 'spool-of-thread', label: 'Spool of Thread', quantityPerCraft: 1, consumeUses: true }] },
+    { id: 'leather-cowl', outputTypeId: 'leather-cowl', outputLabel: 'Leather cowl', outputDescription: 'A close-fitting leather cowl with a simple stitched edge.', requiredLevel: 1, experience: 18.5, toolTypeIds: ['crafting-needle'], ingredients: [{ typeId: 'tanned-deer-hide', label: 'tanned deer hide', quantityPerCraft: 1 }, { typeId: 'spool-of-thread', label: 'Spool of Thread', quantityPerCraft: 1, consumeUses: true }] },
+    { id: 'leather-body', outputTypeId: 'leather-body', outputLabel: 'Leather body', outputDescription: 'A plain leather vest, pieced together with close, even stitches.', requiredLevel: 1, experience: 25, toolTypeIds: ['crafting-needle'], ingredients: [{ typeId: 'tanned-deer-hide', label: 'tanned deer hide', quantityPerCraft: 1 }, { typeId: 'spool-of-thread', label: 'Spool of Thread', quantityPerCraft: 1, consumeUses: true }] },
+    { id: 'leather-chaps', outputTypeId: 'leather-chaps', outputLabel: 'Leather chaps', outputDescription: 'A pair of leather leg guards with a narrow stitched seam.', requiredLevel: 1, experience: 27, toolTypeIds: ['crafting-needle'], ingredients: [{ typeId: 'tanned-deer-hide', label: 'tanned deer hide', quantityPerCraft: 1 }, { typeId: 'spool-of-thread', label: 'Spool of Thread', quantityPerCraft: 1, consumeUses: true }] },
+    { id: 'leather-vambraces', outputTypeId: 'leather-vambraces', outputLabel: 'Leather vambraces', outputDescription: 'A pair of leather forearm guards, neatly secured at the wrist.', requiredLevel: 11, experience: 22, toolTypeIds: ['crafting-needle'], ingredients: [{ typeId: 'tanned-deer-hide', label: 'tanned deer hide', quantityPerCraft: 1 }, { typeId: 'spool-of-thread', label: 'Spool of Thread', quantityPerCraft: 1, consumeUses: true }] },
+    { id: 'leather-shield', outputTypeId: 'leather-shield', outputLabel: 'Leather shield', outputDescription: 'A small leather-covered shield with a reinforced rim.', requiredLevel: 19, experience: 30, toolTypeIds: ['crafting-needle'], ingredients: [{ typeId: 'tanned-deer-hide', label: 'tanned deer hide', quantityPerCraft: 1 }, { typeId: 'spool-of-thread', label: 'Spool of Thread', quantityPerCraft: 1, consumeUses: true }] },
+  ],
   fishingSpots: [{
     id: 'bellwold-south-bridge-fishing',
     locationId: 'bellwold-river-bridge',
@@ -501,6 +511,28 @@ const draft = {
                   woodcuttingAxe: { requiredLevel: 20, power: 3 },
                 },
                 price: 50,
+              },
+              {
+                id: 'marr-crafting-needle',
+                item: {
+                  id: 'crafting-needle',
+                  typeId: 'crafting-needle',
+                  label: 'Crafting Needle',
+                  description: 'A small, reusable needle for stitching leather at a workbench.',
+                },
+                price: 4,
+              },
+              {
+                id: 'marr-spool-of-thread',
+                item: {
+                  id: 'spool-of-thread',
+                  typeId: 'spool-of-thread',
+                  label: 'Spool of Thread',
+                  description: 'A tightly wound spool of strong thread, with five uses.',
+                  usesRemaining: 5,
+                },
+                price: 2,
+                repeatable: true,
               },
             ],
           },
@@ -1439,7 +1471,7 @@ const draft = {
     {
       id: 'bellwold-milepost-workshop',
       name: 'Milepost Workshop',
-      description: 'Pale shavings curl across a scarred bench beside a low, warm stove. A file rasps against metal; the hazel track runs east.',
+      description: 'Pale shavings curl across a scarred workbench beside a low, warm stove. A file rasps against metal; the hazel track runs east.',
       mapPosition: { x: -3, y: -9, terrain: 'building' },
       exits: [
         { id: 'workshop-to-hazel-cut', fromLocationId: 'bellwold-milepost-workshop', toLocationId: 'bellwold-hazel-cut', label: 'east', direction: 'east', roadId: 'bellwold-mile-west-road' },

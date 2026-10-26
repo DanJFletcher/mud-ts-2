@@ -5,6 +5,7 @@ import {
   dailyJobsPlugin,
   fishingPlugin,
   woodcuttingPlugin,
+  craftingPlugin,
   createClassRulesetPlugin,
   createLocationGroupsPlugin,
   autonomousNpcsPlugin,
@@ -97,6 +98,7 @@ export function createWorldRuntimes(
       dailyJobsPlugin,
       fishingPlugin,
       woodcuttingPlugin,
+      craftingPlugin,
       worldEventEffectsPlugin,
     ];
     runtimes.set(definition.worldInstanceId, {
