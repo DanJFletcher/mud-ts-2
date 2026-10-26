@@ -930,11 +930,18 @@ app.post(
       if (typeof command?.characterId === 'string' && command.characterId !== current.characterId) {
         return res.status(403).json({ message: 'This world session is bound to a different character.' });
       }
-      const [currentCharacter, interactionEvents, teamCombatInfo] = await measureStage(
+      const interactionStreamIdForWorld = interactionStreamId(current.worldInstanceId);
+      const guardStreamIds = [current.characterId, interactionStreamIdForWorld];
+      const guardStreamsRead = store.readStreams
+        ? store.readStreams(current.worldInstanceId, guardStreamIds)
+        : Promise.all(guardStreamIds.map(async (streamId) => [
+            streamId,
+            await store.readStream(current.worldInstanceId, streamId),
+          ] as const)).then((entries) => new Map(entries));
+      const [guardStreams, teamCombatInfo] = await measureStage(
         'commandGuardReads',
         () => Promise.all([
-          store.readStream(current.worldInstanceId, current.characterId).then(replayCharacter),
-          store.readStream(current.worldInstanceId, interactionStreamId(current.worldInstanceId)),
+          guardStreamsRead,
           selected.engine.query({
             type: 'team.combat.info',
             version: 1,
@@ -945,6 +952,8 @@ app.post(
           }, worldContext(identity, current)),
         ]),
       );
+      const currentCharacter = replayCharacter(guardStreams.get(current.characterId) ?? []);
+      const interactionEvents = guardStreams.get(interactionStreamIdForWorld) ?? [];
       if (currentCharacter?.combat?.status === 'defeat' || currentCharacter?.health?.current === 0) {
         return res.status(409).json({ message: 'Your character has died. Start a new character to begin again.' });
       }
