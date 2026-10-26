@@ -191,22 +191,18 @@ indicate gameplay improvement or regression. Endpoint telemetry can lag by up to
 
 ## Next measurements and recommendations
 
-1. Gather 20–30 same-device guest movement traces in development and production
-   with `?muddTrace=1`, and compare request IDs, command stage, movement
-   projection, query count/time, pool acquisition, and browser paint.
-2. Continue collecting current-build production traces until there are enough
-   commands for useful percentiles. Correlate any multi-second proxy outlier to
-   the same app request ID; a server log sample alone does not explain missing
+1. Use development guest movement traces as the iterative benchmark. Repeat the
+   same route and sample size after each measured change; do not publish to
+   production for every optimization.
+2. Once a development improvement is repeatable, use one deliberate production
+   validation to check whether the change transfers. Correlate any proxy outlier
+   to its app request ID; a server log sample alone does not explain missing
    proxy time.
-3. Obtain deployment/database placement and DB-side CPU/query/lock telemetry.
-   If the production per-query floor remains 25–30 ms while development stays
-   sub-millisecond, prioritize measured region/topology or DB-service causes
-   before deeper engine rewrites.
-4. With a disposable PostgreSQL test database, investigate reducing batched
-   stream-read round trips and projecting only required shared state. Any
-   event-store change must retain advisory-lock ordering, separate receipt
-   lookup, expected revisions, deterministic locks, companion guards, and
-   concurrent duplicate-command tests.
+3. Obtain deployment/database placement and DB-side CPU/query/lock telemetry
+   before changing production topology or database settings.
+4. Any event-store optimization must retain advisory-lock ordering, separate
+   post-lock receipt lookup, expected revisions, deterministic locks, companion
+   guards, and concurrent duplicate-command tests.
 
 Development benchmark command:
 
@@ -272,3 +268,60 @@ The remaining cost is still substantial: about 10 append statements and roughly
 pool acquisition waits remain stronger targets than additional speculative
 refactoring. The client timings are transport-level checks from the development
 container, not browser paint timings on the player's device.
+
+## Development-first command optimization
+
+On **2026-10-26**, a matched, sequential guest trace was run against the
+development application and database before and after a focused event-store
+change. Each run used one new guest character, alternated between Bellwold
+Market Square and The Kindly Roof, and made 10 successful moves with snapshots
+between commands. Both world sessions were closed afterward. The development
+guest, character, and test events remain in the development database. No
+production request or publish was used for this comparison.
+
+### Change
+
+The HTTP command route already verifies the active character and scopes its
+read cache to that character. During a primary-character append, the projection
+refresh nevertheless issued another `characters` existence query. The
+PostgreSQL adapter now skips that redundant read only when the scoped stream
+matches the primary append. Unscoped writes and companion streams still verify
+the character row in PostgreSQL. Advisory locks, receipt lookup ordering,
+expected-version checks, and the atomic event/receipt transaction are
+unchanged.
+
+### Before and after
+
+| Development measurement | Before (10 moves) | After (10 moves) |
+|---|---:|---:|
+| Server movement duration, median | 29 ms | 25 ms |
+| Server movement duration, mean | 149 ms | 52 ms |
+| Server movement duration, range | 19–406 ms | 22–224 ms |
+| Append SQL statements per move | 10 | **9** |
+| Append elapsed time, median | 11.8 ms | 10.3 ms |
+| Total SQL statements per move, median | 25.5 | 24.5 |
+| Development-container movement round trip, median | 39.3 ms | 33.2 ms |
+| Snapshot round trip, median | 20.4 ms | 20.1 ms |
+
+The query-count reduction is consistent across every move in the two samples.
+The lower median timings are encouraging but the 10-command samples are small
+and noisy; they do not establish a production latency improvement. The server
+still recorded one append query taking about **201 ms** (fingerprint
+`9505cacb7c71`) in the post-change run. Current traces do not label that
+fingerprint with SQL text, so its exact statement and database-side cause are
+not yet established. Pool waits remained low in the traced moves.
+
+### Verification and limits
+
+- Server TypeScript check and targeted ESLint passed.
+- All 16 PostgreSQL event-store integration tests passed against an isolated,
+  temporary local PostgreSQL database.
+- The development workflow restarted successfully and completed the full
+  application build. The 10 post-change commands and 11 snapshots all returned
+  HTTP 200; there were no version-conflict retries.
+- Repository-wide ESLint still reports unrelated unused-variable errors in
+  `packages/plugins/src/parties.ts`, `packages/plugins/src/team-combat.ts`, and
+  `packages/ui/src/components/DailyBoard.tsx`; these files were not changed.
+- Client timings were measured by `fetch` from the Replit development
+  container, not from a phone/browser. This work was not published, so the
+  production impact remains unverified.

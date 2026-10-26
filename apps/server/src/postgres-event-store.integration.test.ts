@@ -138,7 +138,9 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
 
   it('writes appended events and their command receipt in one database round trip', async () => {
     const streamId = randomUUID();
-    const created = await store.append({
+    const { PostgresEventStore } = await import('./persistence/postgres-event-store.js');
+    const appendStore = new PostgresEventStore();
+    const created = await appendStore.append({
       worldInstanceId: appendBatchWorldInstanceId,
       streamId,
       actorId: playerId,
@@ -178,17 +180,49 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
         },
       }],
     };
-    const metrics = newMeasurements('append-batch-query-count');
-    const committed = await requestMeasurements.run(metrics, () => store.append(request));
+    await appendStore.readStreams(appendBatchWorldInstanceId, [streamId]);
+    const unscopedMetrics = newMeasurements('append-batch-query-count-unscoped');
+    const unscoped = await requestMeasurements.run(unscopedMetrics, () => appendStore.append(request));
+    const unscopedAppendQueries = unscopedMetrics.databaseOperations['event_store.command_append']?.queries;
 
-    expect(committed.kind).toBe('committed');
-    expect(metrics.databaseOperations['event_store.command_append']?.queries).toBe(10);
-    const history = await store.readStream(appendBatchWorldInstanceId, request.streamId);
-    expect(history).toHaveLength(2);
+    const scopedRequest: AppendRequest = {
+      ...request,
+      commandId: `append-batch-scoped-${randomUUID()}`,
+      payloadHash: randomUUID(),
+      expectedVersion: 2,
+      events: [{
+        type: 'character.item_taken',
+        version: 1,
+        payload: {
+          characterId: streamId,
+          locationId: 'mossgate-clearing',
+          item: {
+            id: `item-${randomUUID()}`,
+            label: 'Scoped append fixture item',
+            description: 'A second item for scoped append instrumentation.',
+          },
+        },
+      }],
+    };
+    const scopedMetrics = newMeasurements('append-batch-query-count-scoped');
+    const scoped = await requestMeasurements.run(scopedMetrics, () =>
+      appendStore.withCommandReadCache(appendBatchWorldInstanceId, streamId, async () => {
+        await appendStore.readStreams(appendBatchWorldInstanceId, [streamId]);
+        return appendStore.append(scopedRequest);
+      }, 2));
+
+    expect(unscoped.kind).toBe('committed');
+    expect(scoped.kind).toBe('committed');
+    expect(unscopedAppendQueries).toBe(9);
+    expect(scopedMetrics.databaseOperations['event_store.command_append']?.queries)
+      .toBe(unscopedAppendQueries! - 1);
+    const history = await appendStore.readStream(appendBatchWorldInstanceId, request.streamId);
+    expect(history).toHaveLength(3);
     expect(history[1]).toMatchObject({ type: 'character.item_taken', aggregateVersion: 2 });
-    expect((await store.lookupCommand(
-      appendBatchWorldInstanceId, playerId, request.commandId, request.payloadHash,
-    ))?.receipt).toEqual(committed.receipt);
+    expect(history[2]).toMatchObject({ type: 'character.item_taken', aggregateVersion: 3 });
+    expect((await appendStore.lookupCommand(
+      appendBatchWorldInstanceId, playerId, scopedRequest.commandId, scopedRequest.payloadHash,
+    ))?.receipt).toEqual(scoped.receipt);
   });
 
   it('incrementally replays history above the old byte ceiling, then rebuilds safely after eviction', async () => {

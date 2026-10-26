@@ -69,12 +69,15 @@ export class PostgresEventStore implements EventStorePort {
     worldInstanceId: string,
     streamId: string,
     knownAppend?: { expectedVersion: number; events: readonly StoredGameEvent[] },
+    knownCharacterStream = false,
   ) {
     // Only character aggregates participate. Shared streams are text IDs.
     if (!/^[0-9a-f-]{36}$/i.test(streamId)) return;
-    const [character] = await tx.select({ id: characters.id }).from(characters)
-      .where(and(eq(characters.id, streamId), eq(characters.worldInstanceId, worldInstanceId))).limit(1);
-    if (!character) return;
+    if (!knownCharacterStream) {
+      const [character] = await tx.select({ id: characters.id }).from(characters)
+        .where(and(eq(characters.id, streamId), eq(characters.worldInstanceId, worldInstanceId))).limit(1);
+      if (!character) return;
+    }
     const cached = this.streamCache.get(this.streamKey(worldInstanceId, streamId));
     const cacheMatchesAppend = knownAppend && cached?.revision === knownAppend.expectedVersion;
     const tail = cacheMatchesAppend
@@ -598,7 +601,7 @@ export class PostgresEventStore implements EventStorePort {
           await this.refreshRoomState(tx, request.worldInstanceId, streamId, {
             expectedVersion: currentRevision,
             events: appended,
-          });
+          }, this.scopedCommandReadCache(request.worldInstanceId, streamId) !== undefined);
         } else {
           await this.refreshRoomState(tx, request.worldInstanceId, streamId);
         }
