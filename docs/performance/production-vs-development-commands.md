@@ -314,24 +314,36 @@ a slow read/insert query plan.
 
 Development PostgreSQL reported `synchronous_commit=on`, `fsync=on`,
 `wal_sync_method=fdatasync`, and no configured synchronous standby. Those
-settings preserve local commit durability. `track_wal_io_timing` was off, so
-`pg_stat_wal` reported zero write/sync time and cannot establish whether the
-single slow acknowledgment was a storage flush, database-service scheduling, or
-the database response/network path. The setting was not changed.
+settings preserve local commit durability.
 
 A subsequent 10-move development trace matched all 21 request IDs. Across its
 10 movement requests, the `COMMIT` fingerprint appeared 20 times, with a
 2.9 ms median and 4.1 ms maximum; movement server time was 22.5 ms median and
 40 ms maximum. During that sample `pg_stat_wal` counters increased by 8 writes
-and 7 syncs, but timing remained unavailable. The 201 ms commit did not recur.
-This points to an intermittent commit-acknowledgment delay, not a consistently
-expensive SQL statement. Do not weaken `fsync` or `synchronous_commit` to mask
-it; more WAL I/O timing or database-service telemetry is needed to distinguish
-the remaining causes.
+and 7 syncs, but timing was disabled. The 201 ms commit did not recur in that
+sample.
+
+For a longer 20-move development trace, `track_wal_io_timing` was temporarily
+enabled only for the development database role. All 20 moves and 21 snapshots
+succeeded. Client movement round trips had a 37.5 ms median and 312.7 ms
+maximum. The available server-log segment matched 21 of 41 trace IDs (10
+commands and 11 snapshots), so server-side percentiles are incomplete. In that
+logged subset, one movement command took 192 ms, including a 148.8 ms `COMMIT`;
+pool wait for the request was under 1 ms.
+
+Across the interval around that 20-move run, aggregate `pg_stat_wal` counters
+increased by 58 writes and 57 syncs; reported write time increased 2.2 ms and
+sync time increased 234.5 ms. These counters are database-wide, not attributable
+to one transaction. The results are consistent with intermittent WAL
+durability/flush delay, but cannot prove that the 148.8 ms commit spent that
+time in `fdatasync` rather than in database scheduling or the response path.
+Do not weaken `fsync` or `synchronous_commit`; the remaining distinction needs
+complete per-request capture and database-service/storage telemetry.
 
 The temporary SQL-template logger was removed and the development workflow was
-restarted cleanly. No production query, publish, or configuration change was
-made.
+restarted cleanly. The temporary role override was reset and a fresh connection
+confirmed `track_wal_io_timing=off`; `synchronous_commit` and `fsync` remained
+on. No production query, publish, or configuration change was made.
 
 ### Verification and limits
 
@@ -341,6 +353,10 @@ made.
 - The development workflow restarted successfully and completed the full
   application build. The 10 post-change commands and 11 snapshots all returned
   HTTP 200; there were no version-conflict retries.
+- The later 20-move run also completed successfully and closed its world
+  session, but the retained server log segment contained only 21 of 41 trace
+  entries. Its client timings and aggregate WAL deltas are complete; server
+  percentiles are not.
 - Repository-wide ESLint still reports unrelated unused-variable errors in
   `packages/plugins/src/parties.ts`, `packages/plugins/src/team-combat.ts`, and
   `packages/ui/src/components/DailyBoard.tsx`; these files were not changed.
