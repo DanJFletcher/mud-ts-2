@@ -1400,11 +1400,12 @@ const draft = {
     {
       id: 'bellwold-south-mile-marker',
       name: 'Old South Mile Marker',
-      description: 'A weathered stone marker stands beside the packed road. Most of its face is worn smooth; shallow grooves remain beneath the lichen. Far Bank Track is north; the unfinished road lies south.',
+      description: 'A weathered stone marker stands beside the packed road. Most of its face is worn smooth; shallow grooves remain beneath the lichen. Far Bank Track is north; the unfinished road lies south, and a dirt track branches west.',
       mapPosition: { x: 0, y: -9, terrain: 'land' },
       exits: [
         { id: 'mile-marker-to-far-bank', fromLocationId: 'bellwold-south-mile-marker', toLocationId: 'bellwold-far-bank-track', label: 'north', direction: 'north', roadId: 'bellwold-south-road' },
         { id: 'mile-marker-to-road-end', fromLocationId: 'bellwold-south-mile-marker', toLocationId: 'bellwold-unfinished-road-end', label: 'south', direction: 'south', roadId: 'bellwold-south-road' },
+        { id: 'mile-marker-to-west-track', fromLocationId: 'bellwold-south-mile-marker', toLocationId: 'bellwold-mile-west-track', label: 'west', direction: 'west', roadId: 'bellwold-mile-west-road' },
       ],
       readables: [
         {
@@ -1412,6 +1413,78 @@ const draft = {
           label: 'Mile marker inscription',
           description: 'A shallow inscription cut into the marker face.',
           text: 'The surviving inscription records a distance from Bellwold. Its destination name has worn away.',
+        },
+      ],
+    },
+    {
+      id: 'bellwold-mile-west-track',
+      name: 'Mile Marker West Track',
+      description: 'The packed dirt bends west from the stone marker. Dry grass rasps against your boots, and a line of hazel leaves shivers ahead; the marker is east.',
+      mapPosition: { x: -1, y: -9, terrain: 'dirt' },
+      exits: [
+        { id: 'mile-west-track-to-marker', fromLocationId: 'bellwold-mile-west-track', toLocationId: 'bellwold-south-mile-marker', label: 'east', direction: 'east', roadId: 'bellwold-mile-west-road' },
+        { id: 'mile-west-track-to-hazel-cut', fromLocationId: 'bellwold-mile-west-track', toLocationId: 'bellwold-hazel-cut', label: 'west', direction: 'west', roadId: 'bellwold-mile-west-road' },
+      ],
+    },
+    {
+      id: 'bellwold-hazel-cut',
+      name: 'Hazel Cut',
+      description: 'Hazel branches narrow the track, their leaves whispering over the road. A faint smell of woodsmoke drifts from the west; the Mile Marker West Track is east.',
+      mapPosition: { x: -2, y: -9, terrain: 'land' },
+      exits: [
+        { id: 'hazel-cut-to-mile-west-track', fromLocationId: 'bellwold-hazel-cut', toLocationId: 'bellwold-mile-west-track', label: 'east', direction: 'east', roadId: 'bellwold-mile-west-road' },
+        { id: 'hazel-cut-to-workshop', fromLocationId: 'bellwold-hazel-cut', toLocationId: 'bellwold-milepost-workshop', label: 'west', direction: 'west', roadId: 'bellwold-mile-west-road' },
+      ],
+    },
+    {
+      id: 'bellwold-milepost-workshop',
+      name: 'Milepost Workshop',
+      description: 'Pale shavings curl across a scarred bench beside a low, warm stove. A file rasps against metal; the hazel track runs east.',
+      mapPosition: { x: -3, y: -9, terrain: 'building' },
+      exits: [
+        { id: 'workshop-to-hazel-cut', fromLocationId: 'bellwold-milepost-workshop', toLocationId: 'bellwold-hazel-cut', label: 'east', direction: 'east', roadId: 'bellwold-mile-west-road' },
+      ],
+      npcs: [
+        {
+          id: 'nessa-rill',
+          name: 'Nessa Rill',
+          description: 'Nessa braces a cartwheel against a low stand, pale shavings clinging to her sleeves as she checks its rim for a wobble.',
+          activityDescription: 'truing a cartwheel against a wooden brace',
+          greeting: '“Mind the shavings; they gather thick around the bench. What brings you this way?”',
+          topics: [
+            {
+              id: 'wheelwright-work',
+              keywords: ['work', 'workshop', 'repair', 'repairs', 'wheel', 'tools'],
+              response: '“I’m Nessa Rill. I live in the loft above the bench and mend carts, handles, and wooden fittings.”',
+            },
+            {
+              id: 'west-road',
+              keywords: ['road', 'mile marker', 'west', 'track'],
+              response: '“The track ends here. Wagons can turn around by the bench; beyond the hazel there is no road I can send you along.”',
+            },
+          ],
+          unknownTopicResponse: '“Ask me about the repair work or the road. I’m better with a spoke than a rumor.”',
+          dialogue: {
+            prompt: '“Mind the shavings; they gather thick around the bench. What brings you this way?”',
+            choices: bellwoldSmallTalkChoices(
+              'nessa-rill',
+              '“Nessa Rill. I live in the loft above the bench and make my living repairing carts, handles, and wooden fittings.”',
+              '“I’m truing this cartwheel. The rim was loose enough to send a load skidding if I left it.”',
+              '“Bellwold is the nearest place to trade and see familiar faces. I go in when I need supplies or news.”',
+              [
+                {
+                  id: 'repairs',
+                  label: 'What do you repair?',
+                  response: '“Mostly cart wheels, handles, and wooden fittings. If the break is metal, I send folks to Darric at the forge.”',
+                },
+                {
+                  id: 'road',
+                  label: 'Why set up here?',
+                  response: '“The old road brings wagons past my door, and the loft keeps me close to the work. It suits me.”',
+                },
+              ],
+            ),
+          },
         },
       ],
     },
@@ -1783,6 +1856,24 @@ const draft = {
     },
   ],
   roads: [
+    {
+      id: 'bellwold-mile-west-road',
+      name: 'Bellwold Mile Marker West Road',
+      locationIds: [
+        'bellwold-south-mile-marker',
+        'bellwold-mile-west-track',
+        'bellwold-hazel-cut',
+        'bellwold-milepost-workshop',
+      ],
+      encounterChancePercent: 10,
+      encounters: [
+        {
+          id: 'bellwold-mile-west-road-stray-hound',
+          name: 'Stray Hound',
+          combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' },
+        },
+      ],
+    },
     {
       id: 'bellwold-south-road',
       name: 'Bellwold South Road',

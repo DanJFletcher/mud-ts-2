@@ -374,9 +374,9 @@ describe('Orraveth Bellwold settlement', () => {
     }
   });
 
-  it('has a valid, fully reachable sixty-nine-location region with map directions matching its exits', () => {
+  it('has a valid, fully reachable seventy-two-location region with map directions matching its exits', () => {
     expect(validateDraftWorldGraph(orravethWorld)).toEqual([]);
-    expect(orravethWorld.locations).toHaveLength(69);
+    expect(orravethWorld.locations).toHaveLength(72);
 
     const worldWithMissingQuestRewardItem = structuredClone(orravethWorld);
     const churchQuest = worldWithMissingQuestRewardItem.quests?.find(
@@ -513,6 +513,16 @@ describe('Orraveth Bellwold settlement', () => {
   it('adds a west road and an east road that passes through the abandoned mill', () => {
     const expectedRoads = [
       {
+        id: 'bellwold-mile-west-road',
+        name: 'Bellwold Mile Marker West Road',
+        locationIds: [
+          'bellwold-south-mile-marker',
+          'bellwold-mile-west-track',
+          'bellwold-hazel-cut',
+          'bellwold-milepost-workshop',
+        ],
+      },
+      {
         id: 'bellwold-east-mill-road',
         name: 'Bellwold East Mill Road',
         locationIds: [
@@ -570,6 +580,40 @@ describe('Orraveth Bellwold settlement', () => {
         }));
       }
     }
+  });
+
+  it('ends the Old South Mile Marker west road at a workshop with a resident craftsperson', () => {
+    const marker = orravethWorld.locations.find(({ id }) => id === 'bellwold-south-mile-marker');
+    const workshop = orravethWorld.locations.find(({ id }) => id === 'bellwold-milepost-workshop');
+    const resident = workshop?.npcs?.find(({ id }) => id === 'nessa-rill');
+
+    expect(marker?.exits).toContainEqual(expect.objectContaining({
+      toLocationId: 'bellwold-mile-west-track',
+      direction: 'west',
+      roadId: 'bellwold-mile-west-road',
+    }));
+    expect(workshop).toMatchObject({
+      name: 'Milepost Workshop',
+      mapPosition: { x: -3, y: -9, terrain: 'building' },
+      exits: [expect.objectContaining({
+        toLocationId: 'bellwold-hazel-cut',
+        direction: 'east',
+      })],
+    });
+    expect(workshop?.description).toMatch(/shavings|file|stove/i);
+    expect(resident).toMatchObject({
+      name: 'Nessa Rill',
+      activityDescription: expect.stringContaining('cartwheel'),
+    });
+    expect(resident?.dialogue?.choices.map(({ label }) => label)).toEqual(expect.arrayContaining([
+      'Who are you?',
+      'What are you doing?',
+      'What is Bellwold like?',
+      'What do you repair?',
+      'Why set up here?',
+    ]));
+    expect(resident?.dialogue?.choices.find(({ label }) => label === 'Who are you?')?.response)
+      .toContain('live in the loft');
   });
 
   it('keeps the church belfry and annex on separate Z-level maps', () => {
