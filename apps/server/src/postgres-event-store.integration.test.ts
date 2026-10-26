@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AppendRequest, EventStorePort } from '@mudd/engine-core';
+import { newMeasurements, requestMeasurements } from './performance.js';
 
 const testDatabaseUrl = process.env.MUDD_TEST_DATABASE_URL;
 const hasDatabase = Boolean(testDatabaseUrl);
@@ -10,7 +11,9 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
   const worldInstanceId = `audit-test-${randomUUID()}`;
   const chatWorldInstanceId = `audit-chat-test-${randomUUID()}`;
   const presenceWorldInstanceId = `audit-presence-test-${randomUUID()}`;
+  const cacheWorldInstanceId = `audit-cache-test-${randomUUID()}`;
   const characterId = randomUUID();
+  const cacheCharacterId = randomUUID();
   const chatCharacterId = randomUUID();
   const playerId = randomUUID();
   let guestPlayerId: string | undefined;
@@ -47,7 +50,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     const { inArray } = await import('drizzle-orm');
     const { characters, commandReceipts, durableEffects, gameEvents, players, worldSessions } = await import('./db/schema.js');
     try {
-      const testWorlds = [worldInstanceId, chatWorldInstanceId, presenceWorldInstanceId];
+      const testWorlds = [worldInstanceId, chatWorldInstanceId, presenceWorldInstanceId, cacheWorldInstanceId];
       const testPlayers = [playerId, ...presencePlayerIds, ...(guestPlayerId ? [guestPlayerId] : [])];
       await db.delete(durableEffects).where(inArray(durableEffects.worldInstanceId, testWorlds));
       await db.delete(commandReceipts).where(inArray(commandReceipts.worldInstanceId, testWorlds));
@@ -717,7 +720,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
         npcName: 'Fixture NPC',
         text: 'This reply survives a retry.',
         sourceEffectId: outputKey,
-      }),
+      }, 1),
       publishNpcRoomMessage({
         worldInstanceId: chatWorldInstanceId,
         roomId: 'glasswater-bridge',
@@ -753,5 +756,135 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     });
     expect(liveMessages?.terminalEvents.some((message) => message.id === movementNotice.id)).toBe(true);
     await db.delete(characters).where((await import('drizzle-orm')).eq(characters.id, chatCharacterId));
+  });
+
+  it('reuses one character head within a command but still rejects a stale append', async () => {
+    const { PostgresEventStore } = await import('./persistence/postgres-event-store.js');
+    const scopedStore = new PostgresEventStore();
+    const created = await scopedStore.append({
+      worldInstanceId: cacheWorldInstanceId,
+      streamId: cacheCharacterId,
+      actorId: playerId,
+      commandId: `cache-create-${randomUUID()}`,
+      payloadHash: randomUUID(),
+      expectedVersion: 0,
+      events: [{
+        type: 'character.created',
+        version: 1,
+        payload: {
+          characterId: cacheCharacterId,
+          playerId,
+          name: 'Cache fixture',
+          startingLocationId: 'mossgate-clearing',
+        },
+      }],
+    });
+    expect(created.kind).toBe('committed');
+
+    const metrics = newMeasurements('command-read-cache-test');
+    const result = await requestMeasurements.run(metrics, () =>
+      scopedStore.withCommandReadCache(cacheWorldInstanceId, cacheCharacterId, async () => {
+        const before = await scopedStore.readStream(cacheWorldInstanceId, cacheCharacterId);
+        const revision = await scopedStore.readStreamRevision(cacheWorldInstanceId, cacheCharacterId);
+        expect(revision).toBe(before.at(-1)?.aggregateVersion);
+
+        const concurrentWrite = await new PostgresEventStore().append({
+          worldInstanceId: cacheWorldInstanceId,
+          streamId: cacheCharacterId,
+          actorId: playerId,
+          commandId: `cache-concurrent-${randomUUID()}`,
+          payloadHash: randomUUID(),
+          expectedVersion: revision,
+          events: [{
+            type: 'character.renamed',
+            version: 1,
+            payload: { characterId: cacheCharacterId, name: 'Concurrent writer' },
+          }],
+        });
+        expect(concurrentWrite.kind).toBe('committed');
+
+        const staleWrite = await scopedStore.append({
+          worldInstanceId: cacheWorldInstanceId,
+          streamId: cacheCharacterId,
+          actorId: playerId,
+          commandId: `cache-stale-${randomUUID()}`,
+          payloadHash: randomUUID(),
+          expectedVersion: revision,
+          events: [{
+            type: 'character.renamed',
+            version: 1,
+            payload: { characterId: cacheCharacterId, name: 'Stale writer' },
+          }],
+        });
+        expect(staleWrite.kind).toBe('conflict');
+
+        const refreshed = await scopedStore.readStream(cacheWorldInstanceId, cacheCharacterId);
+        expect(refreshed.at(-1)?.aggregateVersion).toBe(revision + 1);
+        const appended = await scopedStore.append({
+          worldInstanceId: cacheWorldInstanceId,
+          streamId: cacheCharacterId,
+          actorId: playerId,
+          commandId: `cache-rename-${randomUUID()}`,
+          payloadHash: randomUUID(),
+          expectedVersion: revision + 1,
+          events: [{
+            type: 'character.renamed',
+            version: 1,
+            payload: { characterId: cacheCharacterId, name: 'Cache fixture renamed' },
+          }],
+        });
+        expect(appended.kind).toBe('committed');
+        return scopedStore.readStream(cacheWorldInstanceId, cacheCharacterId);
+      }),
+    );
+
+    expect(result.at(-1)?.aggregateVersion).toBe(3);
+    expect(metrics.databaseOperations['event_store.stream_revision_lookup']?.calls).toBe(2);
+
+    const newerExpectedMetrics = newMeasurements('command-read-cache-newer-version-test');
+    const newerExpected = await requestMeasurements.run(newerExpectedMetrics, () =>
+      scopedStore.withCommandReadCache(cacheWorldInstanceId, cacheCharacterId, async () => {
+        const initial = await scopedStore.readStream(cacheWorldInstanceId, cacheCharacterId);
+        expect(initial.at(-1)?.aggregateVersion).toBe(3);
+
+        const concurrentWrite = await new PostgresEventStore().append({
+          worldInstanceId: cacheWorldInstanceId,
+          streamId: cacheCharacterId,
+          actorId: playerId,
+          commandId: `cache-ahead-${randomUUID()}`,
+          payloadHash: randomUUID(),
+          expectedVersion: 3,
+          events: [{
+            type: 'character.renamed',
+            version: 1,
+            payload: { characterId: cacheCharacterId, name: 'Newer server revision' },
+          }],
+        });
+        expect(concurrentWrite.kind).toBe('committed');
+
+        const currentRevision = await scopedStore.readStreamRevision(cacheWorldInstanceId, cacheCharacterId);
+        expect(currentRevision).toBe(4);
+        const current = await scopedStore.readStream(cacheWorldInstanceId, cacheCharacterId);
+        expect(current.at(-1)?.aggregateVersion).toBe(4);
+        const accepted = await scopedStore.append({
+          worldInstanceId: cacheWorldInstanceId,
+          streamId: cacheCharacterId,
+          actorId: playerId,
+          commandId: `cache-ahead-accept-${randomUUID()}`,
+          payloadHash: randomUUID(),
+          expectedVersion: currentRevision,
+          events: [{
+            type: 'character.renamed',
+            version: 1,
+            payload: { characterId: cacheCharacterId, name: 'Accepted at current revision' },
+          }],
+        });
+        expect(accepted.kind).toBe('committed');
+        return scopedStore.readStream(cacheWorldInstanceId, cacheCharacterId);
+      }, 4),
+    );
+
+    expect(newerExpected.at(-1)?.aggregateVersion).toBe(5);
+    expect(newerExpectedMetrics.databaseOperations['event_store.stream_revision_lookup']?.calls).toBe(2);
   });
 });

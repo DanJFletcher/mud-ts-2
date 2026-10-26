@@ -678,6 +678,18 @@ vi.mock('./middlewares/clerkProxyMiddleware.js', () => ({
 vi.mock('./persistence/postgres-event-store.js', () => ({
   PostgresEventStore: class {
     async rebuildRoomStates() {}
+    withCommandReadCache<T>(
+      _worldInstanceId: string,
+      _streamId: string,
+      run: () => T,
+      _expectedVersion?: number,
+    ) {
+      return run();
+    }
+    withoutCommandReadCache<T>(run: () => T) {
+      return run();
+    }
+    invalidateCommandReadCache() {}
     async readStream(_worldInstanceId: string, characterId: string) {
       return state.characters[characterId as keyof typeof state.characters] ?? null;
     }

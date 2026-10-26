@@ -197,18 +197,20 @@ async function resetStaminaRecoveryAnchor(runtime: WorldRuntime, characterId: st
 
 let effectBatchRunning = false;
 async function runPendingEffectBatch() {
-  if (effectBatchRunning) return;
-  effectBatchRunning = true;
-  try {
-    for (const runtime of worldRuntimes.values()) {
-      await measureDatabaseOperation('effect_batch.process_pending', () =>
-        runtime.engine.processPendingEffects(25, runtime.worldInstanceId));
+  return store.withoutCommandReadCache(async () => {
+    if (effectBatchRunning) return;
+    effectBatchRunning = true;
+    try {
+      for (const runtime of worldRuntimes.values()) {
+        await measureDatabaseOperation('effect_batch.process_pending', () =>
+          runtime.engine.processPendingEffects(25, runtime.worldInstanceId));
+      }
+    } catch {
+      console.error('Could not process durable event effects.');
+    } finally {
+      effectBatchRunning = false;
     }
-  } catch {
-    console.error('Could not process durable event effects.');
-  } finally {
-    effectBatchRunning = false;
-  }
+  });
 }
 void runPendingEffectBatch();
 const effectPoller = setInterval(() => void runPendingEffectBatch(), 1_000);
@@ -864,7 +866,24 @@ app.get('/api/interactions', async (req, res, next) => {
   }
 });
 
-app.post('/api/commands', createRateLimiter({ windowMs: 60_000, maxRequests: 120 }), async (req, res, next) => {
+app.post(
+  '/api/commands',
+  createRateLimiter({ windowMs: 60_000, maxRequests: 120 }),
+  (req, res, next) => {
+    const command = req.body as { characterId?: unknown } | null;
+    const characterId = typeof command?.characterId === 'string' ? command.characterId : '';
+    const expectedVersion = typeof (req.body as { expectedVersion?: unknown } | null)?.expectedVersion === 'number'
+      ? (req.body as { expectedVersion: number }).expectedVersion
+      : undefined;
+    if (expectedVersion === undefined) return next();
+    return store.withCommandReadCache(
+      res.locals.worldInstanceId,
+      characterId,
+      () => next(),
+      expectedVersion,
+    );
+  },
+  async (req, res, next) => {
   try {
     const identity = await accountFor(req, res);
     if (!identity) return;
@@ -1010,6 +1029,9 @@ app.post('/api/commands', createRateLimiter({ windowMs: 60_000, maxRequests: 120
     }
 
     const result = await measureStage('command', () => selected.engine.dispatch(req.body, context, res.locals.requestId));
+    if (result.commitOutcome === 'duplicate' && commandSession) {
+      store.invalidateCommandReadCache(selected.worldInstanceId, commandSession.characterId);
+    }
     // Effects are durably queued with the command. Their worker is already
     // running; don't make the action wait for unrelated effects across worlds.
     if (result.receipt.ok) void runPendingEffectBatch();
@@ -1058,7 +1080,8 @@ app.post('/api/commands', createRateLimiter({ windowMs: 60_000, maxRequests: 120
   } catch (error) {
     next(error);
   }
-});
+  },
+);
 
 app.post('/api/queries', async (req, res, next) => {
   try {

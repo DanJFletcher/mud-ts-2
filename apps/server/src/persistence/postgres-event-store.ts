@@ -1,4 +1,5 @@
-import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { and, asc, desc, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import type { CommandReceipt } from '@mudd/contracts';
 import type {
   AppendOutcome,
@@ -28,6 +29,14 @@ export function toStoredGameEvent(row: typeof gameEvents.$inferSelect): StoredGa
     tick: row.tick,
   };
 }
+
+type CommandStreamReadCache = {
+  readonly worldInstanceId: string;
+  readonly streamId: string;
+  expectedVersion?: number;
+  revision?: number;
+  events?: readonly StoredGameEvent[];
+};
 
 function toStoredEventEffect(
   row: typeof durableEffects.$inferSelect,
@@ -59,6 +68,7 @@ export class PostgresEventStore implements EventStorePort {
     tx: Pick<typeof db, 'select' | 'insert'>,
     worldInstanceId: string,
     streamId: string,
+    knownAppend?: { expectedVersion: number; events: readonly StoredGameEvent[] },
   ) {
     // Only character aggregates participate. Shared streams are text IDs.
     if (!/^[0-9a-f-]{36}$/i.test(streamId)) return;
@@ -66,10 +76,13 @@ export class PostgresEventStore implements EventStorePort {
       .where(and(eq(characters.id, streamId), eq(characters.worldInstanceId, worldInstanceId))).limit(1);
     if (!character) return;
     const cached = this.streamCache.get(this.streamKey(worldInstanceId, streamId));
-    const tail = (await tx.select().from(gameEvents).where(and(
-      eq(gameEvents.worldInstanceId, worldInstanceId), eq(gameEvents.streamId, streamId),
-      ...(cached ? [sql`${gameEvents.streamVersion} > ${cached.revision}`] : []),
-    )).orderBy(asc(gameEvents.streamVersion))).map(toStoredGameEvent);
+    const cacheMatchesAppend = knownAppend && cached?.revision === knownAppend.expectedVersion;
+    const tail = cacheMatchesAppend
+      ? knownAppend.events
+      : (await tx.select().from(gameEvents).where(and(
+          eq(gameEvents.worldInstanceId, worldInstanceId), eq(gameEvents.streamId, streamId),
+          ...(cached ? [sql`${gameEvents.streamVersion} > ${cached.revision}`] : []),
+        )).orderBy(asc(gameEvents.streamVersion))).map(toStoredGameEvent);
     const history = cached ? [...cached.events, ...tail] : tail;
     retainCharacterReplayPrefix(history, cached?.events);
     const state = replayCharacter(history);
@@ -125,6 +138,40 @@ export class PostgresEventStore implements EventStorePort {
     readonly bytes: number;
   }>();
   private cachedStreamBytes = 0;
+  private readonly commandReadCache = new AsyncLocalStorage<CommandStreamReadCache>();
+
+  /**
+   * Reuse the active character's event snapshot only within one HTTP command.
+   * append() still validates the live head under the database lock.
+   */
+  withCommandReadCache<T>(
+    worldInstanceId: string,
+    streamId: string,
+    run: () => T,
+    expectedVersion?: number,
+  ): T {
+    if (!streamId) return run();
+    return this.commandReadCache.run({ worldInstanceId, streamId, expectedVersion }, run);
+  }
+
+  withoutCommandReadCache<T>(run: () => T): T {
+    return this.commandReadCache.exit(run);
+  }
+
+  invalidateCommandReadCache(worldInstanceId: string, streamId: string) {
+    const scoped = this.commandReadCache.getStore();
+    if (scoped?.worldInstanceId === worldInstanceId && scoped.streamId === streamId) {
+      scoped.revision = undefined;
+      scoped.events = undefined;
+    }
+  }
+
+  private scopedCommandReadCache(worldInstanceId: string, streamId: string) {
+    const scoped = this.commandReadCache.getStore();
+    return scoped?.worldInstanceId === worldInstanceId && scoped.streamId === streamId
+      ? scoped
+      : undefined;
+  }
 
   private streamKey(worldInstanceId: string, streamId: string) {
     return `${worldInstanceId}\u0000${streamId}`;
@@ -192,17 +239,39 @@ export class PostgresEventStore implements EventStorePort {
   }
 
   async readStreamRevision(worldInstanceId: string, streamId: string): Promise<number> {
-    return measureDatabaseOperation('event_store.stream_revision_lookup', async () => {
+    const scoped = this.scopedCommandReadCache(worldInstanceId, streamId);
+    if (
+      scoped?.revision !== undefined &&
+      (scoped.expectedVersion === undefined || scoped.revision === scoped.expectedVersion)
+    ) {
+      return scoped.revision;
+    }
+    if (scoped) scoped.events = undefined;
+    const revision = await measureDatabaseOperation('event_store.stream_revision_lookup', async () => {
       const [head] = await db.select({ revision: gameEvents.streamVersion }).from(gameEvents)
         .where(and(eq(gameEvents.worldInstanceId, worldInstanceId), eq(gameEvents.streamId, streamId)))
         .orderBy(desc(gameEvents.streamVersion)).limit(1);
       return head?.revision ?? 0;
     });
+    if (scoped) scoped.revision = revision;
+    return revision;
   }
 
   async readStream(worldInstanceId: string, streamId: string): Promise<readonly StoredGameEvent[]> {
+    const scoped = this.scopedCommandReadCache(worldInstanceId, streamId);
+    if (
+      scoped?.events &&
+      (scoped.expectedVersion === undefined || scoped.revision === scoped.expectedVersion)
+    ) {
+      return scoped.events;
+    }
     const revision = await this.readStreamRevision(worldInstanceId, streamId);
-    return this.readStreamAtRevision(worldInstanceId, streamId, revision);
+    const events = await this.readStreamAtRevision(worldInstanceId, streamId, revision);
+    if (scoped) {
+      scoped.revision = revision;
+      scoped.events = events;
+    }
+    return events;
   }
 
   async readStreams(
@@ -212,22 +281,51 @@ export class PostgresEventStore implements EventStorePort {
     const uniqueStreamIds = [...new Set(streamIds)];
     if (uniqueStreamIds.length === 0) return new Map();
 
-    const revisions = await measureDatabaseOperation('event_store.stream_revisions_lookup', async () => {
+    const scoped = this.commandReadCache.getStore();
+    const cachedScoped = scoped?.worldInstanceId === worldInstanceId &&
+      uniqueStreamIds.includes(scoped.streamId) &&
+      scoped.revision !== undefined
+      && (scoped.expectedVersion === undefined || scoped.revision === scoped.expectedVersion)
+      ? scoped
+      : undefined;
+    const streamsToLookup = cachedScoped
+      ? uniqueStreamIds.filter((streamId) => streamId !== cachedScoped.streamId)
+      : uniqueStreamIds;
+    const revisions = streamsToLookup.length === 0
+      ? new Map<string, number>()
+      : await measureDatabaseOperation('event_store.stream_revisions_lookup', async () => {
       const rows = await db.select({
         streamId: gameEvents.streamId,
         revision: sql<number>`max(${gameEvents.streamVersion})`,
       }).from(gameEvents).where(and(
         eq(gameEvents.worldInstanceId, worldInstanceId),
-        inArray(gameEvents.streamId, uniqueStreamIds),
+        inArray(gameEvents.streamId, streamsToLookup),
       )).groupBy(gameEvents.streamId);
       return new Map(rows.map((row) => [row.streamId, Number(row.revision)]));
     });
 
     const entries = await Promise.all(uniqueStreamIds.map(async (streamId) => [
       streamId,
-      await this.readStreamAtRevision(worldInstanceId, streamId, revisions.get(streamId) ?? 0),
+      cachedScoped && streamId === cachedScoped.streamId && cachedScoped.events
+        ? cachedScoped.events
+        : await this.readStreamAtRevision(
+            worldInstanceId,
+            streamId,
+            streamId === cachedScoped?.streamId
+              ? cachedScoped.revision!
+              : revisions.get(streamId) ?? 0,
+          ),
     ] as const));
-    return new Map(entries);
+    const result = new Map(entries);
+    if (cachedScoped) {
+      const events = result.get(cachedScoped.streamId);
+      if (events) cachedScoped.events = events;
+    } else if (scoped?.worldInstanceId === worldInstanceId && result.has(scoped.streamId)) {
+      const revision = revisions.get(scoped.streamId) ?? 0;
+      scoped.revision = revision;
+      scoped.events = result.get(scoped.streamId);
+    }
+    return result;
   }
 
   private touchCachedStream(key: string) {
@@ -444,7 +542,14 @@ export class PostgresEventStore implements EventStorePort {
       }
 
       for (const streamId of writeIds) {
-        await this.refreshRoomState(tx, request.worldInstanceId, streamId);
+        if (streamId === request.streamId) {
+          await this.refreshRoomState(tx, request.worldInstanceId, streamId, {
+            expectedVersion: currentRevision,
+            events: appended,
+          });
+        } else {
+          await this.refreshRoomState(tx, request.worldInstanceId, streamId);
+        }
       }
       const receipt: Extract<CommandReceipt, { ok: true }> = {
         ok: true,
@@ -470,8 +575,28 @@ export class PostgresEventStore implements EventStorePort {
         request.expectedVersion,
         outcome.events,
       );
+      const scoped = this.scopedCommandReadCache(request.worldInstanceId, request.streamId);
+      if (scoped) {
+        const nextRevision = outcome.receipt.newAggregateVersion;
+        const cached = this.streamCache.get(this.streamKey(request.worldInstanceId, request.streamId));
+        if (scoped.revision === request.expectedVersion && scoped.events) {
+          const nextEvents = [...scoped.events, ...outcome.events];
+          retainCharacterReplayPrefix(nextEvents, scoped.events);
+          scoped.events = nextEvents;
+        } else {
+          scoped.events = cached?.revision === nextRevision ? cached.events : undefined;
+        }
+        scoped.revision = nextRevision;
+        scoped.expectedVersion = nextRevision;
+      }
       for (const companion of request.companions ?? []) {
         this.invalidateStream(request.worldInstanceId, companion.streamId);
+        this.invalidateCommandReadCache(request.worldInstanceId, companion.streamId);
+      }
+    } else {
+      this.invalidateCommandReadCache(request.worldInstanceId, request.streamId);
+      for (const companion of request.companions ?? []) {
+        this.invalidateCommandReadCache(request.worldInstanceId, companion.streamId);
       }
     }
     return outcome;
