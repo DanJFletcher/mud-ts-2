@@ -47,6 +47,15 @@ pool.on('connect', (client) => {
     const context = databaseMeasurementContext();
     const started = performance.now();
     const fingerprint = context.measurements?.traceId ? queryFingerprint(args) : undefined;
+    if (process.env.NODE_ENV !== 'production' && fingerprint === '9505cacb7c71') {
+      const input = args[0];
+      const text = typeof input === 'string' ? input : typeof input?.text === 'string' ? input.text : undefined;
+      if (text) console.info(JSON.stringify({
+        event: 'mudd_trace_sql_template_debug',
+        fingerprint,
+        statement: text.replace(/\s+/g, ' ').trim(),
+      }));
+    }
     recordDatabaseQueryStart(context);
     const finish = () => {
       recordDatabaseQueryFinish(context, performance.now() - started, fingerprint);
