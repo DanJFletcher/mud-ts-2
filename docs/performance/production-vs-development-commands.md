@@ -1,9 +1,10 @@
 # Production vs. development gameplay latency
 
-**Measurement date:** 2026-10-26  
-**Scope:** Read-only production telemetry, current-build server logs, a bounded
-development database benchmark, and the latest workspace source. No production
-commands, account creation, database writes, load tests, or publishing were run.
+**Initial baseline measurement date:** 2026-10-26  
+**Initial scope:** Read-only production telemetry, current-build server logs, a
+bounded development database benchmark, and the then-current workspace source.
+A later, bounded production guest trace was run after the event/receipt batching
+change was published; its results and data impact are recorded at the end.
 
 ## Version and measurement boundaries
 
@@ -12,10 +13,10 @@ commands, account creation, database writes, load tests, or publishing were run.
 | Workspace | `57d152eb78a47aa1341435bf12dcaf9391d9f13a` | Local Git HEAD |
 | Production | Build `e9de5e19-2df6-4fa8-b9db-8f6b4cfa707e`, source commit `74bac94284e1996bcb540beea7ebb2af6fe6fa63` | Deployment build logs; successful VM build finished about 2026-10-26 11:34 UTC |
 
-The deployed commit predates the workspace HEAD. In particular, the latest
-workspace's batched command-guard stream read is not present in the serving
-revision. The root URL returned HTTP 200 during this investigation. No deployment
-revision was inferred from the page HTML.
+At the initial baseline, the deployed commit predated workspace HEAD. In
+particular, the latest workspace's batched command-guard stream read was not
+present in that serving revision. The root URL returned HTTP 200 during this
+investigation. No deployment revision was inferred from the page HTML.
 
 Production endpoint metrics cover the post-build window
 **11:34:03–13:12:59 UTC** and a broader seven-day window. The server-log sample
@@ -149,12 +150,14 @@ above.
    or proxy/network delay. The post-build route sample is small, and the
    seven-day aggregate mixes revisions.
 
-The code change available for this workspace is the already-added batched guard
-stream read; it removes one SQL statement in that path but has no demonstrated
-end-to-end latency win yet. No speculative transaction rewrite, cache that could
-serve stale permissions, pool-size increase, or production setting change was
-made. The audit's PostgreSQL idempotency ordering remains intact: acquire the
-command advisory lock, then perform the receipt lookup in a separate statement.
+At the time of the initial audit, the relevant workspace change was the batched
+command-guard stream read. A later focused change also batches event-row and
+command-receipt insertion into one statement within the event-store transaction.
+It retains the PostgreSQL idempotency ordering: acquire the command advisory
+lock, then perform the receipt lookup in a separate statement. The post-publish
+measurement below confirms one fewer append statement, but not a latency win.
+No stale permission cache, pool-size increase, or production setting change was
+made.
 
 ## Tests and limitations
 
@@ -171,9 +174,9 @@ command advisory lock, then perform the receipt lookup in a separate statement.
 - No production writes, load tests, database changes, or publish actions were
   performed.
 
-## Post-publish check
+## Earlier post-publish check (before event/receipt batching)
 
-The current successful production build is `1dbd51fc-e01f-4993-9fc6-e43b4ab3fd7c`,
+The successful production build at that check was `1dbd51fc-e01f-4993-9fc6-e43b4ab3fd7c`,
 source commit `1ba1f0cf9b290c8a0992261f56290f4ed827b09d`, reported successful at
 **2026-10-26 13:37:21 UTC**. The source commit descends from workspace HEAD
 `57d152e`, so this build includes that workspace revision.
@@ -212,3 +215,60 @@ MUDD_DB_BENCHMARK=1 \
 MUDD_DB_BENCHMARK_TARGET=development \
 npm run benchmark:db:readonly --workspace @mudd/server
 ```
+
+## Follow-up production trace after event/receipt batching
+
+### Deployment and test scope
+
+The latest successful build was `3080efc4-0356-4240-920a-d98b05b9759a`,
+created at **14:32:19 UTC** and successful at **14:37:44 UTC** on
+2026-10-26. Its source revision was
+`684babd0305fa6a147513b96a2aef057b21605df`; that revision contains the batched
+event/receipt statement and keeps the post-lock receipt lookup separate.
+
+From **14:49:33–14:49:44 UTC**, a guest character made 10 alternating moves
+between Bellwold Market Square and The Kindly Roof, with 11 `/api/game`
+snapshots. All 21 traced requests returned HTTP 200. The test world session was
+closed afterward. The guest, character, and their movement events remain in
+production; no production records were deleted.
+
+### Client and server measurements
+
+The direct HTTP client ran from the Replit development container, not the
+player's phone or browser:
+
+| Request | Samples | Mean | Median | Range |
+|---|---:|---:|---:|---:|
+| Movement client round trip | 10 | 591 ms | 551 ms | 491–827 ms |
+| Snapshot client round trip | 11 | 239 ms | 227 ms | 183–361 ms |
+
+Production logs matched all 21 trace IDs with complete entries:
+
+| Server measurement | Samples | Mean | Median | Range |
+|---|---:|---:|---:|---:|
+| Movement request duration | 10 | 574 ms | 536 ms | 479–787 ms |
+| Movement command stage | 10 | 352 ms | 344 ms | 300–430 ms |
+| Command append SQL statements | 10 | **10 each** | 10 | 10–10 |
+| Command append cumulative SQL time | 10 | 315 ms | 302 ms | 268–398 ms |
+| Total movement request SQL statements | 10 | 21.6 | 22 | 19–24 |
+| Total movement request cumulative SQL time | 10 | 669 ms | 657 ms | 518–853 ms |
+| Movement request pool wait | 10 | 20 ms | 2.8 ms | 1.3–177 ms |
+| Snapshot server duration | 11 | 206 ms | 176 ms | 166–304 ms |
+| Snapshot SQL statements | 11 | 7.3 | 7 | 7–10 |
+| Snapshot cumulative SQL time | 11 | 235 ms | 195 ms | 185–412 ms |
+
+### Interpretation
+
+The targeted change achieved its direct goal: command appends used 10 SQL
+statements per move, down from 11 in the earlier production sample. It did **not**
+demonstrate lower end-to-end latency in this small run: mean server movement
+duration was 574 ms versus the earlier 543 ms, while mean append SQL time was
+315 ms versus about 301 ms. These samples are not controlled enough to attribute
+the difference to the change; the current run also had one 177 ms pool-wait
+outlier. Snapshot duration remained about level (206 ms versus 205 ms earlier).
+
+The remaining cost is still substantial: about 10 append statements and roughly
+22 total SQL statements per move. Production per-query latency and occasional
+pool acquisition waits remain stronger targets than additional speculative
+refactoring. The client timings are transport-level checks from the development
+container, not browser paint timings on the player's device.
