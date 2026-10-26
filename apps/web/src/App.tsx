@@ -3493,21 +3493,24 @@ export function WorldClient({
                   expandRequest={terminalExpandRequest}
                   mobileViewport={isMobileViewport}
                 >
-                    {!optimisticTravel && (
-                      <div className="focused-room-presence" role="group" aria-label="Players in this room">
-                        <Users size={14} aria-hidden="true" />
-                        <span>
-                          {snapshot.location.occupants.length > 0
-                            ? `Here now: ${snapshot.location.occupants.map((occupant) => occupant.displayName).join(", ")}`
-                            : "No other players here"}
+                    <div
+                      className="focused-room-presence"
+                      role="group"
+                      aria-label="Players in this room"
+                      aria-busy={Boolean(optimisticTravel)}
+                    >
+                      <Users size={14} aria-hidden="true" />
+                      <span>
+                        {!optimisticTravel && snapshot.location.occupants.length > 0
+                          ? `Here now: ${snapshot.location.occupants.map((occupant) => occupant.displayName).join(", ")}`
+                          : "No other players here"}
+                      </span>
+                      {!optimisticTravel && presenceStale && (
+                        <span className="focused-room-presence__status" role="status">
+                          Presence may be out of date.
                         </span>
-                        {presenceStale && (
-                          <span className="focused-room-presence__status" role="status">
-                            Presence may be out of date.
-                          </span>
-                        )}
-                      </div>
-                    )}
+                      )}
+                    </div>
                     {snapshot.character?.health && !isAnyCombatActive && !visiblePvp && (
                       <div className="focused-terminal-vitals" role="group" aria-label="Character vitals">
                         <span className="focused-terminal-vital" role="group" aria-label="Character health" title="Health">

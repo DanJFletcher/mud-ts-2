@@ -1206,6 +1206,8 @@ describe('single-character world session client', () => {
     quickGo('north');
 
     expect(await screen.findByRole('heading', { name: 'Glasswater Bridge' })).toBeVisible();
+    expect(screen.getByRole('group', { name: 'Players in this room' }))
+      .toHaveTextContent('No other players here');
     expect(screen.getByText('A stone bridge crosses clear water.')).toBeVisible();
     expect(screen.getByText('A Bridge Watcher is here, eyes alert. A brass token lies here.')).toBeVisible();
     expect(screen.queryByText('Traveling north…')).not.toBeInTheDocument();
