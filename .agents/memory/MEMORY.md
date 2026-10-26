@@ -21,3 +21,4 @@
 - [Timed gameplay actions](timed-gameplay-actions.md) — Persist timed action progress and server-side random outcomes; clients schedule updates but never own gameplay rolls.
 - [Database tracing contexts](database-tracing-context.md) — Consume lazy database thenables inside their async measurement context so operation-level timings stay attributable.
 - [Postgres command idempotency](postgres-command-idempotency.md) — Keep receipt lookup after the advisory-lock statement; a combined query can retain a pre-lock snapshot.
+- [Ephemeral PostgreSQL tests](ephemeral-postgres-tests.md) — In the Nix dev container, point temporary PostgreSQL sockets at a writable temp directory.

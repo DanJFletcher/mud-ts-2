@@ -511,7 +511,38 @@ export class PostgresEventStore implements EventStorePort {
         occurredAt: committedAt,
         tick: event.tick,
       }));
-      await tx.insert(gameEvents).values([...companionRows, ...primaryRows]);
+      const eventRows = [...companionRows, ...primaryRows];
+      const receipt: Extract<CommandReceipt, { ok: true }> = {
+        ok: true,
+        commandId: request.commandId,
+        eventIds: appended.map((event) => event.eventId),
+        newAggregateVersion: appended.at(-1)?.aggregateVersion ?? currentRevision,
+      };
+      // Keep event rows and their idempotency receipt atomic, but pay for only
+      // one database round trip. The command lock and receipt lookup above must
+      // remain separate statements so the read gets a fresh snapshot after any
+      // concurrent command finishes waiting on the lock.
+      const insertedEvents = tx.$with('appended_events').as(
+        tx.insert(gameEvents).values(eventRows).returning({ eventId: gameEvents.eventId }),
+      );
+      const insertedReceipt = tx.$with('appended_receipt').as(
+        tx.insert(commandReceipts).values({
+          worldInstanceId: request.worldInstanceId,
+          actorId: request.actorId,
+          commandId: request.commandId,
+          payloadHash: request.payloadHash,
+          streamId: request.streamId,
+          receipt,
+          events: appended,
+        }).returning({ commandId: commandReceipts.commandId }),
+      );
+      const [persisted] = await tx.with(insertedEvents, insertedReceipt).select({
+        eventCount: sql<number>`(SELECT count(*)::int FROM ${insertedEvents})`,
+        receiptCount: sql<number>`(SELECT count(*)::int FROM ${insertedReceipt})`,
+      }).from(insertedEvents).limit(1);
+      if (persisted?.eventCount !== eventRows.length || persisted.receiptCount !== 1) {
+        throw new Error('Command append did not persist its events and receipt.');
+      }
 
       if (request.effects?.length) {
         await tx.insert(durableEffects).values(request.effects.map((effect, index) => ({
@@ -572,21 +603,6 @@ export class PostgresEventStore implements EventStorePort {
           await this.refreshRoomState(tx, request.worldInstanceId, streamId);
         }
       }
-      const receipt: Extract<CommandReceipt, { ok: true }> = {
-        ok: true,
-        commandId: request.commandId,
-        eventIds: appended.map((event) => event.eventId),
-        newAggregateVersion: appended.at(-1)?.aggregateVersion ?? currentRevision,
-      };
-      await tx.insert(commandReceipts).values({
-        worldInstanceId: request.worldInstanceId,
-        actorId: request.actorId,
-        commandId: request.commandId,
-        payloadHash: request.payloadHash,
-        streamId: request.streamId,
-        receipt,
-        events: appended,
-      });
       return { kind: 'committed', streamId: request.streamId, events: appended, receipt };
     }));
     if (outcome.kind === 'committed') {

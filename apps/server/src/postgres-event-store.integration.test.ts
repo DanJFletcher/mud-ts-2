@@ -12,6 +12,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
   const chatWorldInstanceId = `audit-chat-test-${randomUUID()}`;
   const presenceWorldInstanceId = `audit-presence-test-${randomUUID()}`;
   const cacheWorldInstanceId = `audit-cache-test-${randomUUID()}`;
+  const appendBatchWorldInstanceId = `audit-append-batch-${randomUUID()}`;
   const characterId = randomUUID();
   const cacheCharacterId = randomUUID();
   const chatCharacterId = randomUUID();
@@ -50,7 +51,9 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     const { inArray } = await import('drizzle-orm');
     const { characters, commandReceipts, durableEffects, gameEvents, players, worldSessions } = await import('./db/schema.js');
     try {
-      const testWorlds = [worldInstanceId, chatWorldInstanceId, presenceWorldInstanceId, cacheWorldInstanceId];
+      const testWorlds = [
+        worldInstanceId, chatWorldInstanceId, presenceWorldInstanceId, cacheWorldInstanceId, appendBatchWorldInstanceId,
+      ];
       const testPlayers = [playerId, ...presencePlayerIds, ...(guestPlayerId ? [guestPlayerId] : [])];
       await db.delete(durableEffects).where(inArray(durableEffects.worldInstanceId, testWorlds));
       await db.delete(commandReceipts).where(inArray(commandReceipts.worldInstanceId, testWorlds));
@@ -131,6 +134,61 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     expect((await restartedStore.append(sameCommandOtherActor)).kind).toBe('committed');
     expect(await restartedStore.readStream(worldInstanceId, sameCommandOtherActor.streamId)).toHaveLength(1);
     expect(await restartedStore.readStream('another-world-instance', characterId)).toHaveLength(0);
+  });
+
+  it('writes appended events and their command receipt in one database round trip', async () => {
+    const streamId = randomUUID();
+    const created = await store.append({
+      worldInstanceId: appendBatchWorldInstanceId,
+      streamId,
+      actorId: playerId,
+      commandId: `append-batch-create-${randomUUID()}`,
+      payloadHash: randomUUID(),
+      expectedVersion: 0,
+      events: [{
+        type: 'character.created',
+        version: 1,
+        payload: {
+          characterId: streamId,
+          playerId,
+          name: 'Append batch fixture',
+          startingLocationId: 'mossgate-clearing',
+        },
+      }],
+    });
+    expect(created.kind).toBe('committed');
+    const request: AppendRequest = {
+      worldInstanceId: appendBatchWorldInstanceId,
+      streamId,
+      actorId: playerId,
+      commandId: `append-batch-${randomUUID()}`,
+      payloadHash: randomUUID(),
+      expectedVersion: 1,
+      events: [{
+        type: 'character.item_taken',
+        version: 1,
+        payload: {
+          characterId: streamId,
+          locationId: 'mossgate-clearing',
+          item: {
+            id: `item-${randomUUID()}`,
+            label: 'Append batch fixture item',
+            description: 'A test item for command append instrumentation.',
+          },
+        },
+      }],
+    };
+    const metrics = newMeasurements('append-batch-query-count');
+    const committed = await requestMeasurements.run(metrics, () => store.append(request));
+
+    expect(committed.kind).toBe('committed');
+    expect(metrics.databaseOperations['event_store.command_append']?.queries).toBe(10);
+    const history = await store.readStream(appendBatchWorldInstanceId, request.streamId);
+    expect(history).toHaveLength(2);
+    expect(history[1]).toMatchObject({ type: 'character.item_taken', aggregateVersion: 2 });
+    expect((await store.lookupCommand(
+      appendBatchWorldInstanceId, playerId, request.commandId, request.payloadHash,
+    ))?.receipt).toEqual(committed.receipt);
   });
 
   it('incrementally replays history above the old byte ceiling, then rebuilds safely after eviction', async () => {
