@@ -296,7 +296,44 @@ test('containers accept ordinary items and reject nested containers', () => {
   const parsed = WorldPackDraftSchema.parse(base);
   assert.equal(parsed.locations[0].containers[0].kind, 'sack');
   assert.deepEqual(parsed.locations[0].containers[0].contents[0].consumable, { effect: 'heal', amount: 2 });
+  assert.equal(parsed.locations[0].containers[0].capacity, undefined);
   assert.deepEqual(validateDraftWorldGraph(parsed), []);
+  const stackableContainer = WorldPackDraftSchema.parse({
+    ...base,
+    locations: [{
+      ...base.locations[0],
+      containers: [{
+        ...base.locations[0].containers[0],
+        capacity: 3,
+        contents: [{
+          id: 'herb-bundle',
+          label: 'Herb bundle',
+          description: 'Three bundles tied together.',
+          stackable: true,
+          quantity: 3,
+        }],
+      }],
+    }],
+  });
+  assert.equal(stackableContainer.locations[0].containers[0].capacity, 3);
+  assert.equal(stackableContainer.locations[0].containers[0].contents[0].quantity, 3);
+  assert.equal(WorldPackDraftSchema.safeParse({
+    ...base,
+    locations: [{
+      ...base.locations[0],
+      containers: [{
+        ...base.locations[0].containers[0],
+        capacity: 2,
+        contents: [{
+          id: 'herb-bundle',
+          label: 'Herb bundle',
+          description: 'Three bundles tied together.',
+          stackable: true,
+          quantity: 3,
+        }],
+      }],
+    }],
+  }).success, false);
   assert.equal(WorldPackDraftSchema.safeParse({
     ...base,
     locations: [{

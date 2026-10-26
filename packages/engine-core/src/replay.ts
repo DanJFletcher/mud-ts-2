@@ -983,8 +983,11 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
         state.equipment.weaponItemId === stored.payload.item.id ||
         state.equipment.armorItemId === stored.payload.item.id ||
         itemLocation?.locationId !== null ||
+        carriedItem.typeId !== stored.payload.item.typeId ||
         carriedItem.label !== stored.payload.item.label ||
-        carriedItem.description !== stored.payload.item.description
+        carriedItem.description !== stored.payload.item.description ||
+        carriedItem.stackable !== stored.payload.item.stackable ||
+        carriedItem.quantity !== stored.payload.item.quantity
       ) {
         throw new Error(`Invalid item stored event at revision ${event.aggregateVersion}.`);
       }

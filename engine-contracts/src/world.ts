@@ -91,11 +91,27 @@ export const TakeableObjectDefinitionSchema = z.object({
   description: z.string().min(1).max(1000),
   roomDescription: z.string().min(1).max(1000).optional(),
   questBound: z.boolean().optional(),
+  stackable: z.boolean().optional(),
+  quantity: NonNegativeIntSchema.max(2_147_483_647).positive().optional(),
   consumable: ConsumableItemSchema.optional(),
   equipment: InventoryEquipmentSchema.optional(),
   fishingRod: FishingRodDefinitionSchema.optional(),
   woodcuttingAxe: WoodcuttingAxeDefinitionSchema.optional(),
 }).strict().superRefine((item, context) => {
+  if (item.quantity !== undefined && item.stackable !== true) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['quantity'],
+      message: 'Only stackable items can have a quantity.',
+    });
+  }
+  if (item.stackable && item.quantity === undefined) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['quantity'],
+      message: 'Stackable items must specify their quantity.',
+    });
+  }
   if (item.consumable && item.equipment) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
@@ -144,8 +160,23 @@ export const ContainerDefinitionSchema = z.object({
   label: z.string().min(1).max(120),
   description: z.string().min(1).max(1000),
   roomDescription: z.string().min(1).max(1000).optional(),
+  /** Maximum number of individual item units; omitted containers are unlimited. */
+  capacity: NonNegativeIntSchema.max(2_147_483_647).optional(),
   contents: z.array(TakeableObjectDefinitionSchema).max(100),
-}).strict();
+}).strict().superRefine((container, context) => {
+  if (container.capacity === undefined) return;
+  const contentsCapacity = container.contents.reduce(
+    (total, item) => total + (item.stackable ? item.quantity ?? 1 : 1),
+    0,
+  );
+  if (contentsCapacity > container.capacity) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['contents'],
+      message: 'Container contents exceed the authored capacity.',
+    });
+  }
+});
 
 export const RoadEncounterDefinitionSchema = z.object({
   id: IdSchema,

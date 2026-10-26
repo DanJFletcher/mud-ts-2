@@ -1264,6 +1264,157 @@ describe('MUDD engine host', () => {
     await engine.stop();
   });
 
+  it('enforces authored container capacity by stack quantity and leaves failed deposits unchanged on retry', async () => {
+    const testWorld = structuredClone(demoWorld);
+    testWorld.locations[0] = {
+      ...testWorld.locations[0]!,
+      takeables: [
+        {
+          id: 'capacity-stack-a',
+          typeId: 'capacity-stack',
+          label: 'Bundle of herbs',
+          description: 'Two tied bundles of herbs.',
+          stackable: true,
+          quantity: 2,
+        },
+        {
+          id: 'capacity-stack-b',
+          typeId: 'capacity-stack',
+          label: 'Second bundle of herbs',
+          description: 'Two more tied bundles of herbs.',
+          stackable: true,
+          quantity: 2,
+        },
+      ],
+      containers: [{
+        id: 'capacity-satchel',
+        kind: 'sack',
+        label: 'Small satchel',
+        description: 'A satchel with room for three item units.',
+        capacity: 3,
+        contents: [{
+          id: 'capacity-starting-item',
+          label: 'Old button',
+          description: 'A single brass button.',
+        }],
+      }],
+    };
+    const { engine, store } = makeEngine(testWorld);
+    await engine.start();
+
+    const created = await engine.dispatch({
+      type: 'character.create',
+      version: 1,
+      commandId: 'capacity-create-character',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      payload: { name: 'Careful Carrier' },
+    }, session);
+    const characterId = created.streamId!;
+    expect(created.receipt.ok).toBe(true);
+
+    const takeStartingItem = await engine.dispatch({
+      type: 'character.take',
+      version: 1,
+      commandId: 'capacity-take-starting-item',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 1,
+      payload: { itemId: 'capacity-starting-item' },
+    }, session);
+    expect(takeStartingItem.receipt.ok).toBe(true);
+    const takeFirstStack = await engine.dispatch({
+      type: 'character.take',
+      version: 1,
+      commandId: 'capacity-take-stack-a',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 2,
+      payload: { itemId: 'capacity-stack-a' },
+    }, session);
+    const takeSecondStack = await engine.dispatch({
+      type: 'character.take',
+      version: 1,
+      commandId: 'capacity-take-stack-b',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 3,
+      payload: { itemId: 'capacity-stack-b' },
+    }, session);
+    expect(takeFirstStack.receipt.ok).toBe(true);
+    expect(takeSecondStack.receipt.ok).toBe(true);
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))?.inventory)
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'capacity-stack-a', stackable: true, quantity: 2 }),
+        expect.objectContaining({ id: 'capacity-stack-b', stackable: true, quantity: 2 }),
+      ]));
+
+    const storeFirstStack = await engine.dispatch({
+      type: 'character.put',
+      version: 1,
+      commandId: 'capacity-store-stack-a',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 4,
+      payload: { itemId: 'capacity-stack-a', containerId: 'capacity-satchel' },
+    }, session);
+    expect(storeFirstStack.receipt).toMatchObject({ ok: true, newAggregateVersion: 5 });
+
+    const fullDeposit = {
+      type: 'character.put',
+      version: 1,
+      commandId: 'capacity-store-stack-b',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 5,
+      payload: { itemId: 'capacity-stack-b', containerId: 'capacity-satchel' },
+    };
+    const failedDeposit = await engine.dispatch(fullDeposit, session);
+    expect(failedDeposit.receipt).toMatchObject({ ok: false, code: 'RULE_VIOLATION' });
+    expect(failedDeposit.receipt.message).toContain('cannot hold any more items');
+    const retriedDeposit = await engine.dispatch(fullDeposit, session);
+    expect(retriedDeposit.receipt).toEqual(failedDeposit.receipt);
+    expect(retriedDeposit.events).toEqual([]);
+
+    const finalHistory = await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId);
+    const finalCharacter = replayCharacter(finalHistory);
+    expect(finalHistory.filter((event) => event.type === 'character.item_stored')).toHaveLength(1);
+    expect(finalCharacter?.revision).toBe(5);
+    expect(finalCharacter?.inventory).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'capacity-stack-b', stackable: true, quantity: 2 }),
+      ]),
+    );
+    expect(finalCharacter?.itemLocations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          item: expect.objectContaining({ id: 'capacity-stack-a', stackable: true, quantity: 2 }),
+          locationId: finalCharacter?.locationId,
+          containerId: 'capacity-satchel',
+        }),
+      ]),
+    );
+    const roomAfterFailedRetry = await engine.query({
+      type: 'location.describe',
+      version: 1,
+      queryId: 'capacity-room-after-failed-retry',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      payload: {},
+    }, session);
+    expect(roomAfterFailedRetry).toMatchObject({
+      ok: true,
+      value: {
+        objects: expect.arrayContaining([
+          expect.objectContaining({ id: 'capacity-stack-a', containerId: 'capacity-satchel' }),
+        ]),
+      },
+    });
+    expect((roomAfterFailedRetry as { value?: { objects?: { id: string }[] } }).value?.objects)
+      .not.toEqual(expect.arrayContaining([expect.objectContaining({ id: 'capacity-stack-b' })]));
+
+    await engine.stop();
+  });
+
   it('keeps bridge states per character and resolves state-specific room exits', async () => {
     const testWorld = structuredClone(demoWorld);
     testWorld.locations.unshift({

@@ -549,6 +549,10 @@ export const characterPlugin: EnginePlugin = {
           label: inventoryItem.label,
           description: inventoryItem.description,
           ...(inventoryItem.questBound ? { questBound: true } : {}),
+          ...(inventoryItem.stackable !== undefined ? {
+            stackable: inventoryItem.stackable,
+            ...(inventoryItem.quantity !== undefined ? { quantity: inventoryItem.quantity } : {}),
+          } : {}),
           ...(inventoryItem.consumable ? { consumable: inventoryItem.consumable } : {}),
           ...(inventoryItem.equipment ? { equipment: inventoryItem.equipment } : {}),
           ...(inventoryItem.fishingRod ? { fishingRod: inventoryItem.fishingRod } : {}),
@@ -640,7 +644,7 @@ export const characterPlugin: EnginePlugin = {
       }
       const location = context.world.locations.find((candidate) => candidate.id === character.locationId);
       if (!location) throw new Error('The character location is not present in this world version.');
-      const authoredContainer = (location.containers ?? []).some((container) =>
+      const authoredContainer = (location.containers ?? []).find((container) =>
         container.id === command.payload.containerId,
       );
       let sharedState: Awaited<ReturnType<WorldItemsStateCapability['load']>> | undefined;
@@ -661,6 +665,27 @@ export const characterPlugin: EnginePlugin = {
       ) ?? false;
       if (!authoredContainer && !isCurrentCorpse) {
         throw new RuleViolationError('That container is not here.');
+      }
+      if (authoredContainer?.capacity !== undefined) {
+        const trackedItemIds = new Set(character.itemLocations.map((entry) => entry.item.id));
+        const authoredContents = authoredContainer.contents.filter((containerItem) =>
+          !character.claimedContainerItemIds.includes(containerItem.id) &&
+          !trackedItemIds.has(containerItem.id),
+        );
+        const storedContents = character.itemLocations
+          .filter((entry) =>
+            entry.locationId === character.locationId &&
+            entry.containerId === authoredContainer.id,
+          )
+          .map(({ item: storedItem }) => storedItem);
+        const currentUnits = [...authoredContents, ...storedContents].reduce(
+          (total, containerItem) => total + (containerItem.stackable ? containerItem.quantity ?? 1 : 1),
+          0,
+        );
+        const itemUnits = item.stackable ? item.quantity ?? 1 : 1;
+        if (currentUnits + itemUnits > authoredContainer.capacity) {
+          throw new RuleViolationError(`${authoredContainer.label} cannot hold any more items.`);
+        }
       }
       const payload = {
         characterId: character.characterId,
