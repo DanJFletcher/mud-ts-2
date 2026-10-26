@@ -38,6 +38,10 @@ export type AutonomousNpcPosition = Readonly<{
 
 export interface AutonomousNpcStateCapability {
   position(context: NpcLocationContext, npcId: string, initialLocationId: string): Promise<AutonomousNpcPosition>;
+  atLocations(
+    context: NpcLocationContext,
+    locationIds: readonly string[],
+  ): Promise<ReadonlyMap<string, readonly NpcDefinition[]>>;
   atLocation(context: NpcLocationContext, locationId: string): Promise<readonly NpcDefinition[]>;
 }
 
@@ -151,6 +155,45 @@ export const autonomousNpcsPlugin: EnginePlugin = {
       return position;
     };
 
+    const atLocations = async (
+      context: NpcLocationContext,
+      locationIds: readonly string[],
+    ): Promise<ReadonlyMap<string, readonly NpcDefinition[]>> => {
+      const requestedLocationIds = [...new Set(locationIds)];
+      const requested = new Set(requestedLocationIds);
+      const definitions = context.world.locations.flatMap((location) =>
+        (location.npcs ?? []).map((npc) => ({ npc, initialLocationId: location.id })),
+      );
+      const movingDefinitions = definitions.filter(({ npc }) => npc.movement);
+      let positions: AutonomousNpcPosition[];
+      if (!movingDefinitions.length) {
+        positions = [];
+      } else if (context.store.readStreams) {
+        const histories = await context.store.readStreams(
+          context.worldInstanceId,
+          movingDefinitions.map(({ npc }) => autonomousNpcStreamId(npc.id)),
+        );
+        positions = movingDefinitions.map(({ npc, initialLocationId }) =>
+          projectPosition(
+            context.worldInstanceId,
+            npc.id,
+            initialLocationId,
+            histories.get(autonomousNpcStreamId(npc.id)) ?? [],
+          ));
+      } else {
+        positions = await Promise.all(movingDefinitions
+          .map(({ npc, initialLocationId }) => state.position(context, npc.id, initialLocationId)));
+      }
+      const dynamicLocations = new Map(positions.map((position) => [position.npcId, position.locationId]));
+      const byLocation = new Map(requestedLocationIds.map((locationId) => [locationId, [] as NpcDefinition[]]));
+      for (const { npc, initialLocationId } of definitions) {
+        const currentLocationId = dynamicLocations.get(npc.id) ?? initialLocationId;
+        if (!requested.has(currentLocationId)) continue;
+        byLocation.get(currentLocationId)?.push(npc);
+      }
+      return byLocation;
+    };
+
     const state: AutonomousNpcStateCapability = {
       async position(context, npcId, initialLocationId) {
         const events = await context.store.readStream(
@@ -159,33 +202,9 @@ export const autonomousNpcsPlugin: EnginePlugin = {
         );
         return projectPosition(context.worldInstanceId, npcId, initialLocationId, events);
       },
+      atLocations,
       async atLocation(context, locationId) {
-        const definitions = context.world.locations.flatMap((location) =>
-          (location.npcs ?? []).map((npc) => ({ npc, initialLocationId: location.id })),
-        );
-        const movingDefinitions = definitions.filter(({ npc }) => npc.movement);
-        let positions: AutonomousNpcPosition[];
-        if (context.store.readStreams) {
-          const histories = await context.store.readStreams(
-            context.worldInstanceId,
-            movingDefinitions.map(({ npc }) => autonomousNpcStreamId(npc.id)),
-          );
-          positions = movingDefinitions.map(({ npc, initialLocationId }) =>
-            projectPosition(
-              context.worldInstanceId,
-              npc.id,
-              initialLocationId,
-              histories.get(autonomousNpcStreamId(npc.id)) ?? [],
-            ));
-        } else {
-          positions = await Promise.all(movingDefinitions
-            .map(({ npc, initialLocationId }) => state.position(context, npc.id, initialLocationId)));
-        }
-        const dynamicLocations = new Map(positions.map((position) => [position.npcId, position.locationId]));
-        return definitions
-          .filter(({ npc, initialLocationId }) =>
-            (dynamicLocations.get(npc.id) ?? initialLocationId) === locationId)
-          .map(({ npc }) => npc);
+        return (await atLocations(context, [locationId])).get(locationId) ?? [];
       },
     };
     provideCapability(autonomousNpcStateCapability, state);

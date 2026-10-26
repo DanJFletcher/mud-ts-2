@@ -41,6 +41,8 @@ import {
   ObjectInspectionProjectionSchema,
   locationGroupMembershipsForLocation,
   resolveLocationDisplayName,
+  type NpcDefinition,
+  type WorldPackDraft,
   type CapabilityToken,
   WorldCorpseGoldClaimedEventSchema,
   WorldItemClaimedEventSchema,
@@ -786,81 +788,192 @@ export const characterPlugin: EnginePlugin = {
       }
       const location = context.world.locations.find((item) => item.id === character.locationId);
       if (!location) throw new Error('The character location is not present in this world version.');
-      const roomNpcs = await measureQuery('npcPositions', async () =>
-        autonomousNpcs
-          ? autonomousNpcs.atLocation(context, location.id)
-          : location.npcs ?? []);
       const locationState = resolveLocationState(location, character.locationStateId);
       const availableExits = exitsForLocationState(location, locationState?.id);
-      const sharedState = await measureQuery('sharedItems', () => worldItems.load(context));
-      const sharedItems = sharedState.items
-        .filter((item) => item.locationId === character.locationId);
-      const roomCorpses = sharedState.corpses
-        .filter((corpse) => corpse.locationId === character.locationId)
-        .map((corpse) => {
-          const contents = sharedItems
-            .filter((item) => item.containerId === corpse.corpseId)
-            .map(({ worldItemId, item }) => ({
-              id: worldItemId,
-              label: item.label,
-              description: item.description,
-            }));
-          if (!corpse.goldClaimed && corpse.goldItemId && corpse.currencyAmount > 0) {
-            const currencyName = context.world.currency?.name ?? 'coins';
-            contents.push({
-              id: corpse.goldItemId,
-              label: `${corpse.currencyAmount} ${currencyName}`,
-              description: `${corpse.currencyAmount} ${currencyName} left by ${corpse.opponentName}.`,
-            });
-          }
-          return { corpse, contents };
-        });
-      const trackedItemIds = new Set(character.itemLocations.map((entry) => entry.item.id));
-      const visibleContainers = (location.containers ?? []).map((container) => ({
-        ...container,
-        contents: container.contents.filter((item) =>
-          !character.claimedContainerItemIds.includes(item.id) && !trackedItemIds.has(item.id),
-        ),
-      }));
-      const roomTakeables = [
-        ...(location.takeables ?? []).filter((item) => !trackedItemIds.has(item.id)),
-        ...character.itemLocations
-          .filter((entry) => entry.locationId === location.id)
-          .map(({ item }) => item),
+      const projectedLocationIds = [
+        location.id,
+        ...availableExits.map((exit) => exit.toLocationId),
       ];
+      const roomNpcsByLocation = await measureQuery('npcPositions', async () => {
+        if (autonomousNpcs) return autonomousNpcs.atLocations(context, projectedLocationIds);
+        return new Map(projectedLocationIds.map((locationId) => [
+          locationId,
+          context.world.locations.find((candidate) => candidate.id === locationId)?.npcs ?? [],
+        ]));
+      });
+      const roomNpcsFor = (room: WorldPackDraft['locations'][number]): readonly NpcDefinition[] =>
+        roomNpcsByLocation.get(room.id) ?? room.npcs ?? [];
+      const roomNpcs = roomNpcsFor(location);
+      const sharedState = await measureQuery('sharedItems', () => worldItems.load(context));
+      const sharedItemsByLocation = new Map<string, Array<(typeof sharedState.items)[number]>>();
+      for (const item of sharedState.items) {
+        if (!item.locationId) continue;
+        const items = sharedItemsByLocation.get(item.locationId) ?? [];
+        items.push(item);
+        sharedItemsByLocation.set(item.locationId, items);
+      }
+      const corpsesByLocation = new Map<string, Array<(typeof sharedState.corpses)[number]>>();
+      for (const corpse of sharedState.corpses) {
+        const corpses = corpsesByLocation.get(corpse.locationId) ?? [];
+        corpses.push(corpse);
+        corpsesByLocation.set(corpse.locationId, corpses);
+      }
+      const trackedItemIds = new Set(character.itemLocations.map((entry) => entry.item.id));
+      const claimedContainerItemIds = new Set(character.claimedContainerItemIds);
+      const characterItemsByLocation = new Map<string, Array<(typeof character.itemLocations)[number]>>();
+      for (const entry of character.itemLocations) {
+        if (!entry.locationId) continue;
+        const items = characterItemsByLocation.get(entry.locationId) ?? [];
+        items.push(entry);
+        characterItemsByLocation.set(entry.locationId, items);
+      }
       const roomDescriptionByItemId = new Map(
         context.world.locations.flatMap((worldLocation) =>
           (worldLocation.takeables ?? []).map(({ id, roomDescription }) => [id, roomDescription] as const),
         ),
       );
-      const roomItemDescriptions = roomTakeables.flatMap((item) => {
-        const roomDescription = roomDescriptionByItemId.get(item.id);
-        return roomDescription ? [roomDescription] : [];
-      });
-      const sharedItemDescriptions = sharedItems
-        .filter((item) => !item.containerId)
-        .map(({ item }) => `${item.label} lies here.`);
-      const containerDescriptions = visibleContainers.map((container) => {
-        const roomDescription = container.roomDescription ?? `${container.label} is here.`;
-        const contents = container.contents.length
-          ? ` It contains ${container.contents.map((item) => item.label).join(', ')}.`
-          : ' It is empty.';
-        return `${roomDescription}${contents}`;
-      });
-      const corpseDescriptions = roomCorpses.map(({ corpse, contents }) =>
-        `${corpse.description}${contents.length
-          ? ` It contains ${contents.map((item) => item.label).join(', ')}.`
-          : ' It is empty.'}`,
-      );
       const includeNpcDescriptions = query.payload.includeNpcDescriptions === true;
-      const roomNpcDescriptions = roomNpcs.map(({ name, description, activityDescription }) =>
-        includeNpcDescriptions
-          ? `${name} is here. ${description}`
-          : `${name} is here${activityDescription ? `, ${activityDescription}` : ''}.`,
-      );
-      const interactableRoomDescriptions = (location.interactables ?? []).flatMap(({ roomDescription }) =>
-        roomDescription ? [roomDescription] : [],
-      );
+      const projectRoomContents = (
+        room: WorldPackDraft['locations'][number],
+        npcs: readonly NpcDefinition[],
+        includeLongNpcDescriptions: boolean,
+        includeObjects = true,
+      ) => {
+        const itemsInRoom = sharedItemsByLocation.get(room.id) ?? [];
+        const corpsesInRoom = (corpsesByLocation.get(room.id) ?? [])
+          .map((corpse) => {
+            const contents = itemsInRoom
+              .filter((item) => item.containerId === corpse.corpseId)
+              .map(({ worldItemId, item }) => ({
+                id: worldItemId,
+                label: item.label,
+                description: item.description,
+              }));
+            if (!corpse.goldClaimed && corpse.goldItemId && corpse.currencyAmount > 0) {
+              const currencyName = context.world.currency?.name ?? 'coins';
+              contents.push({
+                id: corpse.goldItemId,
+                label: `${corpse.currencyAmount} ${currencyName}`,
+                description: `${corpse.currencyAmount} ${currencyName} left by ${corpse.opponentName}.`,
+              });
+            }
+            return { corpse, contents };
+          });
+        const visibleContainers = (room.containers ?? []).map((container) => ({
+          ...container,
+          contents: container.contents.filter((item) =>
+            !claimedContainerItemIds.has(item.id) && !trackedItemIds.has(item.id),
+          ),
+        }));
+        const roomTakeables = [
+          ...(room.takeables ?? []).filter((item) => !trackedItemIds.has(item.id)),
+          ...(characterItemsByLocation.get(room.id) ?? [])
+            .map(({ item }) => item),
+        ];
+        const roomItemDescriptions = roomTakeables.flatMap((item) => {
+          const roomDescription = roomDescriptionByItemId.get(item.id);
+          return roomDescription ? [roomDescription] : [];
+        });
+        const sharedItemDescriptions = itemsInRoom
+          .filter((item) => !item.containerId)
+          .map(({ item }) => `${item.label} lies here.`);
+        const containerDescriptions = visibleContainers.map((container) => {
+          const roomDescription = container.roomDescription ?? `${container.label} is here.`;
+          const contents = container.contents.length
+            ? ` It contains ${container.contents.map((item) => item.label).join(', ')}.`
+            : ' It is empty.';
+          return `${roomDescription}${contents}`;
+        });
+        const corpseDescriptions = corpsesInRoom.map(({ corpse, contents }) =>
+          `${corpse.description}${contents.length
+            ? ` It contains ${contents.map((item) => item.label).join(', ')}.`
+            : ' It is empty.'}`,
+        );
+        const npcDescriptions = npcs.map(({ name, description, activityDescription }) =>
+          includeLongNpcDescriptions
+            ? `${name} is here. ${description}`
+            : `${name} is here${activityDescription ? `, ${activityDescription}` : ''}.`,
+        );
+        const interactableRoomDescriptions = (room.interactables ?? []).flatMap(({ roomDescription }) =>
+          roomDescription ? [roomDescription] : [],
+        );
+        const objects = includeObjects ? [
+          ...(room.readables ?? []).map(({ id, label, description }) => ({
+            id, label, description, readable: true, takeable: false,
+          })),
+          ...roomTakeables.map(({ id, label, description }) => ({
+            id, label, description, readable: false, takeable: true,
+          })),
+          ...visibleContainers.flatMap((container) => [
+            {
+              id: container.id,
+              label: container.label,
+              description: container.description,
+              readable: false,
+              takeable: false,
+              containerKind: container.kind,
+              contents: container.contents.map(({ id, label, description }) => ({ id, label, description })),
+            },
+            ...container.contents.map(({ id, label, description }) => ({
+              id,
+              label,
+              description,
+              readable: false,
+              takeable: true,
+              containerId: container.id,
+            })),
+          ]),
+          ...itemsInRoom.filter((item) => !item.containerId).map(({ worldItemId, item }) => ({
+            id: worldItemId,
+            label: item.label,
+            description: item.description,
+            readable: false,
+            takeable: true,
+          })),
+          ...corpsesInRoom.flatMap(({ corpse, contents }) => [
+            {
+              id: corpse.corpseId,
+              label: corpse.label,
+              description: corpse.description,
+              readable: false,
+              takeable: false,
+              containerKind: 'corpse' as const,
+              contents,
+            },
+            ...contents.map((content) => ({
+              ...content,
+              readable: false,
+              takeable: true,
+              containerId: corpse.corpseId,
+            })),
+          ]),
+          ...(room.interactables ?? []).map(({ id, label, description }) => ({
+            id, label, description, readable: false, takeable: false,
+          })),
+        ] : [];
+        const npcProjections = npcs.map((npc) => ({
+          id: npc.id,
+          name: npc.name,
+          ...(npc.activityDescription ? { activityDescription: npc.activityDescription } : {}),
+          ...(includeLongNpcDescriptions ? { description: npc.description } : {}),
+          canChallenge: Boolean(npc.combatProfile),
+          combatDisposition: npc.combatDisposition ?? 'passive',
+          canShop: Boolean(npc.shop),
+        }));
+        return {
+          roomDetails: [
+            ...roomItemDescriptions,
+            ...sharedItemDescriptions,
+            ...containerDescriptions,
+            ...corpseDescriptions,
+            ...interactableRoomDescriptions,
+            ...npcDescriptions,
+          ].join('\n\n'),
+          objects,
+          npcs: npcProjections,
+        };
+      };
+      const roomContents = projectRoomContents(location, roomNpcs, includeNpcDescriptions);
       const innCurrency = location.inn ? context.world.currency : undefined;
       if (location.inn && !innCurrency) {
         throw new Error('An authored inn requires configured world currency.');
@@ -883,13 +996,8 @@ export const characterPlugin: EnginePlugin = {
         locationGroups,
         description: [
           locationState?.description ?? location.description,
-          ...roomItemDescriptions,
-          ...sharedItemDescriptions,
-          ...containerDescriptions,
-          ...corpseDescriptions,
-          ...interactableRoomDescriptions,
-          ...roomNpcDescriptions,
-        ].join('\n\n'),
+          roomContents.roomDetails,
+        ].filter(Boolean).join('\n\n'),
         exits: availableExits.map((exit) => {
           const destination = context.world.locations.find((candidate) =>
             candidate.id === exit.toLocationId,
@@ -913,6 +1021,14 @@ export const characterPlugin: EnginePlugin = {
           const destinationDisplayName = destinationShortName
             ? resolveLocationDisplayName(destinationShortName, destinationGroups)
             : undefined;
+          const destinationNpcs = destination ? roomNpcsFor(destination) : [];
+          const destinationContents = isAvailable && destination
+            ? projectRoomContents(destination, destinationNpcs, false, false)
+            : undefined;
+          const previewRoomDetails = destinationContents?.roomDetails;
+          const cappedPreviewRoomDetails = previewRoomDetails && previewRoomDetails.length > 20_000
+            ? `${previewRoomDetails.slice(0, 19_999)}…`
+            : previewRoomDetails;
 
           return {
             id: exit.id,
@@ -928,64 +1044,17 @@ export const characterPlugin: EnginePlugin = {
                 shortName: destinationDisplayName.shortName,
                 qualifiedName: destinationDisplayName.qualifiedName,
                 description: destinationState?.description ?? destination.description,
+                ...(cappedPreviewRoomDetails ? { roomDetails: cappedPreviewRoomDetails } : {}),
+                npcs: destinationNpcs.slice(0, 200).map((npc) => ({
+                  id: npc.id,
+                  name: npc.name,
+                  mobile: Boolean(npc.movement),
+                })),
               },
             } : {}),
           };
         }),
-        objects: [
-          ...(location.readables ?? []).map(({ id, label, description }) => ({
-            id, label, description, readable: true, takeable: false,
-          })),
-          ...roomTakeables.map(({ id, label, description }) => ({
-              id, label, description, readable: false, takeable: true,
-          })),
-          ...visibleContainers.flatMap((container) => [
-            {
-              id: container.id,
-              label: container.label,
-              description: container.description,
-              readable: false,
-              takeable: false,
-              containerKind: container.kind,
-              contents: container.contents.map(({ id, label, description }) => ({ id, label, description })),
-            },
-            ...container.contents.map(({ id, label, description }) => ({
-              id,
-              label,
-              description,
-              readable: false,
-              takeable: true,
-              containerId: container.id,
-            })),
-          ]),
-          ...sharedItems.filter((item) => !item.containerId).map(({ worldItemId, item }) => ({
-            id: worldItemId,
-            label: item.label,
-            description: item.description,
-            readable: false,
-            takeable: true,
-          })),
-          ...roomCorpses.flatMap(({ corpse, contents }) => [
-            {
-              id: corpse.corpseId,
-              label: corpse.label,
-              description: corpse.description,
-              readable: false,
-              takeable: false,
-              containerKind: 'corpse' as const,
-              contents,
-            },
-            ...contents.map((content) => ({
-              ...content,
-              readable: false,
-              takeable: true,
-              containerId: corpse.corpseId,
-            })),
-          ]),
-          ...(location.interactables ?? []).map(({ id, label, description }) => ({
-            id, label, description, readable: false, takeable: false,
-          })),
-        ],
+        objects: roomContents.objects,
         occupants: [],
         ...(location.inn && innCurrency ? {
           inn: {
@@ -997,19 +1066,7 @@ export const characterPlugin: EnginePlugin = {
             },
           },
         } : {}),
-        ...(roomNpcs.length
-          ? {
-            npcs: roomNpcs.map(({ id, name, description, activityDescription, combatProfile, combatDisposition, shop }) => ({
-              id,
-              name,
-              ...(activityDescription ? { activityDescription } : {}),
-              ...(includeNpcDescriptions ? { description } : {}),
-              canChallenge: Boolean(combatProfile),
-              combatDisposition: combatDisposition ?? 'passive',
-              canShop: Boolean(shop),
-            })),
-          }
-          : {}),
+        ...(roomContents.npcs.length ? { npcs: roomContents.npcs } : {}),
       }));
     });
 

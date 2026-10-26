@@ -120,6 +120,20 @@ type OptimisticTravel = Readonly<{
   fromLocationId: string;
   preview: DestinationRoomPreview;
   entryIds: readonly string[];
+  roomDetailsEntryId?: string;
+}>;
+type OptimisticNpcDepartureFallback = Readonly<{
+  worldInstanceId: string;
+  locationId: string;
+  npcName: string;
+  entryId: string;
+  expiresAt: number;
+}>;
+type RecentNpcDepartureAnnouncement = Readonly<{
+  worldInstanceId: string;
+  locationId: string;
+  npcName: string;
+  expiresAt: number;
 }>;
 type RoomLookPreview = Pick<
   NonNullable<GameSnapshot["location"]>,
@@ -348,6 +362,8 @@ export function WorldClient({
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
   const [optimisticTravel, setOptimisticTravel] = useState<OptimisticTravel | null>(null);
   const optimisticTravelRef = useRef<OptimisticTravel | null>(null);
+  const optimisticNpcDepartureFallbacksRef = useRef<OptimisticNpcDepartureFallback[]>([]);
+  const recentNpcDepartureAnnouncementsRef = useRef<RecentNpcDepartureAnnouncement[]>([]);
   const activeLocationIdRef = useRef<string | undefined>(snapshot?.location?.locationId);
   activeLocationIdRef.current = snapshot?.location?.locationId;
   const [classCatalog, setClassCatalog] = useState<ClassCatalogSummary | undefined>();
@@ -549,8 +565,43 @@ export function WorldClient({
     return entry.id;
   }, []);
   const addNpcTerminalEvent = useCallback((message: RoomChatMessage) => {
-    addEntry("narration", `${message.speakerName}: ${message.text}`, true);
-  }, [addEntry]);
+    const isDeparture = /\b(?:leave|leaves|leaving|depart|departs|departed|departing)\b/i.test(message.text);
+    const now = Date.now();
+    if (isDeparture) {
+      recentNpcDepartureAnnouncementsRef.current = [
+        ...recentNpcDepartureAnnouncementsRef.current.filter((announcement) => announcement.expiresAt >= now),
+        {
+          worldInstanceId,
+          locationId: message.roomId,
+          npcName: message.speakerName,
+          expiresAt: now + 30_000,
+        },
+      ].slice(-32);
+    }
+    const fallbackIndex = isDeparture
+      ? optimisticNpcDepartureFallbacksRef.current.findIndex((fallback) =>
+        fallback.worldInstanceId === worldInstanceId &&
+        fallback.locationId === message.roomId &&
+        fallback.npcName.toLocaleLowerCase() === message.speakerName.toLocaleLowerCase() &&
+        fallback.expiresAt >= now)
+      : -1;
+    if (fallbackIndex >= 0) {
+      const [fallback] = optimisticNpcDepartureFallbacksRef.current.splice(fallbackIndex, 1);
+      if (fallback) {
+        setEntries((current) => current.map((entry) =>
+          entry.id === fallback.entryId
+            ? { ...entry, text: `${message.speakerName}: ${message.text}` }
+            : entry,
+        ));
+        return;
+      }
+    }
+    addEntry("narration", `${message.speakerName}: ${message.text}`, true, message.roomId);
+  }, [addEntry, worldInstanceId]);
+  useEffect(() => {
+    optimisticNpcDepartureFallbacksRef.current = [];
+    recentNpcDepartureAnnouncementsRef.current = [];
+  }, [worldInstanceId]);
   useEffect(() => {
     const characterId = snapshot?.character?.characterId;
     if (!characterId) return;
@@ -667,24 +718,61 @@ export function WorldClient({
       return true;
     }
 
+    const appendMissingNpcDepartures = () => {
+      const now = Date.now();
+      const actualNpcIds = new Set((location.npcs ?? []).map((npc) => npc.id));
+      for (const npc of travel.preview.npcs ?? []) {
+        if (!npc.mobile || actualNpcIds.has(npc.id)) continue;
+        const wasAlreadyAnnounced = recentNpcDepartureAnnouncementsRef.current.some((announcement) =>
+          announcement.expiresAt >= now &&
+          announcement.worldInstanceId === worldInstanceId &&
+          announcement.locationId === location.locationId &&
+          announcement.npcName.toLocaleLowerCase() === npc.name.toLocaleLowerCase());
+        if (wasAlreadyAnnounced) continue;
+        const entryId = addEntry("narration", `${npc.name} leaves the room.`, false, location.locationId);
+        optimisticNpcDepartureFallbacksRef.current = [
+          ...optimisticNpcDepartureFallbacksRef.current.filter((fallback) => fallback.expiresAt >= now),
+          {
+            worldInstanceId,
+            locationId: location.locationId,
+            npcName: npc.name,
+            entryId,
+            expiresAt: now + 30_000,
+          },
+        ].slice(-32);
+      }
+    };
+
     const optimisticDescription = travel.preview.description.trim();
     const authoritativeDescription = location.description.trim();
+    let authoritativeRoomDetails: string;
     if (authoritativeDescription === optimisticDescription) {
-      // The eagerly loaded static room description is already in the terminal.
+      authoritativeRoomDetails = "";
     } else if (authoritativeDescription.startsWith(`${optimisticDescription}\n\n`)) {
-      const roomDetails = authoritativeDescription.slice(optimisticDescription.length).trim();
-      if (roomDetails) addEntry("narration", roomDetails, false, location.locationId);
+      authoritativeRoomDetails = authoritativeDescription.slice(optimisticDescription.length).trim();
     } else {
       rollbackOptimisticTravel(travel.commandId);
       addDefaultLook(location);
+      appendMissingNpcDepartures();
       return true;
     }
+
+    const previewRoomDetails = travel.preview.roomDetails?.trim() ?? "";
+    if (authoritativeRoomDetails !== previewRoomDetails) {
+      if (travel.roomDetailsEntryId) {
+        setEntries((current) => current.filter((entry) => entry.id !== travel.roomDetailsEntryId));
+      }
+      if (authoritativeRoomDetails) {
+        addEntry("narration", authoritativeRoomDetails, false, location.locationId);
+      }
+    }
+    appendMissingNpcDepartures();
 
     optimisticTravelRef.current = null;
     setOptimisticTravel(null);
     setPending(null);
     return true;
-  }, [addDefaultLook, addEntry, rollbackOptimisticTravel, setPending]);
+  }, [addDefaultLook, addEntry, rollbackOptimisticTravel, setPending, worldInstanceId]);
   useEffect(() => {
     const travel = optimisticTravelRef.current;
     const location = snapshot?.location;
@@ -1723,12 +1811,18 @@ export function WorldClient({
     });
     if (exit.destinationPreview && !existingOptimisticTravel) {
       const entryIds = addDefaultLook(exit.destinationPreview);
+      const roomDetails = exit.destinationPreview.roomDetails?.trim();
+      const roomDetailsEntryId = roomDetails
+        ? addEntry("narration", roomDetails, false, exit.destinationPreview.locationId)
+        : undefined;
+      if (roomDetailsEntryId) entryIds.push(roomDetailsEntryId);
       const travel: OptimisticTravel = {
         commandId,
         exitId: exit.id,
         fromLocationId,
         preview: exit.destinationPreview,
         entryIds,
+        ...(roomDetailsEntryId ? { roomDetailsEntryId } : {}),
       };
       optimisticTravelRef.current = travel;
       setOptimisticTravel(travel);

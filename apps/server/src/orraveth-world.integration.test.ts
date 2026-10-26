@@ -649,6 +649,16 @@ describe('Orraveth Bellwold settlement', () => {
             description: expect.stringContaining('Stalls and handcarts'),
           }),
         }),
+        expect.objectContaining({
+          id: 'south-common-to-blackwater-forge',
+          destinationPreview: expect.objectContaining({
+            locationId: 'blackwater-forge',
+            roomDetails: expect.stringContaining('Darric Holt is here, repairing a farm fitting at the forge.'),
+            npcs: expect.arrayContaining([
+              expect.objectContaining({ id: 'darric-holt', name: 'Darric Holt', mobile: false }),
+            ]),
+          }),
+        }),
       ]));
       expect(projection.npcs.map(({ id }) => id)).toEqual(
         expect.arrayContaining(['linnet-reed', 'taren-voss']),

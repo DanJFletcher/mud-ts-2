@@ -721,6 +721,13 @@ export const LocationTravelPreviewSchema = z.object({
   shortName: z.string().min(1).max(160),
   qualifiedName: z.string().min(1).max(400),
   description: z.string(),
+  /** Current, viewer-safe room contents; these may change before arrival. */
+  roomDetails: z.string().max(20_000).optional(),
+  npcs: z.array(z.object({
+    id: IdSchema,
+    name: z.string().min(1).max(120),
+    mobile: z.boolean(),
+  }).strict()).max(200).optional(),
 }).strict();
 
 export const ExitProjectionSchema = z.object({
@@ -729,7 +736,7 @@ export const ExitProjectionSchema = z.object({
   direction: z.string().optional(),
   available: z.boolean(),
   roadId: IdSchema.optional(),
-  /** Static, safe-to-present destination text for responsive travel UI. */
+  /** Safe-to-present, non-authoritative destination projection for responsive travel UI. */
   destinationPreview: LocationTravelPreviewSchema.optional(),
 }).strict();
 

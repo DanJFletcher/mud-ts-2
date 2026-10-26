@@ -39,3 +39,7 @@ description: User direction for MUDD's gameplay UI, navigation, and mobile prior
 **Why:** The user asked for Vitals, Items, Equipment, and Stats tabs in Info based on their mockups, while Field notes remains part of Info and character stats must reflect authoritative engine projections.
 
 **How to apply:** Keep these character and journal views under Info. Do not invent stamina or attributes absent from the server projection; make unsupported values explicit.
+
+**Why:** The user wants known NPCs and items from the next room visible immediately during travel, while preserving the server as the authority when room contents change.
+
+**How to apply:** Treat adjacent-room contents as provisional terminal text only. Keep gameplay actions unavailable until the server confirms arrival, replace stale room details from the authoritative projection, and avoid duplicating movement announcements already received through room chat.

@@ -19,6 +19,39 @@ function captureNpcStateCapability() {
 }
 
 describe('autonomous NPC position projection cache', () => {
+  it('projects several rooms from one batched movement-history read', async () => {
+    const readStreams = vi.fn(async () => new Map());
+    const capability = captureNpcStateCapability();
+    const context = {
+      worldInstanceId: 'npc-multi-room-test',
+      world: {
+        locations: [{
+          id: 'room-a',
+          npcs: [{
+            id: 'walker',
+            name: 'Walker',
+            description: 'A traveler.',
+            movement: { intervalMs: 60_000 },
+          }],
+        }, {
+          id: 'room-b',
+          npcs: [{
+            id: 'resident',
+            name: 'Resident',
+            description: 'A local.',
+          }],
+        }],
+      },
+      store: { readStreams },
+    } as never;
+
+    const projected = await capability.atLocations(context, ['room-a', 'room-b', 'room-a']);
+
+    expect(readStreams).toHaveBeenCalledTimes(1);
+    expect(projected.get('room-a')?.map(({ id }) => id)).toEqual(['walker']);
+    expect(projected.get('room-b')?.map(({ id }) => id)).toEqual(['resident']);
+  });
+
   it('reuses unchanged positions but replays when the authoritative revision changes', async () => {
     const npcId = 'test-wandering-npc';
     const streamId = autonomousNpcStreamId(npcId);

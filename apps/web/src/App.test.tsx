@@ -249,6 +249,8 @@ function currentLocation(includeNpcDescriptions = false) {
         shortName: 'Glasswater Bridge',
         qualifiedName: 'Glasswater Bridge',
         description: 'A stone bridge crosses clear water.',
+        roomDetails: 'A Bridge Watcher is here, eyes alert. A brass token lies here.',
+        npcs: [{ id: 'bridge-watcher', name: 'Bridge Watcher', mobile: true }],
       },
     }] : room === 'bridge' ? [{
       id: 'bridge-to-clearing',
@@ -1175,12 +1177,25 @@ describe('single-character world session client', () => {
 
   it('shows the destination room immediately without request-status messages', async () => {
     const original = apiFetch.getMockImplementation()!;
+    let departureEvents: TestRoomChatMessage[] = [];
     let releaseMove!: (response: Response) => void;
     apiFetch.mockImplementation((path, init) => {
       if (path === '/api/commands' && init?.method === 'POST') {
         const body = JSON.parse(String(init.body)) as { type?: string };
         if (body.type === 'character.move') {
           return new Promise<Response>((resolve) => { releaseMove = resolve; });
+        }
+      }
+      if (path.startsWith('/api/chat') && (!init?.method || init.method === 'GET')) {
+        const url = new URL(path, 'http://mudd.test');
+        if (url.searchParams.get('roomId') === 'glasswater-bridge') {
+          const afterId = Number(url.searchParams.get('afterId') ?? 0);
+          return json({
+            roomId: 'glasswater-bridge',
+            messages: [],
+            terminalEvents: departureEvents.filter((event) => event.id > afterId),
+            cursor: 0,
+          });
         }
       }
       return original(path, init);
@@ -1192,6 +1207,7 @@ describe('single-character world session client', () => {
 
     expect(await screen.findByRole('heading', { name: 'Glasswater Bridge' })).toBeVisible();
     expect(screen.getByText('A stone bridge crosses clear water.')).toBeVisible();
+    expect(screen.getByText('A Bridge Watcher is here, eyes alert. A brass token lies here.')).toBeVisible();
     expect(screen.queryByText('Traveling north…')).not.toBeInTheDocument();
     expect(screen.queryByText('The move was accepted. Waiting for the current room to update.')).not.toBeInTheDocument();
     const command = apiFetch.mock.calls.find(([path, init]) =>
@@ -1204,7 +1220,24 @@ describe('single-character world session client', () => {
     });
 
     expect(await screen.findByRole('heading', { name: 'Glasswater Bridge' })).toBeInTheDocument();
+    expect(await screen.findByText('Bridge Watcher leaves the room.')).toBeVisible();
+    expect(screen.queryByText('A Bridge Watcher is here, eyes alert. A brass token lies here.')).not.toBeInTheDocument();
     expect(screen.queryByText('Traveling north…')).not.toBeInTheDocument();
+
+    departureEvents = [{
+      id: 1,
+      roomId: 'glasswater-bridge',
+      speakerType: 'npc',
+      speakerId: 'bridge-watcher',
+      speakerName: 'Bridge Watcher',
+      text: 'A watcher leaves toward the south, eyes alert.',
+      createdAt: '2026-10-26T12:00:00.000Z',
+    }];
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(await screen.findByText('Bridge Watcher: A watcher leaves toward the south, eyes alert.')).toBeVisible();
+    expect(screen.queryByText('Bridge Watcher leaves the room.')).not.toBeInTheDocument();
   });
 
   it('uses the movement response projection without fetching a second game snapshot', async () => {
