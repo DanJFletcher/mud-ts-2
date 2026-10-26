@@ -282,6 +282,56 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     expect(await store.readStream(worldInstanceId, resourceStream)).toHaveLength(1);
   });
 
+  it('checks guarded heads and commits multiple companion streams atomically across retries', async () => {
+    const primaryStream = `guarded-primary-${randomUUID()}`;
+    const observedStream = `guarded-observed-${randomUUID()}`;
+    const companionStreams = [0, 1].map(() => `guarded-companion-${randomUUID()}`);
+    expect((await store.append({
+      worldInstanceId,
+      streamId: observedStream,
+      actorId: playerId,
+      commandId: `guard-seed-${randomUUID()}`,
+      payloadHash: randomUUID(),
+      expectedVersion: 0,
+      events: [{ type: 'audit.guard_seed', version: 1, payload: { current: true } }],
+    })).kind).toBe('committed');
+
+    const request: AppendRequest = {
+      worldInstanceId,
+      streamId: primaryStream,
+      actorId: playerId,
+      commandId: `guarded-append-${randomUUID()}`,
+      payloadHash: randomUUID(),
+      expectedVersion: 0,
+      events: [{ type: 'audit.guarded_primary', version: 1, payload: { committed: true } }],
+      guards: [{ streamId: observedStream, expectedVersion: 1 }],
+      companions: companionStreams.map((streamId, index) => ({
+        streamId,
+        expectedVersion: 0,
+        events: [{ type: 'audit.guarded_companion', version: 1, payload: { index } }],
+      })),
+    };
+    const retries = await Promise.all([store.append(request), store.append(request)]);
+    expect(retries.map((result) => result.kind).sort()).toEqual(['committed', 'duplicate']);
+    expect(await store.readStream(worldInstanceId, primaryStream)).toHaveLength(1);
+    const companionEvents = await Promise.all(companionStreams.map((streamId) =>
+      store.readStream(worldInstanceId, streamId)));
+    expect(companionEvents.map((events) => events.length)).toEqual([1, 1]);
+    expect(companionEvents.map((events) => events[0]?.payload.index)).toEqual([0, 1]);
+
+    expect((await store.append({
+      ...request,
+      commandId: `guarded-stale-${randomUUID()}`,
+      payloadHash: randomUUID(),
+      expectedVersion: 1,
+      guards: [{ streamId: observedStream, expectedVersion: 0 }],
+    })).kind).toBe('conflict');
+    expect(await store.readStream(worldInstanceId, primaryStream)).toHaveLength(1);
+    const afterConflict = await Promise.all(companionStreams.map((streamId) =>
+      store.readStream(worldInstanceId, streamId)));
+    expect(afterConflict.map((events) => events.length)).toEqual([1, 1]);
+  });
+
   it('commits event effects atomically, retries them after restart, and deduplicates their output', async () => {
     const { durableEffects } = await import('./db/schema.js');
     const commandId = `effect-command-${randomUUID()}`;

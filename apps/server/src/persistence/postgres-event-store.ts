@@ -427,23 +427,33 @@ export class PostgresEventStore implements EventStorePort {
       if (new Set(writeIds).size !== writeIds.length) throw new Error('Duplicate atomic write stream.');
       const checks = [...companions, ...(request.guards ?? [])];
       // A deterministic lock order avoids deadlocks across encounter/character writers.
-      for (const streamId of [...new Set([...writeIds, ...checks.map((check) => check.streamId)])].sort()) {
-        await tx.execute(sql`
-          SELECT pg_advisory_xact_lock(hashtext(${request.worldInstanceId}), hashtext(${streamId}))`);
-      }
+      const lockedStreamIds = [...new Set([...writeIds, ...checks.map((check) => check.streamId)])].sort();
+      await tx.execute(sql`
+        WITH ordered_streams AS MATERIALIZED (
+          SELECT stream_id
+          FROM unnest(${lockedStreamIds}::text[]) AS streams(stream_id)
+          ORDER BY stream_id
+        )
+        SELECT pg_advisory_xact_lock(hashtext(${request.worldInstanceId}), hashtext(stream_id))
+        FROM ordered_streams
+        ORDER BY stream_id`);
+
+      // All these heads are authoritative after their advisory locks are held.
+      const headRows = await tx.select({
+        streamId: gameEvents.streamId,
+        revision: sql<number>`max(${gameEvents.streamVersion})`,
+      }).from(gameEvents).where(and(
+        eq(gameEvents.worldInstanceId, request.worldInstanceId),
+        inArray(gameEvents.streamId, lockedStreamIds),
+      )).groupBy(gameEvents.streamId);
+      const revisions = new Map(headRows.map((head) => [head.streamId, Number(head.revision)]));
       for (const check of checks) {
-        const [observed] = await tx.select({ revision: gameEvents.streamVersion }).from(gameEvents)
-          .where(and(eq(gameEvents.worldInstanceId, request.worldInstanceId), eq(gameEvents.streamId, check.streamId)))
-          .orderBy(desc(gameEvents.streamVersion)).limit(1);
-        if ((observed?.revision ?? 0) !== check.expectedVersion) {
+        if ((revisions.get(check.streamId) ?? 0) !== check.expectedVersion) {
           return { kind: 'conflict', streamId: request.streamId, events: [],
             receipt: conflict(request.commandId, 'An observed stream changed. Refresh and try again.') };
         }
       }
-      const [last] = await tx.select({ revision: gameEvents.streamVersion }).from(gameEvents)
-        .where(and(eq(gameEvents.worldInstanceId, request.worldInstanceId), eq(gameEvents.streamId, request.streamId)))
-        .orderBy(desc(gameEvents.streamVersion)).limit(1);
-      const currentRevision = last?.revision ?? 0;
+      const currentRevision = revisions.get(request.streamId) ?? 0;
       if (currentRevision !== request.expectedVersion) {
         return {
           kind: 'conflict',
@@ -468,17 +478,23 @@ export class PostgresEventStore implements EventStorePort {
       }));
 
       if (appended.length === 0) throw new Error('A command must append at least one event.');
-      for (const write of companions) {
+      const companionRows = companions.flatMap((write) => {
         if (!write.events.length) throw new Error('An atomic companion write must contain events.');
-        await tx.insert(gameEvents).values(write.events.map((event, index) => ({
-          eventId: globalThis.crypto.randomUUID(), worldInstanceId: request.worldInstanceId,
-          streamId: write.streamId, streamVersion: write.expectedVersion + index + 1,
-          type: event.type, contractVersion: event.version, payload: event.payload,
-          causationCommandId: request.commandId, actorId: request.actorId,
-          occurredAt: committedAt, tick: write.expectedVersion + index + 1,
-        })));
-      }
-      await tx.insert(gameEvents).values(appended.map((event) => ({
+        return write.events.map((event, index) => ({
+          eventId: globalThis.crypto.randomUUID(),
+          worldInstanceId: request.worldInstanceId,
+          streamId: write.streamId,
+          streamVersion: write.expectedVersion + index + 1,
+          type: event.type,
+          contractVersion: event.version,
+          payload: event.payload,
+          causationCommandId: request.commandId,
+          actorId: request.actorId,
+          occurredAt: committedAt,
+          tick: write.expectedVersion + index + 1,
+        }));
+      });
+      const primaryRows = appended.map((event) => ({
         eventId: event.eventId,
         worldInstanceId: event.worldInstanceId,
         streamId: event.streamId,
@@ -490,7 +506,8 @@ export class PostgresEventStore implements EventStorePort {
         actorId: event.actorId,
         occurredAt: committedAt,
         tick: event.tick,
-      })));
+      }));
+      await tx.insert(gameEvents).values([...companionRows, ...primaryRows]);
 
       if (request.effects?.length) {
         await tx.insert(durableEffects).values(request.effects.map((effect, index) => ({
