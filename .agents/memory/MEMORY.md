@@ -22,3 +22,4 @@
 - [Database tracing contexts](database-tracing-context.md) — Consume lazy database thenables inside their async measurement context so operation-level timings stay attributable.
 - [Postgres command idempotency](postgres-command-idempotency.md) — Keep receipt lookup after the advisory-lock statement; a combined query can retain a pre-lock snapshot.
 - [Ephemeral PostgreSQL tests](ephemeral-postgres-tests.md) — In the Nix dev container, point temporary PostgreSQL sockets at a writable temp directory.
+- [Performance benchmarking](performance-benchmarking.md) — Use matched development traces for iterative performance work; avoid repeated production publishes.
