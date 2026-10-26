@@ -17,6 +17,7 @@ import {
   CharacterSharedItemRelinquishedEventSchema,
   CharacterItemTakenEventSchema,
   CharacterItemDroppedEventSchema,
+  CharacterItemStoredEventSchema,
   CharacterItemUsedEventSchema,
   CharacterEquipmentChangedEventSchema,
   CharacterObjectReadEventSchema,
@@ -29,6 +30,7 @@ import {
   CreateCharacterCommandSchema,
   TakeCharacterItemCommandSchema,
   DropCharacterItemCommandSchema,
+  PutCharacterItemCommandSchema,
   EquipCharacterItemCommandSchema,
   UnequipCharacterItemCommandSchema,
   UseCharacterItemCommandSchema,
@@ -459,7 +461,7 @@ export const characterPlugin: EnginePlugin = {
       if (!location) throw new Error('The character location is not present in this world version.');
       const sharedState = await worldItems.load(context);
       const sharedItem = sharedState.items.find((entry) => entry.worldItemId === command.payload.itemId);
-      if (sharedItem) {
+      if (sharedItem && sharedItem.locationId !== null) {
         if (sharedItem.locationId !== character.locationId) {
           throw new RuleViolationError('That item is not available to take here.');
         }
@@ -531,6 +533,8 @@ export const characterPlugin: EnginePlugin = {
         ? trackedItem.locationId === character.locationId ? trackedItem.item : undefined
         : (location.takeables ?? []).find((candidate) => candidate.id === command.payload.itemId) ?? containerItem;
       if (!item) throw new RuleViolationError('That item is not available to take here.');
+      const sourceContainerId = trackedItem?.containerId ??
+        (containerItem ? authoredContainer?.id : undefined);
       const questBound = item.questBound === true || context.world.locations.some((worldLocation) =>
         worldLocation.takeables?.some((candidate) => candidate.id === item.id && candidate.questBound === true),
       );
@@ -538,7 +542,7 @@ export const characterPlugin: EnginePlugin = {
       const payload = {
         characterId: character.characterId,
         locationId: character.locationId,
-        ...(containerItem && authoredContainer ? { containerId: authoredContainer.id } : {}),
+        ...(sourceContainerId ? { containerId: sourceContainerId } : {}),
         item: {
           id: inventoryItem.id,
           ...(inventoryItem.typeId ? { typeId: inventoryItem.typeId } : {}),
@@ -610,6 +614,65 @@ export const characterPlugin: EnginePlugin = {
           version: 1,
           payload: { characterId: character.characterId, locationId: character.locationId, item },
         }],
+      };
+    });
+
+    registerCommand('character.put', PutCharacterItemCommandSchema, async (command, context) => {
+      const character = await state.load(context, command.characterId);
+      if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
+      assertCharacterAlive(character);
+      assertCharacterStanding(character);
+      const item = character.inventory.find((candidate) => candidate.id === command.payload.itemId);
+      if (!item) throw new RuleViolationError('You are not carrying that item.');
+      const questBound = item.questBound === true || context.world.locations.some((worldLocation) =>
+        worldLocation.takeables?.some((candidate) => candidate.id === item.id && candidate.questBound === true) ||
+        worldLocation.containers?.some((container) =>
+          container.contents.some((candidate) => candidate.id === item.id && candidate.questBound === true),
+        ),
+      );
+      if (questBound) throw new RuleViolationError('Quest items cannot be put away.');
+      if (character.equipment.weaponItemId === item.id || character.equipment.armorItemId === item.id) {
+        throw new RuleViolationError('Unequip that item before putting it away.');
+      }
+      const itemLocation = character.itemLocations.find((entry) => entry.item.id === item.id);
+      if (!itemLocation || itemLocation.locationId !== null) {
+        throw new RuleViolationError('That item is not available to put away.');
+      }
+      const location = context.world.locations.find((candidate) => candidate.id === character.locationId);
+      if (!location) throw new Error('The character location is not present in this world version.');
+      const authoredContainer = (location.containers ?? []).some((container) =>
+        container.id === command.payload.containerId,
+      );
+      let sharedState: Awaited<ReturnType<WorldItemsStateCapability['load']>> | undefined;
+      if (item.sharedItemId || !authoredContainer) {
+        sharedState = await worldItems.load(context);
+      }
+      if (item.sharedItemId) {
+        const sharedItem = sharedState?.items.find((candidate) =>
+          candidate.worldItemId === item.sharedItemId,
+        );
+        if (sharedItem?.holderCharacterId !== character.characterId) {
+          throw new RuleViolationError('That shared item is not currently held by this character.');
+        }
+      }
+      const isCurrentCorpse = sharedState?.corpses.some((corpse) =>
+        corpse.corpseId === command.payload.containerId &&
+        corpse.locationId === character.locationId,
+      ) ?? false;
+      if (!authoredContainer && !isCurrentCorpse) {
+        throw new RuleViolationError('That container is not here.');
+      }
+      const payload = {
+        characterId: character.characterId,
+        locationId: character.locationId,
+        containerId: command.payload.containerId,
+        item,
+      };
+      CharacterItemStoredEventSchema.shape.payload.parse(payload);
+      return {
+        streamId: command.characterId,
+        expectedVersion: command.expectedVersion,
+        events: [{ type: 'character.item_stored', version: 1, payload }],
       };
     });
 
@@ -857,17 +920,30 @@ export const characterPlugin: EnginePlugin = {
                 description: `${corpse.currencyAmount} ${currencyName} left by ${corpse.opponentName}.`,
               });
             }
+            contents.push(...(characterItemsByLocation.get(room.id) ?? [])
+              .filter((entry) => entry.containerId === corpse.corpseId)
+              .map(({ item }) => ({
+                id: item.id,
+                label: item.label,
+                description: item.description,
+              })));
             return { corpse, contents };
           });
         const visibleContainers = (room.containers ?? []).map((container) => ({
           ...container,
-          contents: container.contents.filter((item) =>
-            !claimedContainerItemIds.has(item.id) && !trackedItemIds.has(item.id),
-          ),
+          contents: [
+            ...container.contents.filter((item) =>
+              !claimedContainerItemIds.has(item.id) && !trackedItemIds.has(item.id),
+            ),
+            ...(characterItemsByLocation.get(room.id) ?? [])
+              .filter((entry) => entry.containerId === container.id)
+              .map(({ item }) => item),
+          ],
         }));
         const roomTakeables = [
           ...(room.takeables ?? []).filter((item) => !trackedItemIds.has(item.id)),
           ...(characterItemsByLocation.get(room.id) ?? [])
+            .filter((entry) => !entry.containerId)
             .map(({ item }) => item),
         ];
         const roomItemDescriptions = roomTakeables.flatMap((item) => {
@@ -1090,11 +1166,19 @@ export const characterPlugin: EnginePlugin = {
       const location = context.world.locations.find((item) => item.id === character.locationId);
       if (!location) throw new Error('The character location is not present in this world version.');
       const trackedItemIds = new Set(character.itemLocations.map((entry) => entry.item.id));
+      const characterItemsAtLocation = character.itemLocations.filter((entry) =>
+        entry.locationId === location.id,
+      );
       const visibleContainers = (location.containers ?? []).map((container) => ({
         ...container,
-        contents: container.contents.filter((item) =>
-          !character.claimedContainerItemIds.includes(item.id) && !trackedItemIds.has(item.id),
-        ),
+        contents: [
+          ...container.contents.filter((item) =>
+            !character.claimedContainerItemIds.includes(item.id) && !trackedItemIds.has(item.id),
+          ),
+          ...characterItemsAtLocation
+            .filter((entry) => entry.containerId === container.id)
+            .map(({ item }) => item),
+        ],
       }));
       const roomContainers = visibleContainers.map((container) => ({
         id: container.id,
@@ -1127,6 +1211,13 @@ export const characterPlugin: EnginePlugin = {
               description: `${currencyAmount} ${currencyName} left by ${opponentName}.`,
             });
           }
+          contents.push(...characterItemsAtLocation
+            .filter((entry) => entry.containerId === corpseId)
+            .map(({ item }) => ({
+              id: item.id,
+              label: item.label,
+              description: item.description,
+            })));
           return {
             id: corpseId,
             label,
@@ -1148,8 +1239,9 @@ export const characterPlugin: EnginePlugin = {
         ...roomContainers,
         ...roomCorpseObjects,
         ...visibleContainers.flatMap((container) => container.contents),
-        ...character.itemLocations
-          .filter((entry) => entry.locationId === location.id)
+        ...roomCorpses.flatMap((corpse) => corpse.contents),
+        ...characterItemsAtLocation
+          .filter((entry) => !entry.containerId)
           .map(({ item }) => item),
         ...sharedItems.map(({ worldItemId, item }) => ({
           ...item,

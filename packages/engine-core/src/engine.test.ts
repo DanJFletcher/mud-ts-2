@@ -1171,16 +1171,79 @@ describe('MUDD engine host', () => {
       value: { objects: expect.arrayContaining([expect.objectContaining({ id: 'satchel-healing-draught', takeable: true })]) },
     });
 
+    const invalidPut = await engine.dispatch({
+      type: 'character.put',
+      version: 1,
+      commandId: 'container-put-remote-token',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: firstId,
+      expectedVersion: 2,
+      payload: { itemId: 'satchel-healing-draught', containerId: 'not-here' },
+    }, session);
+    expect(invalidPut.receipt).toMatchObject({ ok: false, code: 'RULE_VIOLATION' });
+
+    const putAway = await engine.dispatch({
+      type: 'character.put',
+      version: 1,
+      commandId: 'container-put-token',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: firstId,
+      expectedVersion: 2,
+      payload: { itemId: 'satchel-healing-draught', containerId: 'mossgate-satchel' },
+    }, session);
+    expect(putAway.receipt).toMatchObject({ ok: true, newAggregateVersion: 3 });
+    expect((await store.readStream(DEMO_WORLD_INSTANCE_ID, firstId)).at(-1))
+      .toMatchObject({
+        type: 'character.item_stored',
+        payload: { containerId: 'mossgate-satchel', item: { id: 'satchel-healing-draught' } },
+      });
+    const firstAfterPut = await engine.query({
+      type: 'location.describe',
+      version: 1,
+      queryId: 'container-first-after-put',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: firstId,
+      payload: {},
+    }, session);
+    expect(firstAfterPut).toMatchObject({
+      ok: true,
+      value: {
+        description: expect.stringContaining('Traveler’s satchel is here. It contains Healing draught.'),
+        objects: expect.arrayContaining([
+          expect.objectContaining({
+            id: 'satchel-healing-draught',
+            takeable: true,
+            containerId: 'mossgate-satchel',
+          }),
+        ]),
+      },
+    });
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, firstId))?.inventory)
+      .toHaveLength(0);
+
+    const retrieved = await engine.dispatch({
+      type: 'character.take',
+      version: 1,
+      commandId: 'container-retrieve-token',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: firstId,
+      expectedVersion: 3,
+      payload: { itemId: 'satchel-healing-draught' },
+    }, session);
+    expect(retrieved.receipt).toMatchObject({ ok: true, newAggregateVersion: 4 });
+    expect((await store.readStream(DEMO_WORLD_INSTANCE_ID, firstId)).at(-1)?.payload)
+      .toMatchObject({ containerId: 'mossgate-satchel', item: { id: 'satchel-healing-draught' } });
+
     const dropped = await engine.dispatch({
       type: 'character.drop',
       version: 1,
       commandId: 'container-drop-token',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId: firstId,
-      expectedVersion: 2,
+      expectedVersion: 4,
       payload: { itemId: 'satchel-healing-draught' },
     }, session);
-    expect(dropped.receipt).toMatchObject({ ok: true, newAggregateVersion: 3 });
+    expect(dropped.receipt).toMatchObject({ ok: true, newAggregateVersion: 5 });
     const firstAfterDrop = await engine.query({
       type: 'location.describe',
       version: 1,

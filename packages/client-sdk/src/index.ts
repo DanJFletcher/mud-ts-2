@@ -21,6 +21,7 @@ import {
   RoadStepCommandSchema,
   TakeCharacterItemCommandSchema,
   DropCharacterItemCommandSchema,
+  PutCharacterItemCommandSchema,
   EquipCharacterItemCommandSchema,
   UnequipCharacterItemCommandSchema,
   UseCharacterItemCommandSchema,
@@ -887,6 +888,25 @@ export class MuddHttpClient {
       characterId,
       expectedVersion,
       payload: { itemId },
+    });
+    return this.send(command);
+  }
+
+  async put(
+    characterId: string,
+    itemId: string,
+    containerId: string,
+    expectedVersion: number,
+    commandId = crypto.randomUUID(),
+  ): Promise<CommandResponse> {
+    const command = PutCharacterItemCommandSchema.parse({
+      type: 'character.put',
+      version: 1,
+      commandId,
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      expectedVersion,
+      payload: { itemId, containerId },
     });
     return this.send(command);
   }

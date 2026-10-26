@@ -2226,7 +2226,9 @@ describe('single-character world session client', () => {
     fireEvent.submit(commandInput.closest('form')!);
     await screen.findByText('Commands');
     expect(history).toHaveTextContent('> help');
-    expect(history).toHaveTextContent('take <item> | take all — Pick up one or all items in the current room.');
+    expect(history).toHaveTextContent('get <item> | get <item> <container> — Take an item from the room or a container; alias of take.');
+    expect(history).toHaveTextContent('take <item> | take <item> <container> | take all — Pick up items from the room or a container.');
+    expect(history).toHaveTextContent('put <item> <container> — Store a carried item in a container here.');
     expect(history).toHaveTextContent('talk <npc> [about <topic>] — Speak privately with someone in the current room.');
     expect(history).toHaveTextContent('use <item> on <target> | use <healing item> | use <fishing rod> — Use a room item, restore health, or fish at a marked spot.');
     expect(history).toHaveTextContent('Quick actions include available movement, item, equipment, merchant, dialogue, and combat actions.');
@@ -2806,6 +2808,138 @@ describe('single-character world session client', () => {
       path === '/api/commands' &&
       JSON.parse(String(init?.body ?? '{}')).type === 'character.drop'
     )).toBe(false);
+  });
+
+  it('treats get as an alias of take', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const input = screen.getByRole('textbox', { name: 'Enter a command' });
+    fireEvent.change(input, { target: { value: 'get stone' } });
+    fireEvent.submit(input.closest('form')!);
+
+    await screen.findByText('You pick up the loose stone.');
+    const request = apiFetch.mock.calls.find(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'character.take',
+    );
+    expect(JSON.parse(String(request?.[1]?.body))).toMatchObject({
+      type: 'character.take',
+      payload: { itemId: 'mossgate-loose-stone' },
+    });
+  });
+
+  it('puts a carried item into a named container and gets it back', async () => {
+    const originalFetch = apiFetch.getMockImplementation()!;
+    const fixtureItem = {
+      id: 'fixture-stone',
+      label: 'test stone',
+      description: 'A small test stone.',
+    };
+    const fixtureContainer = {
+      id: 'fixture-sack',
+      label: 'test sack',
+      description: 'A small test sack.',
+      readable: false,
+      takeable: false,
+      containerKind: 'sack',
+      contents: [],
+    };
+    let stored = false;
+    const withContainer = (location: Record<string, unknown>) => {
+      const existing = Array.isArray(location.objects)
+        ? location.objects as Array<Record<string, unknown>>
+        : [];
+      const objects = existing.filter((object) =>
+        object.id !== fixtureContainer.id && object.id !== fixtureItem.id,
+      );
+      objects.push({
+        ...fixtureContainer,
+        contents: stored ? [fixtureItem] : [],
+      });
+      if (stored) {
+        objects.push({
+          ...fixtureItem,
+          readable: false,
+          takeable: true,
+          containerId: fixtureContainer.id,
+        });
+      }
+      return { ...location, objects };
+    };
+    apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/api/commands' && init?.body) {
+        const command = JSON.parse(String(init.body)) as {
+          type?: string;
+          commandId?: string;
+          payload?: { itemId?: string; containerId?: string };
+        };
+        if (command.type === 'character.put' || (
+          command.type === 'character.take' && command.payload?.itemId === fixtureItem.id
+        )) {
+          stored = command.type === 'character.put';
+          revision += 1;
+          return json({
+            receipt: {
+              ok: true,
+              commandId: command.commandId,
+              eventIds: [],
+              newAggregateVersion: revision,
+            },
+            events: [],
+          });
+        }
+      }
+      const response = await originalFetch(path, init);
+      if (path === '/api/game') {
+        const snapshot = await response.json() as {
+          character: { inventory: Array<{ id: string; label: string; description: string }> };
+          location: Record<string, unknown>;
+        };
+        const inventory = snapshot.character.inventory.filter((item) => item.id !== fixtureItem.id);
+        if (!stored) inventory.push(fixtureItem);
+        return json({
+          ...snapshot,
+          character: { ...snapshot.character, inventory },
+          location: withContainer(snapshot.location),
+        });
+      }
+      if (path === '/api/queries' && init?.body) {
+        const query = JSON.parse(String(init.body)) as { type?: string };
+        if (query.type === 'location.describe') {
+          const result = await response.json() as {
+            ok: boolean;
+            value: Record<string, unknown>;
+          };
+          return json({ ...result, value: withContainer(result.value) });
+        }
+      }
+      return response;
+    });
+
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const input = screen.getByRole('textbox', { name: 'Enter a command' });
+    fireEvent.change(input, { target: { value: 'put test stone test sack' } });
+    fireEvent.submit(input.closest('form')!);
+    await screen.findByText('You put the test stone in the test sack.');
+    const putRequest = apiFetch.mock.calls.find(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'character.put',
+    );
+    expect(JSON.parse(String(putRequest?.[1]?.body))).toMatchObject({
+      type: 'character.put',
+      payload: { itemId: fixtureItem.id, containerId: fixtureContainer.id },
+    });
+
+    const inputAfterPut = screen.getByRole('textbox', { name: 'Enter a command' });
+    fireEvent.change(inputAfterPut, { target: { value: 'get test stone test sack' } });
+    fireEvent.submit(inputAfterPut.closest('form')!);
+    await screen.findByText('You pick up the test stone.');
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'character.take' &&
+      JSON.parse(String(init?.body ?? '{}')).payload?.itemId === fixtureItem.id,
+    )).toBe(true);
   });
 
   it('inspects carried items from the Items tab and by command, including after leaving their room', async () => {

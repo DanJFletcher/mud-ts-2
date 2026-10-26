@@ -154,6 +154,36 @@ function findObjectMatches<T extends { id: string; label: string }>(
     : objects.filter((object) => object.label.toLocaleLowerCase().includes(normalizedTarget));
 }
 
+function findItemContainerMatches<
+  TItem extends { id: string; label: string; containerId?: string },
+  TContainer extends { id: string; label: string },
+>(
+  target: string,
+  items: readonly TItem[],
+  containers: readonly TContainer[],
+  requireItemInsideContainer = false,
+): Array<{ item: TItem; container: TContainer }> {
+  const words = target
+    .trim()
+    .replace(/^(?:the|a|an)\s+/i, "")
+    .replace(/\s+(?:from|in|into)\s+/gi, " ")
+    .replace(/\s+(?:the|a|an)\s+/gi, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+  const matches = new Map<string, { item: TItem; container: TContainer }>();
+  for (let itemWordCount = 1; itemWordCount < words.length; itemWordCount += 1) {
+    const itemTarget = words.slice(0, itemWordCount).join(" ");
+    const containerTarget = words.slice(itemWordCount).join(" ");
+    for (const item of findObjectMatches(itemTarget, items)) {
+      for (const container of findObjectMatches(containerTarget, containers)) {
+        if (requireItemInsideContainer && item.containerId !== container.id) continue;
+        matches.set(`${item.id}:${container.id}`, { item, container });
+      }
+    }
+  }
+  return [...matches.values()];
+}
+
 function findNpcMatches(target: string, npcs: readonly VisibleNpc[]) {
   const normalizedTarget = target.toLocaleLowerCase();
   const exactMatch = npcs.find((npc) =>
@@ -231,8 +261,16 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
     "Read written text in this room or open its daily bulletin.",
   ],
   take: [
-    "Usage: take <item> | take all",
-    "Pick up an item in the current room, or take all available items there.",
+    "Usage: take <item> | take <item> <container> | take all",
+    "Pick up an item in the current room or one of its containers; get is an alias.",
+  ],
+  get: [
+    "Usage: get <item> | get <item> <container>",
+    "Take an item from the room or the named container. Get is an alias of take.",
+  ],
+  put: [
+    "Usage: put <item> <container>",
+    "Store a carried item in a container here. Contents you store are saved for your character.",
   ],
   equip: [
     "Usage: equip <item>",
@@ -293,7 +331,9 @@ const GENERAL_HELP = [
   "look [at] <object> — Describe the room or inspect an object here or in your inventory.",
   "go <direction> — Travel through an available exit.",
   "read <object> | read bulletin — Read room text or open the local daily bulletin.",
-  "take <item> | take all — Pick up one or all items in the current room.",
+  "get <item> | get <item> <container> — Take an item from the room or a container; alias of take.",
+  "take <item> | take <item> <container> | take all — Pick up items from the room or a container.",
+  "put <item> <container> — Store a carried item in a container here.",
   "equip <item> — Equip a carried weapon or armor item.",
   "unequip <weapon|armor> — Remove equipped gear from a slot.",
   "use <item> on <target> | use <healing item> | use <fishing rod> — Use a room item, restore health, or fish at a marked spot.",
@@ -377,7 +417,7 @@ export function WorldClient({
   teamPollingActive.current = Boolean(partyInfo?.party || teamCombatInfo?.encounter?.status === "active");
   const [presenceStale, setPresenceStale] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [pending, setPendingState] = useState<"look" | "read" | "take" | "use" | "drop" | "move" | "talk" | "shop" | "buy" | "combat" | "rest" | "stand" | "equip" | "party" | "daily" | "gather" | null>(null);
+  const [pending, setPendingState] = useState<"look" | "read" | "take" | "use" | "drop" | "put" | "move" | "talk" | "shop" | "buy" | "combat" | "rest" | "stand" | "equip" | "party" | "daily" | "gather" | null>(null);
   const pendingActionSnapshot = useSyncExternalStore(
     client.pendingActions.subscribe,
     client.pendingActions.getSnapshot,
@@ -1699,6 +1739,44 @@ export function WorldClient({
     }
   }, [addEntry, pending, refreshAfterMutation, snapshot]);
 
+  const putObject = useCallback(async (
+    itemId: string,
+    itemLabel: string,
+    containerId: string,
+    containerLabel: string,
+  ) => {
+    if (!snapshot?.character || !snapshot.location || pending) return;
+    const item = snapshot.character.inventory.find((candidate) => candidate.id === itemId);
+    if (!item) return;
+    if (item.questBound) {
+      addEntry("error", "Quest items cannot be put away.");
+      return;
+    }
+    if (
+      snapshot.character.equipment.weaponItemId === itemId ||
+      snapshot.character.equipment.armorItemId === itemId
+    ) {
+      addEntry("error", "Unequip that item before putting it away.");
+      return;
+    }
+    setPending("put");
+    try {
+      await client.put(
+        snapshot.character.characterId,
+        itemId,
+        containerId,
+        snapshot.location.revision,
+      );
+      await refreshAfterMutation(
+        `You put the ${itemLabel.toLocaleLowerCase()} in the ${containerLabel.toLocaleLowerCase()}.`,
+      );
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "You cannot put that item away just now.");
+    } finally {
+      setPending(null);
+    }
+  }, [addEntry, pending, refreshAfterMutation, snapshot]);
+
   const changeEquipment = useCallback(async (
     action: "equip" | "unequip",
     itemOrSlot: string,
@@ -2761,10 +2839,10 @@ export function WorldClient({
       await readObject(matches[0]!.id);
       return;
     }
-    if (verb.toLowerCase() === "take") {
+    if (verb.toLowerCase() === "take" || verb.toLowerCase() === "get") {
       addEntry("system", `> ${value}`);
       if (!target) {
-        addEntry("error", "Take what? Try “take stone”.");
+        addEntry("error", "Take what? Try “get stone” or “get stone sack”.");
         return;
       }
       if (target.toLocaleLowerCase() === "all") {
@@ -2772,7 +2850,18 @@ export function WorldClient({
         return;
       }
       const objects = snapshot?.location?.objects ?? [];
-      const matches = findObjectMatches(target, objects);
+      const takeables = objects.filter((object) => object.takeable);
+      const containers = objects.filter((object) => Boolean(object.containerKind));
+      const containerMatches = findItemContainerMatches(target, takeables, containers, true);
+      if (containerMatches.length > 1) {
+        addEntry("error", `Which item do you mean: ${containerMatches.map(({ item, container }) =>
+          `${item.label} in ${container.label}`,
+        ).join(", ")}?`);
+        return;
+      }
+      const matches = containerMatches.length === 1
+        ? [containerMatches[0]!.item]
+        : findObjectMatches(target.replace(/^(?:the|a|an)\s+/i, ""), objects);
       if (matches.length === 0) {
         addEntry("error", `There is nothing here you can take called “${target}”.`);
         return;
@@ -2787,6 +2876,33 @@ export function WorldClient({
         return;
       }
       await takeObject(object.id, object.label);
+      return;
+    }
+    if (verb.toLowerCase() === "put") {
+      addEntry("system", `> ${value}`);
+      if (!target) {
+        addEntry("error", "Put what where? Try “put stone sack”.");
+        return;
+      }
+      const containers = (snapshot?.location?.objects ?? []).filter((object) =>
+        Boolean(object.containerKind),
+      );
+      const inventory = (snapshot?.character?.inventory ?? []).map((item) => ({
+        ...item, readable: false, takeable: true,
+      }));
+      const matches = findItemContainerMatches(target, inventory, containers);
+      if (matches.length === 0) {
+        addEntry("error", `Name an item you carry and a container here, for example “put stone sack”.`);
+        return;
+      }
+      if (matches.length > 1) {
+        addEntry("error", `Which item and container do you mean: ${matches.map(({ item, container }) =>
+          `${item.label} in ${container.label}`,
+        ).join(", ")}?`);
+        return;
+      }
+      const { item, container } = matches[0]!;
+      await putObject(item.id, item.label, container.id, container.label);
       return;
     }
     if (verb.toLowerCase() === "use") {
@@ -2932,7 +3048,7 @@ export function WorldClient({
     }
     addEntry("system", `> ${value}`);
     addEntry("error", 'Unknown command. Try "help" for the command list.');
-  }, [activeDialogue, addEntry, browseMerchant, changeEquipment, chooseDialogueReply, dropObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, performFishingCast, performWoodcuttingStart, activeMerchantCatalog, performCombatAction, performInnRest, performStaminaPostureChange, interactionInbox, respondToPlayerChallenge, challengePlayer, partyInfo, refreshPartyState, teamCombatInfo, openDailyBoard, fetchDailyBoard, performDailyJob, performSupplyGather, displayedDailyBoard]);
+  }, [activeDialogue, addEntry, browseMerchant, changeEquipment, chooseDialogueReply, dropObject, putObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, performFishingCast, performWoodcuttingStart, activeMerchantCatalog, performCombatAction, performInnRest, performStaminaPostureChange, interactionInbox, respondToPlayerChallenge, challengePlayer, partyInfo, refreshPartyState, teamCombatInfo, openDailyBoard, fetchDailyBoard, performDailyJob, performSupplyGather, displayedDailyBoard]);
 
   const submitQuickCommand = useCallback((rawCommand: string) => {
     setQuickCommandMode("quick");

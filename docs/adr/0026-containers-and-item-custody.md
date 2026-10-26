@@ -21,6 +21,13 @@ stream records item ownership changes.
   records the source container, and the character projection remembers that the
   item has been claimed so consumed or dropped contents do not reappear in that
   character's authored container.
+- Putting a carried item into a container is also a character-owned event. The
+  character stream records its room and container, and the item appears in that
+  container only for that character. This applies to authored containers and
+  dynamic corpses; shared corpse loot remains in the world-item stream and is
+  unaffected by a character's private deposit.
+- Quest-bound and equipped items cannot be put away. Containers still cannot
+  contain other containers.
 - Container definitions and contents are character-instanced just like existing
   authored room loot; this ADR does not create shared stock, mutable shared
   containers, or a new shared-world aggregate.
@@ -47,10 +54,10 @@ stream records item ownership changes.
 
 - No database migration is required. The shared world-item stream is extended
   with corpse creation and currency-claim events.
-- Container contents can be inspected in the current-room projection and taken
-  using the existing take command.
-- Container opening/locking, putting items into containers, capacity, and
-  player-death corpse generation are not introduced here.
+- Container contents can be inspected in the current-room projection, taken
+  with `take`/`get`, and stored with `put`. `get` is an alias of `take`.
+- Container opening/locking, capacity, and player-death corpse generation are
+  not introduced here.
 
 ## Verification
 

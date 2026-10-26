@@ -360,6 +360,22 @@ export const DropCharacterItemCommandSchema = ClientCommandBaseSchema.extend({
   payload: z.object({ itemId: IdSchema }).strict(),
 }).strict();
 
+export const PutCharacterItemCommandSchema = ClientCommandBaseSchema.extend({
+  type: z.literal('character.put'),
+  expectedVersion: NonNegativeIntSchema,
+  payload: z.object({ itemId: IdSchema, containerId: IdSchema }).strict(),
+}).strict();
+
+export const CharacterItemStoredEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('character.item_stored'),
+  payload: z.object({
+    characterId: IdSchema,
+    locationId: IdSchema,
+    containerId: IdSchema,
+    item: InventoryItemProjectionSchema,
+  }).strict(),
+}).strict();
+
 export const EquipCharacterItemCommandSchema = ClientCommandBaseSchema.extend({
   type: z.literal('character.equip'),
   expectedVersion: NonNegativeIntSchema,
@@ -510,6 +526,7 @@ export const CharacterProjectionSchema = z.object({
   itemLocations: z.array(z.object({
     item: InventoryItemProjectionSchema,
     locationId: IdSchema.nullable(),
+    containerId: IdSchema.optional(),
   }).strict()).default([]),
   claimedContainerItemIds: z.array(IdSchema).default([]),
   claimedCorpseGoldIds: z.array(IdSchema).default([]),
@@ -595,6 +612,8 @@ export type CharacterCreatedEvent = z.infer<typeof CharacterCreatedEventSchema>
 export type TakeCharacterItemCommand = z.infer<typeof TakeCharacterItemCommandSchema>;
 export type CharacterItemTakenEvent = z.infer<typeof CharacterItemTakenEventSchema>;
 export type DropCharacterItemCommand = z.infer<typeof DropCharacterItemCommandSchema>;
+export type PutCharacterItemCommand = z.infer<typeof PutCharacterItemCommandSchema>;
+export type CharacterItemStoredEvent = z.infer<typeof CharacterItemStoredEventSchema>;
 export type EquipCharacterItemCommand = z.infer<typeof EquipCharacterItemCommandSchema>;
 export type UnequipCharacterItemCommand = z.infer<typeof UnequipCharacterItemCommandSchema>;
 export type CharacterEquipmentChangedEvent = z.infer<typeof CharacterEquipmentChangedEventSchema>;

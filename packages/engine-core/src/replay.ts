@@ -5,6 +5,7 @@ import {
   CharacterItemTakenEventSchema,
   CharacterItemGrantedEventSchema,
   CharacterItemDroppedEventSchema,
+  CharacterItemStoredEventSchema,
   CharacterEquipmentChangedEventSchema,
   CharacterItemUsedEventSchema,
   CharacterObjectReadEventSchema,
@@ -913,7 +914,7 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
         inventory: [...state.inventory, taken.payload.item],
         itemLocations: itemLocation
           ? state.itemLocations.map((entry) => entry.item.id === taken.payload.item.id
-            ? { ...entry, locationId: null }
+            ? { item: taken.payload.item, locationId: null }
             : entry)
           : [...state.itemLocations, { item: taken.payload.item, locationId: null }],
         ...(taken.payload.containerId
@@ -937,7 +938,7 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
         inventory: [...state.inventory, granted.payload.item],
         itemLocations: state.itemLocations.some((entry) => entry.item.id === granted.payload.item.id)
           ? state.itemLocations.map((entry) => entry.item.id === granted.payload.item.id
-            ? { ...entry, locationId: null }
+            ? { item: granted.payload.item, locationId: null }
             : entry)
           : [...state.itemLocations, { item: granted.payload.item, locationId: null }],
         revision: event.aggregateVersion,
@@ -965,7 +966,37 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
         ...state,
         inventory: state.inventory.filter((item) => item.id !== dropped.payload.item.id),
         itemLocations: state.itemLocations.map((entry) => entry.item.id === dropped.payload.item.id
-          ? { ...entry, locationId: dropped.payload.locationId }
+          ? { item: dropped.payload.item, locationId: dropped.payload.locationId }
+          : entry),
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.item_stored') {
+      if (!state) throw new Error('Item stored event encountered before character creation.');
+      const stored = CharacterItemStoredEventSchema.parse(publicEvent);
+      const carriedItem = state.inventory.find((item) => item.id === stored.payload.item.id);
+      const itemLocation = state.itemLocations.find((entry) => entry.item.id === stored.payload.item.id);
+      if (
+        stored.payload.characterId !== state.characterId ||
+        stored.payload.locationId !== state.locationId ||
+        !carriedItem ||
+        carriedItem.questBound === true ||
+        state.equipment.weaponItemId === stored.payload.item.id ||
+        state.equipment.armorItemId === stored.payload.item.id ||
+        itemLocation?.locationId !== null ||
+        carriedItem.label !== stored.payload.item.label ||
+        carriedItem.description !== stored.payload.item.description
+      ) {
+        throw new Error(`Invalid item stored event at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        inventory: state.inventory.filter((item) => item.id !== stored.payload.item.id),
+        itemLocations: state.itemLocations.map((entry) => entry.item.id === stored.payload.item.id
+          ? {
+            item: stored.payload.item,
+            locationId: stored.payload.locationId,
+            containerId: stored.payload.containerId,
+          }
           : entry),
         revision: event.aggregateVersion,
       });
