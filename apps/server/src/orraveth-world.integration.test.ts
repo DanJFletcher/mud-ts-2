@@ -96,10 +96,14 @@ function makeHarness(options: Readonly<{
 }
 
 describe('Orraveth Bellwold settlement', () => {
-  it('stacks pine logs and shares tree depletion and the 60-second regrowth across characters', async () => {
+  it('uses the mill copper axe to chop trees and shares depletion and regrowth across characters', async () => {
     let clock = new Date('2026-10-24T12:00:00.000Z');
     const world = structuredClone(orravethWorld);
     const tree = world.woodcuttingTrees.find((candidate) => candidate.id === 'bellwold-southbound-pine')!;
+    const millCopperAxe = world.locations
+      .find(({ id }) => id === 'abandoned-watermill')
+      ?.takeables?.find(({ id }) => id === 'mill-copper-axe');
+    if (!millCopperAxe) throw new Error('The authored mill copper axe is missing.');
     const treeLocationIndex = world.locations.findIndex((location) => location.id === tree.locationId);
     const [treeLocation] = world.locations.splice(treeLocationIndex, 1);
     treeLocation!.takeables = [
@@ -115,6 +119,7 @@ describe('Orraveth Bellwold settlement', () => {
         id: 'test-iron-axe', typeId: 'iron-axe', label: 'Iron Axe',
         description: 'A test iron axe.', woodcuttingAxe: { requiredLevel: 10, power: 2 },
       },
+      millCopperAxe,
     ];
     world.locations.unshift(treeLocation!);
     world.respawn = { locationId: tree.locationId };
@@ -150,6 +155,11 @@ describe('Orraveth Bellwold settlement', () => {
       const second = await create('Pine Cutter B', 'b');
       let firstCharacter = await h.loadCharacter(first);
       await h.dispatch(first, {
+        type: 'character.take', version: 1, commandId: 'woodcut-take-mill-copper-axe',
+        expectedVersion: firstCharacter.revision, payload: { itemId: 'mill-copper-axe' },
+      });
+      firstCharacter = await h.loadCharacter(first);
+      await h.dispatch(first, {
         type: 'character.take', version: 1, commandId: 'woodcut-take-iron',
         expectedVersion: firstCharacter.revision, payload: { itemId: 'test-iron-axe' },
       });
@@ -166,7 +176,12 @@ describe('Orraveth Bellwold settlement', () => {
         await h.dispatch(characterId, {
           type: 'woodcutting.start', version: 1, commandId: `${commandId}-start`,
           expectedVersion: character.revision,
-          payload: { axeItemId: `test-bronze-axe-${characterId === first ? 'a' : 'b'}`, treeId: tree.id },
+          payload: {
+            axeItemId: characterId === first
+              ? 'mill-copper-axe'
+              : `test-bronze-axe-${characterId === first ? 'a' : 'b'}`,
+            treeId: tree.id,
+          },
         });
         clock = new Date(clock.getTime() + 1_000);
         character = await h.loadCharacter(characterId);
@@ -804,9 +819,28 @@ describe('Orraveth Bellwold settlement', () => {
       await move('tower-road-to-mill');
       const mill = await queryLocation();
       expect(mill.shortName).toBe('Abandoned Watermill');
-      expect(mill.objects.map(({ id }) => id)).toContain('mill-work-ledger');
-      expect((await readObject('mill-work-ledger')).text).toContain('moving on nights when the channel ran low');
+      expect(mill.objects.map(({ id }) => id)).toEqual(expect.arrayContaining([
+        'mill-work-ledger',
+        'mill-copper-axe',
+      ]));
+      expect(mill.description).toContain('A copper axe leans against the wall.');
+      const atMillBeforeTakingAxe = await h.loadCharacter(characterId);
+      await h.dispatch(characterId, {
+        type: 'character.take',
+        version: 1,
+        commandId: 'take-mill-copper-axe',
+        expectedVersion: atMillBeforeTakingAxe.revision,
+        payload: { itemId: 'mill-copper-axe' },
+      });
       const atMill = await h.loadCharacter(characterId);
+      expect(atMill.inventory).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          id: 'mill-copper-axe',
+          label: 'Copper Axe',
+          woodcuttingAxe: { requiredLevel: 1, power: 1 },
+        }),
+      ]));
+      expect((await readObject('mill-work-ledger')).text).toContain('moving on nights when the channel ran low');
       const readResult = await h.dispatch(characterId, {
         type: 'character.read',
         version: 1,

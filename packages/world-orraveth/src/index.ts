@@ -85,7 +85,7 @@ function bellwoldSmallTalkChoices(
 const draft = {
   formatVersion: 1,
   packId: 'orraveth.bellwold',
-  packVersion: '1.12.0',
+  packVersion: '1.13.0',
   displayName: 'Orraveth: Bellwold',
   dailyBoards: [{
     id: 'bellwold-notice-board', locationId: 'bellwold-south-common', name: 'South Common bulletin board',
@@ -1461,6 +1461,14 @@ const draft = {
         { id: 'mill-to-tower-road', fromLocationId: 'abandoned-watermill', toLocationId: 'old-bell-tower-approach', label: 'west', direction: 'west' },
         { id: 'mill-to-east-track', fromLocationId: 'abandoned-watermill', toLocationId: 'bellwold-east-mill-track', label: 'east', direction: 'east', roadId: 'bellwold-east-mill-road' },
       ],
+      takeables: [{
+        id: 'mill-copper-axe',
+        typeId: 'copper-axe',
+        label: 'Copper Axe',
+        description: 'A copper axe with a worn handle and a serviceable edge, suitable for chopping wood.',
+        roomDescription: 'A copper axe leans against the wall.',
+        woodcuttingAxe: { requiredLevel: 1, power: 1 },
+      }],
       readables: [
         {
           id: 'mill-work-ledger',
