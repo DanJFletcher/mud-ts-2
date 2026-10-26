@@ -171,12 +171,26 @@ command advisory lock, then perform the receipt lookup in a separate statement.
 - No production writes, load tests, database changes, or publish actions were
   performed.
 
+## Post-publish check
+
+The current successful production build is `1dbd51fc-e01f-4993-9fc6-e43b4ab3fd7c`,
+source commit `1ba1f0cf9b290c8a0992261f56290f4ed827b09d`, reported successful at
+**2026-10-26 13:37:21 UTC**. The source commit descends from workspace HEAD
+`57d152e`, so this build includes that workspace revision.
+
+The first available post-build window ended at **13:40:58 UTC**, only about
+3 minutes 37 seconds after success. It returned no `/api/commands` or `/api/game`
+endpoint samples and no gameplay slow logs. The only endpoint aggregate was for
+Clerk session-token requests (2 requests); the only revision-scoped slow log was
+one successful token request with no database queries. These measurements do not
+indicate gameplay improvement or regression. Endpoint telemetry can lag by up to
+30 minutes, and the window is too short to assess command latency.
+
 ## Next measurements and recommendations
 
-1. Publish the current workspace revision only when ready; it is not live yet.
-   Afterward, gather 20–30 same-device guest movement traces in development and
-   production with `?muddTrace=1`, and compare request IDs, command stage,
-   movement projection, query count/time, pool acquisition, and browser paint.
+1. Gather 20–30 same-device guest movement traces in development and production
+   with `?muddTrace=1`, and compare request IDs, command stage, movement
+   projection, query count/time, pool acquisition, and browser paint.
 2. Continue collecting current-build production traces until there are enough
    commands for useful percentiles. Correlate any multi-second proxy outlier to
    the same app request ID; a server log sample alone does not explain missing
