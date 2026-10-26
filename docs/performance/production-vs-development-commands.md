@@ -307,9 +307,31 @@ The query-count reduction is consistent across every move in the two samples.
 The lower median timings are encouraging but the 10-command samples are small
 and noisy; they do not establish a production latency improvement. The server
 still recorded one append query taking about **201 ms** (fingerprint
-`9505cacb7c71`) in the post-change run. Current traces do not label that
-fingerprint with SQL text, so its exact statement and database-side cause are
-not yet established. Pool waits remained low in the traced moves.
+`9505cacb7c71`) in the post-change run. A temporary, development-only
+fingerprint mapping identified the SQL template as `COMMIT`. The slow request
+had zero pool wait, so this was not waiting to acquire a connection and was not
+a slow read/insert query plan.
+
+Development PostgreSQL reported `synchronous_commit=on`, `fsync=on`,
+`wal_sync_method=fdatasync`, and no configured synchronous standby. Those
+settings preserve local commit durability. `track_wal_io_timing` was off, so
+`pg_stat_wal` reported zero write/sync time and cannot establish whether the
+single slow acknowledgment was a storage flush, database-service scheduling, or
+the database response/network path. The setting was not changed.
+
+A subsequent 10-move development trace matched all 21 request IDs. Across its
+10 movement requests, the `COMMIT` fingerprint appeared 20 times, with a
+2.9 ms median and 4.1 ms maximum; movement server time was 22.5 ms median and
+40 ms maximum. During that sample `pg_stat_wal` counters increased by 8 writes
+and 7 syncs, but timing remained unavailable. The 201 ms commit did not recur.
+This points to an intermittent commit-acknowledgment delay, not a consistently
+expensive SQL statement. Do not weaken `fsync` or `synchronous_commit` to mask
+it; more WAL I/O timing or database-service telemetry is needed to distinguish
+the remaining causes.
+
+The temporary SQL-template logger was removed and the development workflow was
+restarted cleanly. No production query, publish, or configuration change was
+made.
 
 ### Verification and limits
 
