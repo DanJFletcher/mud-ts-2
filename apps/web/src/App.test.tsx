@@ -110,6 +110,8 @@ let worldCurrency: { id: string; name: string; symbol: string };
 let merchantLanternPurchased: boolean;
 let healingDraughtCarried: boolean;
 let fishingRodCarried: boolean;
+let woodcuttingAxeCarried: boolean;
+let availableWoodcuttingTrees: Array<{ id: string; label: string }>;
 let characterHealth: { current: number; maximum: number } | null;
 let characterStamina: { current: number; maximum: number };
 let staminaPosture: 'standing' | 'resting';
@@ -481,6 +483,8 @@ beforeEach(() => {
   merchantLanternPurchased = false;
   healingDraughtCarried = false;
   fishingRodCarried = false;
+  woodcuttingAxeCarried = false;
+  availableWoodcuttingTrees = [];
   characterHealth = null;
   characterStamina = { current: 100, maximum: 100 };
   staminaPosture = 'standing';
@@ -643,6 +647,13 @@ beforeEach(() => {
               description: 'A worn fishing rod.',
               fishingRod: { qualityId: 'old', biteChancePercent: 10, waitSeconds: 10 },
             }] : []),
+            ...(woodcuttingAxeCarried ? [{
+              id: 'copper-axe',
+              typeId: 'copper-axe',
+              label: 'Copper Axe',
+              description: 'A worn copper axe.',
+              woodcuttingAxe: { requiredLevel: 1, power: 1 },
+            }] : []),
           ],
         },
         stats: {
@@ -663,6 +674,7 @@ beforeEach(() => {
         availableFishingSpots: room === 'bridge' && !orravethWorld
           ? [{ id: 'glasswater-fishing-spot', label: 'Glasswater Bridge' }]
           : [],
+        availableWoodcuttingTrees,
         map: currentWorldMap(),
         questJournal,
         ...(dailyFeatureEnabled ? {
@@ -1074,6 +1086,18 @@ beforeEach(() => {
               response: 'The mock interaction succeeds.',
             },
           }],
+        });
+      }
+      if (command.type === 'woodcutting.start') {
+        revision += 1;
+        return json({
+          receipt: {
+            ok: true,
+            commandId: command.commandId ?? 'mock-command',
+            eventIds: [],
+            newAggregateVersion: revision,
+          },
+          streamId: characterId,
         });
       }
       if (moveError) return json({ message: moveError }, 409);
@@ -3342,6 +3366,52 @@ describe('single-character world session client', () => {
     await screen.findByRole('heading', { name: 'Glasswater Bridge' });
     fireEvent.click(await screen.findByRole('button', { name: 'Show items to use' }));
     expect(await screen.findByRole('button', { name: 'Use old rod to fish at Glasswater Bridge' })).toBeInTheDocument();
+  });
+
+  it('lets the player choose which in-room tree to chop from quick actions', async () => {
+    woodcuttingAxeCarried = true;
+    availableWoodcuttingTrees = [
+      { id: 'southbound-pine', label: 'pine' },
+      { id: 'southbound-oak', label: 'oak' },
+    ];
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    clickQuickAction('Show items to use');
+    fireEvent.click(await screen.findByRole('button', { name: 'Choose a tree for Copper Axe' }));
+
+    const treeChoices = await screen.findByRole('group', { name: 'Choose a tree' });
+    expect(within(treeChoices).getByRole('button', { name: 'Use Copper Axe on pine' })).toBeInTheDocument();
+    expect(within(treeChoices).getByRole('button', { name: 'Use Copper Axe on oak' })).toBeInTheDocument();
+    fireEvent.click(within(treeChoices).getByRole('button', { name: 'Use Copper Axe on pine' }));
+
+    await screen.findByText('You begin swinging your axe at the tree...');
+    const startCommand = apiFetch.mock.calls.find(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body)).type === 'woodcutting.start',
+    );
+    expect(startCommand).toBeDefined();
+    expect(JSON.parse(String(startCommand?.[1]?.body))).toMatchObject({
+      payload: { axeItemId: 'copper-axe', treeId: 'southbound-pine' },
+    });
+  });
+
+  it('accepts the explicit use axe on tree command form', async () => {
+    woodcuttingAxeCarried = true;
+    availableWoodcuttingTrees = [{ id: 'southbound-pine', label: 'pine' }];
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('use Copper Axe on pine tree');
+
+    await screen.findByText('You begin swinging your axe at the tree...');
+    const startCommand = apiFetch.mock.calls.find(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body)).type === 'woodcutting.start',
+    );
+    expect(JSON.parse(String(startCommand?.[1]?.body))).toMatchObject({
+      payload: { axeItemId: 'copper-axe', treeId: 'southbound-pine' },
+    });
   });
 
   it('shows active daily postings from previous cycles as expired in Field notes', async () => {

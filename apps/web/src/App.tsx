@@ -2933,9 +2933,37 @@ export function WorldClient({
         await performCombatAction("use-item", undefined, false, item.id);
         return;
       }
-      const useMatch = /^(.+?)\s+on\s+(.+)$/i.exec(target);
-      if (!useMatch) {
-        const itemTarget = target.replace(/^(?:the|a|an)\s+/i, "").trim();
+      const explicitUseMatch = /^(.+?)\s+on\s+(.+)$/i.exec(target);
+      const cleanedUseTarget = target.replace(/^(?:the|a|an)\s+/i, "").trim();
+      const carriedAxes = (snapshot?.character?.inventory ?? []).filter((item) => item.woodcuttingAxe);
+      let itemTarget = explicitUseMatch?.[1]?.replace(/^(?:the|a|an)\s+/i, "").trim();
+      let objectTarget = explicitUseMatch?.[2]?.replace(/^(?:the|a|an)\s+/i, "").trim();
+      if (!explicitUseMatch) {
+        const normalizedUseTarget = cleanedUseTarget.toLocaleLowerCase();
+        const matchingAxes = carriedAxes.filter((item) =>
+          normalizedUseTarget.startsWith(`${item.label.toLocaleLowerCase()} `),
+        );
+        const genericAxeTarget = /^axe\s+(.+)$/i.exec(cleanedUseTarget);
+        if (matchingAxes.length > 1) {
+          addEntry("error", `Which axe do you mean: ${matchingAxes.map((item) => item.label).join(", ")}?`);
+          return;
+        }
+        if (matchingAxes.length === 1) {
+          itemTarget = matchingAxes[0]!.label;
+          objectTarget = cleanedUseTarget.slice(itemTarget.length).trim();
+        } else if (genericAxeTarget) {
+          if (carriedAxes.length > 1) {
+            addEntry("error", `Which axe do you mean: ${carriedAxes.map((item) => item.label).join(", ")}?`);
+            return;
+          }
+          if (carriedAxes.length === 1) {
+            itemTarget = carriedAxes[0]!.label;
+            objectTarget = genericAxeTarget[1]!.trim();
+          }
+        }
+      }
+      if (!itemTarget || !objectTarget) {
+        const itemTarget = cleanedUseTarget;
         let itemMatches = findObjectMatches(itemTarget, snapshot?.character?.inventory ?? []);
         if (!itemMatches.length && itemTarget.replace(/\s+/g, "").toLocaleLowerCase() === "fishingrod") {
           itemMatches = (snapshot?.character?.inventory ?? []).filter((item) => item.fishingRod);
@@ -2953,13 +2981,7 @@ export function WorldClient({
           await performFishingCast(item.id);
           return;
         }
-        addEntry("error", "Use a healing item, a fishing rod at a marked spot, or an axe on a named tree.");
-        return;
-      }
-      const itemTarget = useMatch[1]!.replace(/^(?:the|a|an)\s+/i, "").trim();
-      const objectTarget = useMatch[2]!.replace(/^(?:the|a|an)\s+/i, "").trim();
-      if (!itemTarget || !objectTarget) {
-        addEntry("error", "Use what on what? Try “use stone on bell”.");
+        addEntry("error", "Use a healing item, a fishing rod at a marked spot, or an axe on a named tree (for example, “use Copper Axe pine”).");
         return;
       }
       const carriedItems = (snapshot?.character?.inventory ?? []).map((item) => ({
@@ -2974,7 +2996,8 @@ export function WorldClient({
           addEntry("error", `Which axe do you mean: ${axeMatches.map((item) => item.label).join(", ")}?`);
           return;
         }
-        const treeMatches = findObjectMatches(objectTarget, snapshot?.availableWoodcuttingTrees ?? []);
+        const treeTarget = objectTarget.replace(/\s+tree$/i, "").trim();
+        const treeMatches = findObjectMatches(treeTarget, snapshot?.availableWoodcuttingTrees ?? []);
         if (treeMatches.length === 0) {
           addEntry("error", `There is no tree called “${objectTarget}” here.`);
           return;
@@ -3221,6 +3244,8 @@ export function WorldClient({
     return !isAnyCombatActive &&
       (snapshot?.location?.objects ?? []).some((object) => !object.readable && !object.takeable);
   });
+  const quickUseTargetItem = quickInventory.find((item) => item.id === quickUseItemId);
+  const quickUseTargetIsTree = Boolean(quickUseTargetItem?.woodcuttingAxe);
   const terminalLookTargets = useMemo<ActivityLogTarget[]>(() => {
     const location = snapshot?.location;
     if (!location) return [];
@@ -3928,6 +3953,7 @@ export function WorldClient({
                                     : quickCommandMode === "unequip" ? "Unequip"
                                     : quickCommandMode === "shop" ? "Shop"
                                       : quickCommandMode === "buy" ? "Buy"
+                                      : quickCommandMode === "use-target" && quickUseTargetIsTree ? "Choose tree"
                                         : quickCommandMode === "use" || quickCommandMode === "use-target" ? "Use" : "Talk"}
                       </span>
                     )}
@@ -3948,7 +3974,9 @@ export function WorldClient({
                                     : quickCommandMode === "shop" ? "Merchants here"
                                       : quickCommandMode === "buy" ? "Items to buy"
                                         : quickCommandMode === "use" ? "Items to use"
-                                          : quickCommandMode === "use-target" ? "Use target" : "Items to take"
+                                          : quickCommandMode === "use-target"
+                                            ? quickUseTargetIsTree ? "Choose a tree" : "Use target"
+                                            : "Items to take"
                       }
                     >
                       {quickCommandMode === "equip" ? (
@@ -4161,8 +4189,8 @@ export function WorldClient({
                                   if (item.fishingRod) {
                                     void performFishingCast(item.id);
                                   } else if (item.woodcuttingAxe) {
-                                    const tree = snapshot?.availableWoodcuttingTrees?.[0];
-                                    if (tree) void performWoodcuttingStart(item.id, tree.id);
+                                    setQuickUseItemId(item.id);
+                                    setQuickCommandMode("use-target");
                                   } else if (item.consumable?.effect === "heal") {
                                     submitQuickCommand(`use ${item.label}`);
                                   } else {
@@ -4173,7 +4201,7 @@ export function WorldClient({
                                 aria-label={item.fishingRod
                                   ? `Use ${item.label} to fish at ${snapshot?.availableFishingSpots?.[0]?.label ?? "this spot"}`
                                   : item.woodcuttingAxe
-                                    ? `Use ${item.label} to chop ${snapshot?.availableWoodcuttingTrees?.[0]?.label ?? "a tree"}`
+                                    ? `Choose a tree for ${item.label}`
                                   : item.consumable?.effect === "heal"
                                     ? `Use ${item.label}${isAnyCombatActive ? " during combat" : ""}`
                                     : `Choose ${item.label} to use`}
@@ -4199,20 +4227,28 @@ export function WorldClient({
                           </button>
                           {(() => {
                             const item = snapshot.character?.inventory.find((candidate) => candidate.id === quickUseItemId);
-                            const targets = (snapshot.location.objects ?? []).filter((object) => !object.readable && !object.takeable);
+                            const targets = item?.woodcuttingAxe
+                              ? snapshot.availableWoodcuttingTrees ?? []
+                              : (snapshot.location.objects ?? []).filter((object) => !object.readable && !object.takeable);
                             return item && targets.length ? targets.map((target) => (
                               <button
                                 key={target.id}
                                 type="button"
                                 className="focused-quick-command"
-                                onClick={() => submitQuickCommand(`use ${item.label} on ${target.label}`)}
+                                onClick={() => submitQuickCommand(
+                                  item.woodcuttingAxe
+                                    ? `use ${item.label} ${target.label}`
+                                    : `use ${item.label} on ${target.label}`,
+                                )}
                                 aria-label={`Use ${item.label} on ${target.label}`}
                                 disabled={pending !== null}
                               >
                                 {target.label.toLocaleLowerCase()}
                               </button>
                             )) : <span className="focused-quick-commands__empty">
-                              {item ? "No usable targets here" : "Choose an item to use"}
+                              {item?.woodcuttingAxe
+                                ? "No trees here"
+                                : item ? "No usable targets here" : "Choose an item to use"}
                             </span>;
                           })()}
                         </>
