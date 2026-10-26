@@ -428,10 +428,14 @@ export class PostgresEventStore implements EventStorePort {
       const checks = [...companions, ...(request.guards ?? [])];
       // A deterministic lock order avoids deadlocks across encounter/character writers.
       const lockedStreamIds = [...new Set([...writeIds, ...checks.map((check) => check.streamId)])].sort();
+      const lockedStreamValues = sql.join(
+        lockedStreamIds.map((streamId) => sql`(${streamId})`),
+        sql`, `,
+      );
       await tx.execute(sql`
         WITH ordered_streams AS MATERIALIZED (
           SELECT stream_id
-          FROM unnest(${lockedStreamIds}::text[]) AS streams(stream_id)
+          FROM (VALUES ${lockedStreamValues}) AS streams(stream_id)
           ORDER BY stream_id
         )
         SELECT pg_advisory_xact_lock(hashtext(${request.worldInstanceId}), hashtext(stream_id))

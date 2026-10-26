@@ -335,7 +335,7 @@ app.use('/api', (req, res, next) => {
   res.locals.worldInstanceId = runtime.worldInstanceId;
   return next();
 });
-app.use(clerkMiddleware((req) => ({
+app.use(clerkMiddleware((req: Request) => ({
   publishableKey: publishableKeyFromHost(getClerkProxyHost(req) ?? '', process.env.CLERK_PUBLISHABLE_KEY),
 })));
 
