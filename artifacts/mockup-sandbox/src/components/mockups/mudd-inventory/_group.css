@@ -1,0 +1,122 @@
+@import "../mudd-client/_shared/ui/styles.css";
+
+@theme {
+  --font-sans: "DM Sans", system-ui, sans-serif;
+  --font-display: "Literata", Georgia, serif;
+  --font-mono: "DM Mono", ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; }
+html { min-width: 320px; background: #e8e8dc; }
+body { min-width: 320px; min-height: 100vh; margin: 0; }
+
+.inventory-demo {
+  --mudd-bg: #e8e8dc;
+  --mudd-surface: #f4f2e7;
+  --mudd-surface-raised: #fbf9ef;
+  --mudd-text: #263b32;
+  --mudd-ink: #263b32;
+  --mudd-muted: #68776c;
+  --mudd-border: #c9d0bf;
+  --mudd-accent: #486653;
+  --mudd-accent-strong: #304b3a;
+  --mudd-accent-contrast: #f4f2e7;
+  --mudd-warm: #c08c4e;
+  --mudd-danger: #a34f43;
+  --mudd-shadow: 0 14px 32px rgb(43 59 46 / 7%);
+  min-height: 100dvh;
+  padding: 0 16px calc(78px + env(safe-area-inset-bottom));
+  color: var(--mudd-text);
+  background: var(--mudd-bg);
+  font-family: var(--font-sans);
+}
+
+.inventory-demo[data-theme="dark"] {
+  --mudd-bg: #1d2924;
+  --mudd-surface: #25332c;
+  --mudd-surface-raised: #2d3c34;
+  --mudd-text: #e9ede2;
+  --mudd-ink: #e9ede2;
+  --mudd-muted: #a5b2a5;
+  --mudd-border: #43564a;
+  --mudd-accent: #a4c4a7;
+  --mudd-accent-strong: #c0d9bf;
+  --mudd-accent-contrast: #1d2924;
+  --mudd-warm: #deb47d;
+  --mudd-danger: #e89583;
+  --mudd-shadow: 0 14px 34px rgb(0 0 0 / 18%);
+  color-scheme: dark;
+}
+
+.inventory-demo .focused-content { width: min(100%, 880px); margin: 0 auto; padding: 18px 0; }
+.inventory-demo .focused-screen { display: grid; gap: 14px; }
+.inventory-demo .focused-info-tabs { display: flex; gap: 0; overflow-x: auto; margin-bottom: 4px; border-bottom: 1px solid var(--mudd-border); scrollbar-width: none; }
+.inventory-demo .focused-info-tabs::-webkit-scrollbar { display: none; }
+.inventory-demo .focused-info-tab {
+  display: flex;
+  min-width: max-content;
+  min-height: 46px;
+  flex: 1 0 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border-bottom: 2px solid transparent;
+  color: var(--mudd-muted);
+  font: 600 .76rem/1.2 var(--font-sans);
+  text-align: center;
+  text-decoration: none;
+}
+.inventory-demo .focused-info-tab[aria-current="page"] { border-bottom-color: var(--mudd-accent-strong); color: var(--mudd-accent-strong); }
+.inventory-demo .focused-screen-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 2px 0 3px; }
+.inventory-demo .focused-kicker { color: var(--mudd-accent); font: 500 .68rem/1.35 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; }
+.inventory-demo .focused-screen-title { margin: 4px 0 0; font: 600 1.55rem/1.12 var(--font-display); letter-spacing: -.035em; }
+.inventory-demo .focused-card { padding: 18px; border: 1px solid var(--mudd-border); border-radius: 12px; background: var(--mudd-surface); box-shadow: var(--mudd-shadow); }
+.inventory-demo .focused-detail { display: grid; gap: 5px; }
+.inventory-demo .focused-detail--wide { grid-column: 1 / -1; }
+.inventory-demo .focused-detail > span { color: var(--mudd-muted); font: 500 .65rem var(--font-mono); letter-spacing: .1em; text-transform: uppercase; }
+.inventory-demo .focused-detail > strong { font-size: .9rem; font-weight: 600; }
+.inventory-demo .focused-inventory { display: flex; flex-wrap: wrap; gap: 8px; }
+.inventory-demo .focused-inventory-entry { display: flex; flex-wrap: wrap; gap: 6px; }
+.inventory-demo .focused-item-tag { align-self: center; color: var(--mudd-muted); font: 500 .68rem var(--font-mono); text-transform: uppercase; }
+.inventory-demo .focused-inventory-item {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--mudd-border);
+  border-radius: 999px;
+  color: var(--mudd-ink);
+  background: var(--mudd-surface);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.inventory-demo .focused-inventory-item:focus-visible { outline: 2px solid var(--mudd-accent); outline-offset: 2px; }
+.inventory-demo .focused-bottom-nav { position: fixed; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(3, 1fr); min-height: calc(64px + env(safe-area-inset-bottom)); padding: 6px 10px calc(6px + env(safe-area-inset-bottom)); border-top: 1px solid var(--mudd-border); background: color-mix(in srgb, var(--mudd-surface) 94%, transparent); }
+.inventory-demo .focused-tab { display: grid; align-content: center; justify-items: center; gap: 4px; min-height: 50px; border: 0; border-radius: 9px; color: var(--mudd-muted); background: transparent; font: 500 .66rem/1 var(--font-mono); }
+.inventory-demo .focused-tab[aria-current="page"] { color: var(--mudd-accent-strong); background: color-mix(in srgb, var(--mudd-accent) 10%, transparent); }
+
+.inventory-demo .focused-inventory--compact { display: grid; gap: 0; border-top: 1px solid var(--mudd-border); }
+.inventory-demo .focused-inventory-entry--compact { display: block; min-width: 0; border-bottom: 1px solid var(--mudd-border); }
+.inventory-demo .focused-inventory-item--compact {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+}
+.inventory-demo .focused-inventory-item--compact:hover { background: color-mix(in srgb, var(--mudd-accent) 7%, transparent); }
+.inventory-demo .focused-inventory-name { min-width: 0; overflow-wrap: anywhere; }
+.inventory-demo .focused-inventory-meta { flex: 0 0 auto; color: var(--mudd-muted); font: 500 .7rem var(--font-mono); }
+.inventory-demo .focused-inventory-entry--compact .focused-item-tag { padding: 0 8px 6px; }
+
+@media (min-width: 700px) {
+  .inventory-demo { padding-inline: 28px; padding-bottom: 28px; }
+  .inventory-demo .focused-content { padding-top: 30px; }
+  .inventory-demo .focused-bottom-nav { position: static; width: min(100%, 880px); min-height: 54px; margin: 0 auto; padding: 4px; border: 1px solid var(--mudd-border); border-radius: 12px; background: var(--mudd-surface); }
+  .inventory-demo .focused-tab { display: flex; flex-direction: row; justify-content: center; gap: 8px; min-height: 44px; font-size: .72rem; }
+}

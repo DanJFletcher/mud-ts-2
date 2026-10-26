@@ -3,6 +3,8 @@ type ModuleMap = Record<string, () => Promise<Record<string, unknown>>>;
 export const modules: ModuleMap = {
   "./components/mockups/mudd-client/Current.tsx": () => import("../components/mockups/mudd-client/Current.tsx"),
   "./components/mockups/mudd-client/FocusedClient.tsx": () => import("../components/mockups/mudd-client/FocusedClient.tsx"),
+  "./components/mockups/mudd-inventory/Compact.tsx": () => import("../components/mockups/mudd-inventory/Compact.tsx"),
+  "./components/mockups/mudd-inventory/Current.tsx": () => import("../components/mockups/mudd-inventory/Current.tsx"),
   "./components/mockups/navigation-menu/Current.tsx": () => import("../components/mockups/navigation-menu/Current.tsx"),
   "./components/mockups/navigation-menu/MobileChat.tsx": () => import("../components/mockups/navigation-menu/MobileChat.tsx"),
   "./components/mockups/world-map/Current.tsx": () => import("../components/mockups/world-map/Current.tsx"),

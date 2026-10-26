@@ -2981,7 +2981,10 @@ describe('single-character world session client', () => {
     await screen.findByText('You pick up the loose stone.');
 
     await openInfoSection('Items');
-    fireEvent.click(screen.getByRole('button', { name: 'Inspect Loose stone' }));
+    const carriedStone = screen.getByRole('button', { name: 'Inspect Loose stone' });
+    expect(carriedStone).toHaveClass('focused-inventory-item--compact');
+    expect(carriedStone.closest('.focused-inventory')).toHaveClass('focused-inventory--compact');
+    fireEvent.click(carriedStone);
     await screen.findByText('A smooth, palm-sized stone with a pale stripe running through it.');
 
     fireEvent.click(screen.getByRole('link', { name: 'Play' }));

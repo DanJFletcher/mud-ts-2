@@ -4794,20 +4794,27 @@ export function WorldClient({
                     <div className="focused-detail focused-detail--wide">
                       <span>Carried items</span>
                       {snapshot.character?.inventory.length ? (
-                        <div className="focused-inventory">
+                        <div className="focused-inventory focused-inventory--compact">
                           {snapshot.character.inventory.map((item) => (
-                            <div className="focused-inventory-entry" key={item.id}>
+                            <div className="focused-inventory-entry focused-inventory-entry--compact" key={item.id}>
                               <button
                                 type="button"
-                                className="focused-inventory-item"
+                                className="focused-inventory-item focused-inventory-item--compact"
                                 aria-label={`Inspect ${item.label}${item.stackable && (item.quantity ?? 1) > 1 ? ` quantity ${item.quantity}` : ""}${item.usesRemaining !== undefined ? `, ${item.usesRemaining} uses remaining` : ""}`}
                                 disabled={pending !== null}
                                 onClick={() => void inspectCarriedItem(item)}
                               >
-                                {item.label}{item.stackable && (item.quantity ?? 1) > 1 ? ` ×${item.quantity}` : ""}{item.usesRemaining !== undefined ? ` · ${item.usesRemaining} uses` : ""}
+                                <span className="focused-inventory-name">{item.label}</span>
+                                <span className="focused-inventory-meta">
+                                  {item.stackable && (item.quantity ?? 1) > 1
+                                    ? `×${item.quantity}`
+                                    : item.usesRemaining !== undefined
+                                      ? `${item.usesRemaining} uses`
+                                      : <span aria-hidden="true">›</span>}
+                                </span>
                               </button>
                               {item.equipment && (
-                                <span className="focused-item-tag">
+                                <span className="focused-item-tag focused-item-tag--compact">
                                   {snapshot.character?.equipment[item.equipment.slot === "weapon" ? "weaponItemId" : "armorItemId"] === item.id ? "Equipped" : item.equipment.slot}
                                 </span>
                               )}

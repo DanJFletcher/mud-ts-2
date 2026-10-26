@@ -1793,6 +1793,27 @@
 }
 .focused-inventory-item:disabled { cursor: wait; opacity: .65; }
 .focused-inventory-item:focus-visible { outline: 2px solid var(--mudd-accent); outline-offset: 2px; }
+.focused-inventory--compact { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; border-top: 1px solid var(--mudd-border); }
+.focused-inventory-entry--compact { display: flex; min-width: 0; flex-wrap: nowrap; align-items: center; gap: 6px; border-bottom: 1px solid var(--mudd-border); }
+.focused-inventory-item--compact {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+}
+.focused-inventory-item--compact:hover:not(:disabled) { background: color-mix(in srgb, var(--mudd-accent) 7%, transparent); }
+.focused-inventory-item--compact:disabled { cursor: wait; }
+.focused-inventory-name { min-width: 0; overflow-wrap: anywhere; }
+.focused-inventory-meta { flex: 0 0 auto; color: var(--mudd-muted); font: 500 .7rem/1 "DM Mono", monospace; white-space: nowrap; }
+.focused-item-tag--compact { flex: 0 0 auto; padding: 0 6px; }
 .focused-inventory-description { display: grid; gap: 4px; margin: 2px 0 0; color: var(--mudd-muted); font-size: .88rem; line-height: 1.5; }
 .focused-inventory-description strong { color: var(--mudd-ink); }
 .focused-inventory-error { margin: 0; color: var(--mudd-danger); font-size: .85rem; }
