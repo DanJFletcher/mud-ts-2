@@ -776,6 +776,41 @@
 
 .focused-room-chat__header .focused-kicker { margin: 0; }
 
+.focused-room-chat__unread-button {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.focused-room-chat__unread-button:hover {
+  background: color-mix(in srgb, var(--mudd-accent) 10%, transparent);
+}
+
+.focused-room-chat__unread-button:focus-visible {
+  outline: 2px solid var(--mudd-accent);
+  outline-offset: -2px;
+}
+
+.focused-room-chat__unread-badge {
+  display: grid;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  box-sizing: border-box;
+  place-items: center;
+  padding-inline: .32rem;
+  border-radius: 999px;
+  color: var(--mudd-bg);
+  background: var(--mudd-error);
+  font: 600 .62rem/1 "DM Mono", monospace;
+}
+
 .focused-room-chat__controls {
   display: flex;
   flex: 0 0 auto;

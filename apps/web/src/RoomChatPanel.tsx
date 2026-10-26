@@ -68,6 +68,20 @@ function mergeMessages(current: readonly RoomChatMessage[], incoming: readonly R
   return [...messages.values()].sort((left, right) => left.id - right.id).slice(-100);
 }
 
+function trackNewMessages(seenMessageIds: Set<number>, incoming: readonly RoomChatMessage[]) {
+  const unseen: RoomChatMessage[] = [];
+  for (const message of incoming) {
+    if (!seenMessageIds.has(message.id)) unseen.push(message);
+    seenMessageIds.add(message.id);
+  }
+  while (seenMessageIds.size > 200) {
+    const oldestId = seenMessageIds.values().next().value;
+    if (oldestId === undefined) break;
+    seenMessageIds.delete(oldestId);
+  }
+  return unseen;
+}
+
 export function RoomChatPanel({
   realtimeClient,
   pendingActionCoordinator,
@@ -96,10 +110,14 @@ export function RoomChatPanel({
   const [loadError, setLoadError] = useState('');
   const [sendError, setSendError] = useState('');
   const [collapsed, setCollapsed] = useState(false);
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
   const [fullscreenPresent, setFullscreenPresent] = useState(fullscreen);
   const [fullscreenClosing, setFullscreenClosing] = useState(false);
   const messagesRef = useRef<HTMLDivElement>(null);
   const followsLatestRef = useRef(true);
+  const collapsedRef = useRef(collapsed);
+  const fullscreenPresentRef = useRef(fullscreenPresent);
+  const seenMessageIdsRef = useRef(new Set<number>());
   const scope = JSON.stringify([worldInstanceId, characterId, roomId]);
   const currentScopeRef = useRef(scope);
   const lastMessageIdRef = useRef(0);
@@ -117,6 +135,8 @@ export function RoomChatPanel({
   );
 
   currentScopeRef.current = scope;
+  collapsedRef.current = collapsed;
+  fullscreenPresentRef.current = fullscreenPresent;
 
   useEffect(() => {
     if (fullscreen) {
@@ -167,9 +187,11 @@ export function RoomChatPanel({
     let requesting = false;
     followsLatestRef.current = true;
     lastMessageIdRef.current = 0;
+    seenMessageIdsRef.current = new Set();
     initialLoadCompleteRef.current = false;
     pendingSubmissionRef.current = null;
     setMessages([]);
+    setUnreadMessageCount(0);
     setDraft('');
     setLoading(true);
     setSending(false);
@@ -195,16 +217,27 @@ export function RoomChatPanel({
         }
         if (!active) return;
 
+        const isInitialLoad = !initialLoadCompleteRef.current;
         initialLoadCompleteRef.current = true;
         if (typeof body.cursor === 'number' && Number.isSafeInteger(body.cursor)) {
           lastMessageIdRef.current = Math.max(lastMessageIdRef.current, body.cursor);
         }
         if (body.messages.length) {
+          const newMessages = trackNewMessages(seenMessageIdsRef.current, body.messages);
           lastMessageIdRef.current = Math.max(
             lastMessageIdRef.current,
             ...body.messages.map((message) => message.id),
           );
           setMessages((current) => mergeMessages(current, body.messages));
+          const chatIsMinimized = collapsedRef.current && !fullscreenPresentRef.current;
+          if (!isInitialLoad && (chatIsMinimized || !followsLatestRef.current)) {
+            const unreadCount = newMessages.filter((message) =>
+              message.speakerType !== 'player' || message.speakerName !== characterName,
+            ).length;
+            if (unreadCount > 0) {
+              setUnreadMessageCount((current) => current + unreadCount);
+            }
+          }
         }
         const confirmedSubmissionIds = new Set(
           body.messages.flatMap((message) => message.submissionId ? [message.submissionId] : []),
@@ -252,10 +285,22 @@ export function RoomChatPanel({
 
   useEffect(() => {
     const messagesElement = messagesRef.current;
-    if (messagesElement && followsLatestRef.current) {
+    if (messagesElement && !collapsed && followsLatestRef.current) {
+      messagesElement.scrollTop = messagesElement.scrollHeight;
+      setUnreadMessageCount(0);
+    }
+  }, [collapsed, messages]);
+
+  const openLatestMessages = () => {
+    collapsedRef.current = false;
+    setCollapsed(false);
+    followsLatestRef.current = true;
+    setUnreadMessageCount(0);
+    const messagesElement = messagesRef.current;
+    if (messagesElement && !collapsed) {
       messagesElement.scrollTop = messagesElement.scrollHeight;
     }
-  }, [messages]);
+  };
 
   const sendMessage = async (
     event?: FormEvent<HTMLFormElement>,
@@ -359,6 +404,7 @@ export function RoomChatPanel({
         { ...payload.message, submissionId: submission.id },
         ...(payload.npcMessage ? [payload.npcMessage] : []),
       ];
+      trackNewMessages(seenMessageIdsRef.current, incomingMessages);
       setMessages((current) => mergeMessages(current, incomingMessages));
       actionCoordinator.confirm(submission.id);
       setDraft((current) => current.trim() === text ? '' : current);
@@ -394,6 +440,19 @@ export function RoomChatPanel({
     >
       <div className="focused-room-chat__header">
         <h2 className="focused-kicker">Room chat</h2>
+        {unreadMessageCount > 0 && (
+          <button
+            className="focused-room-chat__unread-button"
+            type="button"
+            onClick={openLatestMessages}
+            aria-label={`${unreadMessageCount} unread chat message${unreadMessageCount === 1 ? '' : 's'}. Jump to latest.`}
+            title="Jump to latest chat messages"
+          >
+            <span aria-hidden="true" className="focused-room-chat__unread-badge">
+              {unreadMessageCount > 99 ? '99+' : unreadMessageCount}
+            </span>
+          </button>
+        )}
         <span className="focused-room-chat__status" aria-live="polite">
           {loadError ? 'Reconnecting' : loading ? 'Connecting' : 'Room'}
         </span>
@@ -401,7 +460,14 @@ export function RoomChatPanel({
           {!fullscreenPresent && (
             <DisclosureButton
               className="focused-room-chat__fullscreen-button focused-room-chat__collapse-button"
-              onClick={() => setCollapsed((current) => !current)}
+              onClick={() => {
+                const nextCollapsed = !collapsedRef.current;
+                collapsedRef.current = nextCollapsed;
+                setCollapsed(nextCollapsed);
+                if (!nextCollapsed && followsLatestRef.current) {
+                  setUnreadMessageCount(0);
+                }
+              }}
               aria-label={collapsed ? 'Expand room chat' : 'Collapse room chat'}
               title={collapsed ? 'Expand room chat' : 'Collapse room chat'}
               controls="room-chat-content"
@@ -437,6 +503,7 @@ export function RoomChatPanel({
         onScroll={(event) => {
           const element = event.currentTarget;
           followsLatestRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 28;
+          if (followsLatestRef.current) setUnreadMessageCount(0);
         }}
       >
         {messages.map((message) => (

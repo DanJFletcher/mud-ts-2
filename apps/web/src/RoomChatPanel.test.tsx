@@ -88,6 +88,80 @@ describe('RoomChatPanel message polling', () => {
     expect(screen.getByText('Room')).toBeInTheDocument();
   });
 
+  it('shows a count badge for new messages while chat is collapsed and opens to the latest', async () => {
+    render(
+      <RoomChatPanel worldInstanceId={worldInstanceId} roomId="test-room" fullscreen={false} onFullscreenChange={vi.fn()} />,
+    );
+    await screen.findByText('No room messages yet.');
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse room chat' }));
+    storedMessages.push(
+      {
+        id: 1,
+        roomId: 'test-room',
+        speakerType: 'player',
+        speakerName: 'Alder',
+        text: 'The eastern road is clear.',
+        createdAt: '2026-10-18T12:00:00.000Z',
+      },
+      {
+        id: 2,
+        roomId: 'test-room',
+        speakerType: 'npc',
+        speakerName: 'Mara',
+        text: 'The market is closing soon.',
+        createdAt: '2026-10-18T12:00:01.000Z',
+      },
+    );
+
+    await act(async () => { intervals[0]?.(); });
+    const unreadBadge = await screen.findByRole('button', {
+      name: '2 unread chat messages. Jump to latest.',
+    });
+    expect(unreadBadge.querySelector('.focused-room-chat__unread-badge')).toHaveTextContent('2');
+
+    fireEvent.click(unreadBadge);
+    expect(screen.queryByRole('button', { name: /unread chat messages/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Room chat' })).not.toHaveClass('focused-room-chat--collapsed');
+    expect(screen.getByText('The market is closing soon.')).toBeVisible();
+  });
+
+  it('shows unread messages while scrolled up and clears the badge at the latest message', async () => {
+    storedMessages = [{
+      id: 1,
+      roomId: 'test-room',
+      speakerType: 'npc',
+      speakerName: 'Mara',
+      text: 'The first notice.',
+      createdAt: '2026-10-18T12:00:00.000Z',
+    }];
+    render(
+      <RoomChatPanel worldInstanceId={worldInstanceId} roomId="test-room" fullscreen={false} onFullscreenChange={vi.fn()} />,
+    );
+    expect(await screen.findByText('The first notice.')).toBeVisible();
+    expect(screen.queryByRole('button', { name: /unread chat messages/ })).not.toBeInTheDocument();
+
+    const messages = screen.getByRole('log', { name: 'Room chat messages' });
+    Object.defineProperty(messages, 'scrollHeight', { configurable: true, value: 240 });
+    Object.defineProperty(messages, 'clientHeight', { configurable: true, value: 120 });
+    messages.scrollTop = 0;
+    fireEvent.scroll(messages);
+    storedMessages.push({
+      id: 2,
+      roomId: 'test-room',
+      speakerType: 'player',
+      speakerName: 'Alder',
+      text: 'I found a trail marker.',
+      createdAt: '2026-10-18T12:00:01.000Z',
+    });
+
+    await act(async () => { intervals[0]?.(); });
+    expect(await screen.findByRole('button', { name: '1 unread chat message. Jump to latest.' })).toBeVisible();
+
+    messages.scrollTop = 120;
+    fireEvent.scroll(messages);
+    expect(screen.queryByRole('button', { name: /unread chat message/ })).not.toBeInTheDocument();
+  });
+
   it('pauses hidden-tab chat polling and refreshes immediately on becoming visible', async () => {
     const visibility = vi.spyOn(document, 'visibilityState', 'get');
     visibility.mockReturnValue('visible');
