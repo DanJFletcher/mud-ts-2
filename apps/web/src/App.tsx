@@ -47,7 +47,7 @@ import {
   type AvailableClassAction,
   type CharacterClassDefinition,
 } from "@mudd/ui";
-import { ChevronDown, Compass, Heart, Info as InfoIcon, Keyboard, Menu, Moon, Sparkles, Sun, Users, X, Zap } from "lucide-react";
+import { ChevronDown, Coins, Compass, Heart, Info as InfoIcon, Keyboard, Menu, Moon, Sparkles, Sun, Users, X, Zap } from "lucide-react";
 import { RoomChatPanel, type RoomChatMessage } from "./RoomChatPanel.js";
 import { ActionRefreshGate } from "./action-refresh-gate.js";
 import { TerminalPanel } from "./TerminalPanel.js";
@@ -3938,20 +3938,35 @@ export function WorldClient({
                         </span>
                       )}
                     </div>
-                    {snapshot.character?.health && (
+                    {(snapshot.character?.health || (snapshot.character?.wallet && snapshot.currency)) && (
                       <div className="focused-terminal-vitals" role="group" aria-label="Character vitals">
-                        <span className="focused-terminal-vital" role="group" aria-label="Character health" title="Health">
-                          <Heart size={14} aria-hidden="true" />
-                          {snapshot.character.health.current}/{snapshot.character.health.maximum}
-                        </span>
-                        <span className="focused-terminal-vital" role="group" aria-label="Character stamina" title="Stamina">
-                          <Zap size={14} aria-hidden="true" />
-                          {snapshot.character.resources.stamina.current}/{snapshot.character.resources.stamina.maximum}
-                        </span>
-                        <span className="focused-terminal-vital" role="group" aria-label="Character mana" title="Mana">
-                          <Sparkles size={14} aria-hidden="true" />
-                          {snapshot.character.resources.mana.current}/{snapshot.character.resources.mana.maximum}
-                        </span>
+                        {snapshot.character?.health && (
+                          <>
+                            <span className="focused-terminal-vital" role="group" aria-label="Character health" title="Health">
+                              <Heart size={14} aria-hidden="true" />
+                              {snapshot.character.health.current}/{snapshot.character.health.maximum}
+                            </span>
+                            <span className="focused-terminal-vital" role="group" aria-label="Character stamina" title="Stamina">
+                              <Zap size={14} aria-hidden="true" />
+                              {snapshot.character.resources.stamina.current}/{snapshot.character.resources.stamina.maximum}
+                            </span>
+                            <span className="focused-terminal-vital" role="group" aria-label="Character mana" title="Mana">
+                              <Sparkles size={14} aria-hidden="true" />
+                              {snapshot.character.resources.mana.current}/{snapshot.character.resources.mana.maximum}
+                            </span>
+                          </>
+                        )}
+                        {snapshot.character.wallet && snapshot.currency && (
+                          <span
+                            className="focused-terminal-vital"
+                            role="group"
+                            aria-label={`Character currency balance: ${snapshot.character.wallet.balance} ${snapshot.currency.name}`}
+                            title={snapshot.currency.name}
+                          >
+                            <Coins size={14} aria-hidden="true" />
+                            {snapshot.character.wallet.balance} {snapshot.currency.symbol}
+                          </span>
+                        )}
                       </div>
                     )}
                     <div className="focused-terminal-history-shell">

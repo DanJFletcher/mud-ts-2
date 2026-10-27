@@ -107,7 +107,7 @@ let nextRoomChatMessageId: number;
 let roomOccupants: Array<{ id: string; displayName: string }>;
 let heartbeatOccupants: Array<{ id: string; displayName: string }>;
 let walletBalance: number;
-let worldCurrency: { id: string; name: string; symbol: string };
+let worldCurrency: { id: string; name: string; symbol: string } | undefined;
 let merchantLanternPurchased: boolean;
 let healingDraughtCarried: boolean;
 let fishingRodCarried: boolean;
@@ -2367,6 +2367,7 @@ describe('single-character world session client', () => {
     expect(screen.getByRole('group', { name: 'Character vitals' })).toHaveTextContent('3/6');
     expect(screen.getByRole('group', { name: 'Character stamina' })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Character mana' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Character currency balance: 12 moss mark' })).toHaveTextContent('12 m');
     expect(screen.queryByRole('textbox', { name: 'Enter a command' })).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Quick commands' })).not.toBeInTheDocument();
     const combatActions = screen.getByRole('group', { name: 'Combat actions' });
@@ -2401,7 +2402,7 @@ describe('single-character world session client', () => {
     expect(screen.getByLabelText('Character health')).toHaveTextContent('2/6');
     expect(screen.getByLabelText('Character stamina')).toHaveTextContent('70/100');
     expect(screen.getByLabelText('Character mana')).toHaveTextContent('100/100');
-    expect(screen.getByLabelText('Character vitals').querySelectorAll('svg')).toHaveLength(3);
+    expect(screen.getByLabelText('Character vitals').querySelectorAll('svg')).toHaveLength(4);
     const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
     fireEvent.change(commandInput, { target: { value: 'use Small healing draught' } });
     fireEvent.submit(commandInput.closest('form')!);
@@ -3364,9 +3365,17 @@ describe('single-character world session client', () => {
     walletBalance = 0;
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    expect(screen.getByRole('group', { name: 'Character currency balance: 0 gold piece' })).toHaveTextContent('0 g');
     fireEvent.click(screen.getByRole('link', { name: 'Info' }));
     await screen.findByRole('heading', { name: 'Vitals' });
     expect(screen.getByText('0 gold pieces')).toBeVisible();
+  });
+
+  it('omits the currency vital when the active world has no currency', async () => {
+    worldCurrency = undefined;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    expect(screen.queryByRole('group', { name: /Character currency balance/ })).not.toBeInTheDocument();
   });
 
   it('restores and persists the selected theme', async () => {
