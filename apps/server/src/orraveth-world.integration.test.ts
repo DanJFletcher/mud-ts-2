@@ -8,6 +8,7 @@ import {
 import { EngineHost, InMemoryEventStore, replayCharacter, SYSTEM_ACTOR_ID } from '@mudd/engine-core';
 import {
   autonomousNpcsPlugin,
+  combatPlugin,
   autonomousNpcStreamId,
   characterPlugin,
   createClassRulesetPlugin,
@@ -17,6 +18,7 @@ import {
   woodcuttingPlugin,
   WOODCUTTING_TREES_STREAM_ID,
   movementPlugin,
+  interactionPlugin,
   npcDialoguePlugin,
   projectAutonomousNpcPosition,
   worldItemsPlugin,
@@ -29,11 +31,13 @@ import {
 import { worldEventEffectsPlugin } from './demo-event-effects-plugin.js';
 import { projectWorldMap } from './world-map-projection.js';
 import { MuddHttpClient } from '@mudd/client-sdk';
+import { CharacterStatsQuerySchema } from '@mudd/contracts';
 
 function makeHarness(options: Readonly<{
   now?: () => Date;
   rng?: Readonly<{ roll: (sides: number) => number }>;
   world?: typeof orravethWorld;
+  includeCombat?: boolean;
 }> = {}) {
   let id = 0;
   const owners = new Map<string, string>();
@@ -48,6 +52,7 @@ function makeHarness(options: Readonly<{
       movementPlugin,
       merchantPlugin,
       npcDialoguePlugin,
+      ...(options.includeCombat ? [interactionPlugin, combatPlugin] : []),
       fishingPlugin,
       woodcuttingPlugin,
       craftingPlugin,
@@ -1401,7 +1406,7 @@ describe('Orraveth Bellwold settlement', () => {
       const crafted = await h.loadCharacter(characterId);
       expect(crafted.inventory.filter((item) => item.typeId === 'leather-gloves')).toHaveLength(5);
       expect(crafted.inventory.filter((item) => item.typeId === 'leather-gloves')
-        .every((item) => !item.equipment)).toBe(true);
+        .every((item) => item.equipment?.slot === 'gloves' && item.equipment.defenseBonus === 1)).toBe(true);
       expect(crafted.inventory.find((item) => item.typeId === 'tanned-deer-hide')).toMatchObject({
         stackable: true,
         quantity: 5,
@@ -1409,6 +1414,134 @@ describe('Orraveth Bellwold settlement', () => {
       expect(crafted.inventory.filter((item) => item.typeId === 'spool-of-thread')).toHaveLength(1);
       expect(crafted.inventory.find((item) => item.typeId === 'spool-of-thread')?.usesRemaining).toBe(5);
       expect(crafted.crafting).toEqual({ experienceHundredths: 6900, level: 2 });
+    } finally {
+      await h.engine.stop();
+    }
+  });
+
+  it('equips leather pieces, sums defense, enforces restrictions, and replays equipment events', async () => {
+    const world = structuredClone(orravethWorld);
+    const startingLocation = world.locations[0];
+    if (!startingLocation) throw new Error('Orraveth has no starting location.');
+    const leatherGear = [
+      { id: 'test-leather-gloves', typeId: 'leather-gloves', label: 'Leather gloves', slot: 'gloves', defenseBonus: 1 },
+      { id: 'test-leather-boots', typeId: 'leather-boots', label: 'Leather boots', slot: 'boots', defenseBonus: 1 },
+      { id: 'test-leather-cowl', typeId: 'leather-cowl', label: 'Leather cowl', slot: 'cowl', defenseBonus: 1 },
+      { id: 'test-leather-body', typeId: 'leather-body', label: 'Leather body', slot: 'body', defenseBonus: 2 },
+      { id: 'test-leather-chaps', typeId: 'leather-chaps', label: 'Leather chaps', slot: 'chaps', defenseBonus: 1 },
+      { id: 'test-leather-vambraces', typeId: 'leather-vambraces', label: 'Leather vambraces', slot: 'vambraces', defenseBonus: 1 },
+      { id: 'test-leather-shield', typeId: 'leather-shield', label: 'Leather shield', slot: 'shield', defenseBonus: 2 },
+    ] as const;
+    startingLocation.takeables = [
+      ...(startingLocation.takeables ?? []),
+      ...leatherGear.map(({ id, typeId, label, slot, defenseBonus }) => ({
+        id,
+        typeId,
+        label,
+        description: `A test ${label.toLocaleLowerCase()}.`,
+        equipment: { slot, attackBonus: 0, defenseBonus },
+      })),
+      {
+        id: 'test-non-equipment-stone',
+        typeId: 'test-stone',
+        label: 'Test stone',
+        description: 'A plain stone that cannot be equipped.',
+      },
+    ];
+    startingLocation.npcs = [
+      ...(startingLocation.npcs ?? []),
+      {
+        id: 'leather-gear-test-opponent',
+        name: 'Gear test opponent',
+        description: 'A harmless practice opponent.',
+        greeting: 'Ready when you are.',
+        topics: [],
+        unknownTopicResponse: 'There is nothing more to say.',
+        combatProfile: { maxHealth: 20, attackDamage: 1 },
+      },
+    ];
+    const h = makeHarness({ world, includeCombat: true });
+    await h.engine.start();
+    const client = new MuddHttpClient({
+      worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+      fetcher: async (input, init = {}) => {
+        const body = JSON.parse(String(init.body ?? '{}')) as unknown;
+        const result = String(input).endsWith('/commands')
+          ? await h.engine.dispatch(body, h.session)
+          : await h.engine.query(body, h.session);
+        return Response.json(result);
+      },
+    });
+    try {
+      const created = await client.createCharacter('Leather Guard', 'leather-gear-create', 'orraveth.scout');
+      const characterId = created.streamId!;
+      h.owners.set(characterId, h.session.playerId);
+      let character = await h.loadCharacter(characterId);
+      const stats = async () => {
+        const response = await h.engine.query(CharacterStatsQuerySchema.parse({
+          type: 'character.stats',
+          version: 1,
+          queryId: `leather-gear-stats-${character.revision}`,
+          worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+          characterId,
+          payload: {},
+        }), h.session);
+        if (!response.ok) throw new Error(response.message);
+        return response.value;
+      };
+
+      for (const gear of leatherGear) {
+        await client.take(characterId, gear.id, character.revision, `take-${gear.id}`);
+        character = await h.loadCharacter(characterId);
+      }
+      await client.take(characterId, 'test-non-equipment-stone', character.revision, 'take-stone');
+      character = await h.loadCharacter(characterId);
+      await expect(client.equip(characterId, 'not-carried', character.revision, 'equip-not-carried'))
+        .rejects.toThrow('You are not carrying that item.');
+      await expect(client.equip(characterId, 'test-non-equipment-stone', character.revision, 'equip-stone'))
+        .rejects.toThrow('Test stone cannot be equipped.');
+
+      for (const gear of leatherGear) {
+        await client.equip(characterId, gear.id, character.revision, `equip-${gear.id}`);
+        character = await h.loadCharacter(characterId);
+      }
+      expect(character.equipment).toMatchObject({
+        glovesItemId: 'test-leather-gloves',
+        bootsItemId: 'test-leather-boots',
+        cowlItemId: 'test-leather-cowl',
+        bodyItemId: 'test-leather-body',
+        chapsItemId: 'test-leather-chaps',
+        vambracesItemId: 'test-leather-vambraces',
+        shieldItemId: 'test-leather-shield',
+      });
+      expect((await stats()).armorPercent).toBe(45);
+      await expect(client.equip(characterId, 'test-leather-gloves', character.revision, 'equip-gloves-again'))
+        .rejects.toThrow('Leather gloves is already equipped.');
+
+      for (const gear of leatherGear) {
+        await client.unequip(characterId, gear.slot, character.revision, `unequip-${gear.id}`);
+        character = await h.loadCharacter(characterId);
+      }
+      expect((await stats()).armorPercent).toBe(0);
+      const history = await h.store.readStream(ORRAVETH_WORLD_INSTANCE_ID, characterId);
+      expect(replayCharacter(history)).toEqual(character);
+      expect(history.filter((event) => event.type === 'character.equipment_changed')).toHaveLength(14);
+
+      await client.equip(characterId, 'test-leather-body', character.revision, 'equip-body-for-combat');
+      character = await h.loadCharacter(characterId);
+      await client.performCombatAction(
+        characterId,
+        'attack',
+        character.revision,
+        { targetNpcId: 'leather-gear-test-opponent' },
+        'start-leather-gear-test-combat',
+      );
+      character = await h.loadCharacter(characterId);
+      await expect(client.unequip(characterId, 'body', character.revision, 'unequip-during-combat'))
+        .rejects.toThrow('You cannot change equipment during an active encounter.');
+      expect(character.combat?.playerHealth).toBe(6);
+      expect(character.combat?.lastNarration).toContain('after your armor absorbs 2');
+      expect((await stats()).armorPercent).toBe(10);
     } finally {
       await h.engine.stop();
     }

@@ -884,7 +884,7 @@ describe('turn-based PvE combat', () => {
     state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
     await client.equip(characterId, vest.id, state.revision, 'combat-equip-vest');
     state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-    expect(state.equipment).toEqual({ weaponItemId: blade.id, armorItemId: vest.id });
+    expect(state.equipment).toMatchObject({ weaponItemId: blade.id, armorItemId: vest.id });
     await expect(client.drop(characterId, vest.id, state.revision, 'combat-drop-equipped-vest'))
       .rejects.toThrow('Unequip that item before dropping it.');
 

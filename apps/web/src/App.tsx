@@ -18,7 +18,14 @@ import {
   type GameSnapshot,
   type PendingAction,
 } from "@mudd/client-sdk";
-import { FLEE_STAMINA_COST, type InteractionInbox } from "@mudd/contracts";
+import {
+  characterHasEquippedItem,
+  EQUIPMENT_SLOTS,
+  equipmentItemIdForSlot,
+  FLEE_STAMINA_COST,
+  type EquipmentSlot,
+  type InteractionInbox,
+} from "@mudd/contracts";
 import {
   ActivityLog,
   Button,
@@ -280,10 +287,10 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
   ],
   equip: [
     "Usage: equip <item>",
-    "Equip a carried weapon or armor item. Equipped gear changes combat damage.",
+    "Equip carried gear to its slot. Weapons change damage; armor changes defense.",
   ],
   unequip: [
-    "Usage: unequip <weapon|armor>",
+    "Usage: unequip <slot>",
     "Remove the item from an equipment slot. Gear cannot be changed during combat.",
   ],
   use: [
@@ -341,8 +348,8 @@ const GENERAL_HELP = [
   "get <item> | get <item> <container> — Take an item from the room or a container; alias of take.",
   "take <item> | take <item> <container> | take all — Pick up items from the room or a container.",
   "put <item> <container> — Store a carried item in a container here.",
-  "equip <item> — Equip a carried weapon or armor item.",
-  "unequip <weapon|armor> — Remove equipped gear from a slot.",
+  "equip <item> — Equip carried gear in its equipment slot.",
+  "unequip <slot> — Remove equipped gear from a slot.",
   "use <item> on <target> | use <healing item> | use <fishing rod> — Use a room item, restore health, or fish at a marked spot.",
   "rest — Rest for free in any room while out of combat; recover health, stamina, and mana.",
   "stand — Leave the free resting posture.",
@@ -1761,8 +1768,7 @@ export function WorldClient({
       return;
     }
     if (
-      snapshot.character.equipment.weaponItemId === itemId ||
-      snapshot.character.equipment.armorItemId === itemId
+      characterHasEquippedItem(snapshot.character.equipment, itemId)
     ) {
       addEntry("error", "Unequip that item before putting it away.");
       return;
@@ -1793,7 +1799,7 @@ export function WorldClient({
     const item = action === "equip"
       ? snapshot.character.inventory.find((candidate) => candidate.id === itemOrSlot)
       : undefined;
-    const slot = action === "equip" ? item?.equipment?.slot : itemOrSlot as "weapon" | "armor";
+    const slot = action === "equip" ? item?.equipment?.slot : itemOrSlot as EquipmentSlot;
     if (!slot) return;
     setPending("equip");
     try {
@@ -2925,11 +2931,11 @@ export function WorldClient({
     if (verb.toLowerCase() === "unequip") {
       addEntry("system", `> ${value}`);
       const slot = target.toLocaleLowerCase();
-      if (slot !== "weapon" && slot !== "armor") {
-        addEntry("error", "Unequip which slot? Use “unequip weapon” or “unequip armor”.");
+      if (!EQUIPMENT_SLOTS.includes(slot as EquipmentSlot)) {
+        addEntry("error", `Unequip which slot? Choose ${EQUIPMENT_SLOTS.join(", ")}.`);
         return;
       }
-      await changeEquipment("unequip", slot);
+      await changeEquipment("unequip", slot as EquipmentSlot);
       return;
     }
     if (verb.toLowerCase() === "look") {
@@ -3407,11 +3413,8 @@ export function WorldClient({
         ],
       })),
       ...inventory.map((item) => {
-        const equippedSlot = item.id === equipment?.weaponItemId
-          ? "weapon"
-          : item.id === equipment?.armorItemId
-            ? "armor"
-            : undefined;
+        const equippedSlot = EQUIPMENT_SLOTS.find((slot) =>
+          equipment && equipmentItemIdForSlot(equipment, slot) === item.id);
         const actions: ActivityLogAction[] = [{ id: "look", label: "Look" }];
         if (item.questBound !== true && !equippedSlot) actions.push({ id: "drop", label: "Drop" });
         if (item.equipment && !equippedSlot) actions.push({ id: "equip", label: "Equip" });
@@ -3440,13 +3443,11 @@ export function WorldClient({
 
     const command = actionId === "look"
       ? target.id.startsWith("room:") ? "look" : `look ${label}`
-      : actionId === "unequip-weapon"
-        ? "unequip weapon"
-        : actionId === "unequip-armor"
-          ? "unequip armor"
-          : ["read", "take", "talk", "shop", "attack", "drop", "equip"].includes(actionId)
-            ? `${actionId} ${label}`
-            : undefined;
+      : actionId.startsWith("unequip-")
+        ? `unequip ${actionId.slice("unequip-".length)}`
+        : ["read", "take", "talk", "shop", "attack", "drop", "equip"].includes(actionId)
+          ? `${actionId} ${label}`
+          : undefined;
     if (command) submitQuickCommand(command);
   };
   const handleTerminalLookTarget = (target: ActivityLogTarget) => {
@@ -3475,10 +3476,10 @@ export function WorldClient({
     const equipment = snapshot?.character?.equipment;
     const unequippedInventory = inventory.filter((item) =>
       item.questBound !== true &&
-      item.id !== equipment?.weaponItemId && item.id !== equipment?.armorItemId,
+      (!equipment || !characterHasEquippedItem(equipment, item.id)),
     );
     const gearToEquip = inventory.filter((item) => item.equipment &&
-      (item.equipment.slot === "weapon" ? equipment?.weaponItemId : equipment?.armorItemId) !== item.id);
+      (!equipment || equipmentItemIdForSlot(equipment, item.equipment.slot) !== item.id));
     const readableObjects = (snapshot?.location?.objects ?? []).filter((object) => object.readable);
     const localSources = (snapshot?.dailyActivities?.sources ?? [])
       .filter((source) => source.locationId === snapshot?.location?.locationId);
@@ -3527,7 +3528,7 @@ export function WorldClient({
     if (quickShopNpcs.length > 0) addMode("shop", "shop", "Show merchants");
     if (quickBuyListings.length > 0) addMode("buy", "buy", "Show items to buy");
     if (gearToEquip.length > 0 && visibleCombat?.status !== "active") addMode("equip", "equip", "Show gear to equip");
-    if ((equipment?.weaponItemId || equipment?.armorItemId) && visibleCombat?.status !== "active") {
+    if (equipment && Object.values(equipment).some(Boolean) && visibleCombat?.status !== "active") {
       addMode("unequip", "unequip", "Show equipped gear to remove");
     }
 
@@ -3922,8 +3923,7 @@ export function WorldClient({
                             <button type="button" className="focused-quick-command focused-combat-action" onClick={() => void performPvpAction("defend")} disabled={pending !== null}>defend</button>
                             {quickInventory.some((item) =>
                               item.consumable?.effect === "heal" &&
-                              item.id !== snapshot.character?.equipment.weaponItemId &&
-                              item.id !== snapshot.character?.equipment.armorItemId &&
+                              !characterHasEquippedItem(snapshot.character!.equipment, item.id) &&
                               (visiblePvp.participants.find((participant) => participant.characterId === snapshot.character?.characterId)?.health ?? 0) < (visiblePvp.participants.find((participant) => participant.characterId === snapshot.character?.characterId)?.maximumHealth ?? 0)
                             ) && (
                               <div className="focused-terminal-combat__items">
@@ -4114,20 +4114,18 @@ export function WorldClient({
                       {quickCommandMode === "equip" ? (
                         <>
                           <button type="button" className="focused-quick-command focused-quick-command--back" onClick={() => setQuickCommandMode("quick")} aria-label={quickReturnLabel} disabled={pending !== null}>‹</button>
-                          {(snapshot.character?.inventory ?? []).filter((item) => item.equipment && (
-                            item.equipment.slot === "weapon"
-                              ? snapshot.character?.equipment.weaponItemId !== item.id
-                              : snapshot.character?.equipment.armorItemId !== item.id
-                          )).map((item) => (
+                          {(snapshot.character?.inventory ?? []).filter((item) => item.equipment &&
+                            equipmentItemIdForSlot(snapshot.character!.equipment, item.equipment.slot) !== item.id)
+                            .map((item) => (
                             <button key={item.id} type="button" className="focused-quick-command" onClick={() => submitQuickCommand(`equip ${item.label}`)} aria-label={`Equip ${item.label}`} disabled={pending !== null}>{item.label.toLocaleLowerCase()}</button>
                           ))}
                         </>
                       ) : quickCommandMode === "unequip" ? (
                         <>
                           <button type="button" className="focused-quick-command focused-quick-command--back" onClick={() => setQuickCommandMode("quick")} aria-label={quickReturnLabel} disabled={pending !== null}>‹</button>
-                          {(["weapon", "armor"] as const).filter((slot) => slot === "weapon"
-                            ? snapshot.character?.equipment.weaponItemId
-                            : snapshot.character?.equipment.armorItemId).map((slot) => (
+                          {EQUIPMENT_SLOTS.filter((slot) =>
+                            equipmentItemIdForSlot(snapshot.character!.equipment, slot),
+                          ).map((slot) => (
                             <button key={slot} type="button" className="focused-quick-command" onClick={() => submitQuickCommand(`unequip ${slot}`)} aria-label={`Unequip ${slot}`} disabled={pending !== null}>{slot}</button>
                           ))}
                         </>
@@ -4242,13 +4240,11 @@ export function WorldClient({
                           </button>
                           {(snapshot.character?.inventory ?? []).filter((item) =>
                             item.questBound !== true &&
-                            item.id !== snapshot.character?.equipment.weaponItemId &&
-                            item.id !== snapshot.character?.equipment.armorItemId,
+                            !characterHasEquippedItem(snapshot.character!.equipment, item.id),
                           ).length ? (
                             (snapshot.character?.inventory ?? []).filter((item) =>
                               item.questBound !== true &&
-                              item.id !== snapshot.character?.equipment.weaponItemId &&
-                              item.id !== snapshot.character?.equipment.armorItemId,
+                              !characterHasEquippedItem(snapshot.character!.equipment, item.id),
                             ).map((item) => (
                               <button
                                 key={item.id}
@@ -4744,10 +4740,10 @@ export function WorldClient({
                     <div className="focused-detail focused-detail--wide">
                       <span>Equipped</span>
                       <div className="focused-equipment">
-                        {(["weapon", "armor"] as const).map((slot) => {
-                          const itemId = slot === "weapon"
-                            ? snapshot.character?.equipment.weaponItemId
-                            : snapshot.character?.equipment.armorItemId;
+                        {EQUIPMENT_SLOTS.map((slot) => {
+                          const itemId = snapshot.character
+                            ? equipmentItemIdForSlot(snapshot.character.equipment, slot)
+                            : null;
                           const item = snapshot.character?.inventory.find((candidate) => candidate.id === itemId);
                           return (
                             <div className="focused-equipment-slot" key={slot}>
@@ -4768,8 +4764,11 @@ export function WorldClient({
                       {snapshot.character?.inventory.some((item) => item.equipment) ? (
                         <div className="focused-inventory">
                           {snapshot.character.inventory.filter((item) => item.equipment).map((item) => {
-                            const slotKey = item.equipment?.slot === "weapon" ? "weaponItemId" : "armorItemId";
-                            const isEquipped = snapshot.character?.equipment[slotKey] === item.id;
+                            const isEquipped = Boolean(snapshot.character &&
+                              item.equipment && equipmentItemIdForSlot(
+                                snapshot.character.equipment,
+                                item.equipment.slot,
+                              ) === item.id);
                             return (
                               <div className="focused-inventory-entry" key={item.id}>
                                 <span className="focused-inventory-label">{item.label}</span>
@@ -4815,7 +4814,7 @@ export function WorldClient({
                               </button>
                               {item.equipment && (
                                 <span className="focused-item-tag focused-item-tag--compact">
-                                  {snapshot.character?.equipment[item.equipment.slot === "weapon" ? "weaponItemId" : "armorItemId"] === item.id ? "Equipped" : item.equipment.slot}
+                                  {equipmentItemIdForSlot(snapshot.character!.equipment, item.equipment.slot) === item.id ? "Equipped" : item.equipment.slot}
                                 </span>
                               )}
                             </div>
@@ -5066,8 +5065,7 @@ export function WorldClient({
                           ? (character?.inventory ?? []).filter((item) =>
                             item.typeId === job.details!.supplyTypeId &&
                             item.questBound !== true &&
-                            item.id !== character?.equipment?.weaponItemId &&
-                            item.id !== character?.equipment?.armorItemId
+                            (!character?.equipment || !characterHasEquippedItem(character.equipment, item.id))
                           ).length
                           : 0;
                         return (

@@ -2,6 +2,7 @@ import {
   DailyBoardQuerySchema, DailyBoardProjectionSchema, DailyJobCommandSchema,
   GatherSupplyCommandSchema, dailyCycle, dailyPostings,
   DailyJobChangedEventSchema, SupplyGatheredEventSchema,
+  characterHasEquippedItem,
   type CharacterProjection, type WorldPackDraft,
 } from '@mudd/contracts';
 import { RuleViolationError, type EnginePlugin } from '@mudd/engine-core';
@@ -24,7 +25,7 @@ function boardAt(world: WorldPackDraft, character: CharacterProjection, boardId:
 }
 function supplies(character: CharacterProjection, typeId: string) {
   return character.inventory.filter((item) => item.typeId === typeId && !item.questBound &&
-    item.id !== character.equipment.weaponItemId && item.id !== character.equipment.armorItemId);
+    !characterHasEquippedItem(character.equipment, item.id));
 }
 function supplyCount(character: CharacterProjection, typeId: string) {
   return supplies(character, typeId).reduce((count, item) => count + (item.quantity ?? 1), 0);

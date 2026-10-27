@@ -33,12 +33,17 @@ export function characterAttackDamage(character: CharacterProjection): number {
   return Math.max(1, BASE_PLAYER_DAMAGE + strengthBonus + (weapon?.equipment?.attackBonus ?? 0));
 }
 
+export function characterDefenseReduction(character: CharacterProjection): number {
+  const equippedItemIds = new Set(Object.values(character.equipment).filter((id): id is string => id !== null));
+  return character.inventory.reduce((defense, item) =>
+    equippedItemIds.has(item.id) ? defense + (item.equipment?.defenseBonus ?? 0) : defense, 0);
+}
+
 export function calculateCharacterStats(character: CharacterProjection) {
   const { strength, intelligence, constitution, dexterity } = character.attributes;
   const weapon = character.inventory.find((item) => item.id === character.equipment.weaponItemId);
-  const armor = character.inventory.find((item) => item.id === character.equipment.armorItemId);
   const weaponBonus = weapon?.equipment?.attackBonus ?? 0;
-  const armorBonus = armor?.equipment?.defenseBonus ?? 0;
+  const armorBonus = characterDefenseReduction(character);
 
   return CharacterStatsProjectionSchema.parse({
     attributes: character.attributes,

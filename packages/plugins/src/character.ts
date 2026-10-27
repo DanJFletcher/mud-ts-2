@@ -13,6 +13,8 @@ import {
   DEFAULT_CHARACTER_RESOURCES,
   DEFAULT_CHARACTER_ATTRIBUTES,
   DEFAULT_CHARACTER_HONORS,
+  characterHasEquippedItem,
+  equipmentItemIdForSlot,
   FLEE_STAMINA_COST,
   CharacterSharedItemRelinquishedEventSchema,
   CharacterItemTakenEventSchema,
@@ -579,7 +581,7 @@ export const characterPlugin: EnginePlugin = {
         worldLocation.takeables?.some((candidate) => candidate.id === item.id && candidate.questBound === true),
       );
       if (questBound) throw new RuleViolationError('Quest items cannot be dropped.');
-      if (character.equipment.weaponItemId === item.id || character.equipment.armorItemId === item.id) {
+      if (characterHasEquippedItem(character.equipment, item.id)) {
         throw new RuleViolationError('Unequip that item before dropping it.');
       }
       if (item.sharedItemId) {
@@ -636,7 +638,7 @@ export const characterPlugin: EnginePlugin = {
         ),
       );
       if (questBound) throw new RuleViolationError('Quest items cannot be put away.');
-      if (character.equipment.weaponItemId === item.id || character.equipment.armorItemId === item.id) {
+      if (characterHasEquippedItem(character.equipment, item.id)) {
         throw new RuleViolationError('Unequip that item before putting it away.');
       }
       const itemLocation = character.itemLocations.find((entry) => entry.item.id === item.id);
@@ -707,16 +709,14 @@ export const characterPlugin: EnginePlugin = {
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
       assertCharacterAlive(character);
       assertCharacterStanding(character);
-      if (character.combat?.status === 'active') {
+      if (character.combat?.status === 'active' || await isInSharedCombat(context, character.characterId)) {
         throw new RuleViolationError('You cannot change equipment during an active encounter.');
       }
       const item = character.inventory.find((candidate) => candidate.id === command.payload.itemId);
       if (!item) throw new RuleViolationError('You are not carrying that item.');
       if (!item.equipment) throw new RuleViolationError(`${item.label} cannot be equipped.`);
       const { slot } = item.equipment;
-      const currentItemId = slot === 'weapon'
-        ? character.equipment.weaponItemId
-        : character.equipment.armorItemId;
+      const currentItemId = equipmentItemIdForSlot(character.equipment, slot);
       if (currentItemId === item.id) throw new RuleViolationError(`${item.label} is already equipped.`);
       const payload = { characterId: character.characterId, slot, itemId: item.id };
       CharacterEquipmentChangedEventSchema.shape.payload.parse(payload);
@@ -732,12 +732,10 @@ export const characterPlugin: EnginePlugin = {
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
       assertCharacterAlive(character);
       assertCharacterStanding(character);
-      if (character.combat?.status === 'active') {
+      if (character.combat?.status === 'active' || await isInSharedCombat(context, character.characterId)) {
         throw new RuleViolationError('You cannot change equipment during an active encounter.');
       }
-      const currentItemId = command.payload.slot === 'weapon'
-        ? character.equipment.weaponItemId
-        : character.equipment.armorItemId;
+      const currentItemId = equipmentItemIdForSlot(character.equipment, command.payload.slot);
       if (!currentItemId) throw new RuleViolationError(`You have no ${command.payload.slot} equipped.`);
       const payload = { characterId: character.characterId, slot: command.payload.slot, itemId: null };
       CharacterEquipmentChangedEventSchema.shape.payload.parse(payload);

@@ -13,8 +13,8 @@ The client needs a consistent character sheet for primary attributes, combat rat
 - The combat plugin provides a read-only `character.stats` query. It derives the displayed combat ratings from the current character projection and equipment; these ratings are not copied into a second persistence aggregate.
 - Strength contributes to actual damage in solo PvE, party PvE, and PvP. Damage is `max(1, 2 + floor((Strength - 10) / 5) + weapon attack bonus)`.
 - Constitution contributes to maximum health in solo PvE, party PvE, and PvP. Maximum health is `max(1, 6 + 2 × (level - 1) + floor((Constitution - 10) / 5))`.
-- A Strength and Constitution of 10 preserve the existing level-one baseline of 2 base damage and 6 health. Existing weapon bonuses and flat armor defense remain in effect.
-- The Stats screen displays the complete stat list. Spell power, regeneration, critical chance, resilience, dodge, and honor awards are tracked or projected for future systems; they do not introduce spell, stamina, critical-hit, avoidance, regeneration, or honor-award mechanics in this change. The displayed Armor percentage is a rating derived from equipped armor; current combat continues to apply its established flat defense bonus.
+- A Strength and Constitution of 10 preserve the existing level-one baseline of 2 base damage and 6 health. Existing weapon bonuses remain in effect; equipped defensive bonuses are summed.
+- The Stats screen displays the complete stat list. Spell power, regeneration, critical chance, resilience, dodge, and honor awards are tracked or projected for future systems; they do not introduce spell, stamina, critical-hit, avoidance, regeneration, or honor-award mechanics in this change. The displayed Armor percentage is derived from the sum of equipped defensive bonuses; combat reduces incoming damage by that same sum.
 - XP and level continue to come from character advancement. The currency row uses the active world's wallet and currency name, so a world may label it Gold or another currency.
 - Combat outcomes remain event facts. Replay does not recalculate historical damage or health from current stat formulas.
 

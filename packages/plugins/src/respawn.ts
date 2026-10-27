@@ -1,5 +1,6 @@
 import {
   CharacterRespawnedEventSchema,
+  characterHasEquippedItem,
   type CharacterProjection,
   type InventoryItemProjection,
 } from '@mudd/contracts';
@@ -32,8 +33,7 @@ export function prepareCharacterRespawn(
     item.questBound !== true &&
     !context.world.locations.some((location) =>
       location.takeables?.some((takeable) => takeable.id === item.id && takeable.questBound === true)) &&
-    character.equipment.weaponItemId !== item.id &&
-    character.equipment.armorItemId !== item.id);
+    !characterHasEquippedItem(character.equipment, item.id));
   const selected = eligible.length ? eligible[context.rng.roll(eligible.length) - 1] : undefined;
   if (eligible.length && !selected) {
     throw new Error('The authoritative RNG returned an out-of-range item selection.');

@@ -32,7 +32,7 @@ import {
 import { prepareCharacterRespawn } from './respawn.js';
 import { registerPvpCombat } from './pvp-combat.js';
 import { interactionPolicyRegistry } from './interactions.js';
-import { calculateCharacterStats, characterAttackDamage, maximumHealthForLevel, levelAfterExperience } from './character-stats.js';
+import { calculateCharacterStats, characterAttackDamage, characterDefenseReduction, maximumHealthForLevel, levelAfterExperience } from './character-stats.js';
 import { createWorldCorpseEffect } from './world-items.js';
 import { classAdoptionGuards, classCombatPolicyCapability, type ClassCombatPolicy } from './classes.js';
 import { z } from 'zod';
@@ -376,9 +376,8 @@ export const combatPlugin: EnginePlugin = {
         throw new RuleViolationError(`You need ${FLEE_STAMINA_COST} stamina to flee.`);
       }
       const opponentStyle = encounter.opponentStyle ?? npc.combatProfile.style ?? 'steady';
-      const armor = character.inventory.find((item) => item.id === character.equipment.armorItemId);
       const attackDamage = ability?.damage ?? characterAttackDamage(character);
-      const damageReduction = armor?.equipment?.defenseBonus ?? 0;
+      const damageReduction = characterDefenseReduction(character);
       let damageDealt = 0;
       let damageTaken = 0;
       let healingDone = 0;

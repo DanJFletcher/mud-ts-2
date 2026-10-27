@@ -178,6 +178,7 @@ export const craftingPlugin: EnginePlugin = {
           typeId: recipe.outputTypeId,
           label: recipe.outputLabel,
           description: recipe.outputDescription,
+          ...(recipe.equipment ? { equipment: recipe.equipment } : {}),
         })),
         materialConsumptions,
         experienceAwardedHundredths,

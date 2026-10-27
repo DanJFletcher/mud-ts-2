@@ -7,6 +7,8 @@ import {
   CharacterItemDroppedEventSchema,
   CharacterItemStoredEventSchema,
   CharacterEquipmentChangedEventSchema,
+  characterHasEquippedItem,
+  equipmentItemIdForSlot,
   CharacterItemUsedEventSchema,
   CharacterObjectReadEventSchema,
   CharacterNpcDialogueChoiceMadeEventSchema,
@@ -290,8 +292,8 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
             consumedItemIds.some((id) => state!.inventory.find((item) => item.id === id)?.typeId !== terms.supplyTypeId) ||
             consumedItemQuantities.some(({ itemId }) => state!.inventory.find((item) => item.id === itemId)?.typeId !== terms.supplyTypeId)
           )) ||
-          consumed.has(state.equipment.weaponItemId ?? '') || consumed.has(state.equipment.armorItemId ?? '') ||
-          partialConsumption.has(state.equipment.weaponItemId ?? '') || partialConsumption.has(state.equipment.armorItemId ?? '')) {
+          [...consumed].some((id) => characterHasEquippedItem(state!.equipment, id)) ||
+          [...partialConsumption.keys()].some((id) => characterHasEquippedItem(state!.equipment, id))) {
         throw new Error('Invalid daily job transition.');
       }
       state = CharacterProjectionSchema.parse({
@@ -381,7 +383,8 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
         item.typeId === recipe.outputTypeId &&
         item.label === recipe.outputLabel &&
         item.description === recipe.outputDescription &&
-        Object.keys(item).every((key) => ['id', 'typeId', 'label', 'description'].includes(key)),
+        JSON.stringify(item.equipment ?? null) === JSON.stringify(recipe.equipment ?? null) &&
+        Object.keys(item).every((key) => ['id', 'typeId', 'label', 'description', 'equipment'].includes(key)),
       );
       for (const consumption of materialConsumptions) {
         const item = state.inventory.find((candidate) => candidate.id === consumption.itemId);
@@ -696,8 +699,7 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
         ? event.version === 3 &&
           Boolean(consumedItem?.consumable) &&
           !consumedItem?.equipment &&
-          state.equipment.weaponItemId !== consumedItemId &&
-          state.equipment.armorItemId !== consumedItemId
+          (consumedItemId === undefined || !characterHasEquippedItem(state.equipment, consumedItemId))
         : !consumedItemId && healingDone === 0;
       const expectedStartingHealth = previous?.status === 'active'
         ? previous.playerHealth
@@ -792,8 +794,7 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
         state.combat?.status === 'active' ||
         !item?.consumable ||
         item.equipment ||
-        state.equipment.weaponItemId === used.payload.itemId ||
-        state.equipment.armorItemId === used.payload.itemId ||
+        characterHasEquippedItem(state.equipment, used.payload.itemId) ||
         !previousHealth ||
         expectedHealing <= 0 ||
         used.payload.healingDone !== expectedHealing ||
@@ -824,8 +825,7 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
         consumedItems.some((item) =>
           !item?.consumable ||
           item.equipment ||
-          state!.equipment.weaponItemId === item.id ||
-          state!.equipment.armorItemId === item.id)
+          characterHasEquippedItem(state!.equipment, item.id))
       ) {
         throw new Error(`Invalid PvP outcome at revision ${event.aggregateVersion}.`);
       }
@@ -901,8 +901,7 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
         (droppedItem && (
           !sourceItem ||
           sourceItem.questBound === true ||
-          sourceItem.id === state.equipment.weaponItemId ||
-          sourceItem.id === state.equipment.armorItemId ||
+          characterHasEquippedItem(state.equipment, sourceItem.id) ||
           droppedItem.item.id !== droppedItem.item.sharedItemId ||
           state.inventory.some((item) =>
             item.id === droppedItem.item.id && item.id !== droppedItem.sourceItemId) ||
@@ -960,8 +959,7 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
         !item ||
         item.sharedItemId !== worldItemId ||
         item.questBound === true ||
-        state.equipment.weaponItemId === worldItemId ||
-        state.equipment.armorItemId === worldItemId
+        characterHasEquippedItem(state.equipment, worldItemId)
       ) {
         throw new Error(`Invalid shared item relinquishment at revision ${event.aggregateVersion}.`);
       }
@@ -1071,8 +1069,7 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
         !carriedItem ||
         carriedItem.questBound === true ||
         carriedItem.questBound !== dropped.payload.item.questBound ||
-        state.equipment.weaponItemId === dropped.payload.item.id ||
-        state.equipment.armorItemId === dropped.payload.item.id ||
+        characterHasEquippedItem(state.equipment, dropped.payload.item.id) ||
         itemLocation?.locationId !== null ||
         carriedItem.label !== dropped.payload.item.label ||
         carriedItem.description !== dropped.payload.item.description
@@ -1097,8 +1094,7 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
         stored.payload.locationId !== state.locationId ||
         !carriedItem ||
         carriedItem.questBound === true ||
-        state.equipment.weaponItemId === stored.payload.item.id ||
-        state.equipment.armorItemId === stored.payload.item.id ||
+        characterHasEquippedItem(state.equipment, stored.payload.item.id) ||
         itemLocation?.locationId !== null ||
         carriedItem.typeId !== stored.payload.item.typeId ||
         carriedItem.label !== stored.payload.item.label ||
@@ -1125,9 +1121,7 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
       const changed = CharacterEquipmentChangedEventSchema.parse(publicEvent);
       const { characterId, slot, itemId } = changed.payload;
       const item = itemId ? state.inventory.find((candidate) => candidate.id === itemId) : undefined;
-      const previousItemId = slot === 'weapon'
-        ? state.equipment.weaponItemId
-        : state.equipment.armorItemId;
+      const previousItemId = equipmentItemIdForSlot(state.equipment, slot);
       if (
         characterId !== state.characterId ||
         previousItemId === itemId ||
@@ -1139,7 +1133,7 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
         ...state,
         equipment: {
           ...state.equipment,
-          [slot === 'weapon' ? 'weaponItemId' : 'armorItemId']: itemId,
+          [`${slot}ItemId`]: itemId,
         },
         revision: event.aggregateVersion,
       });

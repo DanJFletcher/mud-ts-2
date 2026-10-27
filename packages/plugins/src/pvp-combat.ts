@@ -22,7 +22,7 @@ import {
 } from './interactions.js';
 import { prepareCharacterRespawn } from './respawn.js';
 import { worldItemDropEffect } from './world-items.js';
-import { characterAttackDamage, maximumHealthForLevel } from './character-stats.js';
+import { characterAttackDamage, characterDefenseReduction, maximumHealthForLevel } from './character-stats.js';
 import { assertCharacterStanding } from './character.js';
 import { classAdoptionGuards, classCombatPolicyCapability, type ClassCombatPolicy } from './classes.js';
 
@@ -113,7 +113,6 @@ function createEncounter(
 ): z.infer<typeof PrivateEncounterSchema> {
   const getStats = (character: typeof left) => {
     const max = maximumHealth(character);
-    const armor = character.inventory.find((item) => item.id === character.equipment.armorItemId);
     return {
       projection: {
         characterId: character.characterId,
@@ -125,7 +124,7 @@ function createEncounter(
         characterId: character.characterId,
         characterHealthAnchor: Math.min(character.health?.current ?? max, max),
         attackDamage: characterAttackDamage(character),
-        defenseReduction: armor?.equipment?.defenseBonus ?? 0,
+        defenseReduction: characterDefenseReduction(character),
         consumables: character.inventory
           .filter((item) => item.consumable && !item.equipment)
           .map((item) => ({ itemId: item.id, amount: item.consumable!.amount })),

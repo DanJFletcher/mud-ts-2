@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { ClientCommandBaseSchema, ClientQueryBaseSchema, DomainEventBaseSchema } from './protocol.js';
 import { IdSchema, NonNegativeIntSchema, PositiveIntSchema } from './ids.js';
-import { InventoryItemProjectionSchema } from './character.js';
+import { InventoryEquipmentSchema, InventoryItemProjectionSchema } from './character.js';
 import { CraftingSkillSchema } from './crafting-skill.js';
 
 export const CraftingIngredientDefinitionSchema = z.object({
@@ -24,6 +24,7 @@ export const CraftingRecipeDefinitionSchema = z.object({
   outputTypeId: IdSchema,
   outputLabel: z.string().min(1).max(120),
   outputDescription: z.string().min(1).max(1000),
+  equipment: InventoryEquipmentSchema.optional(),
   requiredLevel: PositiveIntSchema.max(99),
   experience: CraftingExperienceSchema,
   toolTypeIds: z.array(IdSchema).min(1).max(8),

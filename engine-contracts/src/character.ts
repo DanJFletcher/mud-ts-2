@@ -19,14 +19,14 @@ export const ConsumableItemSchema = z.object({
 }).strict();
 
 export const InventoryEquipmentSchema = z.object({
-  slot: z.enum(['weapon', 'armor']),
+  slot: z.enum(['weapon', 'armor', 'gloves', 'boots', 'cowl', 'body', 'chaps', 'vambraces', 'shield']),
   attackBonus: NonNegativeIntSchema.max(10).default(0),
   defenseBonus: NonNegativeIntSchema.max(10).default(0),
 }).strict().superRefine((equipment, context) => {
   if (equipment.slot === 'weapon' && equipment.defenseBonus > 0) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['defenseBonus'], message: 'Weapons cannot provide armor.' });
   }
-  if (equipment.slot === 'armor' && equipment.attackBonus > 0) {
+  if (equipment.slot !== 'weapon' && equipment.attackBonus > 0) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['attackBonus'], message: 'Armor cannot provide weapon damage.' });
   }
 });
@@ -85,11 +85,42 @@ export const InventoryItemProjectionSchema = z.object({
   }
 });
 
-export const EquipmentSlotSchema = z.enum(['weapon', 'armor']);
+export const EquipmentSlotSchema = z.enum([
+  'weapon', 'armor', 'gloves', 'boots', 'cowl', 'body', 'chaps', 'vambraces', 'shield',
+]);
+export const EQUIPMENT_SLOTS = EquipmentSlotSchema.options;
 export const CharacterEquipmentSchema = z.object({
   weaponItemId: IdSchema.nullable(),
   armorItemId: IdSchema.nullable(),
+  glovesItemId: IdSchema.nullable().default(null),
+  bootsItemId: IdSchema.nullable().default(null),
+  cowlItemId: IdSchema.nullable().default(null),
+  bodyItemId: IdSchema.nullable().default(null),
+  chapsItemId: IdSchema.nullable().default(null),
+  vambracesItemId: IdSchema.nullable().default(null),
+  shieldItemId: IdSchema.nullable().default(null),
 }).strict();
+export type CharacterEquipment = z.infer<typeof CharacterEquipmentSchema>;
+
+export function equipmentItemIdForSlot(equipment: CharacterEquipment, slot: EquipmentSlot): string | null {
+  return equipment[`${slot}ItemId` as keyof CharacterEquipment] ?? null;
+}
+
+export function characterHasEquippedItem(equipment: CharacterEquipment, itemId: string): boolean {
+  return Object.values(equipment).includes(itemId);
+}
+
+export const DEFAULT_CHARACTER_EQUIPMENT: CharacterEquipment = Object.freeze({
+  weaponItemId: null,
+  armorItemId: null,
+  glovesItemId: null,
+  bootsItemId: null,
+  cowlItemId: null,
+  bodyItemId: null,
+  chapsItemId: null,
+  vambracesItemId: null,
+  shieldItemId: null,
+});
 
 export const CharacterWalletSchema = z.object({
   currencyId: IdSchema,
@@ -514,7 +545,7 @@ export const CharacterProjectionSchema = z.object({
   visitedLocationIds: z.array(IdSchema).default([]),
   revision: NonNegativeIntSchema,
   inventory: z.array(InventoryItemProjectionSchema).default([]),
-  equipment: CharacterEquipmentSchema.default({ weaponItemId: null, armorItemId: null }),
+  equipment: CharacterEquipmentSchema.default(DEFAULT_CHARACTER_EQUIPMENT),
   attributes: CharacterAttributesSchema.default(DEFAULT_CHARACTER_ATTRIBUTES),
   characterClass: CharacterClassSnapshotSchema.optional(),
   availableClassActions: z.array(AvailableClassActionSchema).default([]),

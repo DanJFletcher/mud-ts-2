@@ -31,7 +31,7 @@ import {
   type CharacterStateCapability,
 } from './character.js';
 import { prepareCharacterRespawn } from './respawn.js';
-import { characterAttackDamage, maximumHealthForLevel, levelAfterExperience } from './character-stats.js';
+import { characterAttackDamage, characterDefenseReduction, maximumHealthForLevel, levelAfterExperience } from './character-stats.js';
 import {
   teamCombatRosterPolicyCapability,
   teamRoadEncounterCapability,
@@ -693,10 +693,7 @@ export const teamCombatPlugin: EnginePlugin = {
             : undefined;
           if (enemy && enemyDefinition?.combatProfile && target) {
             const armor = participantCharacters.get(target.characterId!);
-            const equippedArmor = armor?.inventory.find((item) =>
-              item.id === armor.equipment.armorItemId,
-            );
-            const armorDefense = equippedArmor?.equipment?.defenseBonus ?? 0;
+            const armorDefense = armor ? characterDefenseReduction(armor) : 0;
           const baseAttack = enemyDefinition.combatProfile.style === 'heavy' && encounter.round % 2 === 1
               ? 0
               : Math.max(0, enemyDefinition.combatProfile.attackDamage - armorDefense -

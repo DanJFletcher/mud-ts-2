@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CharacterRosterSnapshot, WorldSummary } from '@mudd/client-sdk';
+import { DEFAULT_CHARACTER_EQUIPMENT } from '@mudd/contracts';
 import type { ReactNode } from 'react';
 
 const mocks = vi.hoisted(() => ({
@@ -43,7 +44,7 @@ const worlds: WorldSummary[] = [
 const fixture: CharacterRosterSnapshot['characters'][number] = {
   worldInstanceId: demo, characterId: one, name: 'Rowan', worldName: 'The Waystone Path',
   locationId: 'mossgate-clearing', locationTitle: 'Mossgate Clearing', visitedLocationIds: ['mossgate-clearing'],
-  revision: 1, inventory: [], equipment: { weaponItemId: null, armorItemId: null }, availableClassActions: [],
+  revision: 1, inventory: [], equipment: DEFAULT_CHARACTER_EQUIPMENT, availableClassActions: [],
   dailyJobs: [], supplyCollections: [],
   attributes: { strength: 10, intelligence: 10, constitution: 10, dexterity: 10 }, honors: { glory: 0, medals: 0 },
   resources: { stamina: { current: 100, maximum: 100 }, mana: { current: 100, maximum: 100 } },

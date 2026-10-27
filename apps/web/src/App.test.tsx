@@ -2261,7 +2261,7 @@ describe('single-character world session client', () => {
     expect(history).toHaveTextContent('talk <npc> [about <topic>] — Speak privately with someone in the current room.');
     expect(history).toHaveTextContent('use <item> on <target> | use <healing item> | use <fishing rod> — Use a room item, restore health, or fish at a marked spot.');
     expect(history).toHaveTextContent('Quick actions include available movement, item, equipment, merchant, dialogue, and combat actions.');
-    expect(history).toHaveTextContent('equip <item> — Equip a carried weapon or armor item.');
+    expect(history).toHaveTextContent('equip <item> — Equip carried gear in its equipment slot.');
 
     fireEvent.change(commandInput, { target: { value: 'help LOOK' } });
     fireEvent.submit(commandInput.closest('form')!);
