@@ -277,6 +277,10 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
     "Usage: take <item> | take <item> <container> | take all",
     "Pick up an item in the current room or one of its containers; get is an alias.",
   ],
+  loot: [
+    "Usage: loot <corpse>",
+    "Take all remaining items and currency from a corpse in this room.",
+  ],
   get: [
     "Usage: get <item> | get <item> <container>",
     "Take an item from the room or the named container. Get is an alias of take.",
@@ -347,6 +351,7 @@ const GENERAL_HELP = [
   "read <object> | read bulletin — Read room text or open the local daily bulletin.",
   "get <item> | get <item> <container> — Take an item from the room or a container; alias of take.",
   "take <item> | take <item> <container> | take all — Pick up items from the room or a container.",
+  "loot <corpse> — Take all remaining items and currency from a corpse here.",
   "put <item> <container> — Store a carried item in a container here.",
   "equip <item> — Equip carried gear in its equipment slot.",
   "unequip <slot> — Remove equipped gear from a slot.",
@@ -358,7 +363,7 @@ const GENERAL_HELP = [
   "attack <opponent> — Begin an encounter or attack during combat.",
   "defend — Guard against the opponent’s next strike.",
   `flee — End an active PvE encounter; costs ${FLEE_STAMINA_COST} stamina.`,
-  "Quick actions include available movement, item, equipment, merchant, dialogue, and combat actions.",
+  "Quick actions include available movement, item, loot, equipment, merchant, dialogue, and combat actions.",
 ];
 
 function getCommandHelp(topic: string): readonly string[] {
@@ -470,7 +475,7 @@ export function WorldClient({
     const desktopQuery = window.matchMedia?.("(min-width: 700px)");
     return desktopQuery ? !desktopQuery.matches : window.innerWidth < 700;
   });
-  const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "choose-exit" | "look" | "read" | "drop" | "take" | "talk" | "attack" | "shop" | "buy" | "use" | "use-target" | "equip" | "unequip">("quick");
+  const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "choose-exit" | "look" | "read" | "drop" | "take" | "loot" | "talk" | "attack" | "shop" | "buy" | "use" | "use-target" | "equip" | "unequip">("quick");
   const [quickUseItemId, setQuickUseItemId] = useState<string | null>(null);
   const [combatUseMenuOpen, setCombatUseMenuOpen] = useState(false);
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
@@ -1737,6 +1742,64 @@ export function WorldClient({
     }
   }, [addEntry, pending, snapshot]);
 
+  const lootCorpse = useCallback(async (corpseId: string, corpseLabel: string) => {
+    if (!snapshot?.character || pending) return;
+    setPending("take");
+    try {
+      let latestSnapshot = await client.getGame();
+      setSnapshot(latestSnapshot);
+      setConnectionError("");
+      const location = latestSnapshot.location;
+      const corpse = location?.objects.find((object) =>
+        object.id === corpseId && object.containerKind === "corpse",
+      );
+      if (!location || !corpse) {
+        addEntry("error", `You do not see the ${corpseLabel.toLocaleLowerCase()} here.`);
+        return;
+      }
+
+      const initialContents = location.objects.filter((object) =>
+        object.containerId === corpse.id && object.takeable,
+      );
+      if (!initialContents.length) {
+        addEntry("narration", `The ${corpse.label.toLocaleLowerCase()} has nothing left to loot.`);
+        return;
+      }
+
+      let takenCount = 0;
+      for (const item of initialContents) {
+        const currentLocation = latestSnapshot.location;
+        if (!currentLocation?.objects.some((object) =>
+          object.id === item.id &&
+          object.containerId === corpse.id &&
+          object.takeable,
+        )) continue;
+
+        await client.take(snapshot.character.characterId, item.id, currentLocation.revision);
+        latestSnapshot = await client.getGame();
+        setSnapshot(latestSnapshot);
+        setConnectionError("");
+        addEntry("narration", `You pick up the ${item.label.toLocaleLowerCase()}.`);
+        takenCount += 1;
+      }
+
+      if (!takenCount) addEntry("narration", `The ${corpse.label.toLocaleLowerCase()} has nothing left to loot.`);
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "You cannot loot that corpse just now.");
+      try {
+        const currentSnapshot = await client.getGame();
+        setSnapshot(currentSnapshot);
+        setConnectionError("");
+      } catch (refreshError) {
+        const message = refreshError instanceof Error ? refreshError.message : "The world could not be reached.";
+        setConnectionError(message);
+        addEntry("error", message);
+      }
+    } finally {
+      setPending(null);
+    }
+  }, [addEntry, pending, snapshot]);
+
   const dropObject = useCallback(async (itemId: string, label: string) => {
     if (!snapshot?.character || !snapshot.location || pending) return;
     if (snapshot.character.inventory.find((item) => item.id === itemId)?.questBound) {
@@ -2977,6 +3040,27 @@ export function WorldClient({
       await readObject(matches[0]!.id);
       return;
     }
+    if (verb.toLowerCase() === "loot") {
+      addEntry("system", `> ${value}`);
+      if (!target) {
+        addEntry("error", "Loot which corpse? Try “loot Practice Sentinel corpse”.");
+        return;
+      }
+      const corpses = (snapshot?.location?.objects ?? []).filter((object) =>
+        object.containerKind === "corpse",
+      );
+      const matches = findObjectMatches(target.replace(/^(?:the|a|an)\s+/i, ""), corpses);
+      if (matches.length === 0) {
+        addEntry("error", `There is no corpse called “${target}” here.`);
+        return;
+      }
+      if (matches.length > 1) {
+        addEntry("error", `Which corpse do you mean: ${matches.map((corpse) => corpse.label).join(", ")}?`);
+        return;
+      }
+      await lootCorpse(matches[0]!.id, matches[0]!.label);
+      return;
+    }
     if (verb.toLowerCase() === "take" || verb.toLowerCase() === "get") {
       addEntry("system", `> ${value}`);
       if (!target) {
@@ -3209,7 +3293,7 @@ export function WorldClient({
     }
     addEntry("system", `> ${value}`);
     addEntry("error", 'Unknown command. Try "help" for the command list.');
-  }, [activeDialogue, addEntry, browseMerchant, changeEquipment, chooseDialogueReply, craftingCommand, dropObject, putObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, performFishingCast, performWoodcuttingStart, activeMerchantCatalog, performCombatAction, performInnRest, performStaminaPostureChange, interactionInbox, respondToPlayerChallenge, challengePlayer, partyInfo, refreshPartyState, teamCombatInfo, openDailyBoard, fetchDailyBoard, performDailyJob, performSupplyGather, displayedDailyBoard]);
+  }, [activeDialogue, addEntry, browseMerchant, changeEquipment, chooseDialogueReply, craftingCommand, dropObject, lootCorpse, putObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, performFishingCast, performWoodcuttingStart, activeMerchantCatalog, performCombatAction, performInnRest, performStaminaPostureChange, interactionInbox, respondToPlayerChallenge, challengePlayer, partyInfo, refreshPartyState, teamCombatInfo, openDailyBoard, fetchDailyBoard, performDailyJob, performSupplyGather, displayedDailyBoard]);
 
   const submitQuickCommand = useCallback((rawCommand: string) => {
     setQuickCommandMode("quick");
@@ -3267,6 +3351,13 @@ export function WorldClient({
     () => (snapshot?.location?.objects ?? []).filter((object) => object.takeable),
     [snapshot?.location?.objects],
   );
+  const quickLootableCorpses = useMemo(() => {
+    const objects = snapshot?.location?.objects ?? [];
+    return objects.filter((corpse) =>
+      corpse.containerKind === "corpse" &&
+      objects.some((item) => item.containerId === corpse.id && item.takeable),
+    );
+  }, [snapshot?.location?.objects]);
   const challengeableNpcs = useMemo(
     () => (snapshot?.location?.npcs ?? []).filter((npc) => npc.canChallenge),
     [snapshot?.location?.npcs],
@@ -3469,7 +3560,7 @@ export function WorldClient({
     const actions: QuickAction[] = [];
     const addMode = (
       id: string,
-      mode: "look" | "read" | "drop" | "take" | "use" | "talk" | "shop" | "buy" | "attack" | "equip" | "unequip",
+      mode: "look" | "read" | "drop" | "take" | "loot" | "use" | "talk" | "shop" | "buy" | "attack" | "equip" | "unequip",
       ariaLabel: string,
     ) => actions.push({ id, label: id, ariaLabel, opensMenu: true, onSelect: () => setQuickCommandMode(mode) });
     const inventory = snapshot?.character?.inventory ?? [];
@@ -3521,6 +3612,7 @@ export function WorldClient({
     if (readableObjects.length > 0 || bulletin) addMode("read", "read", "Show readable objects");
     if (unequippedInventory.length > 0) addMode("drop", "drop", "Show items to drop");
     if (quickTakeableObjects.length > 0) addMode("take", "take", "Show items to take");
+    if (quickLootableCorpses.length > 0) addMode("loot", "loot", "Show corpses to loot");
     if (quickUseItems.length > 0) {
       addMode("use", "use", "Show items to use");
     }
@@ -3606,6 +3698,7 @@ export function WorldClient({
     quickBuyListings.length,
     quickShopNpcs.length,
     quickTakeableObjects.length,
+    quickLootableCorpses,
     quickUseItems.length,
     setQuickCommandMode,
     snapshot?.character?.inventory,
@@ -4079,7 +4172,8 @@ export function WorldClient({
                           : quickCommandMode === "look" ? "Look"
                             : quickCommandMode === "read" ? "Read"
                               : quickCommandMode === "drop" ? "Drop"
-                                : quickCommandMode === "take" ? "Take"
+                          : quickCommandMode === "take" ? "Take"
+                            : quickCommandMode === "loot" ? "Loot"
                                   : quickCommandMode === "attack" ? "Attack"
                                   : quickCommandMode === "equip" ? "Equip"
                                     : quickCommandMode === "unequip" ? "Unequip"
@@ -4099,7 +4193,8 @@ export function WorldClient({
                             : quickCommandMode === "look" ? "Things to look at"
                               : quickCommandMode === "read" ? "Readable objects"
                                 : quickCommandMode === "drop" ? "Items to drop"
-                                : quickCommandMode === "talk" ? "People here"
+                                  : quickCommandMode === "loot" ? "Corpses to loot"
+                                    : quickCommandMode === "talk" ? "People here"
                                   : quickCommandMode === "attack" ? "Available opponents"
                                 : quickCommandMode === "equip" ? "Gear to equip"
                                   : quickCommandMode === "unequip" ? "Equipped gear"
@@ -4258,6 +4353,32 @@ export function WorldClient({
                               </button>
                             ))
                           ) : <span className="focused-quick-commands__empty">Nothing to drop</span>}
+                        </>
+                      ) : quickCommandMode === "loot" ? (
+                        <>
+                          <button
+                            type="button"
+                            className="focused-quick-command focused-quick-command--back"
+                            onClick={() => setQuickCommandMode("quick")}
+                            aria-label={quickReturnLabel}
+                            disabled={pending !== null}
+                          >
+                            ‹
+                          </button>
+                          {quickLootableCorpses.length ? (
+                            quickLootableCorpses.map((corpse) => (
+                              <button
+                                key={corpse.id}
+                                type="button"
+                                className="focused-quick-command"
+                                onClick={() => submitQuickCommand(`loot ${corpse.label}`)}
+                                aria-label={`Loot ${corpse.label}`}
+                                disabled={pending !== null}
+                              >
+                                {corpse.label.toLocaleLowerCase()}
+                              </button>
+                            ))
+                          ) : <span className="focused-quick-commands__empty">No lootable corpses here</span>}
                         </>
                       ) : quickCommandMode === "take" ? (
                         <>

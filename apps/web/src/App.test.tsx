@@ -2257,16 +2257,22 @@ describe('single-character world session client', () => {
     expect(history).toHaveTextContent('> help');
     expect(history).toHaveTextContent('get <item> | get <item> <container> — Take an item from the room or a container; alias of take.');
     expect(history).toHaveTextContent('take <item> | take <item> <container> | take all — Pick up items from the room or a container.');
+    expect(history).toHaveTextContent('loot <corpse> — Take all remaining items and currency from a corpse here.');
     expect(history).toHaveTextContent('put <item> <container> — Store a carried item in a container here.');
     expect(history).toHaveTextContent('talk <npc> [about <topic>] — Speak privately with someone in the current room.');
     expect(history).toHaveTextContent('use <item> on <target> | use <healing item> | use <fishing rod> — Use a room item, restore health, or fish at a marked spot.');
-    expect(history).toHaveTextContent('Quick actions include available movement, item, equipment, merchant, dialogue, and combat actions.');
+    expect(history).toHaveTextContent('Quick actions include available movement, item, loot, equipment, merchant, dialogue, and combat actions.');
     expect(history).toHaveTextContent('equip <item> — Equip carried gear in its equipment slot.');
 
     fireEvent.change(commandInput, { target: { value: 'help LOOK' } });
     fireEvent.submit(commandInput.closest('form')!);
     await screen.findByText('Usage: look | look [at] <object>');
     expect(history).toHaveTextContent('Look describes the current room. Add an object to inspect it here or in your inventory.');
+
+    fireEvent.change(commandInput, { target: { value: 'help loot' } });
+    fireEvent.submit(commandInput.closest('form')!);
+    await screen.findByText('Usage: loot <corpse>');
+    expect(history).toHaveTextContent('Take all remaining items and currency from a corpse in this room.');
 
     fireEvent.change(commandInput, { target: { value: 'help unknown' } });
     fireEvent.submit(commandInput.closest('form')!);
@@ -2973,6 +2979,112 @@ describe('single-character world session client', () => {
       JSON.parse(String(init?.body ?? '{}')).type === 'character.take' &&
       JSON.parse(String(init?.body ?? '{}')).payload?.itemId === fixtureItem.id,
     )).toBe(true);
+  });
+
+  it('loots all corpse contents by command and from the loot quick-action menu', async () => {
+    const originalFetch = apiFetch.getMockImplementation()!;
+    const fixtureCorpses = [
+      {
+        id: 'fixture-guard-corpse',
+        label: 'Fallen guard corpse',
+        description: 'A guard lies still here.',
+        readable: false,
+        takeable: false,
+        containerKind: 'corpse',
+      },
+      {
+        id: 'fixture-scout-corpse',
+        label: 'Fallen scout corpse',
+        description: 'A scout lies still here.',
+        readable: false,
+        takeable: false,
+        containerKind: 'corpse',
+      },
+    ];
+    const fixtureContents = [
+      { id: 'fixture-bronze-ring', label: 'Bronze ring', description: 'A small bronze ring.', readable: false, takeable: true, containerId: 'fixture-guard-corpse' },
+      { id: 'fixture-corpse-gold', label: '3 moss marks', description: 'Coins left by the guard.', readable: false, takeable: true, containerId: 'fixture-guard-corpse' },
+      { id: 'fixture-broken-arrow', label: 'Broken arrow', description: 'A snapped arrow.', readable: false, takeable: true, containerId: 'fixture-scout-corpse' },
+    ];
+    const takenItemIds = new Set<string>();
+    const corpseIds = new Set(fixtureCorpses.map((corpse) => corpse.id));
+    const withCorpses = (location: Record<string, unknown>) => {
+      const existing = Array.isArray(location.objects)
+        ? location.objects as Array<Record<string, unknown>>
+        : [];
+      const objects = existing.filter((object) =>
+        !corpseIds.has(String(object.id)) &&
+        !fixtureContents.some((item) => item.id === object.id),
+      );
+      const availableContents = fixtureContents.filter((item) => !takenItemIds.has(item.id));
+      objects.push(
+        ...fixtureCorpses.map((corpse) => ({
+          ...corpse,
+          contents: availableContents
+            .filter((item) => item.containerId === corpse.id)
+            .map(({ id, label, description }) => ({ id, label, description })),
+        })),
+        ...availableContents,
+      );
+      return { ...location, objects };
+    };
+
+    apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/api/commands' && init?.body) {
+        const command = JSON.parse(String(init.body)) as {
+          type?: string;
+          commandId?: string;
+          payload?: { itemId?: string };
+        };
+        const itemId = command.payload?.itemId;
+        if (command.type === 'character.take' && itemId && fixtureContents.some((item) => item.id === itemId)) {
+          takenItemIds.add(itemId);
+          revision += 1;
+          return json({
+            receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision },
+            streamId: characterId,
+          });
+        }
+      }
+      const response = await originalFetch(path, init);
+      if (path === '/api/game') {
+        const snapshot = await response.json() as { location: Record<string, unknown> | null };
+        return json({
+          ...snapshot,
+          ...(snapshot.location ? { location: withCorpses(snapshot.location) } : {}),
+        });
+      }
+      if (path === '/api/queries' && init?.body) {
+        const query = JSON.parse(String(init.body)) as { type?: string };
+        if (query.type === 'location.describe') {
+          const result = await response.json() as { ok: boolean; value: Record<string, unknown> };
+          return json({ ...result, value: withCorpses(result.value) });
+        }
+      }
+      return response;
+    });
+
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
+    fireEvent.change(commandInput, { target: { value: 'loot fallen guard corpse' } });
+    fireEvent.submit(commandInput.closest('form')!);
+
+    await screen.findByText('You pick up the bronze ring.');
+    await screen.findByText('You pick up the 3 moss marks.');
+    clickQuickAction('Show corpses to loot');
+    const lootMenu = screen.getByRole('group', { name: 'Corpses to loot' });
+    fireEvent.click(within(lootMenu).getByRole('button', { name: 'Loot Fallen scout corpse' }));
+    await screen.findByText('You pick up the broken arrow.');
+
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+    expect(history).toHaveTextContent('> loot fallen guard corpse');
+    expect(history).toHaveTextContent('> loot Fallen scout corpse');
+    expect([...takenItemIds]).toEqual(expect.arrayContaining([
+      'fixture-bronze-ring',
+      'fixture-corpse-gold',
+      'fixture-broken-arrow',
+    ]));
   });
 
   it('inspects carried items from the Items tab and by command, including after leaving their room', async () => {
