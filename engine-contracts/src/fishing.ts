@@ -94,6 +94,13 @@ export const FishingAdvanceCommandSchema = ClientCommandBaseSchema.extend({
   payload: z.object({ castId: IdSchema }).strict(),
 }).strict();
 
+export const FishingCancelCommandSchema = ClientCommandBaseSchema.extend({
+  type: z.literal('fishing.cancel'),
+  version: z.literal(1),
+  expectedVersion: NonNegativeIntSchema,
+  payload: z.object({ castId: IdSchema }).strict(),
+}).strict();
+
 export const FishingCastStartedEventSchema = DomainEventBaseSchema.extend({
   type: z.literal('character.fishing_cast_started'),
   version: z.literal(1),

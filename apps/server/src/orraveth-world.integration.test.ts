@@ -180,6 +180,29 @@ describe('Orraveth Bellwold settlement', () => {
         payload: { axeItemId: 'test-iron-axe', treeId: tree.id },
       }, h.session);
       expect(underLevelAttempt.receipt.ok).toBe(false);
+      firstCharacter = await h.loadCharacter(first);
+      await h.dispatch(first, {
+        type: 'woodcutting.start',
+        version: 1,
+        commandId: 'woodcut-cancel-start',
+        expectedVersion: firstCharacter.revision,
+        payload: { axeItemId: 'mill-copper-axe', treeId: tree.id },
+      });
+      firstCharacter = await h.loadCharacter(first);
+      const activeWoodcutting = firstCharacter.activeWoodcutting;
+      if (!activeWoodcutting) throw new Error('The test woodcutting action did not start.');
+      const cancelledWoodcutting = await client.cancelWoodcutting(
+        first,
+        activeWoodcutting.actionId,
+        firstCharacter.revision,
+        'woodcut-cancel-command',
+      );
+      expect(cancelledWoodcutting.events.find((event) =>
+        event.type === 'character.woodcutting_action_advanced')?.payload).toMatchObject({
+        status: 'interrupted',
+      });
+      expect((await h.loadCharacter(first)).activeWoodcutting).toBeUndefined();
+
       const chop = async (characterId: string, commandId: string) => {
         let character = await h.loadCharacter(characterId);
         await h.dispatch(characterId, {
@@ -1306,7 +1329,12 @@ describe('Orraveth Bellwold settlement', () => {
   });
 
   it('grants Orin’s old rod and resolves fishing only from server-timed cast events', async () => {
-    const runCast = async (name: string, roll: number, elapsedMs: number, expectedStatus: string) => {
+    const runCast = async (
+      name: string,
+      roll: number,
+      elapsedMs: number,
+      expectedStatus: 'caught' | 'no-bite' | 'cancelled',
+    ) => {
       let now = new Date('2026-10-23T12:00:00.000Z');
       let rollCount = 0;
       const fixtureWorld = structuredClone(orravethWorld);
@@ -1438,6 +1466,25 @@ describe('Orraveth Bellwold settlement', () => {
           { cast?: { castId?: string } } | undefined)?.cast?.castId;
         if (!castId) throw new Error('The fishing cast did not start.');
 
+        if (expectedStatus === 'cancelled') {
+          character = await h.loadCharacter(characterId);
+          const cancelled = await client.cancelFishingCast(
+            characterId,
+            castId,
+            character.revision,
+            `fishing-cancel-${name}`,
+          );
+          expect(cancelled.events.find((event) =>
+            event.type === 'character.fishing_cast_advanced')?.payload).toMatchObject({
+            status: 'interrupted',
+            ticksCompleted: 0,
+            tickRolls: [],
+          });
+          expect((await h.loadCharacter(characterId)).activeFishing).toBeUndefined();
+          expect(rollCount).toBe(0);
+          return;
+        }
+
         now = new Date(now.getTime() + elapsedMs);
         character = await h.loadCharacter(characterId);
         const advanced = await client.advanceFishingCast(
@@ -1484,6 +1531,7 @@ describe('Orraveth Bellwold settlement', () => {
 
     await runCast('Lucky Angler', 1, 1_000, 'caught');
     await runCast('Patient Angler', 100, 10_000, 'no-bite');
+    await runCast('Angler Who Stops Early', 100, 0, 'cancelled');
   });
 
   it('requires a workbench, reuses a needle, consumes thread uses, and records crafting skill', async () => {

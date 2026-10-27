@@ -4,6 +4,7 @@ import {
   WoodcuttingActionStateSchema,
   StartWoodcuttingCommandSchema,
   AdvanceWoodcuttingCommandSchema,
+  CancelWoodcuttingCommandSchema,
   WorldTreeHarvestedEventSchema,
   type WoodcuttingTreeDefinition,
   type WorldPackDraft,
@@ -273,6 +274,31 @@ export const woodcuttingPlugin: EnginePlugin = {
         streamId: character.characterId,
         expectedVersion: command.expectedVersion,
         ...(companions ? { companions } : {}),
+        events: [{ type: 'character.woodcutting_action_advanced', version: 1, payload }],
+      };
+    });
+
+    registerCommand('woodcutting.cancel', CancelWoodcuttingCommandSchema, async (command, context) => {
+      const character = await characters.load(context, command.characterId);
+      if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
+      const action = character.activeWoodcutting;
+      if (!action || action.actionId !== command.payload.actionId) {
+        throw new RuleViolationError('That woodcutting action is no longer active.');
+      }
+      const payload = {
+        characterId: character.characterId,
+        actionId: action.actionId,
+        ticksCompleted: action.ticksCompleted,
+        status: 'interrupted' as const,
+        tickRolls: [],
+        skillExperienceAwarded: 0,
+        totalExperience: character.woodcutting?.experience ?? 0,
+        level: character.woodcutting?.level ?? 1,
+      };
+      WoodcuttingActionAdvancedEventSchema.shape.payload.parse(payload);
+      return {
+        streamId: character.characterId,
+        expectedVersion: command.expectedVersion,
         events: [{ type: 'character.woodcutting_action_advanced', version: 1, payload }],
       };
     });

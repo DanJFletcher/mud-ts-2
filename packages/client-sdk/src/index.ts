@@ -1,8 +1,8 @@
 import { CharacterClassCatalogSchema, ChooseCharacterClassCommandSchema } from '@mudd/contracts';
 import {
   DailyBoardQuerySchema, DailyBoardProjectionSchema, DailyJobCommandSchema, GatherSupplyCommandSchema, SupplySourceDefinitionSchema,
-  FishingCastCommandSchema, FishingAdvanceCommandSchema,
-  StartWoodcuttingCommandSchema, AdvanceWoodcuttingCommandSchema,
+  FishingCastCommandSchema, FishingAdvanceCommandSchema, FishingCancelCommandSchema,
+  StartWoodcuttingCommandSchema, AdvanceWoodcuttingCommandSchema, CancelWoodcuttingCommandSchema,
   CraftingCatalogProjectionSchema, CraftingCatalogQuerySchema, CraftingCommandSchema,
   CharacterProjectionSchema,
   CharacterStatsProjectionSchema,
@@ -464,6 +464,13 @@ export class MuddHttpClient {
     }));
   }
 
+  async cancelFishingCast(characterId: string, castId: string, expectedVersion: number, commandId = crypto.randomUUID()) {
+    return this.send(FishingCancelCommandSchema.parse({
+      type: 'fishing.cancel', version: 1, commandId, worldInstanceId: this.options.worldInstanceId,
+      characterId, expectedVersion, payload: { castId },
+    }));
+  }
+
   async startWoodcutting(characterId: string, axeItemId: string, treeId: string, expectedVersion: number, commandId = crypto.randomUUID()) {
     return this.send(StartWoodcuttingCommandSchema.parse({
       type: 'woodcutting.start', version: 1, commandId, worldInstanceId: this.options.worldInstanceId,
@@ -474,6 +481,13 @@ export class MuddHttpClient {
   async advanceWoodcutting(characterId: string, actionId: string, expectedVersion: number, commandId = crypto.randomUUID()) {
     return this.send(AdvanceWoodcuttingCommandSchema.parse({
       type: 'woodcutting.advance', version: 1, commandId, worldInstanceId: this.options.worldInstanceId,
+      characterId, expectedVersion, payload: { actionId },
+    }));
+  }
+
+  async cancelWoodcutting(characterId: string, actionId: string, expectedVersion: number, commandId = crypto.randomUUID()) {
+    return this.send(CancelWoodcuttingCommandSchema.parse({
+      type: 'woodcutting.cancel', version: 1, commandId, worldInstanceId: this.options.worldInstanceId,
       characterId, expectedVersion, payload: { actionId },
     }));
   }

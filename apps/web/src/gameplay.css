@@ -436,6 +436,27 @@
 }
 .focused-command--mobile-open { display: block; }
 
+.focused-timed-action {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 13px;
+  border-bottom: 1px solid var(--terminal-border);
+  background: var(--terminal-inset);
+  color: var(--terminal-muted);
+  font: 400 .7rem/1.3 "DM Mono", monospace;
+}
+
+.focused-timed-action > span {
+  flex: 1 1 auto;
+}
+
+.focused-timed-action__button {
+  min-width: 54px;
+}
+
 .focused-terminal .focused-quick-commands {
   display: flex;
   min-height: 40px;

@@ -111,6 +111,16 @@ export const AdvanceWoodcuttingCommandSchema = z.object({
   payload: z.object({ actionId: IdSchema }).strict(),
 }).strict();
 
+export const CancelWoodcuttingCommandSchema = z.object({
+  type: z.literal('woodcutting.cancel'),
+  version: z.number().int().positive(),
+  commandId: IdSchema,
+  worldInstanceId: IdSchema,
+  characterId: IdSchema,
+  expectedVersion: NonNegativeIntSchema,
+  payload: z.object({ actionId: IdSchema }).strict(),
+}).strict();
+
 export type WoodcuttingAxeDefinition = z.infer<typeof WoodcuttingAxeDefinitionSchema>;
 export type WoodcuttingTreeDefinition = z.infer<typeof WoodcuttingTreeDefinitionSchema>;
 export type WoodcuttingSkill = z.infer<typeof WoodcuttingSkillSchema>;

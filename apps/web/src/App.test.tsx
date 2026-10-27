@@ -113,6 +113,16 @@ let healingDraughtCarried: boolean;
 let fishingRodCarried: boolean;
 let woodcuttingAxeCarried: boolean;
 let availableWoodcuttingTrees: Array<{ id: string; label: string }>;
+let activeWoodcuttingState: {
+  actionId: string;
+  treeId: string;
+  treeLabel: string;
+  axeItemId: string;
+  locationId: string;
+  startedAt: string;
+  ticksCompleted: number;
+  ticksRequired: 10;
+} | null;
 let characterHealth: { current: number; maximum: number } | null;
 let characterStamina: { current: number; maximum: number };
 let staminaPosture: 'standing' | 'resting';
@@ -494,6 +504,7 @@ beforeEach(() => {
   fishingRodCarried = false;
   woodcuttingAxeCarried = false;
   availableWoodcuttingTrees = [];
+  activeWoodcuttingState = null;
   characterHealth = null;
   characterStamina = { current: 100, maximum: 100 };
   staminaPosture = 'standing';
@@ -613,6 +624,7 @@ beforeEach(() => {
             fractionalCarry: 0,
           },
           ...(combatEncounter ? { combat: combatEncounter } : {}),
+          ...(activeWoodcuttingState ? { activeWoodcutting: activeWoodcuttingState } : {}),
           ...(dailyFeatureEnabled ? { equipment: { weaponItemId: 'mint-equipped', armorItemId: null } } : {}),
           inventory: [
             ...(dailyFeatureEnabled ? [{
@@ -1116,6 +1128,32 @@ beforeEach(() => {
             eventIds: [],
             newAggregateVersion: revision,
           },
+          streamId: characterId,
+        });
+      }
+      if (command.type === 'woodcutting.advance') {
+        if (activeWoodcuttingState) {
+          activeWoodcuttingState = {
+            ...activeWoodcuttingState,
+            ticksCompleted: Math.min(9, activeWoodcuttingState.ticksCompleted + 1),
+            startedAt: new Date(Date.now() - 3_000).toISOString(),
+          };
+        }
+        revision += 1;
+        return json({
+          receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision },
+          streamId: characterId,
+          events: [{
+            type: 'character.woodcutting_action_advanced',
+            payload: { status: 'waiting', ticksCompleted: activeWoodcuttingState?.ticksCompleted ?? 0 },
+          }],
+        });
+      }
+      if (command.type === 'woodcutting.cancel') {
+        activeWoodcuttingState = null;
+        revision += 1;
+        return json({
+          receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision },
           streamId: characterId,
         });
       }
@@ -3579,6 +3617,51 @@ describe('single-character world session client', () => {
     expect(JSON.parse(String(startCommand?.[1]?.body))).toMatchObject({
       payload: { axeItemId: 'copper-axe', treeId: 'southbound-pine' },
     });
+  });
+
+  it('keeps woodcutting recoverable when an NPC room announcement arrives', async () => {
+    activeWoodcuttingState = {
+      actionId: 'persisted-woodcutting-action',
+      treeId: 'southbound-pine',
+      treeLabel: 'pine',
+      axeItemId: 'copper-axe',
+      locationId: 'mossgate-clearing',
+      startedAt: new Date(Date.now() - 10_000).toISOString(),
+      ticksCompleted: 2,
+      ticksRequired: 10,
+    };
+    roomChatMessages.push({
+      id: nextRoomChatMessageId++,
+      roomId: 'mossgate-clearing',
+      speakerType: 'npc',
+      speakerId: 'orin-vale',
+      speakerName: 'Orin Vale',
+      text: 'Orin arrives from the north, glancing toward the river.',
+      createdAt: new Date().toISOString(),
+    });
+
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    const activity = await screen.findByRole('region', { name: 'Woodcutting in progress' });
+    expect(within(activity).getByRole('button', { name: 'Continue' })).toBeEnabled();
+    await waitFor(() => {
+      expect(apiFetch.mock.calls.some(([path, init]) =>
+        path === '/api/commands' &&
+        JSON.parse(String(init?.body)).type === 'woodcutting.advance',
+      )).toBe(true);
+    });
+    const stop = within(activity).getByRole('button', { name: 'Stop' });
+    expect(stop).toBeEnabled();
+    fireEvent.click(stop);
+
+    await waitFor(() => {
+      expect(apiFetch.mock.calls.some(([path, init]) =>
+        path === '/api/commands' &&
+        JSON.parse(String(init?.body)).type === 'woodcutting.cancel' &&
+        JSON.parse(String(init?.body)).payload.actionId === 'persisted-woodcutting-action',
+      )).toBe(true);
+    });
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Woodcutting in progress' })).not.toBeInTheDocument());
   });
 
   it('accepts the explicit use axe on tree command form', async () => {

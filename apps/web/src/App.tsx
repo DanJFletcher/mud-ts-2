@@ -1397,7 +1397,7 @@ export function WorldClient({
     } catch (error) {
       const message = error instanceof Error ? error.message : "The fishing cast could not be advanced.";
       if (message.includes("line is still in the water")) {
-        window.setTimeout(() => { void performFishingTick(castId); }, 250);
+        window.setTimeout(() => { void performFishingTick(castId); }, 1_000);
       } else {
         addEntry("error", message);
         try {
@@ -1431,20 +1431,77 @@ export function WorldClient({
     }
   }, [addEntry, pending, snapshot]);
 
+  const cancelFishingCast = useCallback(async (castId: string) => {
+    const characterId = snapshot?.character?.characterId;
+    if (!characterId || pending) return;
+    setPending("use");
+    try {
+      let current = await client.getGame();
+      let character = current.character;
+      if (!character || character.activeFishing?.castId !== castId) {
+        setSnapshot(current);
+        return;
+      }
+      try {
+        await client.cancelFishingCast(characterId, castId, character.revision);
+      } catch (error) {
+        if (!/revision|conflict/i.test(error instanceof Error ? error.message : "")) throw error;
+        current = await client.getGame();
+        character = current.character;
+        if (!character || character.activeFishing?.castId !== castId) {
+          setSnapshot(current);
+          return;
+        }
+        await client.cancelFishingCast(characterId, castId, character.revision);
+      }
+      setSnapshot(await client.getGame());
+      setConnectionError("");
+      addEntry("narration", "You reel in your line and stop fishing.");
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "The fishing cast could not be cancelled.");
+      try {
+        setSnapshot(await client.getGame());
+      } catch {
+        // Keep the persisted cast visible; the action can be retried after reconnecting.
+      }
+    } finally {
+      setPending(null);
+    }
+  }, [addEntry, pending, setPending, snapshot?.character?.characterId]);
+
   const activeFishingCast = snapshot?.character?.activeFishing;
-  useEffect(() => {
-    if (!activeFishingCast) return;
+  const fishingCastId = activeFishingCast?.castId;
+  const fishingStartedAt = activeFishingCast?.startedAt;
+  const fishingTicksCompleted = activeFishingCast?.ticksCompleted;
+  const fishingTickIntervalSeconds = activeFishingCast?.tickIntervalSeconds;
+  const continueFishingCast = useCallback((castId: string) => {
+    if (!activeFishingCast || activeFishingCast.castId !== castId) return;
     const nextTickAt = Date.parse(activeFishingCast.startedAt) +
       (activeFishingCast.ticksCompleted + 1) * activeFishingCast.tickIntervalSeconds * 1000;
-    const timer = window.setTimeout(() => {
-      void performFishingTick(activeFishingCast.castId);
-    }, Math.max(0, nextTickAt - Date.now()));
-    return () => window.clearTimeout(timer);
+    window.setTimeout(
+      () => { void performFishingTick(castId); },
+      Math.max(0, nextTickAt - Date.now()),
+    );
+  }, [activeFishingCast, performFishingTick]);
+  useEffect(() => {
+    if (!fishingCastId || !fishingStartedAt || fishingTicksCompleted === undefined ||
+        fishingTickIntervalSeconds === undefined) return;
+    const nextTickAt = Date.parse(fishingStartedAt) +
+      (fishingTicksCompleted + 1) * fishingTickIntervalSeconds * 1000;
+    const tryDueTick = () => {
+      if (Date.now() >= nextTickAt) void performFishingTick(fishingCastId);
+    };
+    const firstTick = window.setTimeout(tryDueTick, Math.max(0, nextTickAt - Date.now()));
+    const recoveryTimer = window.setInterval(tryDueTick, 1_000);
+    return () => {
+      window.clearTimeout(firstTick);
+      window.clearInterval(recoveryTimer);
+    };
   }, [
-    activeFishingCast?.castId,
-    activeFishingCast?.startedAt,
-    activeFishingCast?.ticksCompleted,
-    activeFishingCast?.tickIntervalSeconds,
+    fishingCastId,
+    fishingStartedAt,
+    fishingTicksCompleted,
+    fishingTickIntervalSeconds,
     performFishingTick,
   ]);
 
@@ -1493,7 +1550,7 @@ export function WorldClient({
     } catch (error) {
       const message = error instanceof Error ? error.message : "The woodcutting action could not be advanced.";
       if (message.includes("axe is still swinging")) {
-        window.setTimeout(() => { void performWoodcuttingTick(actionId); }, 250);
+        window.setTimeout(() => { void performWoodcuttingTick(actionId); }, 1_000);
       } else if (/revision|conflict/i.test(message)) {
         try {
           const refreshed = await client.getGame();
@@ -1537,19 +1594,74 @@ export function WorldClient({
     }
   }, [addEntry, pending, snapshot]);
 
+  const cancelWoodcuttingAction = useCallback(async (actionId: string) => {
+    const characterId = snapshot?.character?.characterId;
+    if (!characterId || pending) return;
+    setPending("use");
+    try {
+      let current = await client.getGame();
+      let character = current.character;
+      if (!character || character.activeWoodcutting?.actionId !== actionId) {
+        setSnapshot(current);
+        return;
+      }
+      try {
+        await client.cancelWoodcutting(characterId, actionId, character.revision);
+      } catch (error) {
+        if (!/revision|conflict/i.test(error instanceof Error ? error.message : "")) throw error;
+        current = await client.getGame();
+        character = current.character;
+        if (!character || character.activeWoodcutting?.actionId !== actionId) {
+          setSnapshot(current);
+          return;
+        }
+        await client.cancelWoodcutting(characterId, actionId, character.revision);
+      }
+      setSnapshot(await client.getGame());
+      setConnectionError("");
+      addEntry("narration", "You lower your axe and stop chopping.");
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "The woodcutting action could not be cancelled.");
+      try {
+        setSnapshot(await client.getGame());
+      } catch {
+        // Keep the persisted action visible; it can be retried after reconnecting.
+      }
+    } finally {
+      setPending(null);
+    }
+  }, [addEntry, pending, setPending, snapshot?.character?.characterId]);
+
   const activeWoodcutting = snapshot?.character?.activeWoodcutting;
-  useEffect(() => {
-    if (!activeWoodcutting) return;
+  const woodcuttingActionId = activeWoodcutting?.actionId;
+  const woodcuttingStartedAt = activeWoodcutting?.startedAt;
+  const woodcuttingTicksCompleted = activeWoodcutting?.ticksCompleted;
+  const continueWoodcutting = useCallback((actionId: string) => {
+    if (!activeWoodcutting || activeWoodcutting.actionId !== actionId) return;
     const nextTickAt = Date.parse(activeWoodcutting.startedAt) +
       (activeWoodcutting.ticksCompleted + 1) * 1000;
-    const timer = window.setTimeout(() => {
-      void performWoodcuttingTick(activeWoodcutting.actionId);
-    }, Math.max(0, nextTickAt - Date.now()));
-    return () => window.clearTimeout(timer);
+    window.setTimeout(
+      () => { void performWoodcuttingTick(actionId); },
+      Math.max(0, nextTickAt - Date.now()),
+    );
+  }, [activeWoodcutting, performWoodcuttingTick]);
+  useEffect(() => {
+    if (!woodcuttingActionId || !woodcuttingStartedAt || woodcuttingTicksCompleted === undefined) return;
+    const nextTickAt = Date.parse(woodcuttingStartedAt) +
+      (woodcuttingTicksCompleted + 1) * 1000;
+    const tryDueTick = () => {
+      if (Date.now() >= nextTickAt) void performWoodcuttingTick(woodcuttingActionId);
+    };
+    const firstTick = window.setTimeout(tryDueTick, Math.max(0, nextTickAt - Date.now()));
+    const recoveryTimer = window.setInterval(tryDueTick, 1_000);
+    return () => {
+      window.clearTimeout(firstTick);
+      window.clearInterval(recoveryTimer);
+    };
   }, [
-    activeWoodcutting?.actionId,
-    activeWoodcutting?.startedAt,
-    activeWoodcutting?.ticksCompleted,
+    woodcuttingActionId,
+    woodcuttingStartedAt,
+    woodcuttingTicksCompleted,
     performWoodcuttingTick,
   ]);
 
@@ -4218,6 +4330,50 @@ export function WorldClient({
                         className="focused-pending-action__status"
                       />
                     </div>
+                  )}
+                  {activeWoodcutting && (
+                    <section className="focused-timed-action" aria-label="Woodcutting in progress">
+                      <span role="status">
+                        Chopping · {activeWoodcutting.ticksCompleted}/10
+                      </span>
+                      <button
+                        type="button"
+                        className="focused-quick-command focused-timed-action__button"
+                        onClick={() => continueWoodcutting(activeWoodcutting.actionId)}
+                        disabled={pending !== null}
+                      >
+                        Continue
+                      </button>
+                      <button
+                        type="button"
+                        className="focused-quick-command focused-timed-action__button"
+                        onClick={() => void cancelWoodcuttingAction(activeWoodcutting.actionId)}
+                        disabled={pending !== null}
+                      >
+                        Stop
+                      </button>
+                    </section>
+                  )}
+                  {activeFishingCast && (
+                    <section className="focused-timed-action" aria-label="Fishing in progress">
+                      <span role="status">Fishing · {activeFishingCast.ticksCompleted} seconds</span>
+                      <button
+                        type="button"
+                        className="focused-quick-command focused-timed-action__button"
+                        onClick={() => continueFishingCast(activeFishingCast.castId)}
+                        disabled={pending !== null}
+                      >
+                        Continue
+                      </button>
+                      <button
+                        type="button"
+                        className="focused-quick-command focused-timed-action__button"
+                        onClick={() => void cancelFishingCast(activeFishingCast.castId)}
+                        disabled={pending !== null}
+                      >
+                        Stop
+                      </button>
+                    </section>
                   )}
                   {!isAnyCombatActive && !visiblePvp && (
                     <NavigationControls

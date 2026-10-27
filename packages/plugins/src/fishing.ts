@@ -1,6 +1,7 @@
 import {
   FishingAdvanceCommandSchema,
   FishingCastAdvancedEventSchema,
+  FishingCancelCommandSchema,
   FishingCastCommandSchema,
   FishingCastStartedEventSchema,
   FishingCastStateSchema,
@@ -183,6 +184,28 @@ export const fishingPlugin: EnginePlugin = {
         status,
         tickRolls,
         ...(item ? { item } : {}),
+      };
+      FishingCastAdvancedEventSchema.shape.payload.parse(payload);
+      return {
+        streamId: character.characterId,
+        expectedVersion: command.expectedVersion,
+        events: [{ type: 'character.fishing_cast_advanced', version: 1, payload }],
+      };
+    });
+
+    registerCommand('fishing.cancel', FishingCancelCommandSchema, async (command, context) => {
+      const character = await characters.load(context, command.characterId);
+      if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
+      const cast = character.activeFishing;
+      if (!cast || cast.castId !== command.payload.castId) {
+        throw new RuleViolationError('That fishing cast is no longer active.');
+      }
+      const payload = {
+        characterId: character.characterId,
+        castId: cast.castId,
+        ticksCompleted: cast.ticksCompleted,
+        status: 'interrupted' as const,
+        tickRolls: [],
       };
       FishingCastAdvancedEventSchema.shape.payload.parse(payload);
       return {
