@@ -63,9 +63,9 @@ function bellwoldSmallTalkChoices(
   requireInitialChoicesAfterProgressFlagIds: string[] = [],
 ) {
   const initialChoiceVisibility = {
-    ...(hideInitialChoicesAfterProgressFlagIds.length
-      ? { hideAfterProgressFlagIds: hideInitialChoicesAfterProgressFlagIds }
-      : {}),
+    hideAfterProgressFlagIds: hideInitialChoicesAfterProgressFlagIds.length
+      ? hideInitialChoicesAfterProgressFlagIds
+      : [`${npcId}-asked-about-town`],
     ...(requireInitialChoicesAfterProgressFlagIds.length
       ? { requiresProgressFlagIds: requireInitialChoicesAfterProgressFlagIds }
       : {}),
@@ -93,18 +93,17 @@ function bellwoldSmallTalkChoices(
       ...initialChoiceVisibility,
     },
     ...additionalQuestions.map(({ id, label, response, requiresProgressFlagIds, hideAfterProgressFlagIds }) => {
-      const isFollowup = (requiresProgressFlagIds?.length ?? 0) > 0;
-      const hideAfter = hideAfterProgressFlagIds ??
-        (!isFollowup ? hideInitialChoicesAfterProgressFlagIds : undefined);
-      const required = requiresProgressFlagIds ??
-        (!isFollowup ? requireInitialChoicesAfterProgressFlagIds : undefined);
+      const required = [...new Set([
+        ...(requiresProgressFlagIds ?? [`${npcId}-asked-about-town`]),
+        ...requireInitialChoicesAfterProgressFlagIds,
+      ])];
       return {
         id: `${npcId}-${id}`,
         label,
         response,
         progressFlagId: `${npcId}-asked-${id}`,
-        ...(required?.length ? { requiresProgressFlagIds: required } : {}),
-        ...(hideAfter?.length ? { hideAfterProgressFlagIds: hideAfter } : {}),
+        ...(required.length ? { requiresProgressFlagIds: required } : {}),
+        ...(hideAfterProgressFlagIds?.length ? { hideAfterProgressFlagIds } : {}),
       };
     }),
   ];
@@ -319,6 +318,8 @@ const draft = {
                   id: 'patrol-route',
                   label: 'Where does your patrol go?',
                   response: '“From the tower road through the square, down to the Common House and Well Court, then back along the public lanes. I check crossings as I go.”',
+                  requiresProgressFlagIds: [],
+                  hideAfterProgressFlagIds: ['taren-voss-asked-about-town'],
                 },
                 {
                   id: 'beyond-the-frontier',
@@ -620,6 +621,7 @@ const draft = {
                 label: 'Ask about the watermill',
                 response: '“The mill has been abandoned, but there are reports of its wheel moving when the channel is low. There is a ledger inside. Would you read the last entries and bring me what they actually say?”',
                 progressFlagId: 'asked-anwen-about-mill',
+                hideAfterProgressFlagIds: ['anwen-marr-asked-about-town'],
                 questAction: { type: 'accept', questId: 'bellwold-mill-observations' },
               },
               {
@@ -627,6 +629,7 @@ const draft = {
                 label: 'Ask about the abandoned church',
                 response: '“There is a locked annex beneath the abandoned church. A brass key is behind the tally cabinet in the Old Grain House. A sword is sealed beyond that door. Bring it to me; I will pay you 20 gold, inspect the blade, and return it to you.”',
                 progressFlagId: 'accepted-church-sword-recovery',
+                hideAfterProgressFlagIds: ['anwen-marr-asked-about-town'],
                 questAction: { type: 'accept', questId: 'bellwold-church-sword' },
               },
               {
@@ -634,6 +637,7 @@ const draft = {
                 label: 'Report what the ledger says',
                 response: '“Good. Keep the record separate from the explanation. One tells us what was observed; the other still needs work.”',
                 progressFlagId: 'reported-mill-ledger-to-anwen',
+                hideAfterProgressFlagIds: ['anwen-marr-asked-about-town'],
                 questCondition: {
                   questId: 'bellwold-mill-observations',
                   status: 'active',
@@ -646,6 +650,7 @@ const draft = {
                 label: 'Return the church sword',
                 response: '“Anwen checks the blade and its fittings, then places the same sword back in your hands. She counts out 20 gold. ‘Keep it. You found it, and now it is accounted for.’”',
                 progressFlagId: 'returned-church-sword-to-anwen',
+                hideAfterProgressFlagIds: ['anwen-marr-asked-about-town'],
                 questCondition: {
                   questId: 'bellwold-church-sword',
                   status: 'active',

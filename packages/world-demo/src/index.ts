@@ -188,10 +188,18 @@ const draft = {
                 progressFlagId: 'mara-asked-marker',
               },
               {
+                id: 'ask-marker-bearing',
+                label: 'How do you know the marker still points true?',
+                response: 'I check its carved line against the road as it rises east. The tower approach follows that bearing.',
+                progressFlagId: 'mara-explained-marker-bearing',
+                requiresProgressFlagIds: ['mara-asked-marker'],
+              },
+              {
                 id: 'ask-tower',
                 label: 'Ask about the bell tower',
                 response: 'The bell has been silent for years. I still hope to hear it ring again.',
                 progressFlagId: 'mara-asked-tower',
+                requiresProgressFlagIds: ['mara-asked-marker'],
                 questCondition: {
                   questId: 'mara-wayfinding',
                   status: 'active',
@@ -204,6 +212,7 @@ const draft = {
                 label: "I'll follow the marker",
                 response: 'Read the marker, follow it to the tower’s western approach, enter the Old Bell Tower, and come back to tell me what you found.',
                 progressFlagId: 'mara-accepted-wayfinding',
+                hideAfterProgressFlagIds: ['mara-asked-marker'],
                 questAction: { type: 'accept', questId: 'mara-wayfinding' },
               },
               {
@@ -211,6 +220,7 @@ const draft = {
                 label: 'I visited the Old Bell Tower',
                 response: 'You followed the marker all the way to the tower. Thank you for bringing back the story of the path.',
                 progressFlagId: 'mara-reported-wayfinding',
+                hideAfterProgressFlagIds: ['mara-asked-marker'],
                 questAction: { type: 'turn-in', questId: 'mara-wayfinding' },
               },
             ],
@@ -463,10 +473,31 @@ const draft = {
             ],
             choices: [
               {
+                id: 'edda-who-are-you',
+                label: 'Who are you?',
+                response: 'I’m Edda, a bellwright. I listen for the parts of a note that a ledger cannot explain.',
+                progressFlagId: 'edda-asked-who',
+                hideAfterProgressFlagIds: ['edda-asked-tuning'],
+              },
+              {
+                id: 'edda-ask-tuning',
+                label: 'What do you listen for when tuning a bell?',
+                response: 'A clear note should settle instead of rattling against its frame. I compare what I hear with the old records before I decide what needs adjusting.',
+                progressFlagId: 'edda-asked-tuning',
+              },
+              {
+                id: 'edda-ask-records',
+                label: 'How do the old records help?',
+                response: 'They show what the bell sounded like before it fell silent. A difference gives me something to test, not an explanation by itself.',
+                progressFlagId: 'edda-asked-records',
+                requiresProgressFlagIds: ['edda-asked-tuning'],
+              },
+              {
                 id: 'accept-bell-echo',
                 label: 'Investigate the bell puzzle',
                 response: 'The old inscription is still legible. It speaks of something pale and a hollow voice from the river; I found a reed near the bridge.',
                 progressFlagId: 'edda-accepted-bell-echo',
+                hideAfterProgressFlagIds: ['edda-asked-tuning'],
                 questAction: { type: 'accept', questId: 'eddas-bell-echo' },
               },
               {
@@ -474,6 +505,7 @@ const draft = {
                 label: 'I found the Underhollow',
                 response: 'The two notes opened the way below. I found the Underhollow.',
                 progressFlagId: 'edda-reported-bell-echo',
+                hideAfterProgressFlagIds: ['edda-asked-tuning'],
                 questCondition: {
                   questId: 'eddas-bell-echo',
                   status: 'active',
@@ -1348,10 +1380,31 @@ const draft = {
             prompt: 'Nim pauses their work. What would you like to ask?',
             choices: [
               {
+                id: 'nim-who-are-you',
+                label: 'Who are you?',
+                response: 'I’m Nim. I gather and sort fern fronds before weaving them into things people can carry.',
+                progressFlagId: 'nim-asked-who',
+                hideAfterProgressFlagIds: ['nim-asked-baskets'],
+              },
+              {
+                id: 'nim-what-are-you-doing',
+                label: 'What are you doing?',
+                response: 'Sorting the fronds by feel. The brittle ones split; the sound ones can be softened by the hearth.',
+                progressFlagId: 'nim-asked-work',
+                hideAfterProgressFlagIds: ['nim-asked-baskets'],
+              },
+              {
                 id: 'nim-ask-baskets',
                 label: 'Ask about the baskets',
                 response: 'Fernshade fronds bend without splitting once they have dried by the hearth.',
                 progressFlagId: 'nim-asked-baskets',
+              },
+              {
+                id: 'nim-ask-frond-preparation',
+                label: 'How do you know when a frond is ready?',
+                response: 'It bends around a finger without creasing white or cracking at the edge. If it springs back too sharply, it needs more time by the hearth.',
+                progressFlagId: 'nim-explained-frond-preparation',
+                requiresProgressFlagIds: ['nim-asked-baskets'],
               },
             ],
           },
@@ -1451,16 +1504,38 @@ const draft = {
             ],
             choices: [
               {
+                id: 'talla-who-are-you',
+                label: 'Who are you?',
+                response: 'I’m Talla. I thatch roofs with reeds and watch the river so the lower beds are not caught by surprise.',
+                progressFlagId: 'talla-asked-who',
+                hideAfterProgressFlagIds: ['talla-asked-gauge'],
+              },
+              {
+                id: 'talla-what-are-you-doing',
+                label: 'What are you doing?',
+                response: 'Checking the reed bundles for damp and watching the stone gauge beneath the bridge.',
+                progressFlagId: 'talla-asked-work',
+                hideAfterProgressFlagIds: ['talla-asked-gauge'],
+              },
+              {
                 id: 'talla-ask-gauge',
                 label: 'Ask about the waterline gauge',
                 response: 'It is carved into the bridge pier beneath the arch. The high notch tells me whether the river is close to the reed beds.',
                 progressFlagId: 'talla-asked-gauge',
               },
               {
+                id: 'talla-ask-high-notch',
+                label: 'What if the high notch gets wet?',
+                response: 'Then I would clear a channel through the clogged sedge before the water reaches the lower beds. That is why I check it early.',
+                progressFlagId: 'talla-explained-high-notch',
+                requiresProgressFlagIds: ['talla-asked-gauge'],
+              },
+              {
                 id: 'accept-sedgewatch-waterline',
                 label: 'I will check the bridge',
                 response: 'Read the stone waterline gauge beneath Glasswater Bridge, then come back and report what it says.',
                 progressFlagId: 'talla-accepted-waterline',
+                hideAfterProgressFlagIds: ['talla-asked-gauge'],
                 questAction: { type: 'accept', questId: 'sedgewatch-waterline' },
               },
               {
@@ -1468,6 +1543,7 @@ const draft = {
                 label: 'Report the waterline',
                 response: 'Only the lowest notch is wet. The middle and high marks are dry. Take five moss marks for the trouble.',
                 progressFlagId: 'talla-reported-waterline',
+                hideAfterProgressFlagIds: ['talla-asked-gauge'],
                 questCondition: {
                   questId: 'sedgewatch-waterline',
                   status: 'active',

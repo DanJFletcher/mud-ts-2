@@ -1055,6 +1055,11 @@ describe('Orraveth Bellwold settlement', () => {
           payload: { npcId, choiceId },
         });
       };
+      const residentsById = new Map(
+        orravethWorld.locations.flatMap((location) =>
+          (location.npcs ?? []).map((npc) => [npc.id, npc] as const),
+        ),
+      );
       const expectResident = async (
         npcId: string,
         topic: string,
@@ -1072,6 +1077,46 @@ describe('Orraveth Bellwold settlement', () => {
             expect.arrayContaining(['Who are you?', 'What are you doing?', 'What is Bellwold like?']),
           );
         }
+        const authoredChoices = residentsById.get(npcId)?.dialogue?.choices ?? [];
+        const townFlagId = `${npcId}-asked-about-town`;
+        const branchChoices = authoredChoices.filter(({ requiresProgressFlagIds }) =>
+          requiresProgressFlagIds?.includes(townFlagId),
+        );
+        expect(branchChoices.length, `${npcId} should author follow-up dialogue`).toBeGreaterThan(0);
+        if (npcId === 'orin-vale') {
+          await chooseDialogue(npcId, 'accept-old-rod', 'expanded-accept-old-rod');
+        }
+        const beforeBranch = await talk(npcId);
+        for (const branchChoice of branchChoices) {
+          expect(beforeBranch.choices.map(({ label }) => label)).not.toContain(branchChoice.label);
+        }
+        await chooseDialogue(
+          npcId,
+          `${npcId}-about-bellwold`,
+          `expanded-town-branch-${npcId}`,
+        );
+        const townBranch = await talk(npcId);
+        const townBranchLabels = townBranch.choices.map(({ label }) => label);
+        expect(townBranchLabels).toEqual(
+          expect.arrayContaining(branchChoices.map(({ label }) => label)),
+        );
+        for (const previousTopic of ['Who are you?', 'What are you doing?', 'What is Bellwold like?']) {
+          expect(townBranchLabels).not.toContain(previousTopic);
+        }
+        const firstFollowup = branchChoices[0]!;
+        await chooseDialogue(npcId, firstFollowup.id, `expanded-followup-${npcId}`);
+        expect((await talk(npcId)).choices.map(({ id }) => id)).not.toContain(firstFollowup.id);
+        const character = await h.loadCharacter(characterId);
+        await h.dispatch(characterId, {
+          type: 'npc.dialogue.restart',
+          version: 1,
+          commandId: `expanded-restart-${npcId}`,
+          expectedVersion: character.revision,
+          payload: { npcId },
+        });
+        expect((await talk(npcId)).choices.map(({ label }) => label)).toEqual(
+          expect.arrayContaining(['Who are you?', 'What are you doing?', 'What is Bellwold like?']),
+        );
         const dialogue = await talk(npcId, topic);
         expect(dialogue.npcName).toBe(name);
         expect(dialogue.text.length).toBeGreaterThan(0);
@@ -1151,7 +1196,7 @@ describe('Orraveth Bellwold settlement', () => {
     }
   });
 
-  it('offers identity, activity, and town questions for every Bellwold resident', () => {
+  it('authors branchable town dialogue for every Bellwold resident', () => {
     const residents = new Map(
       orravethWorld.locations.flatMap((location) =>
         (location.npcs ?? []).map((npc) => [npc.id, npc] as const),
@@ -1175,6 +1220,7 @@ describe('Orraveth Bellwold settlement', () => {
       'pella-wren',
       'sergeant-nera-vail',
       'mira-dell',
+      'nessa-rill',
     ];
 
     for (const npcId of bellwoldResidentIds) {
@@ -1187,6 +1233,17 @@ describe('Orraveth Bellwold settlement', () => {
       expect(choices.map(({ label }) => label)).toEqual(
         expect.arrayContaining(['Who are you?', 'What are you doing?', 'What is Bellwold like?']),
       );
+      const townFlagId = `${npcId}-asked-about-town`;
+      expect(choices
+        .filter(({ label }) => ['Who are you?', 'What are you doing?', 'What is Bellwold like?'].includes(label))
+        .every(({ hideAfterProgressFlagIds }) => hideAfterProgressFlagIds?.includes(townFlagId)))
+        .toBe(true);
+      expect(choices.some(({ requiresProgressFlagIds }) =>
+        requiresProgressFlagIds?.includes(townFlagId),
+      )).toBe(true);
+      for (const questChoice of choices.filter(({ questAction }) => Boolean(questAction))) {
+        expect(questChoice.hideAfterProgressFlagIds).toContain(townFlagId);
+      }
     }
     expect(residents.get('orin-vale')?.dialogue?.choices.map(({ id }) => id))
       .toContain('accept-old-rod');
@@ -1197,6 +1254,35 @@ describe('Orraveth Bellwold settlement', () => {
         'report-mill-ledger',
         'return-church-sword-to-anwen',
       ]));
+  });
+
+  it('authors a real branch for every demo-world NPC conversation', () => {
+    const demoNpcs = demoWorld.locations.flatMap((location) => location.npcs ?? []);
+    expect(demoNpcs.filter(({ dialogue }) => dialogue)).toHaveLength(4);
+
+    for (const npc of demoNpcs.filter(({ dialogue }) => dialogue)) {
+      const choices = npc.dialogue?.choices ?? [];
+      const progressFlags = new Set(choices.map(({ progressFlagId }) => progressFlagId));
+      const followups = choices.filter(({ requiresProgressFlagIds }) =>
+        (requiresProgressFlagIds?.length ?? 0) > 0,
+      );
+      expect(followups.length, `${npc.name} should have a branch`).toBeGreaterThan(0);
+      for (const followup of followups) {
+        expect(
+          followup.requiresProgressFlagIds?.some((flagId) => progressFlags.has(flagId)),
+          `${npc.name}'s follow-up should be unlocked by an authored dialogue choice`,
+        ).toBe(true);
+      }
+      const branchFlags = new Set(followups.flatMap(({ requiresProgressFlagIds }) =>
+        requiresProgressFlagIds ?? [],
+      ));
+      for (const questChoice of choices.filter(({ questAction }) => Boolean(questAction))) {
+        expect(
+          questChoice.hideAfterProgressFlagIds?.some((flagId) => branchFlags.has(flagId)),
+          `${npc.name}'s quest action should not remain in an unrelated dialogue branch`,
+        ).toBe(true);
+      }
+    }
   });
 
   it('keeps NPC look text observable while preserving background in supported interactions', () => {
