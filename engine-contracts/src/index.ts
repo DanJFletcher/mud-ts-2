@@ -15,6 +15,7 @@ export * from './chat.js';
 export * from './character.js';
 export * from './stamina.js';
 export * from './world-items.js';
+export * from './object-lifecycle.js';
 export * from './health.js';
 export * from './commerce.js';
 export * from './quests.js';

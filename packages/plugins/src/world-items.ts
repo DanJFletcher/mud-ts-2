@@ -3,6 +3,7 @@ import {
   CharacterSharedItemReceivedEventSchema,
   InventoryItemProjectionSchema,
   WorldCorpseCreatedEventSchema,
+  WorldCorpseExpiredEventSchema,
   WorldCorpseGoldClaimedEventSchema,
   WorldCorpseRecordSchema,
   WorldItemClaimedEventSchema,
@@ -10,6 +11,8 @@ import {
   WorldItemDroppedEventSchema,
   WorldItemRecordSchema,
   type CombatLootDefinition,
+  type CorpseLifecycleOverride,
+  type CorpseLifecycleRules,
   type WorldCorpseRecord,
   type WorldItemRecord,
 } from '@mudd/contracts';
@@ -17,6 +20,7 @@ import {
   SYSTEM_ACTOR_ID,
   replayCharacter,
 } from '@mudd/engine-core';
+import { objectLifecycleScheduledEvent, objectLifecycleStreamId } from './object-lifecycle.js';
 import type {
   EngineCommandContext,
   EnginePlugin,
@@ -104,10 +108,35 @@ export function createWorldCorpseEffect(
     loot?: CombatLootDefinition;
     currencyId?: string;
     currencyName?: string;
+    corpseType?: 'npc' | 'player';
+    ownerCharacterId?: string;
+    preservedItems?: readonly WorldItemRecord['item'][];
+    createdAt?: string;
+    lifecycleRules?: CorpseLifecycleRules;
+    lifecycleOverride?: CorpseLifecycleOverride;
   },
 ): ProposedEventEffect {
   const loot = input.loot;
   const currencyAmount = loot?.currencyAmount ?? 0;
+  const corpseType = input.corpseType ?? 'npc';
+  const createdAt = input.createdAt ?? new Date().toISOString();
+  const rules = input.lifecycleRules ?? {
+    ordinaryNpcSeconds: 300,
+    bossNpcSeconds: 900,
+    playerSeconds: 1800,
+    emptyCorpseSeconds: 60,
+    npcExpirationPolicy: 'destroy' as const,
+    playerExpirationPolicy: 'recovery-storage' as const,
+    showDecayStages: true,
+  };
+  const lifetimeSeconds = corpseType === 'player'
+    ? rules.playerSeconds
+    : input.lifecycleOverride?.lifetimeSeconds ??
+      (input.lifecycleOverride?.category === 'boss' ? rules.bossNpcSeconds : rules.ordinaryNpcSeconds);
+  const expirationPolicy = corpseType === 'player'
+    ? rules.playerExpirationPolicy
+    : input.lifecycleOverride?.expirationPolicy ?? rules.npcExpirationPolicy;
+  const expiresAt = new Date(Date.parse(createdAt) + lifetimeSeconds * 1000).toISOString();
   const corpseId = `corpse:${makeId()}`;
   const goldItemId = currencyAmount > 0 ? `corpse-gold:${makeId()}` : undefined;
   if (currencyAmount > 0 && (!input.currencyId || !input.currencyName)) {
@@ -121,12 +150,22 @@ export function createWorldCorpseEffect(
     label: `${input.opponentName}’s corpse`,
     description: `The body of ${input.opponentName} lies here.`,
     locationId: input.locationId,
+    corpseType,
+    ...(input.ownerCharacterId ? { ownerCharacterId: input.ownerCharacterId } : {}),
+    createdAt,
+    expiresAt,
+    expirationPolicy,
     ...(currencyAmount > 0 ? { currencyId: input.currencyId } : {}),
     currencyAmount,
     ...(goldItemId ? { goldItemId } : {}),
     goldClaimed: false,
   });
-  const items = (loot?.items ?? []).map((template) => {
+  const items = input.preservedItems
+    ? input.preservedItems.map((item) => ({
+      worldItemId: item.id,
+      item: InventoryItemProjectionSchema.parse(item),
+    }))
+    : (loot?.items ?? []).map((template) => {
     const worldItemId = `corpse-item:${makeId()}`;
     return {
       worldItemId,
@@ -141,7 +180,7 @@ export function createWorldCorpseEffect(
         ...(template.usesRemaining !== undefined ? { usesRemaining: template.usesRemaining } : {}),
       }),
     };
-  });
+    });
   const payload = WorldCorpseCreatedEventSchema.shape.payload.parse({ corpse, items });
   return {
     type: WORLD_CORPSE_CREATE_EFFECT,
@@ -230,7 +269,8 @@ export function projectWorldItems(
         throw new Error(`Invalid shared item claim at revision ${stored.aggregateVersion}.`);
       }
       items.set(previous.worldItemId, WorldItemRecordSchema.parse({
-        ...previous,
+        worldItemId: previous.worldItemId,
+        item: previous.item,
         locationId: null,
         holderCharacterId: claimed.payload.characterId,
       }));
@@ -250,6 +290,27 @@ export function projectWorldItems(
         ...previous,
         goldClaimed: true,
       }));
+    } else if (stored.type === 'world.corpse_expired') {
+      const expired = WorldCorpseExpiredEventSchema.parse(event).payload;
+      const corpse = corpses.get(expired.corpseId);
+      if (!corpse || corpse.locationId !== expired.locationId) {
+        throw new Error(`Invalid corpse expiration at revision ${stored.aggregateVersion}.`);
+      }
+      for (const [itemId, item] of items) {
+        if (item.containerId !== corpse.corpseId) continue;
+        if (expired.policy === 'drop') {
+          items.set(itemId, WorldItemRecordSchema.parse({
+            worldItemId: item.worldItemId,
+            item: item.item,
+            locationId: corpse.locationId,
+            holderCharacterId: null,
+          }));
+        } else {
+          items.delete(itemId);
+          consumedIds.add(itemId);
+        }
+      }
+      corpses.delete(corpse.corpseId);
     } else {
       throw new Error(`Unsupported world item event "${stored.type}" at revision ${stored.aggregateVersion}.`);
     }
@@ -323,6 +384,17 @@ async function appendWorldCorpse(
     payloadHash,
     expectedVersion: state.revision,
     events: [{ type: 'world.corpse_created', version: 1, payload }],
+    companions: [{
+      streamId: objectLifecycleStreamId(payload.corpse.corpseId),
+      expectedVersion: 0,
+      events: [objectLifecycleScheduledEvent({
+        objectId: payload.corpse.corpseId,
+        objectType: 'corpse',
+        locationId: payload.corpse.locationId,
+        createdAt: payload.corpse.createdAt ?? new Date().toISOString(),
+        expiresAt: payload.corpse.expiresAt ?? new Date(Date.now() + 300_000).toISOString(),
+      })],
+    }],
   });
   if (!result.receipt.ok) throw new Error('Could not commit the shared corpse.');
 }

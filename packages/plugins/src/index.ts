@@ -51,6 +51,16 @@ export {
   worldItemsStreamId,
 } from './world-items.js';
 export {
+  objectLifecyclePlugin,
+  objectLifecycleStateCapability,
+  objectLifecycleStreamId,
+  objectLifecycleScheduledEvent,
+  objectLifecycleExpiredEvent,
+  projectObjectLifecycle,
+} from './object-lifecycle.js';
+export type { ObjectLifecycleStateCapability } from './object-lifecycle.js';
+export { corpseLifecyclePlugin } from './corpse-lifecycle.js';
+export {
   interactionStreamId,
   projectInteractionEvents,
   updateInteractionRequestStatus,

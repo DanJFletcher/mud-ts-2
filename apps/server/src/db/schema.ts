@@ -72,6 +72,29 @@ export const gameEvents = pgTable('game_events', {
     .on(table.worldInstanceId, table.streamId, table.streamVersion),
 ]);
 
+/** Rebuildable due-work index; lifecycle events remain the source of truth. */
+export const worldObjectLifecycles = pgTable('world_object_lifecycles', {
+  worldInstanceId: text('world_instance_id').notNull(),
+  objectId: text('object_id').notNull(),
+  objectType: text('object_type').notNull(),
+  locationId: text('location_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  state: text('state').$type<'scheduled' | 'expiring' | 'expired' | 'cancelled'>().notNull(),
+  revision: integer('revision').notNull(),
+  attempts: integer('attempts').notNull().default(0),
+  leaseToken: uuid('lease_token'),
+  leaseUntil: timestamp('lease_until', { withTimezone: true }),
+}, (table) => [
+  primaryKey({
+    name: 'world_object_lifecycles_pk',
+    columns: [table.worldInstanceId, table.objectId],
+  }),
+  index('world_object_lifecycles_due_idx').on(table.worldInstanceId, table.state, table.expiresAt, table.leaseUntil),
+  check('world_object_lifecycles_state_check', sql`${table.state} in ('scheduled', 'expiring', 'expired', 'cancelled')`),
+  check('world_object_lifecycles_revision_check', sql`${table.revision} >= 1`),
+]);
+
 /** Rebuildable room read model; updated in the event append transaction. */
 export const roomCharacterStates = pgTable('room_character_states', {
   characterId: uuid('character_id').primaryKey().references(() => characters.id, { onDelete: 'cascade' }),

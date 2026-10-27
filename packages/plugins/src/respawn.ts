@@ -1,11 +1,12 @@
 import {
   CharacterRespawnedEventSchema,
+  InventoryItemProjectionSchema,
   characterHasEquippedItem,
   type CharacterProjection,
   type InventoryItemProjection,
 } from '@mudd/contracts';
 import type { EngineCommandContext, ProposedDomainEvent, ProposedEventEffect } from '@mudd/engine-core';
-import { createWorldItemDrop } from './world-items.js';
+import { createWorldCorpseEffect } from './world-items.js';
 
 export interface PreparedRespawn {
   event: ProposedDomainEvent;
@@ -14,7 +15,7 @@ export interface PreparedRespawn {
 
 export function prepareCharacterRespawn(
   character: CharacterProjection,
-  context: Pick<EngineCommandContext, 'world' | 'makeId' | 'rng'>,
+  context: Pick<EngineCommandContext, 'world' | 'makeId' | 'rng' | 'now'>,
   cause: 'pve' | 'pvp' | 'team-pve',
   encounterId: string,
   deathLocationId: string,
@@ -43,9 +44,23 @@ export function prepareCharacterRespawn(
   const effects: ProposedEventEffect[] = [];
   if (selected) {
     const worldItemId = selected.sharedItemId ?? context.makeId();
-    const drop = createWorldItemDrop(worldItemId, character.characterId, deathLocationId, selected);
-    droppedItem = { sourceItemId: selected.id, item: drop.item };
-    effects.push(drop.effect);
+    const item = InventoryItemProjectionSchema.parse({
+      ...selected,
+      id: worldItemId,
+      sharedItemId: worldItemId,
+    });
+    droppedItem = { sourceItemId: selected.id, item };
+    effects.push(createWorldCorpseEffect(context.makeId, {
+      encounterId,
+      opponentId: character.characterId,
+      opponentName: character.name,
+      locationId: deathLocationId,
+      corpseType: 'player',
+      ownerCharacterId: character.characterId,
+      preservedItems: [item],
+      createdAt: context.now().toISOString(),
+      lifecycleRules: context.world.corpseLifecycle,
+    }));
   }
   const payload = {
     characterId: character.characterId,

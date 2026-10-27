@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import type { CommandReceipt } from '@mudd/contracts';
 import type {
@@ -8,7 +9,15 @@ import type {
   StoredEventEffect,
   StoredGameEvent,
 } from '@mudd/engine-core';
-import { characters, commandReceipts, durableEffects, gameEvents, worldSessions, roomCharacterStates } from '../db/schema.js';
+import {
+  characters,
+  commandReceipts,
+  durableEffects,
+  gameEvents,
+  roomCharacterStates,
+  worldObjectLifecycles,
+  worldSessions,
+} from '../db/schema.js';
 import { db } from '../db/client.js';
 import { retainCharacterReplayPrefix, replayCharacter } from '@mudd/engine-core';
 import { measureDatabaseOperation } from '../performance.js';
@@ -596,6 +605,97 @@ export class PostgresEventStore implements EventStorePort {
         }
       }
 
+      const lifecycleWrites = [
+        {
+          events: request.events,
+          revision: currentRevision,
+        },
+        ...companions.map((write) => ({
+          events: write.events,
+          revision: write.expectedVersion,
+        })),
+      ];
+      for (const write of lifecycleWrites) {
+        for (const [index, event] of write.events.entries()) {
+          const revision = write.revision + index + 1;
+          const payload = event.payload;
+          if (event.type === 'world.object_lifecycle_scheduled') {
+            await tx.insert(worldObjectLifecycles).values({
+              worldInstanceId: request.worldInstanceId,
+              objectId: String(payload.objectId),
+              objectType: String(payload.objectType),
+              locationId: String(payload.locationId),
+              createdAt: new Date(String(payload.createdAt)),
+              expiresAt: new Date(String(payload.expiresAt)),
+              state: 'scheduled',
+              revision,
+              attempts: 0,
+              leaseToken: null,
+              leaseUntil: null,
+            }).onConflictDoUpdate({
+              target: [worldObjectLifecycles.worldInstanceId, worldObjectLifecycles.objectId],
+              set: {
+                objectType: String(payload.objectType),
+                locationId: String(payload.locationId),
+                createdAt: new Date(String(payload.createdAt)),
+                expiresAt: new Date(String(payload.expiresAt)),
+                state: 'scheduled',
+                revision,
+                attempts: 0,
+                leaseToken: null,
+                leaseUntil: null,
+              },
+            });
+          } else if (event.type === 'world.object_lifecycle_rescheduled') {
+            await tx.update(worldObjectLifecycles).set({
+              objectType: String(payload.objectType),
+              locationId: String(payload.locationId),
+              expiresAt: new Date(String(payload.expiresAt)),
+              state: 'scheduled',
+              revision,
+              attempts: 0,
+              leaseToken: null,
+              leaseUntil: null,
+            }).where(and(
+              eq(worldObjectLifecycles.worldInstanceId, request.worldInstanceId),
+              eq(worldObjectLifecycles.objectId, String(payload.objectId)),
+            ));
+          } else if (event.type === 'world.object_lifecycle_cancelled') {
+            await tx.update(worldObjectLifecycles).set({
+              state: 'cancelled',
+              revision,
+              leaseToken: null,
+              leaseUntil: null,
+            }).where(and(
+              eq(worldObjectLifecycles.worldInstanceId, request.worldInstanceId),
+              eq(worldObjectLifecycles.objectId, String(payload.objectId)),
+            ));
+          } else if (event.type === 'world.object_expiring') {
+            await tx.update(worldObjectLifecycles).set({
+              state: 'expiring',
+              revision,
+              attempts: sql`${worldObjectLifecycles.attempts} + 1`,
+              leaseToken: null,
+              leaseUntil: null,
+            }).where(and(
+              eq(worldObjectLifecycles.worldInstanceId, request.worldInstanceId),
+              eq(worldObjectLifecycles.objectId, String(payload.objectId)),
+            ));
+          } else if (event.type === 'world.object_expired') {
+            await tx.update(worldObjectLifecycles).set({
+              locationId: String(payload.locationId),
+              state: 'expired',
+              revision,
+              leaseToken: null,
+              leaseUntil: null,
+            }).where(and(
+              eq(worldObjectLifecycles.worldInstanceId, request.worldInstanceId),
+              eq(worldObjectLifecycles.objectId, String(payload.objectId)),
+            ));
+          }
+        }
+      }
+
       for (const streamId of writeIds) {
         if (streamId === request.streamId) {
           await this.refreshRoomState(tx, request.worldInstanceId, streamId, {
@@ -670,6 +770,57 @@ export class PostgresEventStore implements EventStorePort {
       }).where(eq(durableEffects.id, pending.id)).returning();
       return claimed ? toStoredEventEffect(claimed, leaseToken) : undefined;
     });
+  }
+
+  async claimDueObjectLifecycles(
+    worldInstanceId: string,
+    now: Date,
+    limit = 32,
+    leaseMs = 60_000,
+  ): Promise<Array<{
+    objectId: string;
+    revision: number;
+    leaseToken: string;
+  }>> {
+    if (!Number.isInteger(limit) || limit < 1) throw new RangeError('Lifecycle batch size must be positive.');
+    if (!Number.isInteger(leaseMs) || leaseMs < 1) throw new RangeError('Lifecycle lease must be positive.');
+    return db.transaction(async (tx) => {
+      const rows = await tx.select({
+        objectId: worldObjectLifecycles.objectId,
+        revision: worldObjectLifecycles.revision,
+      }).from(worldObjectLifecycles).where(and(
+        eq(worldObjectLifecycles.worldInstanceId, worldInstanceId),
+        inArray(worldObjectLifecycles.state, ['scheduled', 'expiring']),
+        lte(worldObjectLifecycles.expiresAt, now),
+        or(isNull(worldObjectLifecycles.leaseUntil), lte(worldObjectLifecycles.leaseUntil, now)),
+      )).orderBy(asc(worldObjectLifecycles.expiresAt))
+        .limit(limit)
+        .for('update', { skipLocked: true });
+      const leaseUntil = new Date(now.getTime() + leaseMs);
+      return Promise.all(rows.map(async (row) => {
+        const leaseToken = randomUUID();
+        await tx.update(worldObjectLifecycles).set({ leaseToken, leaseUntil }).where(and(
+          eq(worldObjectLifecycles.worldInstanceId, worldInstanceId),
+          eq(worldObjectLifecycles.objectId, row.objectId),
+        ));
+        return { objectId: row.objectId, revision: row.revision, leaseToken };
+      }));
+    });
+  }
+
+  async releaseObjectLifecycleClaim(
+    worldInstanceId: string,
+    objectId: string,
+    leaseToken: string,
+  ): Promise<void> {
+    await db.update(worldObjectLifecycles).set({
+      leaseToken: null,
+      leaseUntil: null,
+    }).where(and(
+      eq(worldObjectLifecycles.worldInstanceId, worldInstanceId),
+      eq(worldObjectLifecycles.objectId, objectId),
+      eq(worldObjectLifecycles.leaseToken, leaseToken),
+    ));
   }
 
   async completeEffect(effectId: string, leaseToken: string): Promise<boolean> {

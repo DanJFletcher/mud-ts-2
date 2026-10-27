@@ -64,6 +64,11 @@ export const WorldCorpseRecordSchema = z.object({
   label: z.string().min(1).max(120),
   description: z.string().min(1).max(1000),
   locationId: IdSchema,
+  corpseType: z.enum(['npc', 'player']).optional(),
+  ownerCharacterId: IdSchema.optional(),
+  createdAt: z.string().datetime({ offset: true }).optional(),
+  expiresAt: z.string().datetime({ offset: true }).optional(),
+  expirationPolicy: z.enum(['destroy', 'drop', 'recovery-storage']).optional(),
   currencyId: IdSchema.optional(),
   currencyAmount: NonNegativeIntSchema.max(2_147_483_647),
   goldItemId: IdSchema.optional(),
@@ -87,6 +92,17 @@ export const WorldCorpseCreatedEventSchema = DomainEventBaseSchema.extend({
       worldItemId: IdSchema,
       item: InventoryItemProjectionSchema,
     }).strict()).max(24),
+  }).strict(),
+}).strict();
+
+export const WorldCorpseExpiredEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('world.corpse_expired'),
+  version: z.literal(1),
+  payload: z.object({
+    corpseId: IdSchema,
+    locationId: IdSchema,
+    policy: z.enum(['destroy', 'drop', 'recovery-storage']),
+    expiredAt: z.string().datetime({ offset: true }),
   }).strict(),
 }).strict();
 

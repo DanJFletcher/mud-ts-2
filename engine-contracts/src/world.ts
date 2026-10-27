@@ -209,11 +209,30 @@ export const ContainerDefinitionSchema = z.object({
   }
 });
 
+export const CorpseExpirationPolicySchema = z.enum(['destroy', 'drop', 'recovery-storage']);
+
+export const CorpseLifecycleOverrideSchema = z.object({
+  category: z.enum(['ordinary', 'boss']).default('ordinary'),
+  lifetimeSeconds: z.number().int().min(30).max(604800).optional(),
+  expirationPolicy: CorpseExpirationPolicySchema.optional(),
+}).strict();
+
+export const CorpseLifecycleRulesSchema = z.object({
+  ordinaryNpcSeconds: z.number().int().min(30).max(604800).default(300),
+  bossNpcSeconds: z.number().int().min(30).max(604800).default(900),
+  playerSeconds: z.number().int().min(30).max(604800).default(1800),
+  emptyCorpseSeconds: z.number().int().min(30).max(3600).default(60),
+  npcExpirationPolicy: CorpseExpirationPolicySchema.default('destroy'),
+  playerExpirationPolicy: CorpseExpirationPolicySchema.default('recovery-storage'),
+  showDecayStages: z.boolean().default(true),
+}).strict();
+
 export const RoadEncounterDefinitionSchema = z.object({
   id: IdSchema,
   name: z.string().min(1).max(120),
   combatProfile: NpcCombatProfileSchema,
   loot: CombatLootDefinitionSchema.optional(),
+  corpse: CorpseLifecycleOverrideSchema.optional(),
 }).strict();
 
 export const RoadDefinitionSchema = z.object({
@@ -441,6 +460,7 @@ export const NpcDefinitionSchema = z.object({
   combatDisposition: NpcCombatDispositionSchema.optional(),
   combatProfile: NpcCombatProfileSchema.optional(),
   loot: CombatLootDefinitionSchema.optional(),
+  corpse: CorpseLifecycleOverrideSchema.optional(),
   shop: MerchantCatalogDefinitionSchema.optional(),
 }).strict().superRefine((npc, context) => {
   if (npc.combatDisposition === 'hostile' && !npc.combatProfile) {
@@ -495,6 +515,7 @@ export const WorldPackDraftSchema = z.object({
   classCatalog: CharacterClassCatalogSchema.optional(),
   currency: WorldCurrencyDefinitionSchema.optional(),
   respawn: z.object({ locationId: IdSchema }).strict().optional(),
+  corpseLifecycle: CorpseLifecycleRulesSchema.default({}),
   locations: z.array(LocationDefinitionSchema),
   locationGroups: z.array(LocationGroupDefinitionSchema).max(500).default([]),
   roads: z.array(RoadDefinitionSchema).default([]),
@@ -1010,6 +1031,9 @@ export type WorldPackDraft = z.infer<typeof WorldPackDraftSchema>;
 export type WorldPackDraftInput = z.input<typeof WorldPackDraftSchema>;
 export type RoadDefinition = z.infer<typeof RoadDefinitionSchema>;
 export type CombatLootDefinition = z.infer<typeof CombatLootDefinitionSchema>;
+export type CorpseExpirationPolicy = z.infer<typeof CorpseExpirationPolicySchema>;
+export type CorpseLifecycleOverride = z.infer<typeof CorpseLifecycleOverrideSchema>;
+export type CorpseLifecycleRules = z.infer<typeof CorpseLifecycleRulesSchema>;
 export type RoadEncounterDefinition = z.infer<typeof RoadEncounterDefinitionSchema>;
 export type LocationDescribeQuery = z.infer<typeof LocationDescribeQuerySchema>;
 export type ObjectReadQuery = z.infer<typeof ObjectReadQuerySchema>;

@@ -21,6 +21,8 @@ import {
   partyCombatPolicyPlugin,
   teamCombatPlugin,
   worldItemsPlugin,
+  objectLifecyclePlugin,
+  corpseLifecyclePlugin,
 } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import {
@@ -79,7 +81,9 @@ export function createWorldRuntimes(
     );
     const plugins = [
       ...(definition.world.classCatalog ? [createClassRulesetPlugin(definition.world.classCatalog)] : []),
+      objectLifecyclePlugin,
       worldItemsPlugin,
+      corpseLifecyclePlugin,
       locationGroupsFeature.plugin,
       autonomousNpcsPlugin,
       characterPlugin,
