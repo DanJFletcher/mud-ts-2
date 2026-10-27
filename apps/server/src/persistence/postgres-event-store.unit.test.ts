@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AppendRequest } from '@mudd/engine-core';
 
 const { mockDb } = vi.hoisted(() => ({
   mockDb: {
@@ -186,6 +187,121 @@ describe('PostgresEventStore unit behavior', () => {
       kind: 'conflict',
       receipt: { ok: false, code: 'VERSION_CONFLICT', retryable: true },
     });
+  });
+
+  it('commits primary and companion events, receipt, and effects in one atomic append', async () => {
+    const persistedValues: unknown[] = [];
+    const heads = [
+      { streamId: 'companion-stream', revision: 2 },
+      { streamId: 'guard-stream', revision: 3 },
+    ];
+    const ctes: unknown[] = [];
+    const tx = {
+      execute: vi.fn(async () => undefined),
+      select: vi.fn(() => ({
+        from: () => ({
+          where: () => ({
+            limit: async () => [],
+            groupBy: async () => heads,
+          }),
+        }),
+      })),
+      insert: vi.fn(() => ({
+        values: (values: unknown) => {
+          persistedValues.push(values);
+          return {
+            returning: () => ({ values }),
+          };
+        },
+      })),
+      $with: vi.fn((name: string) => ({
+        as: (query: unknown) => {
+          const cte = { name, query };
+          ctes.push(cte);
+          return cte;
+        },
+      })),
+      with: vi.fn(() => ({
+        select: () => ({
+          from: () => ({
+            limit: async () => [{ eventCount: 2, receiptCount: 1 }],
+          }),
+        }),
+      })),
+    };
+    mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(tx));
+    const store = new PostgresEventStore();
+    const request: AppendRequest = {
+      worldInstanceId: 'world-1',
+      streamId: 'shared-character-stream',
+      actorId: 'player-1',
+      commandId: 'atomic-command',
+      payloadHash: 'atomic-payload',
+      expectedVersion: 0,
+      guards: [{ streamId: 'guard-stream', expectedVersion: 3 }],
+      companions: [{
+        streamId: 'companion-stream',
+        expectedVersion: 2,
+        events: [{ type: 'world.team.changed', version: 1, payload: { teamId: 'team-1' } }],
+      }],
+      events: [{
+        type: 'character.progress.changed',
+        version: 1,
+        payload: { characterId: 'shared-character-stream', progress: 1 },
+      }],
+      effects: [{
+        type: 'world.location.entered',
+        version: 1,
+        payload: { characterId: 'shared-character-stream', toLocationId: 'room-b' },
+      }],
+    };
+
+    const outcome = await store.append(request);
+
+    expect(outcome.kind).toBe('committed');
+    expect(outcome).toMatchObject({
+      streamId: 'shared-character-stream',
+      receipt: { ok: true, commandId: 'atomic-command', newAggregateVersion: 1 },
+    });
+    expect(persistedValues).toHaveLength(3);
+
+    const eventRows = persistedValues[0] as Array<{
+      streamId: string;
+      streamVersion: number;
+      type: string;
+      causationCommandId: string;
+      payload: Record<string, unknown>;
+    }>;
+    expect(eventRows).toHaveLength(2);
+    expect(eventRows.map(({ streamId, streamVersion, type }) => ({ streamId, streamVersion, type })))
+      .toEqual([
+        { streamId: 'companion-stream', streamVersion: 3, type: 'world.team.changed' },
+        { streamId: 'shared-character-stream', streamVersion: 1, type: 'character.progress.changed' },
+      ]);
+    expect(eventRows.every((event) => event.causationCommandId === 'atomic-command')).toBe(true);
+
+    expect(persistedValues[1]).toMatchObject({
+      worldInstanceId: 'world-1',
+      actorId: 'player-1',
+      commandId: 'atomic-command',
+      payloadHash: 'atomic-payload',
+      streamId: 'shared-character-stream',
+    });
+    const effectRows = persistedValues[2] as Array<{
+      effectType: string;
+      dedupeKey: string;
+      payload: Record<string, unknown>;
+    }>;
+    expect(effectRows).toHaveLength(1);
+    expect(effectRows[0]).toMatchObject({
+      effectType: 'world.location.entered',
+      dedupeKey: 'command:world-1:player-1:atomic-command:0',
+      payload: { toLocationId: 'room-b' },
+    });
+    expect(ctes.map((cte) => (cte as { name: string }).name))
+      .toEqual(['appended_events', 'appended_receipt']);
+    expect(tx.with).toHaveBeenCalledTimes(1);
+    expect(mockDb.transaction).toHaveBeenCalledTimes(1);
   });
 
   it('claims a pending durable effect with a lease and incremented attempt count', async () => {
