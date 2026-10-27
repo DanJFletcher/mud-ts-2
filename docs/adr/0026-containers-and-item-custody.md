@@ -31,11 +31,14 @@ stream records item ownership changes.
 - Container definitions and contents are character-instanced just like existing
   authored room loot; this ADR does not create shared stock, mutable shared
   containers, or a new shared-world aggregate.
-- Authored NPC and road-combatant loot is an optional list of item templates and
-  an optional currency amount. A combat victory creates a corpse snapshot in the
-  existing world-instance item stream, including an empty corpse when no loot
-  was authored. Corpse contents are instantiated with unique shared item IDs
-  and the defeated opponent's name and location are recorded.
+- Authored NPC and road-combatant loot may include guaranteed item templates and
+  currency, plus percentage-chance item and currency drops. The server resolves
+  these chances during the victory command with its injected RNG; the resulting
+  corpse-creation event stores the actual drops so retries and replay do not
+  reroll them. A combat victory creates a corpse snapshot in the existing
+  world-instance item stream, including an empty corpse when no loot is authored.
+  Corpse contents are instantiated with unique shared item IDs and the defeated
+  opponent's name and location are recorded.
 - Dynamic corpses, their contents, and unclaimed currency are shared world
   state, not character inventory or mutable NPC state. The world-item stream is
   the single writer: item claims reserve the item there before a durable effect
@@ -67,4 +70,5 @@ stream records item ownership changes.
   from the current location, and remain removed for that character after use.
 - Combat tests verify victory creates one shared corpse, item and currency
   claims are visible and single-winner, retries do not duplicate loot, and
-  character wallets are credited once.
+  character wallets are credited once. Chance-based drops are resolved with
+  deterministic server RNG and are recorded in the shared corpse event.

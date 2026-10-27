@@ -137,23 +137,45 @@ export const TakeableObjectDefinitionSchema = z.object({
   }
 });
 
+export const ChanceCombatLootItemSchema = z.object({
+  item: TakeableObjectDefinitionSchema,
+  chancePercent: z.number().int().min(0).max(100),
+}).strict();
+
 export const CombatLootDefinitionSchema = z.object({
   items: z.array(TakeableObjectDefinitionSchema).max(24).default([]),
+  chanceItems: z.array(ChanceCombatLootItemSchema).max(24).optional(),
   currencyAmount: NonNegativeIntSchema.max(2_147_483_647).optional(),
+  currencyChancePercent: z.number().int().min(0).max(100).optional(),
 }).strict().superRefine((loot, context) => {
+  if (loot.currencyChancePercent !== undefined && (!loot.currencyAmount || loot.currencyAmount < 1)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['currencyChancePercent'],
+      message: 'A currency drop chance requires a positive currency amount.',
+    });
+  }
+
   const itemIds = new Set<string>();
-  for (const [index, item] of loot.items.entries()) {
+  const allItems = [
+    ...loot.items.map((item, index) => ({ item, path: ['items', index] as (string | number)[] })),
+    ...(loot.chanceItems ?? []).map((drop, index) => ({
+      item: drop.item,
+      path: ['chanceItems', index, 'item'] as (string | number)[],
+    })),
+  ];
+  for (const { item, path } of allItems) {
     if (itemIds.has(item.id)) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['items', index, 'id'],
+        path: [...path, 'id'],
         message: 'Combat loot item IDs must be unique within the loot definition.',
       });
     }
     if (item.questBound) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['items', index, 'questBound'],
+        path: [...path, 'questBound'],
         message: 'Combat loot cannot contain quest-bound items.',
       });
     }

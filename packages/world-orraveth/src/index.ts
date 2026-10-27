@@ -82,10 +82,33 @@ function bellwoldSmallTalkChoices(
   ];
 }
 
+function banditEncounter(id: string) {
+  return {
+    id,
+    name: 'Bandit',
+    combatProfile: { maxHealth: 6, attackDamage: 1, style: 'steady' },
+    loot: {
+      items: [],
+      chanceItems: [{
+        item: {
+          id: 'bandit-knife-template',
+          typeId: 'bandit-knife',
+          label: 'Bandit knife',
+          description: 'A narrow knife with a worn wooden grip and a nicked steel edge.',
+          equipment: { slot: 'weapon', attackBonus: 1 },
+        },
+        chancePercent: 5,
+      }],
+      currencyAmount: 3,
+      currencyChancePercent: 50,
+    },
+  };
+}
+
 const draft = {
   formatVersion: 1,
   packId: 'orraveth.bellwold',
-  packVersion: '1.15.0',
+  packVersion: '1.16.0',
   displayName: 'Orraveth: Bellwold',
   dailyBoards: [{
     id: 'bellwold-notice-board', locationId: 'bellwold-south-common', name: 'South Common bulletin board',
@@ -1904,6 +1927,7 @@ const draft = {
           name: 'Stray Hound',
           combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' },
         },
+        banditEncounter('bellwold-mile-west-road-bandit'),
       ],
     },
     {
@@ -1931,6 +1955,7 @@ const draft = {
           loot: { items: [{ id: 'deer-hide-template', typeId: 'deer-hide', label: 'Deer hide',
             description: 'A brown deer hide with a pale underside.' }] },
         },
+        banditEncounter('bellwold-south-road-bandit'),
       ],
     },
     {
@@ -1949,6 +1974,7 @@ const draft = {
           name: 'Stray Hound',
           combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' },
         },
+        banditEncounter('bellwold-east-mill-road-bandit'),
       ],
     },
     {
@@ -1966,6 +1992,7 @@ const draft = {
           name: 'Stray Hound',
           combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' },
         },
+        banditEncounter('bellwold-north-church-road-bandit'),
       ],
     },
     {
@@ -1983,6 +2010,7 @@ const draft = {
           name: 'Stray Hound',
           combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' },
         },
+        banditEncounter('bellwold-west-road-bandit'),
       ],
     },
   ],

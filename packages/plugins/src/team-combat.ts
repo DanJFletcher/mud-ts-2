@@ -39,6 +39,7 @@ import {
   type TeamRoadEncounterCapability,
 } from './team-combat-policy.js';
 import { createWorldCorpseEffect } from './world-items.js';
+import { resolveCombatLoot } from './combat-loot.js';
 import { classAdoptionGuards, classCombatPolicyCapability, type ClassCombatPolicy } from './classes.js';
 
 const STREAM_ID = 'world-team-combat';
@@ -796,7 +797,7 @@ export const teamCombatPlugin: EnginePlugin = {
             opponentId: opponent.npcId!,
             opponentName: opponent.displayName,
             locationId: encounter.locationId,
-            loot: defeatedNpc.loot,
+            loot: resolveCombatLoot(defeatedNpc.loot, context.rng),
             ...(context.world.currency
               ? {
                 currencyId: context.world.currency.id,

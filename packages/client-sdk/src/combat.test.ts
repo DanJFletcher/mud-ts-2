@@ -116,10 +116,17 @@ async function moveAlongDemoRoad(
   return result!;
 }
 
-function makeClient(world = demoWorld, now: () => Date = () => new Date()) {
+function makeClient(
+  world = demoWorld,
+  now: () => Date = () => new Date(),
+  rng?: Readonly<{ roll: (sides: number) => number }>,
+  useAuthoredRoadEncounterChance = false,
+) {
   const store = new InMemoryEventStore();
   const testWorld = structuredClone(world);
-  for (const road of testWorld.roads ?? []) road.encounterChancePercent = 0;
+  if (!useAuthoredRoadEncounterChance) {
+    for (const road of testWorld.roads ?? []) road.encounterChancePercent = 0;
+  }
   const engine = new EngineHost(
     testPlugins,
     store,
@@ -127,6 +134,7 @@ function makeClient(world = demoWorld, now: () => Date = () => new Date()) {
     testWorld,
     undefined,
     now,
+    rng,
   );
   const ready = engine.start();
   const fetcher: typeof fetch = async (input, init = {}) => {
@@ -815,6 +823,91 @@ describe('turn-based PvE combat', () => {
     expect(corpses[0]?.actorId).toBe(SYSTEM_ACTOR_ID);
     expect((await store.readStream(DEMO_WORLD_INSTANCE_ID, 'world-items'))
       .filter((event) => event.type === 'world.corpse_gold_claimed')).toHaveLength(1);
+    await engine.stop();
+  });
+
+  it('resolves road bandit chance loot into a corpse and allows the knife to be equipped', async () => {
+    const lootWorld = structuredClone(demoWorld);
+    const banditLoot = {
+      items: [],
+      chanceItems: [{
+        item: {
+          id: 'bandit-knife-template',
+          typeId: 'bandit-knife',
+          label: 'Bandit knife',
+          description: 'A narrow knife with a worn wooden grip and a nicked steel edge.',
+          equipment: { slot: 'weapon' as const, attackBonus: 1, defenseBonus: 0 },
+        },
+        chancePercent: 5,
+      }],
+      currencyAmount: 3,
+      currencyChancePercent: 50,
+    };
+    const roadExit = lootWorld.locations.flatMap((location) => location.exits)
+      .find((exit) => exit.id === 'clearing-to-stillwater-path');
+    if (!roadExit?.roadId) throw new Error('The test road exit is missing its road ID.');
+    const road = lootWorld.roads.find((candidate) => candidate.id === roadExit.roadId);
+    if (!road) throw new Error('The test road definition is missing.');
+    for (const candidate of lootWorld.roads) candidate.encounterChancePercent = 0;
+    road.encounterChancePercent = 100;
+    road.encounters = [{
+      id: 'test-road-bandit',
+      name: 'Bandit',
+      combatProfile: { maxHealth: 1, attackDamage: 1 },
+      loot: banditLoot,
+    }];
+
+    const rolls = [1, 1, 5, 50];
+    const rng = {
+      roll(sides: number) {
+        const result = rolls.shift();
+        if (result === undefined || result < 1 || result > sides) {
+          throw new Error(`Unexpected deterministic roll for ${sides} sides.`);
+        }
+        return result;
+      },
+    };
+    const { client, store, engine } = makeClient(lootWorld, undefined, rng, true);
+    const created = await client.createCharacter('Briar', 'combat-bandit-create');
+    const characterId = created.streamId!;
+    let character = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+
+    await client.roadStep(
+      characterId,
+      roadExit.id,
+      character.revision,
+      'combat-bandit-road-step',
+    );
+    character = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(character.combat).toMatchObject({ status: 'active', opponentName: 'Bandit' });
+    const encounterId = character.combat!.encounterId;
+    await client.performCombatAction(
+      characterId,
+      'attack',
+      character.revision,
+      { encounterId },
+      'combat-bandit-defeat',
+    );
+    character = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(character.combat?.status).toBe('victory');
+    await engine.processPendingEffects();
+
+    const room = await client.look(characterId, 'combat-bandit-corpse-look');
+    const corpse = room.objects.find((object) => object.containerKind === 'corpse');
+    expect(corpse?.contents).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'Bandit knife' }),
+      expect.objectContaining({ label: `3 ${demoWorld.currency!.name}` }),
+    ]));
+
+    const knife = corpse!.contents!.find((item) => item.label === 'Bandit knife')!;
+    await client.take(characterId, knife.id, character.revision, 'combat-bandit-loot-knife');
+    await engine.processPendingEffects();
+    character = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    await client.equip(characterId, knife.id, character.revision, 'combat-bandit-equip-knife');
+    character = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(character.equipment.weaponItemId).toBe(knife.id);
+    expect(character.inventory.find((item) => item.id === knife.id)?.equipment?.attackBonus).toBe(1);
+    expect(rolls).toEqual([]);
     await engine.stop();
   });
 

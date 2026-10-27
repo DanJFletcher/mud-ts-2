@@ -398,12 +398,25 @@ test('combat loot accepts ordinary items and currency but rejects quest-bound lo
         loot: {
           items: [{ id: 'rat-whisker', label: 'Rat whisker', description: 'A stiff whisker.' }],
           currencyAmount: 2,
+          currencyChancePercent: 50,
+          chanceItems: [{
+            item: {
+              id: 'rat-knife',
+              typeId: 'bandit-knife',
+              label: 'Bandit knife',
+              description: 'A narrow knife.',
+              equipment: { slot: 'weapon', attackBonus: 1 },
+            },
+            chancePercent: 5,
+          }],
         },
       }],
     }],
   };
   const parsed = WorldPackDraftSchema.parse(pack);
   assert.equal(parsed.locations[0].npcs[0].loot.currencyAmount, 2);
+  assert.equal(parsed.locations[0].npcs[0].loot.currencyChancePercent, 50);
+  assert.equal(parsed.locations[0].npcs[0].loot.chanceItems[0].chancePercent, 5);
   assert.deepEqual(validateDraftWorldGraph(parsed), []);
   assert.equal(WorldPackDraftSchema.safeParse({
     ...pack,
@@ -417,6 +430,31 @@ test('combat loot accepts ordinary items and currency but rejects quest-bound lo
             label: 'Quest map',
             description: 'A quest map.',
             questBound: true,
+          }],
+        },
+      }],
+    }],
+  }).success, false);
+  assert.equal(WorldPackDraftSchema.safeParse({
+    ...pack,
+    locations: [{
+      ...pack.locations[0],
+      npcs: [{
+        ...pack.locations[0].npcs[0],
+        loot: { currencyChancePercent: 50 },
+      }],
+    }],
+  }).success, false);
+  assert.equal(WorldPackDraftSchema.safeParse({
+    ...pack,
+    locations: [{
+      ...pack.locations[0],
+      npcs: [{
+        ...pack.locations[0].npcs[0],
+        loot: {
+          chanceItems: [{
+            item: { id: 'too-rare', label: 'Knife', description: 'A knife.' },
+            chancePercent: 101,
           }],
         },
       }],

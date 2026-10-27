@@ -34,6 +34,7 @@ import { registerPvpCombat } from './pvp-combat.js';
 import { interactionPolicyRegistry } from './interactions.js';
 import { calculateCharacterStats, characterAttackDamage, characterDefenseReduction, maximumHealthForLevel, levelAfterExperience } from './character-stats.js';
 import { createWorldCorpseEffect } from './world-items.js';
+import { resolveCombatLoot } from './combat-loot.js';
 import { classAdoptionGuards, classCombatPolicyCapability, type ClassCombatPolicy } from './classes.js';
 import { z } from 'zod';
 
@@ -503,7 +504,7 @@ export const combatPlugin: EnginePlugin = {
           opponentId: npc.id,
           opponentName: npc.name,
           locationId: resolvedEncounter.locationId,
-          loot: npc.loot,
+          loot: resolveCombatLoot(npc.loot, context.rng),
           ...(context.world.currency
             ? {
               currencyId: context.world.currency.id,

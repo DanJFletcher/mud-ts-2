@@ -568,12 +568,16 @@ describe('Orraveth Bellwold settlement', () => {
         locationIds: expected.locationIds,
         encounterChancePercent: 10,
       });
-      expect(road?.encounters).toEqual([
+      expect(road?.encounters).toEqual(expect.arrayContaining([
         expect.objectContaining({
           name: 'Stray Hound',
           combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' },
         }),
-      ]);
+        expect.objectContaining({
+          name: 'Bandit',
+          combatProfile: { maxHealth: 6, attackDamage: 1, style: 'steady' },
+        }),
+      ]));
       const routeLocations = expected.locationIds.map((id) =>
         orravethWorld.locations.find(({ id: locationId }) => locationId === id)!,
       );
@@ -588,6 +592,28 @@ describe('Orraveth Bellwold settlement', () => {
           roadId: expected.id,
         }));
       }
+    }
+  });
+
+  it('authors bandits on every Bellwold road with chance-based gold and a rare equipable knife', () => {
+    expect(orravethWorld.roads).toHaveLength(5);
+    for (const road of orravethWorld.roads) {
+      const bandit = road.encounters.find(({ name }) => name === 'Bandit');
+      expect(bandit).toMatchObject({
+        combatProfile: { maxHealth: 6, attackDamage: 1, style: 'steady' },
+        loot: {
+          currencyAmount: 3,
+          currencyChancePercent: 50,
+          chanceItems: [{
+            chancePercent: 5,
+            item: {
+              typeId: 'bandit-knife',
+              label: 'Bandit knife',
+              equipment: { slot: 'weapon', attackBonus: 1 },
+            },
+          }],
+        },
+      });
     }
   });
 
