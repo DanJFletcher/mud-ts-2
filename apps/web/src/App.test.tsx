@@ -74,6 +74,7 @@ const characterId = '11111111-1111-4111-8111-111111111111';
 let room: 'clearing' | 'bridge' | 'market' | 'inn' | 'belfry';
 let orravethWorld: boolean;
 let dailyFeatureEnabled: boolean;
+let bulletinReadableObject: boolean;
 let dailyJobStatus: 'available' | 'active' | 'completed';
 let dailySupplyCount: number;
 let dailyBoardQueryCount: number;
@@ -209,6 +210,13 @@ function currentLocation(includeNpcDescriptions = false) {
         description: 'A smooth, palm-sized stone with a pale stripe running through it.',
         readable: false,
         takeable: true,
+      }] : []),
+      ...(dailyFeatureEnabled && bulletinReadableObject ? [{
+        id: 'reedbank-bulletin-object',
+        label: 'Bulletin board',
+        description: 'A plank board holds handwritten notices.',
+        readable: true,
+        takeable: false,
       }] : []),
       ...(includeSecondTakeable && !secondItemTaken ? [{
         id: 'mossgate-lost-feather',
@@ -462,6 +470,7 @@ beforeEach(() => {
   room = 'clearing';
   orravethWorld = false;
   dailyFeatureEnabled = false;
+  bulletinReadableObject = false;
   dailyJobStatus = 'available';
   dailySupplyCount = 0;
   dailyBoardQueryCount = 0;
@@ -3442,11 +3451,15 @@ describe('single-character world session client', () => {
 
   it('lists the bulletin in read quick actions and supports accepting and delivering jobs', async () => {
     dailyFeatureEnabled = true;
+    bulletinReadableObject = true;
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
 
     clickQuickAction('Show readable objects');
-    clickQuickAction('Read Reedbank Bulletin');
+    const readableObjects = screen.getByRole('group', { name: 'Readable objects' });
+    expect(within(readableObjects).getByRole('button', { name: 'Read bulletin' })).toBeVisible();
+    expect(within(readableObjects).queryByRole('button', { name: 'Read Bulletin board' })).not.toBeInTheDocument();
+    clickQuickAction('Read bulletin');
     await waitFor(() => expect(dailyBoardQueryCount).toBe(1));
     const board = await screen.findByRole('region', { name: 'Reedbank Bulletin' });
     fireEvent.click(within(board).getByRole('button', { name: 'Accept' }));

@@ -66,6 +66,25 @@ type CraftingRecipeOption = Awaited<ReturnType<MuddHttpClient["getCraftingCatalo
 const classCharacter = (character: GameSnapshot["character"]): ClassAwareCharacter | undefined =>
   character as ClassAwareCharacter | undefined;
 
+function readableObjectsForQuickActions(snapshot: GameSnapshot | null | undefined) {
+  const bulletin = snapshot?.dailyActivities?.boards[0];
+  const bulletinAliases = [
+    "bulletin",
+    "bulletin board",
+    "daily bulletin",
+    "daily bulletin board",
+    "notice",
+    "notice board",
+  ];
+  return (snapshot?.location?.objects ?? []).filter((object) => {
+    if (!object.readable) return false;
+    if (!bulletin) return true;
+    const label = object.label.trim().toLocaleLowerCase().replace(/\s+/g, " ");
+    const boardName = bulletin.name.trim().toLocaleLowerCase().replace(/\s+/g, " ");
+    return label !== boardName && !bulletinAliases.includes(label);
+  });
+}
+
 function isRejectedAction(error: unknown): boolean {
   return error instanceof MuddCommandError ||
     (error instanceof MuddHttpError && error.status >= 400 && error.status < 500);
@@ -3571,7 +3590,7 @@ export function WorldClient({
     );
     const gearToEquip = inventory.filter((item) => item.equipment &&
       (!equipment || equipmentItemIdForSlot(equipment, item.equipment.slot) !== item.id));
-    const readableObjects = (snapshot?.location?.objects ?? []).filter((object) => object.readable);
+    const readableObjects = readableObjectsForQuickActions(snapshot);
     const localSources = (snapshot?.dailyActivities?.sources ?? [])
       .filter((source) => source.locationId === snapshot?.location?.locationId);
     const dailyCycle = snapshot?.dailyActivities?.cycle;
@@ -4301,13 +4320,13 @@ export function WorldClient({
                                   type="button"
                                   className="focused-quick-command"
                                   onClick={() => submitQuickCommand("read bulletin")}
-                                  aria-label={`Read ${snapshot.dailyActivities.boards[0].name}`}
+                                  aria-label="Read bulletin"
                                   disabled={pending !== null}
                                 >
                                   bulletin
                                 </button>
                               )}
-                              {(snapshot?.location?.objects ?? []).filter((object) => object.readable).map((object) => (
+                              {readableObjectsForQuickActions(snapshot).map((object) => (
                                 <button
                                   key={object.id}
                                   type="button"
