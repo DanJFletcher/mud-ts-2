@@ -20,6 +20,69 @@ function mockUpdateReturning(rows: unknown[]) {
   return { set, where, returning };
 }
 
+function createAppendTransaction(options: {
+  heads?: Array<{ streamId: string; revision: number }>;
+  persistedCounts?: Array<{ eventCount: number; receiptCount: number }>;
+  failOnInsertIndex?: number;
+} = {}) {
+  const persistedValues: unknown[] = [];
+  const ctes: unknown[] = [];
+  let insertIndex = 0;
+  const tx = {
+    execute: vi.fn(async () => undefined),
+    select: vi.fn(() => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [],
+          groupBy: async () => options.heads ?? [],
+        }),
+      }),
+    })),
+    insert: vi.fn(() => {
+      const index = insertIndex++;
+      return {
+        values: (values: unknown) => {
+          persistedValues.push(values);
+          if (index === options.failOnInsertIndex) throw new Error('durable effect insert failed');
+          return { returning: () => ({ values }) };
+        },
+      };
+    }),
+    $with: vi.fn((name: string) => ({
+      as: (query: unknown) => {
+        const cte = { name, query };
+        ctes.push(cte);
+        return cte;
+      },
+    })),
+    with: vi.fn(() => ({
+      select: () => ({
+        from: () => ({
+          limit: async () => options.persistedCounts ?? [{ eventCount: 1, receiptCount: 1 }],
+        }),
+      }),
+    })),
+  };
+  return { tx, persistedValues, ctes };
+}
+
+function basicAppendRequest(overrides: Partial<AppendRequest> = {}): AppendRequest {
+  return {
+    worldInstanceId: 'world-1',
+    streamId: 'shared-character-stream',
+    actorId: 'player-1',
+    commandId: 'atomic-command',
+    payloadHash: 'atomic-payload',
+    expectedVersion: 0,
+    events: [{
+      type: 'character.progress.changed',
+      version: 1,
+      payload: { characterId: 'shared-character-stream', progress: 1 },
+    }],
+    ...overrides,
+  };
+}
+
 describe('PostgresEventStore unit behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -302,6 +365,54 @@ describe('PostgresEventStore unit behavior', () => {
       .toEqual(['appended_events', 'appended_receipt']);
     expect(tx.with).toHaveBeenCalledTimes(1);
     expect(mockDb.transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['the event count is incomplete', [{ eventCount: 0, receiptCount: 1 }]],
+    ['the receipt count is incomplete', [{ eventCount: 1, receiptCount: 0 }]],
+    ['the combined insert returns no row', []],
+  ])('rejects the append when %s', async (_scenario, persistedCounts) => {
+    const { tx, persistedValues } = createAppendTransaction({ persistedCounts });
+    let transactionResolved = false;
+    mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => {
+      const result = await run(tx);
+      transactionResolved = true;
+      return result;
+    });
+
+    await expect(new PostgresEventStore().append(basicAppendRequest({
+      effects: [{
+        type: 'world.location.entered',
+        version: 1,
+        payload: { characterId: 'shared-character-stream', toLocationId: 'room-b' },
+      }],
+    }))).rejects.toThrow('Command append did not persist its events and receipt.');
+
+    expect(transactionResolved).toBe(false);
+    expect(persistedValues).toHaveLength(2);
+    expect(tx.insert).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects after an effect write fails so the enclosing append transaction can roll back', async () => {
+    const { tx, persistedValues } = createAppendTransaction({ failOnInsertIndex: 2 });
+    let transactionResolved = false;
+    mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => {
+      const result = await run(tx);
+      transactionResolved = true;
+      return result;
+    });
+
+    await expect(new PostgresEventStore().append(basicAppendRequest({
+      effects: [{
+        type: 'world.location.entered',
+        version: 1,
+        payload: { characterId: 'shared-character-stream', toLocationId: 'room-b' },
+      }],
+    }))).rejects.toThrow('durable effect insert failed');
+
+    expect(transactionResolved).toBe(false);
+    expect(persistedValues).toHaveLength(3);
+    expect(tx.insert).toHaveBeenCalledTimes(3);
   });
 
   it('claims a pending durable effect with a lease and incremented attempt count', async () => {
