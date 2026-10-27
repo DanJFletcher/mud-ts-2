@@ -853,6 +853,14 @@ export const NpcDialogueChoiceCommandSchema = ClientCommandBaseSchema.extend({
   }).strict(),
 }).strict();
 
+export const NpcDialogueRestartCommandSchema = ClientCommandBaseSchema.extend({
+  type: z.literal('npc.dialogue.restart'),
+  expectedVersion: NonNegativeIntSchema,
+  payload: z.object({
+    npcId: IdSchema,
+  }).strict(),
+}).strict();
+
 export const ReadableObjectProjectionSchema = z.object({
   id: IdSchema,
   label: z.string(),

@@ -1678,6 +1678,37 @@ export function WorldClient({
     }
   }, [addEntry, pending, snapshot]);
 
+  const closeNpcDialogue = useCallback(async () => {
+    const dialogue = activeDialogue;
+    setDialogueModalOpen(false);
+    const character = snapshot?.character;
+    if (!dialogue || !character || pending) return;
+    const progress = character.npcProgress.find((entry) => entry.npcId === dialogue.npcId);
+    if (!progress?.lastChoiceId) return;
+
+    setActiveDialogue(null);
+    setPending("talk");
+    try {
+      await client.restartNpcDialogue(
+        character.characterId,
+        dialogue.npcId,
+        character.revision,
+      );
+      const nextSnapshot = await client.getGame();
+      setSnapshot(nextSnapshot);
+      setConnectionError("");
+      try {
+        setActiveDialogue(await client.talk(character.characterId, dialogue.npcId));
+      } catch {
+        setActiveDialogue(null);
+      }
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "The conversation could not be restarted.");
+    } finally {
+      setPending(null);
+    }
+  }, [activeDialogue, addEntry, client, pending, snapshot]);
+
   const chooseDialogueReply = useCallback(async (choiceId: string, announceChoice = true) => {
     if (!snapshot?.character || !activeDialogue || pending) return;
     const choice = activeDialogue.choices.find((candidate) => candidate.id === choiceId);
@@ -4726,7 +4757,7 @@ export function WorldClient({
                       farewellLabel={getNpcFarewellLabel(activeDialogue.npcId)}
                       busy={pending === "talk"}
                       onSelect={(choiceId) => void chooseDialogueReply(choiceId)}
-                      onClose={() => setDialogueModalOpen(false)}
+                      onClose={() => void closeNpcDialogue()}
                     />
                   ) : null}
                   {isMobileViewport && (

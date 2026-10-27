@@ -15,6 +15,7 @@ import {
   LocationGroupsListQuerySchema,
   LocationGroupsListProjectionSchema,
   NpcDialogueChoiceCommandSchema,
+  NpcDialogueRestartCommandSchema,
   NpcTalkQuerySchema,
   ObjectInspectQuerySchema,
   MoveCharacterCommandSchema,
@@ -860,6 +861,24 @@ export class MuddHttpClient {
       characterId,
       expectedVersion,
       payload: { npcId, choiceId },
+    });
+    return this.send(command);
+  }
+
+  async restartNpcDialogue(
+    characterId: string,
+    npcId: string,
+    expectedVersion: number,
+    commandId = crypto.randomUUID(),
+  ): Promise<CommandResponse> {
+    const command = NpcDialogueRestartCommandSchema.parse({
+      type: 'npc.dialogue.restart',
+      version: 1,
+      commandId,
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      expectedVersion,
+      payload: { npcId },
     });
     return this.send(command);
   }

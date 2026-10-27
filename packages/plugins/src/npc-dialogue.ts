@@ -1,7 +1,9 @@
 import {
   CharacterNpcDialogueChoiceMadeEventSchema,
+  CharacterNpcDialogueRestartedEventSchema,
   CharacterItemGrantedEventSchema,
   NpcDialogueChoiceCommandSchema,
+  NpcDialogueRestartCommandSchema,
   NpcDialogueProjectionSchema,
   CharacterQuestRewardedEventSchema,
   QuestAcceptedEventSchema,
@@ -167,6 +169,7 @@ export const npcDialoguePlugin: EnginePlugin = {
     requires: ['mudd.character.state.v1'],
     eventSchemaVersions: {
       'character.npc_dialogue_choice_made': 1,
+      'character.npc_dialogue_restarted': 1,
       'character.item_granted': 1,
       'quest.accepted': 1,
       'quest.completed': 1,
@@ -322,6 +325,38 @@ export const npcDialoguePlugin: EnginePlugin = {
         streamId: character.characterId,
         expectedVersion: command.expectedVersion,
         events,
+      };
+    });
+
+    registerCommand('npc.dialogue.restart', NpcDialogueRestartCommandSchema, async (command, context) => {
+      const character = await characterState.load(context, command.characterId);
+      if (!character) throw new RuleViolationError('That character is no longer available.');
+      const npc = context.world.locations
+        .flatMap((location) => location.npcs ?? [])
+        .find((candidate) => candidate.id === command.payload.npcId);
+      if (!npc?.dialogue) throw new RuleViolationError('That conversation is not available in this world.');
+
+      const progress = character.npcProgress.find((entry) => entry.npcId === npc.id);
+      if (!progress?.lastChoiceId) throw new RuleViolationError('There is no conversation to restart.');
+      const completedFlags = new Set(progress.progressFlagIds);
+      const preservedProgressFlagIds = npc.dialogue.choices
+        .filter((choice) => choice.itemReward || choice.questAction)
+        .map((choice) => choice.progressFlagId)
+        .filter((progressFlagId) => completedFlags.has(progressFlagId));
+      const payload = {
+        characterId: character.characterId,
+        npcId: npc.id,
+        preservedProgressFlagIds,
+      };
+      CharacterNpcDialogueRestartedEventSchema.shape.payload.parse(payload);
+      return {
+        streamId: character.characterId,
+        expectedVersion: command.expectedVersion,
+        events: [{
+          type: 'character.npc_dialogue_restarted',
+          version: 1,
+          payload,
+        }],
       };
     });
   },

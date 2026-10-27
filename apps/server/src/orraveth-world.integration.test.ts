@@ -1101,6 +1101,15 @@ describe('Orraveth Bellwold settlement', () => {
       const tarenAfterFrontierQuestion = await talk('taren-voss');
       expect(tarenAfterFrontierQuestion.text).toContain('Reports speak of merchant city-states');
       expect(tarenAfterFrontierQuestion.choices).toEqual([]);
+      const beforeRestart = await h.loadCharacter(characterId);
+      await h.dispatch(characterId, {
+        type: 'npc.dialogue.restart',
+        version: 1,
+        commandId: 'taren-restart-conversation',
+        expectedVersion: beforeRestart.revision,
+        payload: { npcId: 'taren-voss' },
+      });
+      expect(await talk('taren-voss')).toEqual(tarenFirstVisit);
       await expectResident('orin-vale', 'fishing', 'Orin Vale');
       await move('square-to-inn');
       await expectResident('tomas-innkeeper', 'road', 'Tomas', 'Merefall League', 'guild-influenced city-states');
@@ -1254,6 +1263,18 @@ describe('Orraveth Bellwold settlement', () => {
           label: 'old rod',
           fishingRod: expect.objectContaining({ biteChancePercent: 10, waitSeconds: 10 }),
         }));
+        await h.dispatch(characterId, {
+          type: 'npc.dialogue.restart',
+          version: 1,
+          commandId: `fishing-restart-orin-${name}`,
+          expectedVersion: character.revision,
+          payload: { npcId: 'orin-vale' },
+        });
+        character = await h.loadCharacter(characterId);
+        expect(character.npcProgress.find((entry) => entry.npcId === 'orin-vale')).toEqual({
+          npcId: 'orin-vale',
+          progressFlagIds: ['received-old-fishing-rod'],
+        });
 
         const previous = new Map<string, { from: string; exitId: string }>();
         const visited = new Set([character.locationId]);

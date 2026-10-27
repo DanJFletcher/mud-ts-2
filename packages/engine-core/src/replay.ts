@@ -12,6 +12,7 @@ import {
   CharacterItemUsedEventSchema,
   CharacterObjectReadEventSchema,
   CharacterNpcDialogueChoiceMadeEventSchema,
+  CharacterNpcDialogueRestartedEventSchema,
   QuestAcceptedEventSchema,
   QuestCompletedEventSchema,
   CharacterQuestRewardedEventSchema,
@@ -1210,6 +1211,31 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
             progressFlagIds: [choice.payload.progressFlagId],
             lastChoiceId: choice.payload.choiceId,
           }],
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'character.npc_dialogue_restarted') {
+      if (!state) throw new Error('NPC dialogue restart event encountered before character creation.');
+      const restarted = CharacterNpcDialogueRestartedEventSchema.parse(publicEvent);
+      if (restarted.payload.characterId !== state.characterId) {
+        throw new Error(`Invalid NPC dialogue restart event at revision ${event.aggregateVersion}.`);
+      }
+      const existingProgress = state.npcProgress.find((entry) => entry.npcId === restarted.payload.npcId);
+      const preservedFlags = new Set(restarted.payload.preservedProgressFlagIds);
+      if (
+        preservedFlags.size !== restarted.payload.preservedProgressFlagIds.length ||
+        restarted.payload.preservedProgressFlagIds.some((flagId) => !existingProgress?.progressFlagIds.includes(flagId))
+      ) {
+        throw new Error(`Invalid preserved NPC dialogue progress at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        npcProgress: existingProgress
+          ? preservedFlags.size
+            ? state.npcProgress.map((entry) => entry.npcId === restarted.payload.npcId
+              ? { npcId: entry.npcId, progressFlagIds: [...preservedFlags] }
+              : entry)
+            : state.npcProgress.filter((entry) => entry.npcId !== restarted.payload.npcId)
+          : state.npcProgress,
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'quest.accepted') {

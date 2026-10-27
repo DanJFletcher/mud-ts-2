@@ -675,6 +675,22 @@ describe('MuddHttpClient', () => {
     await expect(client.chooseNpcDialogue(characterId, 'mara-waykeeper', 'ask-marker', afterRead.revision + 1, 'sdk-choice-marker-again'))
       .rejects.toThrow('You have already asked about that.');
 
+    const restartedDialogue = await client.restartNpcDialogue(
+      characterId,
+      'mara-waykeeper',
+      afterRead.revision + 1,
+      'sdk-restart-dialogue',
+    );
+    expect(restartedDialogue.receipt).toMatchObject({
+      ok: true,
+      newAggregateVersion: afterRead.revision + 2,
+    });
+    await expect(client.talk(characterId, 'mara-waykeeper', undefined, 'sdk-talk-after-restart'))
+      .resolves.toMatchObject({
+        text: 'The old paths still have their stories. What would you like to ask?',
+        choices: expect.arrayContaining([{ id: 'ask-marker', label: 'Ask about the marker' }]),
+      });
+
     const afterDialogue = await client.look(characterId, 'sdk-look-after-dialogue');
     const taken = await client.take(characterId, 'mossgate-loose-stone', afterDialogue.revision, 'sdk-take');
     expect(taken.receipt).toMatchObject({ ok: true, newAggregateVersion: afterDialogue.revision + 1 });

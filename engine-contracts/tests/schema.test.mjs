@@ -7,7 +7,48 @@ import {
   DropCharacterItemCommandSchema, InventoryItemProjectionSchema, WorldPackDraftSchema,
   QuestDefinitionSchema, validateDraftWorldGraph, MapPositionSchema, WorldMapProjectionSchema,
   NpcDialogueDefinitionSchema,
+  NpcDialogueRestartCommandSchema, CharacterNpcDialogueRestartedEventSchema,
 } from '../dist/src/index.js';
+
+test('restarting NPC dialogue is a versioned command and preserves unique durable flags', () => {
+  const command = {
+    type: 'npc.dialogue.restart',
+    version: 1,
+    commandId: 'restart1',
+    worldInstanceId: 'world1',
+    characterId: 'char1',
+    expectedVersion: 2,
+    payload: { npcId: 'taren-voss' },
+  };
+  assert.equal(NpcDialogueRestartCommandSchema.safeParse(command).success, true);
+  assert.equal(NpcDialogueRestartCommandSchema.safeParse({
+    ...command,
+    payload: { npcId: 'taren-voss', progressFlagIds: ['forged'] },
+  }).success, false);
+
+  const event = {
+    type: 'character.npc_dialogue_restarted',
+    version: 1,
+    eventId: 'event1',
+    worldInstanceId: 'world1',
+    aggregateId: 'char1',
+    aggregateVersion: 3,
+    causationCommandId: 'restart1',
+    actorId: 'player1',
+    occurredAt: '2026-10-27T12:00:00Z',
+    tick: 1,
+    payload: {
+      characterId: 'char1',
+      npcId: 'taren-voss',
+      preservedProgressFlagIds: ['quest-accepted'],
+    },
+  };
+  assert.equal(CharacterNpcDialogueRestartedEventSchema.safeParse(event).success, true);
+  assert.equal(CharacterNpcDialogueRestartedEventSchema.safeParse({
+    ...event,
+    payload: { ...event.payload, preservedProgressFlagIds: ['quest-accepted', 'quest-accepted'] },
+  }).success, false);
+});
 
 test('NPC dialogue branches reference existing flags, hide prior choices, and cannot form cycles', () => {
   const dialogue = {

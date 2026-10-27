@@ -565,6 +565,11 @@ beforeEach(() => {
           locationId: currentLocation().locationId,
           visitedLocationIds,
           revision,
+          npcProgress: maraChoice ? [{
+            npcId: 'mara-waykeeper',
+            progressFlagIds: [maraChoice === 'ask-marker' ? 'asked-marker' : 'asked-tower'],
+            lastChoiceId: maraChoice,
+          }] : [],
           ...(dailyFeatureEnabled ? {
             dailyJobs: [{
               boardId: 'reedbank-board',
@@ -1064,6 +1069,11 @@ beforeEach(() => {
       }
       if (command.type === 'npc.dialogue.choose') {
         maraChoice = command.payload?.choiceId ?? null;
+        revision += 1;
+        return json({ receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision }, streamId: characterId });
+      }
+      if (command.type === 'npc.dialogue.restart') {
+        maraChoice = null;
         revision += 1;
         return json({ receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision }, streamId: characterId });
       }
@@ -2586,8 +2596,11 @@ describe('single-character world session client', () => {
     const chat = screen.getByRole('region', { name: 'Room chat' });
     const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
     const markerResponse = 'Mara: The marker points east to the Old Bell Tower. Its direction is still true.';
+    const greetingResponse = 'Mara: The old paths still have their stories. What would you like to ask?';
     const markerResponseCount = () => [...history.querySelectorAll('li')]
       .filter((entry) => entry.textContent === markerResponse).length;
+    const greetingResponseCount = () => [...history.querySelectorAll('li')]
+      .filter((entry) => entry.textContent === greetingResponse).length;
 
     fireEvent.change(commandInput, { target: { value: 'talk Mara' } });
     fireEvent.submit(commandInput.closest('form')!);
@@ -2624,6 +2637,12 @@ describe('single-character world session client', () => {
     expect(chat).not.toHaveTextContent('The marker points east to the Old Bell Tower. Its direction is still true.');
 
     fireEvent.click(screen.getByRole('button', { name: 'Close conversation' }));
+    await waitFor(() => {
+      expect(apiFetch.mock.calls.some(([, init]) =>
+        JSON.parse(String(init?.body ?? '{}')).type === 'npc.dialogue.restart',
+      )).toBe(true);
+    });
+    await waitFor(() => expect(history.closest('.focused-terminal')).toHaveAttribute('aria-busy', 'false'));
     fireEvent.change(commandInput, { target: { value: 'talk Mara about bell' } });
     fireEvent.submit(commandInput.closest('form')!);
     await waitFor(() => {
@@ -2634,8 +2653,10 @@ describe('single-character world session client', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Talk to Mara' }));
     expect(screen.getByRole('group', { name: /^Quick commands, page \d+$/ })).toBeVisible();
     await waitFor(() => {
-      expect(markerResponseCount()).toBe(2);
+      expect(greetingResponseCount()).toBe(2);
+      expect(markerResponseCount()).toBe(1);
     });
+    expect(screen.getByRole('group', { name: 'Mara response options' })).toHaveTextContent('Ask about the marker');
 
     fireEvent.click(screen.getByRole('button', { name: 'Close conversation' }));
     quickGo('north');
@@ -2645,7 +2666,8 @@ describe('single-character world session client', () => {
     fireEvent.change(commandInput, { target: { value: 'talk Mara' } });
     fireEvent.submit(commandInput.closest('form')!);
     await waitFor(() => {
-      expect(markerResponseCount()).toBe(3);
+      expect(greetingResponseCount()).toBe(3);
+      expect(markerResponseCount()).toBe(1);
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Close conversation' }));

@@ -491,6 +491,23 @@ export const CharacterNpcDialogueChoiceMadeEventSchema = DomainEventBaseSchema.e
   }).strict(),
 }).strict();
 
+export const CharacterNpcDialogueRestartedEventSchema = DomainEventBaseSchema.extend({
+  type: z.literal('character.npc_dialogue_restarted'),
+  payload: z.object({
+    characterId: IdSchema,
+    npcId: IdSchema,
+    preservedProgressFlagIds: z.array(IdSchema).max(8),
+  }).strict().superRefine((payload, context) => {
+    if (new Set(payload.preservedProgressFlagIds).size !== payload.preservedProgressFlagIds.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['preservedProgressFlagIds'],
+        message: 'Preserved dialogue progress flags must be unique.',
+      });
+    }
+  }),
+}).strict();
+
 export const RenameCharacterCommandSchema = z.object({
   type: z.literal('character.rename'),
   version: ContractVersionSchema,
