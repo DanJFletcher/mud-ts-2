@@ -3785,7 +3785,7 @@ export function WorldClient({
                         </span>
                       )}
                     </div>
-                    {snapshot.character?.health && !isAnyCombatActive && !visiblePvp && (
+                    {snapshot.character?.health && (
                       <div className="focused-terminal-vitals" role="group" aria-label="Character vitals">
                         <span className="focused-terminal-vital" role="group" aria-label="Character health" title="Health">
                           <Heart size={14} aria-hidden="true" />

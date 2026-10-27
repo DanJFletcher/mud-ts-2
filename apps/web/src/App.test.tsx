@@ -2322,6 +2322,7 @@ describe('single-character world session client', () => {
 
   it('replaces normal terminal actions with dedicated combat controls', async () => {
     healingDraughtCarried = true;
+    characterHealth = { current: 3, maximum: 6 };
     combatEncounter = {
       encounterId: 'combat-ui-encounter',
       locationId: 'mossgate-clearing',
@@ -2338,6 +2339,9 @@ describe('single-character world session client', () => {
     };
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    expect(screen.getByRole('group', { name: 'Character vitals' })).toHaveTextContent('3/6');
+    expect(screen.getByRole('group', { name: 'Character stamina' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Character mana' })).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Enter a command' })).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Quick commands' })).not.toBeInTheDocument();
     const combatActions = screen.getByRole('group', { name: 'Combat actions' });
