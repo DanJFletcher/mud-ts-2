@@ -19,7 +19,9 @@ Physical items have an optional authored `typeId`, distinct from their unique in
 ID. Delivery matches type IDs and consumes exact physical instances, never labels.
 Bound or equipped items cannot be delivered. Shared corpse loot retains its type through
 pickup and drop. Consumption of shared loot is a terminal world-item event, committed
-as a companion write atomically with the character's delivery and rewards.
+as a companion write atomically with the character's delivery and rewards. For stackable
+supplies, delivery counts units rather than inventory slots; replay uses the pre-event
+quantity for fully consumed stacks and explicit unit counts for partial stacks.
 
 Delivery records the resolved cycle, consumed instance IDs, reward amounts and resulting
 level/maximum health. Replay does not consult today's clock or reroll rewards. Optimistic

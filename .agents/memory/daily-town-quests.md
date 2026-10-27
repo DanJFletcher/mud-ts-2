@@ -11,3 +11,9 @@ Towns can have bulletin boards where residents post small quests, such as reques
 
 For implementation-policy decisions, consult [the daily-jobs ADR](../../docs/adr/0032-daily-town-jobs.md).
 The initial reset and collection policies are deliberate defaults, not additional user requirements.
+
+Stackable quest supplies count units, not inventory slots. Fully consumed stacks are recorded by item ID and replay must read their pre-event quantity; partial stacks carry an explicit consumed-unit count.
+
+**Why:** A Pine Logs posting failed at delivery when a three-log stack was counted as one supply during event replay.
+
+**How to apply:** When changing daily supply consumption or replay, test both fully consumed and partially consumed stacks and preserve exact remaining quantities.

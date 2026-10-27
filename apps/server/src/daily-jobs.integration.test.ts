@@ -63,6 +63,8 @@ function harness(encounterChancePercent = 0, bellwoldDialogue = false, configure
         supply: { typeId: 'river-fish', label: 'Fish', description: 'A freshly caught fish for the test fixture.' } },
       { id: 'fixture-hides', locationId: 'board-room', label: 'Collect hides', dailyLimit: 6,
         supply: { typeId: 'deer-hide', label: 'Hide', description: 'A deer hide.' } },
+      { id: 'fixture-pine-logs', locationId: 'board-room', label: 'Collect pine logs', dailyLimit: 6,
+        supply: { typeId: 'pine-logs', label: 'Pine Logs', description: 'A bundle of pine logs.' } },
     ];
   }
   configure?.(world);
@@ -266,14 +268,14 @@ describe('daily town jobs through an authorized engine', () => {
     } finally { await h.engine.stop(); }
   });
 
-  it('rotates Bellwold’s three supply slots deterministically with valid sources', () => {
+  it('rotates Bellwold’s postings to supplies supported by world activities', () => {
     const board = orravethWorld.dailyBoards[0]!;
     const today = dailyPostings(board, '2026-10-23');
-    expect(today.map((job) => job.supplyTypeId)).toEqual(['deer-hide', 'river-fish', 'firewood']);
+    expect(today.map((job) => job.supplyTypeId)).toEqual(['deer-hide', 'river-fish', 'pine-logs']);
     expect(dailyPostings(board, '2026-10-24').map((job) => job.id)).not.toEqual(today.map((job) => job.id));
-    expect(orravethWorld.supplySources.map((source) => source.supply.typeId)).toEqual(['firewood']);
     expect(orravethWorld.fishingSpots.flatMap((spot) => spot.species.map((species) => species.itemTypeId)))
       .toContain('river-fish');
+    expect(orravethWorld.woodcuttingTrees.map((tree) => tree.logTypeId)).toContain('pine-logs');
     expect(orravethWorld.roads.flatMap((road) => road.encounters).some((encounter) =>
       encounter.loot?.items.some((item) => item.typeId === 'deer-hide'))).toBe(true);
   });
@@ -318,6 +320,79 @@ describe('daily town jobs through an authorized engine', () => {
         worldInstanceId: 'daily-world', characterId: id, payload: { boardId: 'board' } }, h.session());
       expect(response).toMatchObject({ ok: true, value: { jobs: [expect.objectContaining({ status: 'completed' }), expect.anything()] } });
       await restarted.stop();
+    } finally { await h.engine.stop(); }
+  });
+
+  it('delivers a fully consumed stack using its unit quantity during replay', async () => {
+    const h = harness(0, false, (world) => {
+      world.dailyBoards[0]!.slots[0] = world.dailyBoards[0]!.slots[0]!.map((job) => ({
+        ...job,
+        supplyTypeId: 'pine-logs',
+        quantity: 3,
+      }));
+      world.locations[0]!.takeables.push({
+        id: 'pine-logs-stack',
+        typeId: 'pine-logs',
+        label: 'Pine Logs',
+        description: 'Three bundled pine logs.',
+        stackable: true,
+        quantity: 3,
+      });
+    });
+    await h.engine.start();
+    try {
+      const id = await h.create();
+      const board = await h.board(id);
+      const job = board.jobs[0]!;
+      const payload = { boardId: 'board', cycle: board.cycle, jobId: job.id };
+      expect((await h.command(id, 'character.take', { itemId: 'pine-logs-stack' })).receipt.ok).toBe(true);
+      expect((await h.load(id)).inventory).toContainEqual(expect.objectContaining({
+        id: 'pine-logs-stack',
+        typeId: 'pine-logs',
+        quantity: 3,
+      }));
+      expect((await h.command(id, 'daily.job', { ...payload, action: 'accept' })).receipt.ok).toBe(true);
+
+      const delivered = await h.command(id, 'daily.job', { ...payload, action: 'deliver' });
+      expect(delivered.receipt.ok).toBe(true);
+      const character = await h.load(id);
+      expect(character.inventory.some((item) => item.typeId === 'pine-logs')).toBe(false);
+      expect(character.dailyJobs.find((entry) => entry.jobId === job.id)?.status).toBe('completed');
+      expect(character.wallet?.balance).toBe(job.gold);
+      expect(character.advancement?.experience).toBe(job.experience);
+    } finally { await h.engine.stop(); }
+  });
+
+  it('keeps unused units when a daily job consumes part of a stack', async () => {
+    const h = harness(0, false, (world) => {
+      world.dailyBoards[0]!.slots[0] = world.dailyBoards[0]!.slots[0]!.map((job) => ({
+        ...job,
+        supplyTypeId: 'pine-logs',
+        quantity: 3,
+      }));
+      world.locations[0]!.takeables.push({
+        id: 'pine-logs-stack',
+        typeId: 'pine-logs',
+        label: 'Pine Logs',
+        description: 'Five bundled pine logs.',
+        stackable: true,
+        quantity: 5,
+      });
+    });
+    await h.engine.start();
+    try {
+      const id = await h.create();
+      const board = await h.board(id);
+      const job = board.jobs[0]!;
+      const payload = { boardId: 'board', cycle: board.cycle, jobId: job.id };
+      expect((await h.command(id, 'character.take', { itemId: 'pine-logs-stack' })).receipt.ok).toBe(true);
+      expect((await h.command(id, 'daily.job', { ...payload, action: 'accept' })).receipt.ok).toBe(true);
+      expect((await h.command(id, 'daily.job', { ...payload, action: 'deliver' })).receipt.ok).toBe(true);
+      expect((await h.load(id)).inventory).toContainEqual(expect.objectContaining({
+        id: 'pine-logs-stack',
+        typeId: 'pine-logs',
+        quantity: 2,
+      }));
     } finally { await h.engine.stop(); }
   });
 

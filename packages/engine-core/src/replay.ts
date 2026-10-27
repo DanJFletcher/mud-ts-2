@@ -274,7 +274,10 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
       const prior = state.dailyJobs.find(matches);
       const consumed = new Set(consumedItemIds);
       const partialConsumption = new Map(consumedItemQuantities.map(({ itemId, quantity }) => [itemId, quantity]));
-      const consumedQuantity = consumedItemIds.length +
+      const consumedQuantity = consumedItemIds.reduce((total, itemId) => {
+        const item = state!.inventory.find((entry) => entry.id === itemId);
+        return total + (item?.stackable ? item.quantity ?? 1 : 1);
+      }, 0) +
         consumedItemQuantities.reduce((total, entry) => total + entry.quantity, 0);
       const terms = prior?.details ?? job.details;
       if (changed.characterId !== state.characterId || state.wallet?.currencyId !== changed.currencyId ||
