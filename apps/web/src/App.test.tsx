@@ -2721,6 +2721,23 @@ describe('single-character world session client', () => {
     expect(screen.queryByRole('dialog', { name: 'Conversation with Mara' })).not.toBeInTheDocument();
   });
 
+  it('restarts an already-ended NPC conversation when the player talks to them again', async () => {
+    maraChoice = 'ask-tower';
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+
+    submitWorldCommand('talk Mara');
+
+    const conversation = await screen.findByRole('dialog', { name: 'Conversation with Mara' });
+    expect(conversation).toHaveTextContent('The old paths still have their stories. What would you like to ask?');
+    expect(screen.getByRole('group', { name: 'Mara response options' })).toHaveTextContent('Ask about the marker');
+    expect(history).not.toHaveTextContent('The bell has been silent for years. I still hope to hear it ring again.');
+    expect(apiFetch.mock.calls.some(([, init]) =>
+      JSON.parse(String(init?.body ?? '{}')).type === 'npc.dialogue.restart',
+    )).toBe(true);
+  });
+
   it('looks at visible objects by target and only while they are in the current room', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });

@@ -1667,7 +1667,16 @@ export function WorldClient({
     if (!snapshot?.character || pending) return;
     setPending("talk");
     try {
-      const dialogue = await client.talk(snapshot.character.characterId, npcId, topic);
+      const character = snapshot.character;
+      let dialogue = await client.talk(character.characterId, npcId, topic);
+      const progress = character.npcProgress.find((entry) => entry.npcId === npcId);
+      if (!topic && dialogue.choices.length === 0 && progress?.lastChoiceId) {
+        await client.restartNpcDialogue(character.characterId, npcId, character.revision);
+        const nextSnapshot = await client.getGame();
+        setSnapshot(nextSnapshot);
+        setConnectionError("");
+        dialogue = await client.talk(character.characterId, npcId);
+      }
       addEntry("narration", `${dialogue.npcName}: ${dialogue.text}`);
       setActiveDialogue(dialogue);
       setDialogueModalOpen((isOpen) => isOpen || dialogue.choices.length > 0);
