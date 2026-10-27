@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CharacterProjectionSchema, MOVEMENT_STAMINA_COST } from '@mudd/contracts';
 import { demoWorld } from '@mudd/world-demo';
-import { createMovementPlan } from './movement.js';
+import { createMovementPlan, movementPlugin } from './movement.js';
 
 const now = new Date('2026-10-27T12:00:00.000Z');
 const roomId = 'mossgate-clearing';
@@ -154,5 +154,70 @@ describe('createMovementPlan', () => {
     exit.toLocationId = roomId;
     const selfExitPlan = createMovementPlan(pack, character(), exit.id, true, now);
     expect(selfExitPlan.effects).toEqual([]);
+  });
+});
+
+describe('movement command registration', () => {
+  function registeredCommand(player: ReturnType<typeof character>) {
+    let handler: ((command: any, context: any) => Promise<unknown>) | undefined;
+    let providedPlan: unknown;
+    movementPlugin.register({
+      registerCommand: (_name: string, _schema: unknown, registered: unknown) => {
+        handler = registered as (command: any, context: any) => Promise<unknown>;
+      },
+      requireCapability: () => ({ load: async () => player }),
+      provideCapability: (_token: unknown, implementation: unknown) => {
+        providedPlan = implementation;
+      },
+    } as never);
+    if (!handler) throw new Error('Movement command was not registered.');
+    return { handler, providedPlan };
+  }
+
+  it('provides movement planning and handles a valid command', async () => {
+    const { world: pack, exit } = firstExitOf();
+    exit.roadId = undefined;
+    const player = character();
+    const { handler, providedPlan } = registeredCommand(player);
+
+    const result = await handler({
+      characterId: player.characterId,
+      expectedVersion: player.revision,
+      payload: { exitId: exit.id },
+    }, {
+      world: pack,
+      now: () => now,
+    });
+
+    expect(providedPlan).toMatchObject({ plan: expect.any(Function) });
+    expect(result).toMatchObject({
+      streamId: player.characterId,
+      expectedVersion: player.revision,
+      events: expect.arrayContaining([expect.objectContaining({ type: 'character.moved' })]),
+      effects: expect.any(Array),
+    });
+  });
+
+  it('rejects missing and archived character state', async () => {
+    let handler: ((command: any, context: any) => Promise<unknown>) | undefined;
+    const players = [undefined, character({ archived: true })];
+    movementPlugin.register({
+      registerCommand: (_name: string, _schema: unknown, registered: unknown) => {
+        handler = registered as (command: any, context: any) => Promise<unknown>;
+      },
+      requireCapability: () => ({ load: async () => players.shift() }),
+      provideCapability: () => undefined,
+    } as never);
+    if (!handler) throw new Error('Movement command was not registered.');
+
+    const command = {
+      characterId: 'movement-test-character',
+      expectedVersion: 1,
+      payload: { exitId: 'exit-1' },
+    };
+    await expect(handler(command, { world: world(), now: () => now }))
+      .rejects.toThrow('That character is no longer available.');
+    await expect(handler(command, { world: world(), now: () => now }))
+      .rejects.toThrow('That character is no longer available.');
   });
 });
