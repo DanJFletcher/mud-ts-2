@@ -3620,7 +3620,7 @@ export function WorldClient({
     const actions: QuickAction[] = [];
     const addMode = (
       id: string,
-      mode: "look" | "read" | "drop" | "take" | "loot" | "use" | "talk" | "shop" | "buy" | "attack" | "equip" | "unequip",
+      mode: "look" | "read" | "drop" | "take" | "loot" | "talk" | "use" | "shop" | "buy" | "attack" | "equip" | "unequip",
       ariaLabel: string,
     ) => actions.push({ id, label: id, ariaLabel, opensMenu: true, onSelect: () => setQuickCommandMode(mode) });
     const inventory = snapshot?.character?.inventory ?? [];
@@ -4036,27 +4036,6 @@ export function WorldClient({
                       </div>
                     </section>
                   ) : null}
-                  {!dialogueModalOpen && !isAnyCombatActive && !visiblePvp && activeDialogue?.choices.length ? (
-                    <div className="focused-terminal-dialogue">
-                      <div
-                        className="focused-terminal-dialogue__choices"
-                        role="group"
-                        aria-label={`${activeDialogue.npcName} dialogue choices`}
-                      >
-                        {activeDialogue.choices.map((choice) => (
-                          <button
-                            key={choice.id}
-                            type="button"
-                            className="focused-quick-command"
-                            onClick={() => void chooseDialogueReply(choice.id)}
-                            disabled={pending !== null}
-                          >
-                            {choice.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
                   {visiblePvp ? (
                     <section className="focused-terminal-combat" aria-label="Player combat">
                       <div className="focused-terminal-combat__status" role="status" aria-live="polite">
@@ -4239,8 +4218,9 @@ export function WorldClient({
                                     : quickCommandMode === "unequip" ? "Unequip"
                                     : quickCommandMode === "shop" ? "Shop"
                                       : quickCommandMode === "buy" ? "Buy"
+                                          : quickCommandMode === "talk" ? "Talk"
                                       : quickCommandMode === "use-target" && quickUseTargetIsTree ? "Choose tree"
-                                        : quickCommandMode === "use" || quickCommandMode === "use-target" ? "Use" : "Talk"}
+                                        : quickCommandMode === "use" || quickCommandMode === "use-target" ? "Use" : ""}
                       </span>
                     )}
                     <div
@@ -4253,8 +4233,8 @@ export function WorldClient({
                             : quickCommandMode === "look" ? "Things to look at"
                               : quickCommandMode === "read" ? "Readable objects"
                                 : quickCommandMode === "drop" ? "Items to drop"
-                                  : quickCommandMode === "loot" ? "Corpses to loot"
-                                    : quickCommandMode === "talk" ? "People here"
+                                     : quickCommandMode === "loot" ? "Corpses to loot"
+                                  : quickCommandMode === "talk" ? "People here"
                                   : quickCommandMode === "attack" ? "Available opponents"
                                 : quickCommandMode === "equip" ? "Gear to equip"
                                   : quickCommandMode === "unequip" ? "Equipped gear"

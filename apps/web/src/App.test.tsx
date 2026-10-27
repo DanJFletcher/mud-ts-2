@@ -2643,6 +2643,7 @@ describe('single-character world session client', () => {
       )).toBe(true);
     });
     await waitFor(() => expect(history.closest('.focused-terminal')).toHaveAttribute('aria-busy', 'false'));
+    expect(screen.queryByRole('group', { name: 'Mara dialogue choices' })).not.toBeInTheDocument();
     fireEvent.change(commandInput, { target: { value: 'talk Mara about bell' } });
     fireEvent.submit(commandInput.closest('form')!);
     await waitFor(() => {
