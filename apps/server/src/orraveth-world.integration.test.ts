@@ -1064,9 +1064,14 @@ describe('Orraveth Bellwold settlement', () => {
       ) => {
         expect((await describe()).npcs.map(({ id }) => id)).toContain(npcId);
         const conversation = await talk(npcId);
-        expect(conversation.choices.map(({ label }) => label)).toEqual(
-          expect.arrayContaining(['Who are you?', 'What are you doing?', 'What is Bellwold like?']),
-        );
+        const choiceLabels = conversation.choices.map(({ label }) => label);
+        if (npcId === 'orin-vale') {
+          expect(choiceLabels).toEqual(['Accept the old rod']);
+        } else {
+          expect(choiceLabels).toEqual(
+            expect.arrayContaining(['Who are you?', 'What are you doing?', 'What is Bellwold like?']),
+          );
+        }
         const dialogue = await talk(npcId, topic);
         expect(dialogue.npcName).toBe(name);
         expect(dialogue.text.length).toBeGreaterThan(0);
@@ -1249,6 +1254,16 @@ describe('Orraveth Bellwold settlement', () => {
         h.owners.set(characterId, h.session.playerId);
 
         let character = await h.loadCharacter(characterId);
+        const openingDialogue = await client.talk(characterId, 'orin-vale');
+        expect(openingDialogue.choices.map(({ label }) => label)).toEqual(['Accept the old rod']);
+        await expect(h.dispatch(characterId, {
+          type: 'npc.dialogue.choose',
+          version: 1,
+          commandId: `fishing-locked-orin-topic-${name}`,
+          expectedVersion: character.revision,
+          payload: { npcId: 'orin-vale', choiceId: 'orin-vale-who-are-you' },
+        })).rejects.toThrow('That choice is not available here.');
+        character = await h.loadCharacter(characterId);
         const gift = await h.dispatch(characterId, {
           type: 'npc.dialogue.choose',
           version: 1,
@@ -1263,6 +1278,13 @@ describe('Orraveth Bellwold settlement', () => {
           label: 'old rod',
           fishingRod: expect.objectContaining({ biteChancePercent: 10, waitSeconds: 10 }),
         }));
+        const postGiftDialogue = await client.talk(characterId, 'orin-vale');
+        expect(postGiftDialogue.choices.map(({ label }) => label)).toEqual(expect.arrayContaining([
+          'Who are you?',
+          'What are you doing?',
+          'What is Bellwold like?',
+        ]));
+        expect(postGiftDialogue.choices.map(({ label }) => label)).not.toContain('Accept the old rod');
         await h.dispatch(characterId, {
           type: 'npc.dialogue.restart',
           version: 1,
@@ -1275,6 +1297,13 @@ describe('Orraveth Bellwold settlement', () => {
           npcId: 'orin-vale',
           progressFlagIds: ['received-old-fishing-rod'],
         });
+        const restartedDialogue = await client.talk(characterId, 'orin-vale');
+        expect(restartedDialogue.choices.map(({ label }) => label)).toEqual(expect.arrayContaining([
+          'Who are you?',
+          'What are you doing?',
+          'What is Bellwold like?',
+        ]));
+        expect(restartedDialogue.choices.map(({ label }) => label)).not.toContain('Accept the old rod');
 
         const previous = new Map<string, { from: string; exitId: string }>();
         const visited = new Set([character.locationId]);

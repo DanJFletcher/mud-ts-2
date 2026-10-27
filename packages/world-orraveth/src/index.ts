@@ -60,10 +60,16 @@ function bellwoldSmallTalkChoices(
     hideAfterProgressFlagIds?: string[];
   }> = [],
   hideInitialChoicesAfterProgressFlagIds: string[] = [],
+  requireInitialChoicesAfterProgressFlagIds: string[] = [],
 ) {
-  const initialChoiceVisibility = hideInitialChoicesAfterProgressFlagIds.length
-    ? { hideAfterProgressFlagIds: hideInitialChoicesAfterProgressFlagIds }
-    : {};
+  const initialChoiceVisibility = {
+    ...(hideInitialChoicesAfterProgressFlagIds.length
+      ? { hideAfterProgressFlagIds: hideInitialChoicesAfterProgressFlagIds }
+      : {}),
+    ...(requireInitialChoicesAfterProgressFlagIds.length
+      ? { requiresProgressFlagIds: requireInitialChoicesAfterProgressFlagIds }
+      : {}),
+  };
   return [
     {
       id: `${npcId}-who-are-you`,
@@ -90,12 +96,14 @@ function bellwoldSmallTalkChoices(
       const isFollowup = (requiresProgressFlagIds?.length ?? 0) > 0;
       const hideAfter = hideAfterProgressFlagIds ??
         (!isFollowup ? hideInitialChoicesAfterProgressFlagIds : undefined);
+      const required = requiresProgressFlagIds ??
+        (!isFollowup ? requireInitialChoicesAfterProgressFlagIds : undefined);
       return {
         id: `${npcId}-${id}`,
         label,
         response,
         progressFlagId: `${npcId}-asked-${id}`,
-        ...(requiresProgressFlagIds ? { requiresProgressFlagIds } : {}),
+        ...(required?.length ? { requiresProgressFlagIds: required } : {}),
         ...(hideAfter?.length ? { hideAfterProgressFlagIds: hideAfter } : {}),
       };
     }),
@@ -371,6 +379,8 @@ const draft = {
                     response: '“Watch where the current slows beside the stones. Then be patient. If you rush the line, you’ll only hear the water laugh at you.”',
                   },
                 ],
+                [],
+                ['received-old-fishing-rod'],
               ),
               {
                 id: 'accept-old-rod',
