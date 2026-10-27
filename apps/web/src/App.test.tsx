@@ -2364,7 +2364,7 @@ describe('single-character world session client', () => {
     };
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
-    expect(screen.getByRole('group', { name: 'Character vitals' })).toHaveTextContent('3/6');
+    expect(screen.getByRole('group', { name: 'Quick info' })).toHaveTextContent('3/6');
     expect(screen.getByRole('group', { name: 'Character stamina' })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Character mana' })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Character currency balance: 12 moss mark' })).toHaveTextContent('12 m');
@@ -2402,7 +2402,7 @@ describe('single-character world session client', () => {
     expect(screen.getByLabelText('Character health')).toHaveTextContent('2/6');
     expect(screen.getByLabelText('Character stamina')).toHaveTextContent('70/100');
     expect(screen.getByLabelText('Character mana')).toHaveTextContent('100/100');
-    expect(screen.getByLabelText('Character vitals').querySelectorAll('svg')).toHaveLength(4);
+    expect(screen.getByLabelText('Quick info').querySelectorAll('svg')).toHaveLength(4);
     const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
     fireEvent.change(commandInput, { target: { value: 'use Small healing draught' } });
     fireEvent.submit(commandInput.closest('form')!);

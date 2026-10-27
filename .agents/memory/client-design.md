@@ -43,3 +43,7 @@ description: User direction for MUDD's gameplay UI, navigation, and mobile prior
 **Why:** The user wants known NPCs and items from the next room visible immediately during travel, while preserving the server as the authority when room contents change.
 
 **How to apply:** Treat adjacent-room contents as provisional terminal text only. Keep gameplay actions unavailable until the server confirms arrival, replace stale room details from the authoritative projection, and avoid duplicating movement announcements already received through room chat.
+
+**Why:** The user named the compact status strip at the top of Play the “Quick info” section and wants that term used going forward.
+
+**How to apply:** Refer to the health, stamina, mana, and currency strip as Quick info; keep its compact icon-and-value presentation.

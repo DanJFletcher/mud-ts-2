@@ -3939,7 +3939,7 @@ export function WorldClient({
                       )}
                     </div>
                     {(snapshot.character?.health || (snapshot.character?.wallet && snapshot.currency)) && (
-                      <div className="focused-terminal-vitals" role="group" aria-label="Character vitals">
+                      <div className="focused-terminal-vitals" role="group" aria-label="Quick info">
                         {snapshot.character?.health && (
                           <>
                             <span className="focused-terminal-vital" role="group" aria-label="Character health" title="Health">
