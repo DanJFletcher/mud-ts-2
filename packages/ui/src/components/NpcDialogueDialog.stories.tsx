@@ -7,6 +7,7 @@ const meta = {
   args: {
     npcName: 'Mara',
     dialogue: 'The old paths still have their stories. What would you like to ask?',
+    farewellLabel: 'Goodbye',
     choices: [
       { id: 'marker', label: 'Ask about the marker' },
       { id: 'tower', label: 'Ask about the bell tower' },

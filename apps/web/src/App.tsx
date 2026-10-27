@@ -54,6 +54,7 @@ import { TerminalPanel } from "./TerminalPanel.js";
 import { WorldMapPanel } from "./WorldMapPanel.js";
 import CodexScreen from "./codex/CodexScreen.js";
 import { PwaInstallAction } from "./lobby/PwaInstallAction.js";
+import { getNpcFarewellLabel } from "./npc-farewell.js";
 
 const client = new MuddHttpClient({ worldInstanceId: "mudd-demo-instance", basePath: import.meta.env.BASE_URL });
 type ClassCatalogSummary = { id: string; revision: number; classes: CharacterClassDefinition[] };
@@ -4722,6 +4723,7 @@ export function WorldClient({
                       npcName={activeDialogue.npcName}
                       dialogue={activeDialogue.text}
                       choices={activeDialogue.choices}
+                      farewellLabel={getNpcFarewellLabel(activeDialogue.npcId)}
                       busy={pending === "talk"}
                       onSelect={(choiceId) => void chooseDialogueReply(choiceId)}
                       onClose={() => setDialogueModalOpen(false)}

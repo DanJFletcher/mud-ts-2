@@ -10,6 +10,7 @@ export interface NpcDialogueDialogProps {
   npcName: string;
   dialogue: string;
   choices: readonly NpcDialogueChoice[];
+  farewellLabel: string;
   busy?: boolean;
   onSelect: (choiceId: string) => void;
   onClose: () => void;
@@ -20,6 +21,7 @@ export function NpcDialogueDialog({
   npcName,
   dialogue,
   choices,
+  farewellLabel,
   busy = false,
   onSelect,
   onClose,
@@ -97,10 +99,7 @@ export function NpcDialogueDialog({
           aria-label="End conversation"
         >
           <Button type="button" variant="secondary" onClick={dismiss} disabled={busy}>
-            Goodbye
-          </Button>
-          <Button type="button" variant="secondary" onClick={dismiss} disabled={busy}>
-            I should get going
+            {farewellLabel}
           </Button>
         </div>
       </section>

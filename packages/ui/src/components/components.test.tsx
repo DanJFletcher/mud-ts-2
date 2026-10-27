@@ -162,6 +162,7 @@ describe('@mudd/ui components', () => {
       <NpcDialogueDialog
         npcName="Mara"
         dialogue="The old paths still have their stories."
+          farewellLabel="Goodbye"
         choices={[
           { id: 'marker', label: 'Ask about the marker' },
           { id: 'tower', label: 'Ask about the bell tower' },
@@ -189,13 +190,16 @@ describe('@mudd/ui components', () => {
         <NpcDialogueDialog
           npcName="Mara"
           dialogue="The old paths still have their stories."
+            farewellLabel={farewell}
           choices={[{ id: 'marker', label: 'Ask about the marker' }]}
           onSelect={onSelect}
           onClose={onClose}
         />,
       );
 
-      fireEvent.click(screen.getByRole('button', { name: farewell }));
+      const farewellGroup = screen.getByRole('group', { name: 'End conversation' });
+      expect(within(farewellGroup).getAllByRole('button')).toHaveLength(1);
+      fireEvent.click(within(farewellGroup).getByRole('button', { name: farewell }));
 
       expect(onClose).toHaveBeenCalledOnce();
       expect(onSelect).not.toHaveBeenCalled();

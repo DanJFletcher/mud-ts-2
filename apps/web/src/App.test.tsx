@@ -2599,6 +2599,9 @@ describe('single-character world session client', () => {
     const conversation = screen.getByRole('dialog', { name: 'Conversation with Mara' });
     expect(conversation).toHaveTextContent('The old paths still have their stories. What would you like to ask?');
     expect(screen.getByRole('group', { name: 'Mara response options' })).toHaveTextContent('Ask about the marker');
+    const farewellGroup = within(conversation).getByRole('group', { name: 'End conversation' });
+    expect(within(farewellGroup).getAllByRole('button')).toHaveLength(1);
+    expect(within(farewellGroup).getByRole('button', { name: 'Until next time' })).toBeInTheDocument();
     expect(screen.queryByRole('group', { name: 'Mara dialogue choices' })).not.toBeInTheDocument();
     const greetingRequest = apiFetch.mock.calls.find(([path, init]) =>
       path === '/api/queries' &&
