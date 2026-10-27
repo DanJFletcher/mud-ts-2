@@ -214,7 +214,7 @@ describe('RoomChatPanel message polling', () => {
     expect(screen.getAllByText('Hello')).toHaveLength(1);
   });
 
-  it('polls the selected non-demo world and forwards NPC departures and arrivals to the terminal', async () => {
+  it('forwards room movement and lifecycle announcements to the terminal', async () => {
     const onTerminalEvent = vi.fn();
     render(
       <RoomChatPanel
@@ -242,15 +242,24 @@ describe('RoomChatPanel message polling', () => {
       text: 'A villager enters from the north, nodding to a familiar face.',
       createdAt: '2026-10-21T12:00:01.000Z',
     };
-    pendingTerminalEvents = [departure, arrival];
+    const lifecycleNotice: RoomChatMessage = {
+      id: 15,
+      roomId: 'test-room',
+      speakerType: 'npc',
+      speakerName: 'The room',
+      text: 'The remains of a bandit crumble into dust.',
+      createdAt: '2026-10-21T12:00:02.000Z',
+    };
+    pendingTerminalEvents = [departure, arrival, lifecycleNotice];
 
     await act(async () => {
       intervals[0]?.();
     });
 
-    await waitFor(() => expect(onTerminalEvent).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(onTerminalEvent).toHaveBeenCalledTimes(3));
     expect(onTerminalEvent).toHaveBeenNthCalledWith(1, departure);
     expect(onTerminalEvent).toHaveBeenNthCalledWith(2, arrival);
+    expect(onTerminalEvent).toHaveBeenNthCalledWith(3, lifecycleNotice);
     for (const [, init] of fetchMock.mock.calls) {
       expect(new Headers(init?.headers).get('x-mudd-world-instance')).toBe(worldInstanceId);
     }
@@ -258,6 +267,7 @@ describe('RoomChatPanel message polling', () => {
     expect(screen.queryByText(arrival.text)).not.toBeInTheDocument();
     expect(screen.queryByText(departure.speakerName)).not.toBeInTheDocument();
     expect(screen.queryByText(arrival.speakerName)).not.toBeInTheDocument();
+    expect(screen.queryByText(lifecycleNotice.text)).not.toBeInTheDocument();
   });
 
   it('sends player chat to the selected non-demo world', async () => {

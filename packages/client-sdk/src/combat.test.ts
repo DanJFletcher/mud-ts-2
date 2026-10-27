@@ -13,6 +13,7 @@ import {
 } from '@mudd/engine-core';
 import {
   characterPlugin,
+  corpseLifecyclePlugin,
   combatPlugin,
   combatRoomPresenceCapability,
   groupsPlugin,
@@ -25,6 +26,12 @@ import {
   roadTravelPlugin,
   teamCombatPlugin,
   interactionStreamId,
+  objectLifecyclePlugin,
+  objectLifecycleStreamId,
+  projectWorldItems,
+  ROOM_ANNOUNCEMENT_EFFECT,
+  RoomAnnouncementEffectSchema,
+  worldItemsStreamId,
   worldItemsPlugin,
 } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
@@ -54,8 +61,23 @@ const testCombatPresencePlugin: EnginePlugin = {
   },
 };
 
+const testRoomAnnouncementPlugin: EnginePlugin = {
+  manifest: {
+    id: 'mudd.test-room-announcements',
+    version: '1.0.0',
+    apiVersion: '1.0',
+    category: 'core',
+  },
+  register({ registerEffect }) {
+    registerEffect(ROOM_ANNOUNCEMENT_EFFECT, 1, RoomAnnouncementEffectSchema, async () => {});
+  },
+};
+
 const testPlugins = [
   worldItemsPlugin,
+  objectLifecyclePlugin,
+  corpseLifecyclePlugin,
+  testRoomAnnouncementPlugin,
   characterPlugin,
   groupsPlugin,
   partyPlugin,
@@ -823,6 +845,114 @@ describe('turn-based PvE combat', () => {
     expect(corpses[0]?.actorId).toBe(SYSTEM_ACTOR_ID);
     expect((await store.readStream(DEMO_WORLD_INSTANCE_ID, 'world-items'))
       .filter((event) => event.type === 'world.corpse_gold_claimed')).toHaveLength(1);
+    await engine.stop();
+  });
+
+  it('expires an NPC corpse into loose items and claimable currency under the drop policy', async () => {
+    let now = new Date('2026-10-27T12:00:00.000Z');
+    const lootWorld = {
+      ...demoWorld,
+      corpseLifecycle: {
+        ...demoWorld.corpseLifecycle,
+        ordinaryNpcSeconds: 30,
+        npcExpirationPolicy: 'drop' as const,
+      },
+      locations: demoWorld.locations.map((location) => location.id !== 'mossgate-clearing'
+        ? location
+        : {
+          ...location,
+          npcs: location.npcs?.map((npc) => npc.id !== 'mossgate-training-sentinel'
+            ? npc
+            : {
+              ...npc,
+              loot: {
+                items: [{
+                  id: 'expiry-test-badge',
+                  label: 'Weathered badge',
+                  description: 'A badge left by a fallen sentinel.',
+                }],
+                currencyAmount: 3,
+              },
+            }),
+        }),
+    };
+    const { client, store, engine } = makeClient(lootWorld, () => now);
+    const created = await client.createCharacter('Briar', 'corpse-expiry-create');
+    const characterId = created.streamId!;
+    let state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    let action = 0;
+    do {
+      await client.performCombatAction(
+        characterId,
+        'attack',
+        state.revision,
+        state.combat?.status === 'active'
+          ? { encounterId: state.combat.encounterId }
+          : { targetNpcId: 'mossgate-training-sentinel' },
+        `corpse-expiry-attack-${++action}`,
+      );
+      state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    } while (state.combat?.status !== 'victory');
+    await engine.processPendingEffects();
+
+    const worldStreamId = worldItemsStreamId(DEMO_WORLD_INSTANCE_ID);
+    let worldItems = projectWorldItems(await store.readStream(DEMO_WORLD_INSTANCE_ID, worldStreamId));
+    expect(worldItems.corpses).toHaveLength(1);
+    const corpse = worldItems.corpses[0]!;
+    expect(corpse.expirationPolicy).toBe('drop');
+
+    now = new Date(Date.parse(corpse.expiresAt!) + 1);
+    const expiredRoom = await client.look(characterId, 'corpse-expiry-look-before-sweep');
+    expect(expiredRoom.objects.some((object) => object.id === corpse.corpseId)).toBe(false);
+    await expect(client.take(
+      characterId,
+      worldItems.items[0]!.worldItemId,
+      state.revision,
+      'corpse-expiry-late-loot',
+    )).rejects.toThrow('That corpse has already begun to decay beyond recovery.');
+    const expired = await engine.dispatchSystem({
+      type: 'world.object.expire',
+      version: 1,
+      commandId: 'corpse-expiry-system-command',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      expectedVersion: 1,
+      payload: { objectId: corpse.corpseId },
+    }, SYSTEM_ACTOR_ID);
+    expect(expired.receipt.ok).toBe(true);
+    await engine.processPendingEffects();
+
+    worldItems = projectWorldItems(await store.readStream(DEMO_WORLD_INSTANCE_ID, worldStreamId));
+    expect(worldItems.corpses).toEqual([]);
+    expect(worldItems.items).toHaveLength(1);
+    expect(worldItems.items[0]).toMatchObject({
+      locationId: corpse.locationId,
+      item: { label: 'Weathered badge' },
+    });
+    expect(worldItems.items[0]).not.toHaveProperty('containerId');
+    expect(worldItems.currencyDrops).toMatchObject([{
+      locationId: corpse.locationId,
+      currencyId: demoWorld.currency!.id,
+      amount: 3,
+    }]);
+    expect((await store.readStream(
+      DEMO_WORLD_INSTANCE_ID,
+      objectLifecycleStreamId(corpse.corpseId),
+    )).at(-1)?.type).toBe('world.object_expired');
+
+    const currencyDrop = worldItems.currencyDrops[0]!;
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    const claim = await client.take(
+      characterId,
+      currencyDrop.dropId,
+      state.revision,
+      'claim-loose-currency',
+    );
+    expect(claim.receipt.ok).toBe(true);
+    await engine.processPendingEffects();
+    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(state.wallet?.balance).toBe(demoWorld.currency!.startingBalance + 3);
+    expect(projectWorldItems(await store.readStream(DEMO_WORLD_INSTANCE_ID, worldStreamId)).currencyDrops)
+      .toEqual([]);
     await engine.stop();
   });
 

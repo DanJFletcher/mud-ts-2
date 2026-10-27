@@ -15,6 +15,7 @@ import {
 import type { EnginePlugin, EventEffectContext, ProposedDomainEvent, ProposedEventEffect } from '@mudd/engine-core';
 import type {
   CombatLootDefinition,
+  CorpseLifecycleOverride,
   CharacterProjection,
   NpcCombatProfile,
   RoadEncounterDefinition,
@@ -75,7 +76,13 @@ function findCombatOpponent(
   world: WorldPackDraft,
   locationId: string,
   opponentId: string,
-): { id: string; name: string; combatProfile: NpcCombatProfile; loot?: CombatLootDefinition } | undefined {
+): {
+  id: string;
+  name: string;
+  combatProfile: NpcCombatProfile;
+  loot?: CombatLootDefinition;
+  corpse?: CorpseLifecycleOverride;
+} | undefined {
   const localNpc = world.locations
     .find((location) => location.id === locationId)
     ?.npcs?.find((candidate) => candidate.id === opponentId && candidate.combatProfile);
@@ -85,6 +92,7 @@ function findCombatOpponent(
       name: localNpc.name,
       combatProfile: localNpc.combatProfile,
       loot: localNpc.loot,
+      ...(localNpc.corpse ? { corpse: localNpc.corpse } : {}),
     };
   }
   for (const road of world.roads) {
@@ -95,6 +103,7 @@ function findCombatOpponent(
         name: encounter.name,
         combatProfile: encounter.combatProfile,
         loot: encounter.loot,
+        ...(encounter.corpse ? { corpse: encounter.corpse } : {}),
       };
     }
   }
@@ -505,6 +514,9 @@ export const combatPlugin: EnginePlugin = {
           opponentName: npc.name,
           locationId: resolvedEncounter.locationId,
           loot: resolveCombatLoot(npc.loot, context.rng),
+          createdAt: context.now().toISOString(),
+          lifecycleRules: context.world.corpseLifecycle,
+          ...(npc.corpse ? { lifecycleOverride: npc.corpse } : {}),
           ...(context.world.currency
             ? {
               currencyId: context.world.currency.id,

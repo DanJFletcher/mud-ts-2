@@ -215,7 +215,9 @@ export const CorpseLifecycleOverrideSchema = z.object({
   category: z.enum(['ordinary', 'boss']).default('ordinary'),
   lifetimeSeconds: z.number().int().min(30).max(604800).optional(),
   expirationPolicy: CorpseExpirationPolicySchema.optional(),
-}).strict();
+}).strict().refine((override) => override.expirationPolicy !== 'recovery-storage', {
+  message: 'NPC corpse recovery storage requires a player owner.',
+});
 
 export const CorpseLifecycleRulesSchema = z.object({
   ordinaryNpcSeconds: z.number().int().min(30).max(604800).default(300),

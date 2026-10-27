@@ -443,6 +443,7 @@ export function WorldClient({
   const optimisticTravelRef = useRef<OptimisticTravel | null>(null);
   const optimisticNpcDepartureFallbacksRef = useRef<OptimisticNpcDepartureFallback[]>([]);
   const recentNpcDepartureAnnouncementsRef = useRef<RecentNpcDepartureAnnouncement[]>([]);
+  const recentNpcTerminalEventIdsRef = useRef<Set<string>>(new Set());
   const activeLocationIdRef = useRef<string | undefined>(snapshot?.location?.locationId);
   activeLocationIdRef.current = snapshot?.location?.locationId;
   const [classCatalog, setClassCatalog] = useState<ClassCatalogSummary | undefined>();
@@ -645,6 +646,15 @@ export function WorldClient({
     return entry.id;
   }, []);
   const addNpcTerminalEvent = useCallback((message: RoomChatMessage) => {
+    if (Number.isSafeInteger(message.id)) {
+      const eventKey = `${worldInstanceId}:${message.id}`;
+      if (recentNpcTerminalEventIdsRef.current.has(eventKey)) return;
+      if (recentNpcTerminalEventIdsRef.current.size >= 256) {
+        const oldest = recentNpcTerminalEventIdsRef.current.values().next().value;
+        if (oldest) recentNpcTerminalEventIdsRef.current.delete(oldest);
+      }
+      recentNpcTerminalEventIdsRef.current.add(eventKey);
+    }
     const isDeparture = /\b(?:leave|leaves|leaving|depart|departs|departed|departing)\b/i.test(message.text);
     const now = Date.now();
     if (isDeparture) {
@@ -681,6 +691,7 @@ export function WorldClient({
   useEffect(() => {
     optimisticNpcDepartureFallbacksRef.current = [];
     recentNpcDepartureAnnouncementsRef.current = [];
+    recentNpcTerminalEventIdsRef.current.clear();
   }, [worldInstanceId]);
   useEffect(() => {
     const characterId = snapshot?.character?.characterId;

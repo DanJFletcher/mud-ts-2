@@ -55,11 +55,18 @@ export {
   objectLifecycleStateCapability,
   objectLifecycleStreamId,
   objectLifecycleScheduledEvent,
+  objectLifecycleRescheduledEvent,
   objectLifecycleExpiredEvent,
   projectObjectLifecycle,
 } from './object-lifecycle.js';
 export type { ObjectLifecycleStateCapability } from './object-lifecycle.js';
 export { corpseLifecyclePlugin } from './corpse-lifecycle.js';
+export {
+  ROOM_ANNOUNCEMENT_EFFECT,
+  ROOM_ANNOUNCEMENT_SOURCE_PREFIX,
+  RoomAnnouncementEffectSchema,
+  roomAnnouncementEffect,
+} from './room-announcements.js';
 export {
   interactionStreamId,
   projectInteractionEvents,

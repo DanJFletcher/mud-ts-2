@@ -52,6 +52,7 @@ import { projectLocationWithGroups } from './location-group-projection.js';
 import { listRoomOccupants, touchWorldSessionPresence } from './room-presence-service.js';
 import { createAutonomousNpcScheduler } from './autonomous-npc-scheduler.js';
 import { createStaminaRecoveryScheduler } from './stamina-recovery-scheduler.js';
+import { createObjectLifecycleScheduler } from './object-lifecycle-scheduler.js';
 import { enterWorld } from './world-entry.js';
 import { shouldInitializeCharacterWallet } from './world-wallet-policy.js';
 import { projectWorldMap } from './world-map-projection.js';
@@ -173,6 +174,16 @@ const staminaRecoverySchedulers = [...worldRuntimes.values()].map((runtime) =>
   }),
 );
 for (const scheduler of staminaRecoverySchedulers) scheduler.start();
+const objectLifecycleScheduler = createObjectLifecycleScheduler({
+  runtimes: [...worldRuntimes.values()],
+  store,
+  onError(error, worldInstanceId, objectId) {
+    console.error(
+      `Could not expire world object${objectId ? ` ${objectId}` : ''} in ${worldInstanceId}.`,
+      error,
+    );
+  },
+});
 
 async function resetStaminaRecoveryAnchor(runtime: WorldRuntime, characterId: string) {
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -1193,6 +1204,7 @@ async function shutdown() {
   server.close();
   for (const scheduler of autonomousNpcSchedulers) scheduler.stop();
   for (const scheduler of staminaRecoverySchedulers) scheduler.stop();
+  objectLifecycleScheduler.stop();
   await stopWorldRuntimes(worldRuntimes);
   await pool.end();
 }

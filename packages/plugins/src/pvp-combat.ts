@@ -21,7 +21,7 @@ import {
   type InteractionPolicyRegistry,
 } from './interactions.js';
 import { prepareCharacterRespawn } from './respawn.js';
-import { worldItemDropEffect } from './world-items.js';
+import { createWorldCorpseEffect } from './world-items.js';
 import { characterAttackDamage, characterDefenseReduction, maximumHealthForLevel } from './character-stats.js';
 import { assertCharacterStanding } from './character.js';
 import { classAdoptionGuards, classCombatPolicyCapability, type ClassCombatPolicy } from './classes.js';
@@ -213,11 +213,16 @@ async function applyPvpOutcome(
     if (respawnPayload && !respawnAlreadyApplied) {
       events.push(event('character.respawned', respawnPayload));
       if (respawnPayload.droppedItem) {
-        effects.push(worldItemDropEffect({
-          worldItemId: respawnPayload.droppedItem.item.id,
-          fromCharacterId: characterId,
+        effects.push(createWorldCorpseEffect(context.makeId, {
+          encounterId: respawnPayload.encounterId,
+          opponentId: characterId,
+          opponentName: character.name,
           locationId: respawnPayload.deathLocationId,
-          item: respawnPayload.droppedItem.item,
+          corpseType: 'player',
+          ownerCharacterId: characterId,
+          preservedItems: [respawnPayload.droppedItem.item],
+          createdAt: context.now().toISOString(),
+          lifecycleRules: context.world.corpseLifecycle,
         }));
       }
     }

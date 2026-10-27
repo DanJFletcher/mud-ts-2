@@ -14,6 +14,7 @@ import {
   type CorpseLifecycleOverride,
   type CorpseLifecycleRules,
   type WorldCorpseRecord,
+  type WorldCurrencyDropRecord,
   type WorldItemRecord,
 } from '@mudd/contracts';
 import {
@@ -21,6 +22,7 @@ import {
   replayCharacter,
 } from '@mudd/engine-core';
 import { objectLifecycleScheduledEvent, objectLifecycleStreamId } from './object-lifecycle.js';
+import { roomAnnouncementEffect } from './room-announcements.js';
 import type {
   EngineCommandContext,
   EnginePlugin,
@@ -43,6 +45,7 @@ export interface WorldItemsState {
   revision: number;
   items: WorldItemRecord[];
   corpses: WorldCorpseRecord[];
+  currencyDrops: WorldCurrencyDropRecord[];
 }
 
 export interface WorldItemsStateCapability {
@@ -129,7 +132,11 @@ export function createWorldCorpseEffect(
     playerExpirationPolicy: 'recovery-storage' as const,
     showDecayStages: true,
   };
-  const lifetimeSeconds = corpseType === 'player'
+  const hasInitialContents = (input.preservedItems?.length ?? loot?.items?.length ?? 0) > 0 ||
+    currencyAmount > 0;
+  const lifetimeSeconds = !hasInitialContents
+    ? rules.emptyCorpseSeconds
+    : corpseType === 'player'
     ? rules.playerSeconds
     : input.lifecycleOverride?.lifetimeSeconds ??
       (input.lifecycleOverride?.category === 'boss' ? rules.bossNpcSeconds : rules.ordinaryNpcSeconds);
@@ -194,6 +201,7 @@ export function projectWorldItems(
 ): WorldItemsState {
   const items = new Map<string, WorldItemRecord>();
   const corpses = new Map<string, WorldCorpseRecord>();
+  const currencyDrops = new Map<string, WorldCurrencyDropRecord>();
   const consumedIds = new Set<string>();
   let revision = 0;
   for (const stored of events) {
@@ -277,19 +285,31 @@ export function projectWorldItems(
     } else if (stored.type === 'world.corpse_gold_claimed') {
       const claimed = WorldCorpseGoldClaimedEventSchema.parse(event);
       const previous = corpses.get(claimed.payload.corpseId);
-      if (
-        !previous ||
-        previous.locationId !== claimed.payload.locationId ||
-        previous.currencyId !== claimed.payload.currencyId ||
-        previous.currencyAmount !== claimed.payload.amount ||
-        previous.goldClaimed
-      ) {
-        throw new Error(`Invalid corpse gold claim at revision ${stored.aggregateVersion}.`);
+      if (previous) {
+        if (
+          previous.locationId !== claimed.payload.locationId ||
+          previous.currencyId !== claimed.payload.currencyId ||
+          previous.currencyAmount !== claimed.payload.amount ||
+          previous.goldClaimed
+        ) {
+          throw new Error(`Invalid corpse gold claim at revision ${stored.aggregateVersion}.`);
+        }
+        corpses.set(previous.corpseId, WorldCorpseRecordSchema.parse({
+          ...previous,
+          goldClaimed: true,
+        }));
+      } else {
+        const dropped = currencyDrops.get(claimed.payload.corpseId);
+        if (
+          !dropped ||
+          dropped.locationId !== claimed.payload.locationId ||
+          dropped.currencyId !== claimed.payload.currencyId ||
+          dropped.amount !== claimed.payload.amount
+        ) {
+          throw new Error(`Invalid loose currency claim at revision ${stored.aggregateVersion}.`);
+        }
+        currencyDrops.delete(dropped.corpseId);
       }
-      corpses.set(previous.corpseId, WorldCorpseRecordSchema.parse({
-        ...previous,
-        goldClaimed: true,
-      }));
     } else if (stored.type === 'world.corpse_expired') {
       const expired = WorldCorpseExpiredEventSchema.parse(event).payload;
       const corpse = corpses.get(expired.corpseId);
@@ -310,13 +330,33 @@ export function projectWorldItems(
           consumedIds.add(itemId);
         }
       }
+      if (
+        expired.policy === 'drop' &&
+        corpse.currencyAmount > 0 &&
+        corpse.currencyId &&
+        corpse.goldItemId &&
+        !corpse.goldClaimed
+      ) {
+        currencyDrops.set(corpse.corpseId, {
+          dropId: corpse.goldItemId,
+          corpseId: corpse.corpseId,
+          locationId: corpse.locationId,
+          currencyId: corpse.currencyId,
+          amount: corpse.currencyAmount,
+        });
+      }
       corpses.delete(corpse.corpseId);
     } else {
       throw new Error(`Unsupported world item event "${stored.type}" at revision ${stored.aggregateVersion}.`);
     }
     revision = stored.aggregateVersion;
   }
-  return { revision, items: [...items.values()], corpses: [...corpses.values()] };
+  return {
+    revision,
+    items: [...items.values()],
+    corpses: [...corpses.values()],
+    currencyDrops: [...currencyDrops.values()],
+  };
 }
 
 async function appendWorldDrop(
@@ -384,6 +424,12 @@ async function appendWorldCorpse(
     payloadHash,
     expectedVersion: state.revision,
     events: [{ type: 'world.corpse_created', version: 1, payload }],
+    effects: [roomAnnouncementEffect(
+      payload.corpse.locationId,
+      payload.corpse.corpseType === 'player'
+        ? `${payload.corpse.opponentName} leaves behind a bundle of belongings.`
+        : `${payload.corpse.opponentName} falls, and their body lies here.`,
+    )],
     companions: [{
       streamId: objectLifecycleStreamId(payload.corpse.corpseId),
       expectedVersion: 0,
@@ -489,6 +535,7 @@ export const worldItemsPlugin: EnginePlugin = {
       'world.item_dropped': 1,
       'world.item_claimed': 1,
       'world.corpse_created': 1,
+      'world.corpse_expired': 1,
       'world.corpse_gold_claimed': 1,
       'character.shared_item_received': 1,
       'character.corpse_gold_received': 1,

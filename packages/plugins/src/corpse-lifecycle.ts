@@ -15,7 +15,8 @@ import {
   objectLifecycleStreamId,
   projectObjectLifecycle,
 } from './object-lifecycle.js';
-import { projectWorldItems, worldItemsStateCapability, worldItemsStreamId } from './world-items.js';
+import { projectWorldItems, worldItemsStreamId } from './world-items.js';
+import { roomAnnouncementEffect } from './room-announcements.js';
 
 const ObjectExpiringPayloadSchema = ObjectExpiringEventSchema.shape.payload;
 const SharedItemReceivedPayloadSchema = CharacterSharedItemReceivedEventSchema.shape.payload;
@@ -32,7 +33,9 @@ async function expireCorpse(
   const lifecycle = projectObjectLifecycle(lifecycleEvents);
   if (!lifecycle || lifecycle.state !== 'expiring' || lifecycle.expiresAt !== payload.expiresAt) return;
 
-  const itemsState = await worldItemsStateCapability.load(context);
+  const worldStreamId = worldItemsStreamId(context.worldInstanceId);
+  const worldEvents = await context.store.readStream(context.worldInstanceId, worldStreamId);
+  const itemsState = projectWorldItems(worldEvents);
   const corpse = itemsState.corpses.find((entry) => entry.corpseId === payload.objectId);
   if (!corpse) {
     const result = await context.store.append({
@@ -61,13 +64,12 @@ async function expireCorpse(
     throw new Error(`Corpse ${corpse.corpseId} requires an owner for recovery storage.`);
   }
 
-  const worldStreamId = worldItemsStreamId(context.worldInstanceId);
-  const worldEvents = await context.store.readStream(context.worldInstanceId, worldStreamId);
   const worldState = projectWorldItems(worldEvents);
   const corpseItems = worldState.items.filter((item) => item.containerId === corpse.corpseId);
   const expiredAt = context.now().toISOString();
   const corpseExpiredPayload = CorpseExpiredPayloadSchema.parse({
     corpseId: corpse.corpseId,
+    corpseName: corpse.opponentName,
     locationId: corpse.locationId,
     policy,
     expiredAt,
@@ -127,6 +129,14 @@ async function expireCorpse(
     expectedVersion: worldState.revision,
     events: [{ type: 'world.corpse_expired', version: 1, payload: corpseExpiredPayload }],
     companions,
+    effects: [roomAnnouncementEffect(
+      corpse.locationId,
+      policy === 'drop'
+        ? `The remains of ${corpse.opponentName} crumble away, leaving their belongings behind.`
+        : policy === 'recovery-storage'
+          ? `The remains of ${corpse.opponentName} fade; the belongings left behind are returned to their owner.`
+          : `The remains of ${corpse.opponentName} crumble into dust.`,
+    )],
   });
   if (!result.receipt.ok) throw new Error('Could not atomically expire the corpse and resolve its contents.');
 }

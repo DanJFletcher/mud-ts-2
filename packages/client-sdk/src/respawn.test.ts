@@ -3,13 +3,20 @@ import {
   EngineHost,
   InMemoryEventStore,
   replayCharacter,
+  SYSTEM_ACTOR_ID,
+  type EnginePlugin,
 } from '@mudd/engine-core';
 import {
   characterPlugin,
+  corpseLifecyclePlugin,
   combatPlugin,
   interactionPlugin,
   movementPlugin,
+  objectLifecyclePlugin,
+  objectLifecycleStreamId,
   projectWorldItems,
+  ROOM_ANNOUNCEMENT_EFFECT,
+  RoomAnnouncementEffectSchema,
   worldItemsPlugin,
   worldItemsStreamId,
 } from '@mudd/core-plugins';
@@ -37,17 +44,38 @@ function makeWorld(withDroppableItems: boolean) {
   });
 }
 
-function makeHarness(withDroppableItems: boolean) {
+const testRoomAnnouncementPlugin: EnginePlugin = {
+  manifest: {
+    id: 'mudd.test-respawn-room-announcements',
+    version: '1.0.0',
+    apiVersion: '1.0',
+    category: 'core',
+  },
+  register({ registerEffect }) {
+    registerEffect(ROOM_ANNOUNCEMENT_EFFECT, 1, RoomAnnouncementEffectSchema, async () => {});
+  },
+};
+
+function makeHarness(withDroppableItems: boolean, now: () => Date = () => new Date('2026-10-19T12:00:00.000Z')) {
   let id = 0;
   const store = new InMemoryEventStore();
   const world = makeWorld(withDroppableItems);
   const engine = new EngineHost(
-    [worldItemsPlugin, characterPlugin, interactionPlugin, combatPlugin, movementPlugin],
+    [
+      worldItemsPlugin,
+      objectLifecyclePlugin,
+      corpseLifecyclePlugin,
+      testRoomAnnouncementPlugin,
+      characterPlugin,
+      interactionPlugin,
+      combatPlugin,
+      movementPlugin,
+    ],
     store,
     { canAccessInstance: async () => true, ownsCharacter: async () => true },
     world,
     () => `respawn-test-id-${++id}`,
-    () => new Date('2026-10-19T12:00:00.000Z'),
+    now,
     { roll: (sides) => sides },
   );
   return { engine, store };
@@ -136,11 +164,19 @@ describe('character death and shared loot', () => {
     expect(fallen?.combat).toBeUndefined();
 
     const itemEvents = await store.readStream(DEMO_WORLD_INSTANCE_ID, worldItemsStreamId(DEMO_WORLD_INSTANCE_ID));
-    expect(itemEvents.filter((event) => event.type === 'world.item_dropped')).toHaveLength(1);
+    expect(itemEvents.filter((event) => event.type === 'world.corpse_created')).toHaveLength(1);
     const worldItems = projectWorldItems(itemEvents);
+    expect(worldItems.corpses).toHaveLength(1);
+    expect(worldItems.corpses[0]).toMatchObject({
+      locationId: 'mossgate-clearing',
+      corpseType: 'player',
+      ownerCharacterId: fallenId,
+      expirationPolicy: 'recovery-storage',
+    });
     expect(worldItems.items).toHaveLength(1);
     expect(worldItems.items[0]).toMatchObject({
       locationId: 'mossgate-clearing',
+      containerId: worldItems.corpses[0]!.corpseId,
       holderCharacterId: null,
       item: { label: 'Glass bead' },
     });
@@ -225,6 +261,60 @@ describe('character death and shared loot', () => {
       DEMO_WORLD_INSTANCE_ID,
       worldItemsStreamId(DEMO_WORLD_INSTANCE_ID),
     )).items).toHaveLength(0);
+    await engine.stop();
+  });
+
+  it('returns unclaimed player-corpse contents to their owner when the recovery timer expires', async () => {
+    let now = new Date('2026-10-19T12:00:00.000Z');
+    const { engine, store } = makeHarness(true, () => now);
+    await engine.start();
+    const characterId = await createCharacter(engine, 'recovery-owner', 'Rill');
+    expect((await perform(engine, store, 'recovery-owner', characterId, 'recovery-take-bead', 'character.take', {
+      itemId: 'test-glass-bead',
+    })).receipt.ok).toBe(true);
+    expect((await perform(
+      engine,
+      store,
+      'recovery-owner',
+      characterId,
+      'recovery-owner-lethal-hit',
+      'combat.action',
+      { action: 'attack', targetNpcId: 'mossgate-training-sentinel' },
+    )).receipt.ok).toBe(true);
+    await engine.processPendingEffects();
+
+    const itemStreamId = worldItemsStreamId(DEMO_WORLD_INSTANCE_ID);
+    const worldItems = projectWorldItems(await store.readStream(DEMO_WORLD_INSTANCE_ID, itemStreamId));
+    const corpse = worldItems.corpses[0]!;
+    expect(worldItems.items).toMatchObject([{
+      containerId: corpse.corpseId,
+      holderCharacterId: null,
+      item: { label: 'Glass bead' },
+    }]);
+
+    now = new Date(Date.parse(corpse.expiresAt!) + 1);
+    const expiration = await engine.dispatchSystem({
+      type: 'world.object.expire',
+      version: 1,
+      commandId: 'player-corpse-expire',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      expectedVersion: 1,
+      payload: { objectId: corpse.corpseId },
+    }, SYSTEM_ACTOR_ID);
+    expect(expiration.receipt.ok).toBe(true);
+    await engine.processPendingEffects();
+
+    const recovered = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId));
+    expect(recovered?.inventory).toContainEqual(expect.objectContaining({
+      sharedItemId: worldItems.items[0]!.worldItemId,
+      label: 'Glass bead',
+    }));
+    expect(projectWorldItems(await store.readStream(DEMO_WORLD_INSTANCE_ID, itemStreamId)).corpses)
+      .toEqual([]);
+    expect((await store.readStream(
+      DEMO_WORLD_INSTANCE_ID,
+      objectLifecycleStreamId(corpse.corpseId),
+    )).at(-1)?.type).toBe('world.object_expired');
     await engine.stop();
   });
 });

@@ -69,6 +69,11 @@ import {
   worldItemsStreamId,
   type WorldItemsStateCapability,
 } from './world-items.js';
+import {
+  objectLifecycleRescheduledEvent,
+  objectLifecycleStreamId,
+  projectObjectLifecycle,
+} from './object-lifecycle.js';
 import { exitsForLocationState, resolveLocationState } from './location-state.js';
 import {
   autonomousNpcStateCapability,
@@ -86,6 +91,51 @@ export function assertCharacterAlive(character: CharacterProjection): void {
   if (character.combat?.status === 'defeat' || character.health?.current === 0) {
     throw new RuleViolationError('Your character has died. Start a new character to begin again.');
   }
+}
+
+type ProjectedWorldCorpse =
+  Awaited<ReturnType<WorldItemsStateCapability['load']>>['corpses'][number];
+
+function corpseDecayDescription(
+  corpse: ProjectedWorldCorpse,
+  now: Date,
+  showStages: boolean,
+): string {
+  if (!showStages || !corpse.createdAt || !corpse.expiresAt) return corpse.description;
+  const created = Date.parse(corpse.createdAt);
+  const expires = Date.parse(corpse.expiresAt);
+  const remaining = expires - now.getTime();
+  if (expires <= created || remaining <= 0) return corpse.description;
+  const fraction = remaining / (expires - created);
+  if (fraction <= 0.25) return `${corpse.description} The remains are fading quickly.`;
+  if (fraction <= 0.5) return `${corpse.description} The body is breaking down, its outline softening.`;
+  if (fraction <= 0.75) return `${corpse.description} The body has begun to weather and darken.`;
+  return corpse.description;
+}
+
+async function rescheduleEmptyCorpse(
+  context: EngineCommandContext,
+  corpse: ProjectedWorldCorpse,
+): Promise<{ streamId: string; expectedVersion: number; events: { type: string; version: number; payload: Record<string, unknown> }[] } | undefined> {
+  if (!corpse.expiresAt) return undefined;
+  const currentExpiry = Date.parse(corpse.expiresAt);
+  const emptyExpiry = context.now().getTime() + context.world.corpseLifecycle.emptyCorpseSeconds * 1000;
+  const expiresAt = new Date(Math.min(currentExpiry, emptyExpiry)).toISOString();
+  if (Date.parse(expiresAt) >= currentExpiry) return undefined;
+  const streamId = objectLifecycleStreamId(corpse.corpseId);
+  const events = await context.store.readStream(context.worldInstanceId, streamId);
+  const lifecycle = projectObjectLifecycle(events);
+  if (!lifecycle || lifecycle.state !== 'scheduled') return undefined;
+  return {
+    streamId,
+    expectedVersion: lifecycle.revision,
+    events: [objectLifecycleRescheduledEvent({
+      objectId: corpse.corpseId,
+      objectType: 'corpse',
+      locationId: corpse.locationId,
+      expiresAt,
+    })],
+  };
 }
 
 export function assertCharacterStanding(character: CharacterProjection): void {
@@ -464,9 +514,32 @@ export const characterPlugin: EnginePlugin = {
       const sharedState = await worldItems.load(context);
       const sharedItem = sharedState.items.find((entry) => entry.worldItemId === command.payload.itemId);
       if (sharedItem && sharedItem.locationId !== null) {
+        const containingCorpse = sharedItem.containerId
+          ? sharedState.corpses.find((corpse) => corpse.corpseId === sharedItem.containerId)
+          : undefined;
+        if (
+          containingCorpse?.expiresAt &&
+          Date.parse(containingCorpse.expiresAt) <= context.now().getTime()
+        ) {
+          throw new RuleViolationError('That corpse has already begun to decay beyond recovery.');
+        }
         if (sharedItem.locationId !== character.locationId) {
           throw new RuleViolationError('That item is not available to take here.');
         }
+        const remainingInCorpse = containingCorpse
+          ? sharedState.items.some((entry) =>
+            entry.containerId === containingCorpse.corpseId &&
+            entry.worldItemId !== sharedItem.worldItemId)
+          : true;
+        const unclaimedGold = Boolean(
+          containingCorpse &&
+          containingCorpse.currencyAmount > 0 &&
+          containingCorpse.goldItemId &&
+          !containingCorpse.goldClaimed,
+        );
+        const lifecycleWrite = containingCorpse && !remainingInCorpse && !unclaimedGold
+          ? await rescheduleEmptyCorpse(context, containingCorpse)
+          : undefined;
         const eventPayload = {
           worldItemId: sharedItem.worldItemId,
           characterId: character.characterId,
@@ -477,6 +550,7 @@ export const characterPlugin: EnginePlugin = {
           streamId: worldItemsStreamId(context.worldInstanceId),
           expectedVersion: sharedState.revision,
           events: [{ type: 'world.item_claimed', version: 1, payload: eventPayload }],
+          ...(lifecycleWrite ? { companions: [lifecycleWrite] } : {}),
           effects: [worldItemClaimEffect({
             worldItemId: sharedItem.worldItemId,
             characterId: character.characterId,
@@ -488,38 +562,61 @@ export const characterPlugin: EnginePlugin = {
       const corpseWithGold = sharedState.corpses.find((corpse) =>
         corpse.goldItemId === command.payload.itemId &&
         corpse.locationId === character.locationId &&
-        !corpse.goldClaimed,
+        !corpse.goldClaimed &&
+        (!corpse.expiresAt || Date.parse(corpse.expiresAt) > context.now().getTime()),
       );
-      if (corpseWithGold) {
+      const looseCurrency = sharedState.currencyDrops.find((drop) =>
+        drop.dropId === command.payload.itemId && drop.locationId === character.locationId,
+      );
+      const currencySource = corpseWithGold
+        ? {
+          corpseId: corpseWithGold.corpseId,
+          currencyId: corpseWithGold.currencyId,
+          currencyAmount: corpseWithGold.currencyAmount,
+        }
+        : looseCurrency
+          ? {
+            corpseId: looseCurrency.corpseId,
+            currencyId: looseCurrency.currencyId,
+            currencyAmount: looseCurrency.amount,
+          }
+          : undefined;
+      if (currencySource) {
         const currency = context.world.currency;
         if (
           !currency ||
-          currency.id !== corpseWithGold.currencyId ||
+          currency.id !== currencySource.currencyId ||
           !character.wallet ||
           character.wallet.currencyId !== currency.id
         ) {
           throw new RuleViolationError('This character’s wallet is not ready to collect that currency.');
         }
-        if (character.wallet.balance > 2_147_483_647 - corpseWithGold.currencyAmount) {
+        if (character.wallet.balance > 2_147_483_647 - currencySource.currencyAmount) {
           throw new RuleViolationError('Your wallet cannot hold that much currency.');
         }
         const eventPayload = {
-          corpseId: corpseWithGold.corpseId,
+          corpseId: currencySource.corpseId,
           characterId: character.characterId,
           locationId: character.locationId,
           currencyId: currency.id,
-          amount: corpseWithGold.currencyAmount,
+          amount: currencySource.currencyAmount,
         };
         WorldCorpseGoldClaimedEventSchema.shape.payload.parse(eventPayload);
+        const hasCorpseItems = corpseWithGold &&
+          sharedState.items.some((item) => item.containerId === corpseWithGold.corpseId);
+        const lifecycleWrite = corpseWithGold && !hasCorpseItems
+          ? await rescheduleEmptyCorpse(context, corpseWithGold)
+          : undefined;
         return {
           streamId: worldItemsStreamId(context.worldInstanceId),
           expectedVersion: sharedState.revision,
           events: [{ type: 'world.corpse_gold_claimed', version: 1, payload: eventPayload }],
+          ...(lifecycleWrite ? { companions: [lifecycleWrite] } : {}),
           effects: [worldCorpseGoldCreditEffect({
             characterId: character.characterId,
-            corpseId: corpseWithGold.corpseId,
+            corpseId: currencySource.corpseId,
             currencyId: currency.id,
-            amount: corpseWithGold.currencyAmount,
+            amount: currencySource.currencyAmount,
           })],
         };
       }
@@ -905,6 +1002,12 @@ export const characterPlugin: EnginePlugin = {
         corpses.push(corpse);
         corpsesByLocation.set(corpse.locationId, corpses);
       }
+      const currencyDropsByLocation = new Map<string, Array<(typeof sharedState.currencyDrops)[number]>>();
+      for (const drop of sharedState.currencyDrops) {
+        const drops = currencyDropsByLocation.get(drop.locationId) ?? [];
+        drops.push(drop);
+        currencyDropsByLocation.set(drop.locationId, drops);
+      }
       const trackedItemIds = new Set(character.itemLocations.map((entry) => entry.item.id));
       const claimedContainerItemIds = new Set(character.claimedContainerItemIds);
       const characterItemsByLocation = new Map<string, Array<(typeof character.itemLocations)[number]>>();
@@ -927,7 +1030,9 @@ export const characterPlugin: EnginePlugin = {
         includeObjects = true,
       ) => {
         const itemsInRoom = sharedItemsByLocation.get(room.id) ?? [];
+        const now = context.now();
         const corpsesInRoom = (corpsesByLocation.get(room.id) ?? [])
+          .filter((corpse) => !corpse.expiresAt || Date.parse(corpse.expiresAt) > now.getTime())
           .map((corpse) => {
             const contents = itemsInRoom
               .filter((item) => item.containerId === corpse.corpseId)
@@ -951,7 +1056,17 @@ export const characterPlugin: EnginePlugin = {
                 label: item.label,
                 description: item.description,
               })));
-            return { corpse, contents };
+            return {
+              corpse: {
+                ...corpse,
+                description: corpseDecayDescription(
+                  corpse,
+                  now,
+                  context.world.corpseLifecycle.showDecayStages,
+                ),
+              },
+              contents,
+            };
           });
         const visibleContainers = (room.containers ?? []).map((container) => ({
           ...container,
@@ -977,6 +1092,16 @@ export const characterPlugin: EnginePlugin = {
         const sharedItemDescriptions = itemsInRoom
           .filter((item) => !item.containerId)
           .map(({ item }) => `${item.label} lies here.`);
+        const currencyDropObjects = (currencyDropsByLocation.get(room.id) ?? []).map((drop) => {
+          const currencyName = context.world.currency?.name ?? 'coins';
+          return {
+            id: drop.dropId,
+            label: `${drop.amount} ${currencyName}`,
+            description: `${drop.amount} ${currencyName} lies here.`,
+            readable: false,
+            takeable: true,
+          };
+        });
         const containerDescriptions = visibleContainers.map((container) => {
           const roomDescription = container.roomDescription ?? `${container.label} is here.`;
           const contents = container.contents.length
@@ -1030,6 +1155,7 @@ export const characterPlugin: EnginePlugin = {
             readable: false,
             takeable: true,
           })),
+            ...currencyDropObjects,
           ...corpsesInRoom.flatMap(({ corpse, contents }) => [
             {
               id: corpse.corpseId,
@@ -1064,6 +1190,7 @@ export const characterPlugin: EnginePlugin = {
           roomDetails: [
             ...roomItemDescriptions,
             ...sharedItemDescriptions,
+            ...currencyDropObjects.map(({ description }) => description),
             ...containerDescriptions,
             ...corpseDescriptions,
             ...interactableRoomDescriptions,
@@ -1218,8 +1345,23 @@ export const characterPlugin: EnginePlugin = {
       const sharedItems = sharedState.items
         .filter((item) => item.locationId === character.locationId);
       const roomCorpses = sharedState.corpses
-        .filter((corpse) => corpse.locationId === character.locationId)
-        .map(({ corpseId, label, description, opponentName, currencyAmount, currencyId, goldItemId, goldClaimed }) => {
+        .filter((corpse) => corpse.locationId === character.locationId &&
+          (!corpse.expiresAt || Date.parse(corpse.expiresAt) > context.now().getTime()))
+        .map((corpse) => {
+          const {
+            corpseId,
+            label,
+            opponentName,
+            currencyAmount,
+            currencyId,
+            goldItemId,
+            goldClaimed,
+          } = corpse;
+          const description = corpseDecayDescription(
+            corpse,
+            context.now(),
+            context.world.corpseLifecycle.showDecayStages,
+          );
           const contents = sharedItems
             .filter((item) => item.containerId === corpseId)
             .map(({ worldItemId, item }) => ({
@@ -1255,6 +1397,16 @@ export const characterPlugin: EnginePlugin = {
             currencyId,
           };
         });
+      const roomCurrencyDrops = sharedState.currencyDrops
+        .filter((drop) => drop.locationId === character.locationId)
+        .map((drop) => {
+          const currencyName = context.world.currency?.name ?? 'coins';
+          return {
+            id: drop.dropId,
+            label: `${drop.amount} ${currencyName}`,
+            description: `${drop.amount} ${currencyName} lies here.`,
+          };
+        });
       const roomCorpseObjects = roomCorpses.map(({ id, label, description }) => ({ id, label, description }));
       const objectInRoom = [
         ...(location.readables ?? []),
@@ -1262,6 +1414,7 @@ export const characterPlugin: EnginePlugin = {
         ...(location.interactables ?? []),
         ...roomContainers,
         ...roomCorpseObjects,
+        ...roomCurrencyDrops,
         ...visibleContainers.flatMap((container) => container.contents),
         ...roomCorpses.flatMap((corpse) => corpse.contents),
         ...characterItemsAtLocation

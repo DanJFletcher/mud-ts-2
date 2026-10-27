@@ -24,3 +24,4 @@
 - [Ephemeral PostgreSQL tests](ephemeral-postgres-tests.md) — In the Nix dev container, point temporary PostgreSQL sockets at a writable temp directory.
 - [Performance benchmarking](performance-benchmarking.md) — Use matched development traces for iterative performance work; avoid repeated production publishes.
 - [Leather crafting progression](leather-crafting.md) — Leather recipes use tanned deer hides; tanning and wearable outputs are deferred.
+- [Drizzle migration snapshots](drizzle-snapshot-discipline.md) — Keep schema snapshots aligned with manual SQL migrations or later generated migrations may recreate existing tables.

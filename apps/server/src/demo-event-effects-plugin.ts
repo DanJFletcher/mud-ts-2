@@ -14,6 +14,11 @@ import {
   PLAYER_ROOM_MESSAGE_EFFECT,
   PlayerRoomMessageEffectSchema,
 } from './durable-effect-contracts.js';
+import {
+  ROOM_ANNOUNCEMENT_EFFECT,
+  ROOM_ANNOUNCEMENT_SOURCE_PREFIX,
+  RoomAnnouncementEffectSchema,
+} from '@mudd/core-plugins';
 
 export const worldEventEffectsPlugin: EnginePlugin = {
   manifest: {
@@ -25,6 +30,17 @@ export const worldEventEffectsPlugin: EnginePlugin = {
   register({ registerEffect, registerEventHandler }) {
     const announceNpcRoomMessage = createNpcRoomAnnouncer(publishNpcRoomMessage);
     const reactToNpcRoomChat = createNpcRoomChatReactor(publishNpcRoomMessage);
+
+    registerEffect(ROOM_ANNOUNCEMENT_EFFECT, 1, RoomAnnouncementEffectSchema, async (effect, context) => {
+      await publishNpcRoomMessage({
+        worldInstanceId: context.worldInstanceId,
+        roomId: effect.locationId,
+        npcId: `room:${effect.locationId}`,
+        npcName: 'The room',
+        text: effect.message,
+        sourceEffectId: `${ROOM_ANNOUNCEMENT_SOURCE_PREFIX}${context.effectId}`,
+      });
+    });
 
     registerEventHandler(
       'world.npc.moved',

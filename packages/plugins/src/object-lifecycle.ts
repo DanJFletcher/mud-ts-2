@@ -44,7 +44,19 @@ export function projectObjectLifecycle(
 ): ObjectLifecycleProjection | undefined {
   let lifecycle: ObjectLifecycleProjection | undefined;
   for (const event of events) {
-    const raw = { ...event, payload: event.payload } as LifecycleEvent;
+    const raw = {
+      type: event.type,
+      version: event.version,
+      eventId: event.eventId,
+      worldInstanceId: event.worldInstanceId,
+      aggregateId: event.streamId,
+      aggregateVersion: event.aggregateVersion,
+      causationCommandId: event.causationCommandId,
+      actorId: event.actorId,
+      occurredAt: event.occurredAt,
+      tick: event.aggregateVersion,
+      payload: event.payload,
+    } as LifecycleEvent;
     if (event.type === 'world.object_lifecycle_scheduled') {
       const payload = ObjectLifecycleScheduledEventSchema.parse(raw).payload;
       lifecycle = ObjectLifecycleProjectionSchema.parse({
@@ -109,6 +121,16 @@ export function objectLifecycleScheduledEvent(
     type: 'world.object_lifecycle_scheduled',
     version: 1,
     payload: ObjectLifecycleScheduledEventSchema.shape.payload.parse(payload),
+  };
+}
+
+export function objectLifecycleRescheduledEvent(
+  payload: z.infer<typeof ObjectLifecycleRescheduledEventSchema>['payload'],
+) {
+  return {
+    type: 'world.object_lifecycle_rescheduled',
+    version: 1,
+    payload: ObjectLifecycleRescheduledEventSchema.shape.payload.parse(payload),
   };
 }
 

@@ -881,6 +881,14 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
       text: 'The NPC leaves.',
       sourceEffectId: `world-npc-movement:${randomUUID()}:departure`,
     });
+    const lifecycleNotice = await publishNpcRoomMessage({
+      worldInstanceId: chatWorldInstanceId,
+      roomId: 'glasswater-bridge',
+      npcId: 'room:glasswater-bridge',
+      npcName: 'The room',
+      text: 'The remains of a bandit crumble into dust.',
+      sourceEffectId: `world-room-announcement:${randomUUID()}`,
+    });
     const chatHistory = await listRoomChatMessages({
       worldInstanceId: chatWorldInstanceId,
       playerId,
@@ -897,6 +905,8 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
       afterId: movementNotice.id - 1,
     });
     expect(liveMessages?.terminalEvents.some((message) => message.id === movementNotice.id)).toBe(true);
+    expect(liveMessages?.messages.some((message) => message.id === lifecycleNotice.id)).toBe(false);
+    expect(liveMessages?.terminalEvents.some((message) => message.id === lifecycleNotice.id)).toBe(true);
     await db.delete(characters).where((await import('drizzle-orm')).eq(characters.id, chatCharacterId));
   });
 

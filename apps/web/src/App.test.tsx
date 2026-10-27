@@ -1282,6 +1282,7 @@ describe('single-character world session client', () => {
       document.dispatchEvent(new Event('visibilitychange'));
     });
     expect(await screen.findByText('Bridge Watcher: A watcher leaves toward the south, eyes alert.')).toBeVisible();
+    expect(screen.getAllByText('Bridge Watcher: A watcher leaves toward the south, eyes alert.')).toHaveLength(1);
     expect(screen.queryByText('Bridge Watcher leaves the room.')).not.toBeInTheDocument();
   });
 

@@ -81,7 +81,29 @@ export const WorldCorpseRecordSchema = z.object({
       message: 'A corpse with currency must identify its currency and takeable gold entry.',
     });
   }
+  if (corpse.createdAt && corpse.expiresAt && Date.parse(corpse.expiresAt) <= Date.parse(corpse.createdAt)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['expiresAt'],
+      message: 'A corpse must expire after it is created.',
+    });
+  }
+  if (corpse.expirationPolicy === 'recovery-storage' && !corpse.ownerCharacterId) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['ownerCharacterId'],
+      message: 'Recovery storage requires a corpse owner.',
+    });
+  }
 });
+
+export const WorldCurrencyDropRecordSchema = z.object({
+  dropId: IdSchema,
+  corpseId: IdSchema,
+  locationId: IdSchema,
+  currencyId: IdSchema,
+  amount: PositiveIntSchema.max(2_147_483_647),
+}).strict();
 
 export const WorldCorpseCreatedEventSchema = DomainEventBaseSchema.extend({
   type: z.literal('world.corpse_created'),
@@ -100,6 +122,7 @@ export const WorldCorpseExpiredEventSchema = DomainEventBaseSchema.extend({
   version: z.literal(1),
   payload: z.object({
     corpseId: IdSchema,
+    corpseName: z.string().min(1).max(120),
     locationId: IdSchema,
     policy: z.enum(['destroy', 'drop', 'recovery-storage']),
     expiredAt: z.string().datetime({ offset: true }),
@@ -120,3 +143,4 @@ export const WorldCorpseGoldClaimedEventSchema = DomainEventBaseSchema.extend({
 
 export type WorldItemRecord = z.infer<typeof WorldItemRecordSchema>;
 export type WorldCorpseRecord = z.infer<typeof WorldCorpseRecordSchema>;
+export type WorldCurrencyDropRecord = z.infer<typeof WorldCurrencyDropRecordSchema>;

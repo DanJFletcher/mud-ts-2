@@ -3,6 +3,7 @@ import { db } from './db/client.js';
 import { characters, durableEffects, gameEvents, roomChatMessages, worldSessions, roomCharacterStates } from './db/schema.js';
 import { PLAYER_ROOM_MESSAGE_EFFECT } from './durable-effect-contracts.js';
 import { measureDatabaseOperation } from './performance.js';
+import { ROOM_ANNOUNCEMENT_SOURCE_PREFIX } from '@mudd/core-plugins';
 
 export const MAX_ROOM_CHAT_MESSAGE_LENGTH = 500;
 const INITIAL_ROOM_CHAT_LIMIT = 50;
@@ -332,13 +333,16 @@ export async function listRoomChatMessages(input: Readonly<{
         .where(and(...conditions, gt(roomChatMessages.id, input.afterId)))
         .orderBy(asc(roomChatMessages.id))
         .limit(ROOM_CHAT_POLL_LIMIT);
-      const movementRows = rows.filter((row) =>
-        row.sourceEffectId?.startsWith(NPC_MOVEMENT_MESSAGE_SOURCE_PREFIX));
+      const terminalRows = rows.filter((row) =>
+        row.sourceEffectId?.startsWith(NPC_MOVEMENT_MESSAGE_SOURCE_PREFIX) ||
+        row.sourceEffectId?.startsWith(ROOM_ANNOUNCEMENT_SOURCE_PREFIX));
       return {
         messages: rows
-          .filter((row) => !row.sourceEffectId?.startsWith(NPC_MOVEMENT_MESSAGE_SOURCE_PREFIX))
+          .filter((row) =>
+            !row.sourceEffectId?.startsWith(NPC_MOVEMENT_MESSAGE_SOURCE_PREFIX) &&
+            !row.sourceEffectId?.startsWith(ROOM_ANNOUNCEMENT_SOURCE_PREFIX))
           .map((row) => toRoomChatMessage(row, input.characterId)),
-        terminalEvents: movementRows.map((row) => toRoomChatMessage(row)),
+        terminalEvents: terminalRows.map((row) => toRoomChatMessage(row)),
         cursor: rows.at(-1)?.id ?? input.afterId,
       };
     }
@@ -351,7 +355,10 @@ export async function listRoomChatMessages(input: Readonly<{
         ...conditions,
         or(
           isNull(roomChatMessages.sourceEffectId),
-          notLike(roomChatMessages.sourceEffectId, `${NPC_MOVEMENT_MESSAGE_SOURCE_PREFIX}%`),
+          and(
+            notLike(roomChatMessages.sourceEffectId, `${NPC_MOVEMENT_MESSAGE_SOURCE_PREFIX}%`),
+            notLike(roomChatMessages.sourceEffectId, `${ROOM_ANNOUNCEMENT_SOURCE_PREFIX}%`),
+          ),
         ),
       ))
       .orderBy(desc(roomChatMessages.id))

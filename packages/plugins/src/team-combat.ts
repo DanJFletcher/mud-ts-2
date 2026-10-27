@@ -798,6 +798,9 @@ export const teamCombatPlugin: EnginePlugin = {
             opponentName: opponent.displayName,
             locationId: encounter.locationId,
             loot: resolveCombatLoot(defeatedNpc.loot, context.rng),
+            createdAt: context.now().toISOString(),
+            lifecycleRules: context.world.corpseLifecycle,
+            ...(defeatedNpc.corpse ? { lifecycleOverride: defeatedNpc.corpse } : {}),
             ...(context.world.currency
               ? {
                 currencyId: context.world.currency.id,
