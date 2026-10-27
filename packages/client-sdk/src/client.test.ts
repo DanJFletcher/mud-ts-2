@@ -667,7 +667,7 @@ describe('MuddHttpClient', () => {
         npcName: 'Mara',
         text: 'The marker points east toward the Old Bell Tower’s western approach. Its direction is still true.',
         choices: [
-          { id: 'accept-wayfinding-quest', label: "I'll follow the marker" },
+          { id: 'ask-marker-bearing', label: 'How do you know the marker still points true?' },
         ],
       });
     await expect(client.talk(secondCharacterId, 'mara-waykeeper', undefined, 'sdk-talk-second-character-after-choice'))
@@ -1523,11 +1523,17 @@ describe('MuddHttpClient', () => {
     await expect(client.talk(characterId, 'mara-waykeeper', undefined, 'quest-talk-choice-unlocked'))
       .resolves.toMatchObject({
         choices: expect.arrayContaining([{
-          id: 'ask-tower',
-          label: 'Ask about the bell tower',
+          id: 'ask-marker',
+          label: 'Ask about the marker',
         }]),
       });
-    await moveAlongDemoRoad(client, characterId, 'clearing-to-tower-west', afterRead.revision, 'quest-visit-tower-west');
+    await moveAlongDemoRoad(
+      client,
+      characterId,
+      'clearing-to-tower-west',
+      afterRead.revision,
+      'quest-visit-tower-west',
+    );
     const westApproach = await client.look(characterId, 'quest-look-tower-west');
     await client.move(characterId, 'bell-tower-west-to-tower', westApproach.revision, 'quest-visit-tower');
     const atTower = await client.look(characterId, 'quest-look-at-tower');

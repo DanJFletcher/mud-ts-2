@@ -11,6 +11,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test tests/*.test.mjs",
+    "test:coverage": "npm run build && node --experimental-test-coverage --test tests/*.test.mjs",
     "verify-package": "python3 scripts/verify_package.py"
   },
   "dependencies": { "zod": "^3.25.0" },

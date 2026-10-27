@@ -25,3 +25,4 @@
 - [Performance benchmarking](performance-benchmarking.md) — Use matched development traces for iterative performance work; avoid repeated production publishes.
 - [Leather crafting progression](leather-crafting.md) — Leather recipes use tanned deer hides; tanning and wearable outputs are deferred.
 - [Drizzle migration snapshots](drizzle-snapshot-discipline.md) — Keep schema snapshots aligned with manual SQL migrations or later generated migrations may recreate existing tables.
+- [Unit-test coverage target](unit-test-coverage-target.md) — Keep expanding measured unit tests toward the user's 100% coverage goal; report remaining gaps honestly.
