@@ -68,6 +68,16 @@ function matchingQuestResponse(
     )[0];
 }
 
+function choiceProgressConditionsMet(
+  requiredProgressFlagIds: readonly string[] | undefined,
+  hideAfterProgressFlagIds: readonly string[] | undefined,
+  completedProgressFlagIds: readonly string[] | undefined,
+): boolean {
+  const completed = new Set(completedProgressFlagIds ?? []);
+  return (requiredProgressFlagIds ?? []).every((progressFlagId) => completed.has(progressFlagId)) &&
+    !(hideAfterProgressFlagIds ?? []).some((progressFlagId) => completed.has(progressFlagId));
+}
+
 function dialogueProjection(
   npc: NpcDefinition,
   character: CharacterProjection,
@@ -118,6 +128,11 @@ function dialogueProjection(
   const choices = dialogue.choices
     .filter((choice) => {
       if (progress?.progressFlagIds.includes(choice.progressFlagId)) return false;
+      if (!choiceProgressConditionsMet(
+        choice.requiresProgressFlagIds,
+        choice.hideAfterProgressFlagIds,
+        progress?.progressFlagIds,
+      )) return false;
       if (choice.questCondition && !questConditionMatches(choice.questCondition, questJournal)) return false;
       if (!choice.questAction) return true;
       const quest = world.quests.find((candidate) => candidate.id === choice.questAction?.questId);
@@ -185,6 +200,15 @@ export const npcDialoguePlugin: EnginePlugin = {
       const choice = npc.dialogue?.choices.find((candidate) => candidate.id === command.payload.choiceId);
       if (!choice) throw new RuleViolationError('That choice is not available here.');
 
+      const progress = character.npcProgress.find((entry) => entry.npcId === npc.id);
+      if (!choiceProgressConditionsMet(
+        choice.requiresProgressFlagIds,
+        choice.hideAfterProgressFlagIds,
+        progress?.progressFlagIds,
+      )) {
+        throw new RuleViolationError('That choice is not available here.');
+      }
+
       if (
         choice.questCondition &&
         !questConditionMatches(choice.questCondition, projectQuestJournal(character, context.world))
@@ -192,7 +216,6 @@ export const npcDialoguePlugin: EnginePlugin = {
         throw new RuleViolationError('That choice is not available here.');
       }
 
-      const progress = character.npcProgress.find((entry) => entry.npcId === npc.id);
       if (progress?.progressFlagIds.includes(choice.progressFlagId)) {
         throw new RuleViolationError('You have already asked about that.');
       }

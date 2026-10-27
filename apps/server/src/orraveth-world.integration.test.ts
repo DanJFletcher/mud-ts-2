@@ -1045,6 +1045,16 @@ describe('Orraveth Bellwold settlement', () => {
         if (!result.ok) throw new Error(result.message);
         return NpcDialogueProjectionSchema.parse(result.value);
       };
+      const chooseDialogue = async (npcId: string, choiceId: string, commandId: string) => {
+        const character = await h.loadCharacter(characterId);
+        return h.dispatch(characterId, {
+          type: 'npc.dialogue.choose',
+          version: 1,
+          commandId,
+          expectedVersion: character.revision,
+          payload: { npcId, choiceId },
+        });
+      };
       const expectResident = async (
         npcId: string,
         topic: string,
@@ -1068,6 +1078,29 @@ describe('Orraveth Bellwold settlement', () => {
 
       await expectResident('linnet-reed', 'Seli Tor', 'Linnet Reed', 'Aven Rusk', 'grain tally');
       await expectResident('taren-voss', 'Heskar', 'Taren Voss', 'Merefall League', 'merchant city-states');
+      const tarenFirstVisit = await talk('taren-voss');
+      expect(tarenFirstVisit.choices.map(({ label }) => label)).toHaveLength(4);
+      expect(tarenFirstVisit.choices.map(({ label }) => label)).not.toContain(
+        'What do you hear about places beyond Bellwold?',
+      );
+      const beforeLockedChoice = await h.loadCharacter(characterId);
+      await expect(chooseDialogue('taren-voss', 'taren-voss-beyond-the-frontier', 'taren-early-frontier-question'))
+        .rejects.toThrow('That choice is not available here.');
+      expect((await h.loadCharacter(characterId)).revision).toBe(beforeLockedChoice.revision);
+
+      await chooseDialogue('taren-voss', 'taren-voss-about-bellwold', 'taren-ask-about-bellwold');
+      const tarenAfterTownQuestion = await talk('taren-voss');
+      expect(tarenAfterTownQuestion.text).toContain('Bellwold is a working village near a frontier.');
+      expect(tarenAfterTownQuestion.choices.map(({ label }) => label)).toEqual([
+        'What do you hear about places beyond Bellwold?',
+      ]);
+      await expect(chooseDialogue('taren-voss', 'taren-voss-who-are-you', 'taren-old-option-after-branch'))
+        .rejects.toThrow('That choice is not available here.');
+
+      await chooseDialogue('taren-voss', 'taren-voss-beyond-the-frontier', 'taren-ask-about-beyond');
+      const tarenAfterFrontierQuestion = await talk('taren-voss');
+      expect(tarenAfterFrontierQuestion.text).toContain('Reports speak of merchant city-states');
+      expect(tarenAfterFrontierQuestion.choices).toEqual([]);
       await expectResident('orin-vale', 'fishing', 'Orin Vale');
       await move('square-to-inn');
       await expectResident('tomas-innkeeper', 'road', 'Tomas', 'Merefall League', 'guild-influenced city-states');

@@ -322,6 +322,8 @@ export const NpcDialogueChoiceDefinitionSchema = z.object({
   label: z.string().min(1).max(120),
   response: z.string().min(1).max(2000),
   progressFlagId: IdSchema,
+  requiresProgressFlagIds: z.array(IdSchema).max(8).default([]),
+  hideAfterProgressFlagIds: z.array(IdSchema).max(8).default([]),
   questCondition: NpcQuestStateConditionSchema.optional(),
   questAction: QuestDialogueActionSchema.optional(),
   itemReward: TakeableObjectDefinitionSchema.optional(),
@@ -334,6 +336,7 @@ export const NpcDialogueDefinitionSchema = z.object({
 }).strict().superRefine((dialogue, context) => {
   const choiceIds = new Set<string>();
   const progressFlagIds = new Set<string>();
+  const choicesByProgressFlagId = new Map<string, (typeof dialogue.choices)[number]>();
   dialogue.choices.forEach((choice, index) => {
     if (choiceIds.has(choice.id)) {
       context.addIssue({
@@ -351,7 +354,72 @@ export const NpcDialogueDefinitionSchema = z.object({
     }
     choiceIds.add(choice.id);
     progressFlagIds.add(choice.progressFlagId);
+    choicesByProgressFlagId.set(choice.progressFlagId, choice);
   });
+
+  dialogue.choices.forEach((choice, index) => {
+    const conditionFlags = new Map<string, Set<string>>();
+    for (const [field, values] of [
+      ['requiresProgressFlagIds', choice.requiresProgressFlagIds],
+      ['hideAfterProgressFlagIds', choice.hideAfterProgressFlagIds],
+    ] as const) {
+      const fieldFlags = new Set<string>();
+      values.forEach((progressFlagId, conditionIndex) => {
+        if (fieldFlags.has(progressFlagId)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['choices', index, field, conditionIndex],
+            message: 'Dialogue progress conditions must be unique.',
+          });
+        }
+        if (!progressFlagIds.has(progressFlagId)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['choices', index, field, conditionIndex],
+            message: 'Dialogue progress conditions must reference a flag in this dialogue.',
+          });
+        }
+        fieldFlags.add(progressFlagId);
+      });
+      conditionFlags.set(field, fieldFlags);
+    }
+    const required = conditionFlags.get('requiresProgressFlagIds')!;
+    const hiddenAfter = conditionFlags.get('hideAfterProgressFlagIds')!;
+    for (const progressFlagId of required) {
+      if (hiddenAfter.has(progressFlagId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['choices', index, 'hideAfterProgressFlagIds'],
+          message: 'A choice cannot require and hide after the same progress flag.',
+        });
+      }
+    }
+  });
+
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const hasCycle = (progressFlagId: string): boolean => {
+    if (visiting.has(progressFlagId)) return true;
+    if (visited.has(progressFlagId)) return false;
+    visiting.add(progressFlagId);
+    const choice = choicesByProgressFlagId.get(progressFlagId);
+    for (const requiredFlagId of choice?.requiresProgressFlagIds ?? []) {
+      if (hasCycle(requiredFlagId)) return true;
+    }
+    visiting.delete(progressFlagId);
+    visited.add(progressFlagId);
+    return false;
+  };
+  for (const [index, choice] of dialogue.choices.entries()) {
+    if (hasCycle(choice.progressFlagId)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['choices', index, 'requiresProgressFlagIds'],
+        message: 'Dialogue choice prerequisites cannot contain a cycle.',
+      });
+      break;
+    }
+  }
 });
 
 export const NpcCombatDispositionSchema = z.enum(['passive', 'hostile']);

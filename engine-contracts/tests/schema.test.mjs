@@ -6,7 +6,66 @@ import {
   PluginManifestSchema, LocationDescribeQuerySchema, ObjectReadQuerySchema, ObjectInspectQuerySchema, TakeCharacterItemCommandSchema,
   DropCharacterItemCommandSchema, InventoryItemProjectionSchema, WorldPackDraftSchema,
   QuestDefinitionSchema, validateDraftWorldGraph, MapPositionSchema, WorldMapProjectionSchema,
+  NpcDialogueDefinitionSchema,
 } from '../dist/src/index.js';
+
+test('NPC dialogue branches reference existing flags, hide prior choices, and cannot form cycles', () => {
+  const dialogue = {
+    prompt: 'What would you like to ask?',
+    choices: [
+      {
+        id: 'ask-town',
+        label: 'What is the town like?',
+        response: 'It is a working village.',
+        progressFlagId: 'asked-town',
+      },
+      {
+        id: 'ask-beyond',
+        label: 'What lies beyond town?',
+        response: 'There are other settlements.',
+        progressFlagId: 'asked-beyond',
+        requiresProgressFlagIds: ['asked-town'],
+      },
+      {
+        id: 'ask-identity',
+        label: 'Who are you?',
+        response: 'I am a local guard.',
+        progressFlagId: 'asked-identity',
+        hideAfterProgressFlagIds: ['asked-town'],
+      },
+    ],
+  };
+
+  const parsed = NpcDialogueDefinitionSchema.parse(dialogue);
+  assert.deepEqual(parsed.choices[0].requiresProgressFlagIds, []);
+  assert.deepEqual(parsed.choices[0].hideAfterProgressFlagIds, []);
+  assert.deepEqual(parsed.choices[1].requiresProgressFlagIds, ['asked-town']);
+  assert.deepEqual(parsed.choices[2].hideAfterProgressFlagIds, ['asked-town']);
+  assert.equal(NpcDialogueDefinitionSchema.safeParse({
+    ...dialogue,
+    choices: [
+      dialogue.choices[0],
+      { ...dialogue.choices[1], requiresProgressFlagIds: ['missing-flag'] },
+      dialogue.choices[2],
+    ],
+  }).success, false);
+  assert.equal(NpcDialogueDefinitionSchema.safeParse({
+    ...dialogue,
+    choices: [
+      dialogue.choices[0],
+      dialogue.choices[1],
+      { ...dialogue.choices[2], hideAfterProgressFlagIds: ['missing-flag'] },
+    ],
+  }).success, false);
+  assert.equal(NpcDialogueDefinitionSchema.safeParse({
+    ...dialogue,
+    choices: [
+      { ...dialogue.choices[0], requiresProgressFlagIds: ['asked-beyond'] },
+      dialogue.choices[1],
+      dialogue.choices[2],
+    ],
+  }).success, false);
+});
 
 test('map terrain is open-ended and developer colors are validated', () => {
   assert.equal(MapPositionSchema.safeParse({

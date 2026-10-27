@@ -52,33 +52,53 @@ function bellwoldSmallTalkChoices(
   identity: string,
   activity: string,
   town: string,
-  additionalQuestions: Array<{ id: string; label: string; response: string }> = [],
+  additionalQuestions: Array<{
+    id: string;
+    label: string;
+    response: string;
+    requiresProgressFlagIds?: string[];
+    hideAfterProgressFlagIds?: string[];
+  }> = [],
+  hideInitialChoicesAfterProgressFlagIds: string[] = [],
 ) {
+  const initialChoiceVisibility = hideInitialChoicesAfterProgressFlagIds.length
+    ? { hideAfterProgressFlagIds: hideInitialChoicesAfterProgressFlagIds }
+    : {};
   return [
     {
       id: `${npcId}-who-are-you`,
       label: 'Who are you?',
       response: identity,
       progressFlagId: `${npcId}-asked-who`,
+      ...initialChoiceVisibility,
     },
     {
       id: `${npcId}-what-are-you-doing`,
       label: 'What are you doing?',
       response: activity,
       progressFlagId: `${npcId}-asked-activity`,
+      ...initialChoiceVisibility,
     },
     {
       id: `${npcId}-about-bellwold`,
       label: 'What is Bellwold like?',
       response: town,
       progressFlagId: `${npcId}-asked-about-town`,
+      ...initialChoiceVisibility,
     },
-    ...additionalQuestions.map(({ id, label, response }) => ({
-      id: `${npcId}-${id}`,
-      label,
-      response,
-      progressFlagId: `${npcId}-asked-${id}`,
-    })),
+    ...additionalQuestions.map(({ id, label, response, requiresProgressFlagIds, hideAfterProgressFlagIds }) => {
+      const isFollowup = (requiresProgressFlagIds?.length ?? 0) > 0;
+      const hideAfter = hideAfterProgressFlagIds ??
+        (!isFollowup ? hideInitialChoicesAfterProgressFlagIds : undefined);
+      return {
+        id: `${npcId}-${id}`,
+        label,
+        response,
+        progressFlagId: `${npcId}-asked-${id}`,
+        ...(requiresProgressFlagIds ? { requiresProgressFlagIds } : {}),
+        ...(hideAfter?.length ? { hideAfterProgressFlagIds: hideAfter } : {}),
+      };
+    }),
   ];
 }
 
@@ -108,7 +128,7 @@ function banditEncounter(id: string) {
 const draft = {
   formatVersion: 1,
   packId: 'orraveth.bellwold',
-  packVersion: '1.16.0',
+  packVersion: '1.17.0',
   displayName: 'Orraveth: Bellwold',
   dailyBoards: [{
     id: 'bellwold-notice-board', locationId: 'bellwold-south-common', name: 'South Common bulletin board',
@@ -296,8 +316,10 @@ const draft = {
                   id: 'beyond-the-frontier',
                   label: 'What do you hear about places beyond Bellwold?',
                   response: '“Reports speak of merchant city-states, mountain assemblies, river councils, and communities with no central ruler. I guard this circuit; I can’t vouch for every report.”',
+                  requiresProgressFlagIds: ['taren-voss-asked-about-town'],
                 },
               ],
+              ['taren-voss-asked-about-town'],
             ),
           },
           movement: {
