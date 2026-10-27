@@ -13,6 +13,7 @@ import {
   assertCharacterAlive, characterStateCapability, staminaRecoveryEvent,
 } from './character.js';
 import { exitsForLocationState, resolveLocationState } from './location-state.js';
+import { interruptActiveTimedActions } from './timed-action-interruption.js';
 
 interface CharacterStateCapability {
   load(context: EngineCommandContext, characterId: string): Promise<CharacterProjection | undefined>;
@@ -104,6 +105,7 @@ export function createMovementPlan(
   return {
     exit,
     events: [
+      ...interruptActiveTimedActions(character),
       recoveryEvent,
       { type: 'character.moved', version: 1, payload },
     ],

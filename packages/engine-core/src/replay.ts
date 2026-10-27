@@ -169,7 +169,7 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
     } else if (event.type === 'character.fishing_cast_started') {
       if (!state) throw new Error('Fishing cast started before character creation.');
       const started = FishingCastStartedEventSchema.parse(publicEvent).payload;
-      if (started.characterId !== state.characterId || state.activeFishing ||
+      if (started.characterId !== state.characterId || state.activeFishing || state.activeWoodcutting ||
           started.cast.locationId !== state.locationId ||
           !state.inventory.some((item) => item.id === started.cast.rodItemId && item.fishingRod?.qualityId === started.cast.rodQualityId)) {
         throw new Error(`Invalid fishing cast start at revision ${event.aggregateVersion}.`);

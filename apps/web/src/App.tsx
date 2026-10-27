@@ -1419,11 +1419,26 @@ export function WorldClient({
     if (!snapshot?.character || pending) return;
     setPending("use");
     try {
-      await client.startFishingCast(snapshot.character.characterId, rodItemId, snapshot.character.revision);
+      const result = await client.startFishingCast(
+        snapshot.character.characterId,
+        rodItemId,
+        snapshot.character.revision,
+      );
       const next = await client.getGame();
       setSnapshot(next);
       setConnectionError("");
-      addEntry("narration", "You cast your line and wait...");
+      const stoppedChopping = result.events?.some((event) =>
+        event.type === "character.woodcutting_action_advanced");
+      const restartedFishing = result.events?.some((event) =>
+        event.type === "character.fishing_cast_advanced");
+      addEntry(
+        "narration",
+        stoppedChopping
+          ? "You lower your axe, cast your line, and wait..."
+          : restartedFishing
+            ? "You reel in your line, cast again, and wait..."
+            : "You cast your line and wait...",
+      );
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "You cannot fish here.");
     } finally {
@@ -1582,11 +1597,27 @@ export function WorldClient({
     if (!snapshot?.character || pending) return;
     setPending("use");
     try {
-      await client.startWoodcutting(snapshot.character.characterId, axeItemId, treeId, snapshot.character.revision);
+      const result = await client.startWoodcutting(
+        snapshot.character.characterId,
+        axeItemId,
+        treeId,
+        snapshot.character.revision,
+      );
       const next = await client.getGame();
       setSnapshot(next);
       setConnectionError("");
-      addEntry("narration", "You begin swinging your axe at the tree...");
+      const stoppedFishing = result.events?.some((event) =>
+        event.type === "character.fishing_cast_advanced");
+      const restartedChopping = result.events?.some((event) =>
+        event.type === "character.woodcutting_action_advanced");
+      addEntry(
+        "narration",
+        stoppedFishing
+          ? "You reel in your line and begin swinging your axe at the tree..."
+          : restartedChopping
+            ? "You pause, then swing your axe at the tree again..."
+            : "You begin swinging your axe at the tree...",
+      );
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "You cannot chop that tree.");
     } finally {
@@ -2183,6 +2214,12 @@ export function WorldClient({
       setSnapshot(nextSnapshot);
       setConnectionError("");
       if (nextSnapshot.location?.locationId !== fromLocationId) {
+        const stoppedFishing = response.events?.some((event) =>
+          event.type === "character.fishing_cast_advanced");
+        const stoppedChopping = response.events?.some((event) =>
+          event.type === "character.woodcutting_action_advanced");
+        if (stoppedFishing) addEntry("narration", "You reel in your line before moving on.");
+        if (stoppedChopping) addEntry("narration", "You lower your axe before moving on.");
         const reconciled = nextSnapshot.location
           ? reconcileOptimisticTravel(nextSnapshot.location, commandId)
           : false;

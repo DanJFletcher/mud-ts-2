@@ -12,6 +12,7 @@ import {
 } from '@mudd/contracts';
 import { RuleViolationError, type EnginePlugin } from '@mudd/engine-core';
 import { assertCharacterAlive, assertCharacterStanding, characterStateCapability, isInSharedCombat, type CharacterStateCapability } from './character.js';
+import { interruptActiveTimedActions } from './timed-action-interruption.js';
 
 function selectWeighted<T extends { weightPercent: number }>(
   entries: readonly T[],
@@ -86,9 +87,6 @@ export const fishingPlugin: EnginePlugin = {
       if (character.combat?.status === 'active' || await isInSharedCombat(context, character.characterId)) {
         throw new RuleViolationError('You cannot fish during combat.');
       }
-      if (character.activeFishing || character.activeWoodcutting) {
-        throw new RuleViolationError('Finish your current timed activity first.');
-      }
       const spot = context.world.fishingSpots.find((candidate) => candidate.locationId === character.locationId);
       if (!spot) throw new RuleViolationError('There is no designated fishing spot here.');
       const location = context.world.locations.find((candidate) => candidate.id === character.locationId);
@@ -113,7 +111,10 @@ export const fishingPlugin: EnginePlugin = {
       return {
         streamId: character.characterId,
         expectedVersion: command.expectedVersion,
-        events: [{ type: 'character.fishing_cast_started', version: 1, payload }],
+        events: [
+          ...interruptActiveTimedActions(character),
+          { type: 'character.fishing_cast_started', version: 1, payload },
+        ],
       };
     });
 

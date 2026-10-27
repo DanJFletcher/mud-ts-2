@@ -17,6 +17,7 @@ import {
   isInSharedCombat,
   type CharacterStateCapability,
 } from './character.js';
+import { interruptActiveTimedActions } from './timed-action-interruption.js';
 
 export const WOODCUTTING_TREES_STREAM_ID = 'woodcutting-trees';
 
@@ -93,9 +94,6 @@ export const woodcuttingPlugin: EnginePlugin = {
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
       assertCharacterAlive(character);
       assertCharacterStanding(character);
-      if (character.activeWoodcutting || character.activeFishing) {
-        throw new RuleViolationError('Finish your current timed activity first.');
-      }
       if (character.combat?.status === 'active' || await isInSharedCombat(context, character.characterId)) {
         throw new RuleViolationError('You cannot chop wood during combat.');
       }
@@ -132,7 +130,10 @@ export const woodcuttingPlugin: EnginePlugin = {
       return {
         streamId: character.characterId,
         expectedVersion: command.expectedVersion,
-        events: [{ type: 'character.woodcutting_action_started', version: 1, payload }],
+        events: [
+          ...interruptActiveTimedActions(character),
+          { type: 'character.woodcutting_action_started', version: 1, payload },
+        ],
       };
     });
 

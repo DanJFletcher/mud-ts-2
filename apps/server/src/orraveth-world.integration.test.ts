@@ -109,6 +109,15 @@ describe('Orraveth Bellwold settlement', () => {
     let clock = new Date('2026-10-24T12:00:00.000Z');
     const world = structuredClone(orravethWorld);
     const tree = world.woodcuttingTrees.find((candidate) => candidate.id === 'bellwold-southbound-pine')!;
+    world.roads = [];
+    for (const location of world.locations) {
+      for (const exit of location.exits) delete exit.roadId;
+    }
+    const testFishingSpot = structuredClone(world.fishingSpots[0]!);
+    testFishingSpot.id = 'test-southbound-fishing-spot';
+    testFishingSpot.locationId = tree.locationId;
+    delete testFishingSpot.stateId;
+    world.fishingSpots.push(testFishingSpot);
     const millCopperAxe = world.locations
       .find(({ id }) => id === 'abandoned-watermill')
       ?.takeables?.find(({ id }) => id === 'mill-copper-axe');
@@ -129,6 +138,13 @@ describe('Orraveth Bellwold settlement', () => {
         description: 'A test iron axe.', woodcuttingAxe: { requiredLevel: 10, power: 2 },
       },
       millCopperAxe,
+      {
+        id: 'test-fishing-rod',
+        typeId: 'old-fishing-rod',
+        label: 'old rod',
+        description: 'A test fishing rod.',
+        fishingRod: { qualityId: 'old', biteChancePercent: 10, waitSeconds: 10 },
+      },
     ];
     world.locations.unshift(treeLocation!);
     world.respawn = { locationId: tree.locationId };
@@ -173,6 +189,11 @@ describe('Orraveth Bellwold settlement', () => {
         expectedVersion: firstCharacter.revision, payload: { itemId: 'test-iron-axe' },
       });
       firstCharacter = await h.loadCharacter(first);
+      await h.dispatch(first, {
+        type: 'character.take', version: 1, commandId: 'woodcut-take-fishing-rod',
+        expectedVersion: firstCharacter.revision, payload: { itemId: 'test-fishing-rod' },
+      });
+      firstCharacter = await h.loadCharacter(first);
       const underLevelAttempt = await h.engine.dispatch({
         type: 'woodcutting.start', version: 1, commandId: 'woodcut-iron-under-level',
         worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID, characterId: first,
@@ -202,6 +223,80 @@ describe('Orraveth Bellwold settlement', () => {
         status: 'interrupted',
       });
       expect((await h.loadCharacter(first)).activeWoodcutting).toBeUndefined();
+
+      firstCharacter = await h.loadCharacter(first);
+      await h.dispatch(first, {
+        type: 'woodcutting.start',
+        version: 1,
+        commandId: 'woodcut-before-fishing',
+        expectedVersion: firstCharacter.revision,
+        payload: { axeItemId: 'mill-copper-axe', treeId: tree.id },
+      });
+      firstCharacter = await h.loadCharacter(first);
+      const switchedToFishing = await client.startFishingCast(
+        first, 'test-fishing-rod', firstCharacter.revision, 'start-fishing-cancels-woodcutting',
+      );
+      expect(switchedToFishing.events.map((event) => event.type)).toEqual([
+        'character.woodcutting_action_advanced',
+        'character.fishing_cast_started',
+      ]);
+      expect(switchedToFishing.events[0]?.payload).toMatchObject({ status: 'interrupted' });
+      firstCharacter = await h.loadCharacter(first);
+      expect(firstCharacter.activeWoodcutting).toBeUndefined();
+      expect(firstCharacter.activeFishing).toBeDefined();
+
+      const leaveRoom = await h.dispatch(first, {
+        type: 'character.move',
+        version: 1,
+        commandId: 'move-cancels-fishing',
+        expectedVersion: firstCharacter.revision,
+        payload: { exitId: 'southbound-track-to-gate' },
+      });
+      expect(leaveRoom.events.map((event) => event.type)).toContain('character.fishing_cast_advanced');
+      expect(leaveRoom.events.map((event) => event.type)).toContain('character.moved');
+      expect(leaveRoom.events.findIndex((event) =>
+        event.type === 'character.fishing_cast_advanced')).toBeLessThan(
+        leaveRoom.events.findIndex((event) => event.type === 'character.moved'),
+      );
+      expect(leaveRoom.events.find((event) =>
+        event.type === 'character.fishing_cast_advanced')?.payload).toMatchObject({ status: 'interrupted' });
+      let movedCharacter = await h.loadCharacter(first);
+      expect(movedCharacter.activeFishing).toBeUndefined();
+      expect(movedCharacter.locationId).toBe('bellwold-south-gate');
+      await h.dispatch(first, {
+        type: 'character.move',
+        version: 1,
+        commandId: 'return-to-southbound-track',
+        expectedVersion: movedCharacter.revision,
+        payload: { exitId: 'south-gate-to-track' },
+      });
+      movedCharacter = await h.loadCharacter(first);
+      const secondFishingCast = await client.startFishingCast(
+        first, 'test-fishing-rod', movedCharacter.revision, 'start-fishing-before-woodcut',
+      );
+      expect(secondFishingCast.events.map((event) => event.type)).toContain('character.fishing_cast_started');
+      movedCharacter = await h.loadCharacter(first);
+      const switchedToWoodcutting = await h.dispatch(first, {
+        type: 'woodcutting.start',
+        version: 1,
+        commandId: 'start-woodcutting-cancels-fishing',
+        expectedVersion: movedCharacter.revision,
+        payload: { axeItemId: 'mill-copper-axe', treeId: tree.id },
+      });
+      expect(switchedToWoodcutting.events.map((event) => event.type)).toEqual([
+        'character.fishing_cast_advanced',
+        'character.woodcutting_action_started',
+      ]);
+      expect(switchedToWoodcutting.events[0]?.payload).toMatchObject({ status: 'interrupted' });
+      firstCharacter = await h.loadCharacter(first);
+      expect(firstCharacter.activeFishing).toBeUndefined();
+      expect(firstCharacter.activeWoodcutting).toBeDefined();
+      await client.cancelWoodcutting(
+        first,
+        firstCharacter.activeWoodcutting!.actionId,
+        firstCharacter.revision,
+        'cleanup-woodcutting-test-action',
+      );
 
       const chop = async (characterId: string, commandId: string) => {
         let character = await h.loadCharacter(characterId);
