@@ -3,8 +3,32 @@ import type { StoredGameEvent } from '@mudd/engine-core';
 import {
   autonomousNpcsPlugin,
   autonomousNpcStreamId,
+  effectiveAutonomousNpcMovementIntervalMs,
+  mobileNpcDefinitions,
+  projectAutonomousNpcPosition,
   type AutonomousNpcStateCapability,
 } from './autonomous-npcs.js';
+
+const worldInstanceId = 'autonomous-npc-tick-test';
+const attemptedAt = '2026-10-27T12:00:00.000Z';
+
+function event(type: string, payload: Record<string, unknown>, revision = 1): StoredGameEvent {
+  const streamId = autonomousNpcStreamId('walker');
+  return {
+    eventId: `npc-event-${revision}`,
+    worldInstanceId,
+    streamId,
+    aggregateId: streamId,
+    aggregateVersion: revision,
+    type,
+    version: 1,
+    payload,
+    causationCommandId: `npc-command-${revision}`,
+    actorId: 'system',
+    occurredAt: attemptedAt,
+    tick: revision,
+  } as unknown as StoredGameEvent;
+}
 
 function captureNpcStateCapability() {
   let capability: AutonomousNpcStateCapability | undefined;
@@ -16,6 +40,58 @@ function captureNpcStateCapability() {
   } as never);
   if (!capability) throw new Error('Autonomous NPC state capability was not registered.');
   return capability;
+}
+
+function captureTickCommand() {
+  let tick: ((command: any, context: any) => Promise<any>) | undefined;
+  autonomousNpcsPlugin.register({
+    provideCapability: () => undefined,
+    registerSystemCommand: (name: string, _schema: unknown, handler: unknown) => {
+      if (name === 'world.npc.tick') tick = handler as typeof tick;
+    },
+  } as never);
+  if (!tick) throw new Error('Autonomous NPC tick command was not registered.');
+  return tick;
+}
+
+function wanderingWorld(overrides: Record<string, unknown> = {}) {
+  return {
+    locations: [
+      {
+        id: 'room-a',
+        exits: [{
+          id: 'a-to-b',
+          fromLocationId: 'room-a',
+          toLocationId: 'room-b',
+          label: 'East',
+          direction: 'east',
+        }],
+        npcs: [{
+          id: 'walker',
+          name: 'Walker',
+          description: 'A traveler.',
+          movement: {
+            strategy: 'wander',
+            intervalMs: 10_000,
+            stayChancePercent: 0,
+            allowedLocationIds: ['room-a', 'room-b'],
+          },
+        }],
+      },
+      {
+        id: 'room-b',
+        exits: [{
+          id: 'b-to-a',
+          fromLocationId: 'room-b',
+          toLocationId: 'room-a',
+          label: 'West',
+          direction: 'west',
+        }],
+        npcs: [],
+      },
+    ],
+    ...overrides,
+  };
 }
 
 describe('autonomous NPC position projection cache', () => {
@@ -105,5 +181,277 @@ describe('autonomous NPC position projection cache', () => {
     await expect(capability.atLocation(context, 'room-a')).rejects.toThrow(
       'Unsupported NPC world event version',
     );
+  });
+});
+
+describe('autonomous NPC movement', () => {
+  it('keeps only mobile NPC definitions and enforces the one-minute minimum interval', () => {
+    const world = wanderingWorld() as any;
+    expect(mobileNpcDefinitions(world).map(({ npc, initialLocationId }) => ({
+      id: npc.id,
+      initialLocationId,
+    }))).toEqual([{ id: 'walker', initialLocationId: 'room-a' }]);
+    expect(effectiveAutonomousNpcMovementIntervalMs(5_000)).toBe(60_000);
+    expect(effectiveAutonomousNpcMovementIntervalMs(90_000)).toBe(90_000);
+  });
+
+  it('replays movement and wait events, preserving route indexes and rejecting inconsistent history', () => {
+    const moved = event('world.npc.moved', {
+      npcId: 'walker',
+      fromLocationId: 'room-a',
+      toLocationId: 'room-b',
+      exitId: 'a-to-b',
+      attemptedAt,
+      routeIndex: 1,
+    });
+    const waited = event('world.npc.movement_waited', {
+      npcId: 'walker',
+      locationId: 'room-b',
+      attemptedAt: '2026-10-27T12:01:00.000Z',
+      routeIndex: 1,
+    }, 2);
+    expect(projectAutonomousNpcPosition([moved, waited], 'walker', 'room-a')).toMatchObject({
+      locationId: 'room-b',
+      revision: 2,
+      lastAttemptAt: '2026-10-27T12:01:00.000Z',
+      routeIndex: 1,
+    });
+    expect(() => projectAutonomousNpcPosition([moved], 'other-npc', 'room-a'))
+      .toThrow('movement history is inconsistent');
+    expect(() => projectAutonomousNpcPosition([
+      event('world.npc.moved', {
+        npcId: 'walker',
+        fromLocationId: 'room-a',
+        toLocationId: 'room-b',
+        exitId: 'a-to-b',
+        attemptedAt,
+        routeIndex: -1,
+      }),
+    ], 'walker', 'room-a')).toThrow();
+    expect(() => projectAutonomousNpcPosition([
+      event('world.npc.movement_waited', {
+        npcId: 'walker',
+        locationId: 'room-b',
+        attemptedAt,
+      }),
+    ], 'walker', 'room-a')).toThrow('movement history is inconsistent');
+  });
+
+  it('moves a wandering NPC through a valid exit and records an authoritative wait', async () => {
+    const tick = captureTickCommand();
+    const rng = { roll: vi.fn().mockReturnValueOnce(50).mockReturnValueOnce(1) };
+    const context = {
+      worldInstanceId,
+      world: wanderingWorld(),
+      store: { readStream: vi.fn(async () => []) },
+      rng,
+      now: () => new Date(attemptedAt),
+    };
+    const moved = await tick({ npcId: 'walker' }, context);
+    expect(moved).toMatchObject({
+      streamId: autonomousNpcStreamId('walker'),
+      expectedVersion: 0,
+      events: [{
+        type: 'world.npc.moved',
+        payload: {
+          npcId: 'walker',
+          fromLocationId: 'room-a',
+          toLocationId: 'room-b',
+          exitId: 'a-to-b',
+          direction: 'east',
+        },
+      }],
+    });
+
+    const noCandidates = captureTickCommand();
+    const wanderFixture = wanderingWorld();
+    const firstRoom = wanderFixture.locations[0]!;
+    const secondRoom = wanderFixture.locations[1]!;
+    const waited = await noCandidates({ npcId: 'walker' }, {
+      ...context,
+      world: wanderingWorld({
+        locations: [{
+          ...firstRoom,
+          exits: [{
+            ...firstRoom.exits[0]!,
+            requiredInteractionId: 'locked-gate',
+          }],
+        }, {
+          ...secondRoom,
+          requiredVisitedLocationId: 'secret-room',
+        }],
+      }),
+      rng: { roll: vi.fn().mockReturnValue(50) },
+    });
+    expect(waited.events[0]).toMatchObject({
+      type: 'world.npc.movement_waited',
+      payload: { npcId: 'walker', locationId: 'room-a', attemptedAt },
+    });
+  });
+
+  it('rejects invalid and early ticks, then follows a route or records a wait at a broken link', async () => {
+    const tick = captureTickCommand();
+    const context = {
+      worldInstanceId,
+      world: wanderingWorld(),
+      store: {
+        readStream: vi.fn(async () => [event('world.npc.movement_waited', {
+          npcId: 'walker',
+          locationId: 'room-a',
+          attemptedAt: '2026-10-27T12:00:00.000Z',
+        })]),
+      },
+      rng: { roll: vi.fn() },
+      now: () => new Date('2026-10-27T12:00:59.999Z'),
+    };
+    await expect(tick({ npcId: 'missing-npc' }, context)).rejects.toThrow('no autonomous movement');
+    await expect(tick({ npcId: 'walker' }, context)).rejects.toThrow('not due to move yet');
+    expect(context.rng.roll).not.toHaveBeenCalled();
+
+    const routeWorld = {
+      locations: [{
+        id: 'room-a',
+        exits: [{
+          id: 'a-to-b',
+          fromLocationId: 'room-a',
+          toLocationId: 'room-b',
+          label: 'East',
+        }],
+        npcs: [{
+          id: 'walker',
+          name: 'Walker',
+          description: 'A traveler.',
+          movement: {
+            strategy: 'route',
+            intervalMs: 60_000,
+            routeLocationIds: ['room-a', 'room-b'],
+          },
+        }],
+      }, {
+        id: 'room-b',
+        exits: [],
+        npcs: [],
+      }],
+    };
+    const route = await tick({ npcId: 'walker' }, {
+      ...context,
+      world: routeWorld,
+      store: { readStream: vi.fn(async () => []) },
+      now: () => new Date('2026-10-27T12:01:00.000Z'),
+    });
+    expect(route.events[0]).toMatchObject({
+      type: 'world.npc.moved',
+      payload: { toLocationId: 'room-b', routeIndex: 1 },
+    });
+
+    const blockedRoute = await tick({ npcId: 'walker' }, {
+      ...context,
+      world: { ...routeWorld, locations: [{ ...routeWorld.locations[0], exits: [] }, routeWorld.locations[1]] },
+      store: { readStream: vi.fn(async () => []) },
+      now: () => new Date('2026-10-27T12:01:00.000Z'),
+    });
+    expect(blockedRoute.events[0]).toMatchObject({
+      type: 'world.npc.movement_waited',
+      payload: { locationId: 'room-a', routeIndex: 0 },
+    });
+  });
+
+  it('uses single-stream reads when batching is unavailable and ignores NPCs outside requested rooms', async () => {
+    const capability = captureNpcStateCapability();
+    const readStream = vi.fn(async () => [event('world.npc.moved', {
+      npcId: 'walker',
+      fromLocationId: 'room-a',
+      toLocationId: 'room-b',
+      exitId: 'a-to-b',
+      attemptedAt,
+    })]);
+    const world = wanderingWorld();
+    world.locations[0]!.npcs!.push({
+      id: 'resident',
+      name: 'Resident',
+      description: 'A local.',
+    } as any);
+    const projected = await capability.atLocations({
+      worldInstanceId,
+      world,
+      store: { readStream },
+    } as never, ['room-b']);
+
+    expect(readStream).toHaveBeenCalledWith(worldInstanceId, autonomousNpcStreamId('walker'));
+    expect(projected.get('room-b')?.map(({ id }) => id)).toEqual(['walker']);
+  });
+
+  it('does not batch-read locations that contain no mobile NPCs', async () => {
+    const capability = captureNpcStateCapability();
+    const readStreams = vi.fn(async () => new Map());
+    const projected = await capability.atLocations({
+      worldInstanceId,
+      world: {
+        locations: [{
+          id: 'room-a',
+          npcs: [{ id: 'resident', name: 'Resident', description: 'A local.' }],
+        }],
+      },
+      store: { readStreams },
+    } as never, ['room-a']);
+
+    expect(readStreams).not.toHaveBeenCalled();
+    expect(projected.get('room-a')?.map(({ id }) => id)).toEqual(['resident']);
+  });
+
+  it('evicts the oldest cached NPC positions after the cache exceeds its bound', async () => {
+    const capability = captureNpcStateCapability();
+    const npcs = Array.from({ length: 257 }, (_, index) => ({
+      id: `walker-${index}`,
+      name: `Walker ${index}`,
+      description: 'A traveler.',
+      movement: {
+        strategy: 'wander',
+        intervalMs: 60_000,
+        stayChancePercent: 10,
+        allowedLocationIds: ['room-a', 'room-b'],
+      },
+    }));
+    const readStreams = vi.fn(async () => new Map());
+
+    const projected = await capability.atLocations({
+      worldInstanceId: 'npc-cache-limit-test',
+      world: { locations: [{ id: 'room-a', npcs }] },
+      store: { readStreams },
+    } as never, ['room-a']);
+
+    expect(projected.get('room-a')).toHaveLength(257);
+    expect(readStreams).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses to move combat-capable NPCs or NPCs whose current location is missing', async () => {
+    const tick = captureTickCommand();
+    const combatWorld = wanderingWorld();
+    combatWorld.locations[0]!.npcs![0] = {
+      ...combatWorld.locations[0]!.npcs![0],
+      combatProfile: { maxHealth: 8, attackDamage: 2 },
+    } as any;
+    await expect(tick({ npcId: 'walker' }, {
+      worldInstanceId,
+      world: combatWorld,
+      store: { readStream: vi.fn(async () => []) },
+      now: () => new Date(attemptedAt),
+      rng: { roll: vi.fn() },
+    })).rejects.toThrow('NPCs that can participate in combat cannot wander in this version');
+
+    const movedOut = event('world.npc.moved', {
+      npcId: 'walker',
+      fromLocationId: 'room-a',
+      toLocationId: 'missing-room',
+      exitId: 'broken-exit',
+      attemptedAt: '2026-10-27T12:01:00.000Z',
+    });
+    await expect(tick({ npcId: 'walker' }, {
+      worldInstanceId,
+      world: wanderingWorld(),
+      store: { readStream: vi.fn(async () => [movedOut]) },
+      now: () => new Date('2026-10-27T12:02:00.000Z'),
+      rng: { roll: vi.fn() },
+    })).rejects.toThrow('location missing from this world');
   });
 });

@@ -283,4 +283,41 @@ describe('party queries and state capability', () => {
       expect.objectContaining({ groupId: activeParty.groupId, type: 'closed' }),
     ]));
   });
+
+  it('includes joined, left, and closed activity after the requested revision', async () => {
+    const history = [
+      ...createHistory(),
+      storedEvent('group.member_joined', {
+        groupId: activeParty.groupId,
+        member,
+        joinedAt: '2026-10-27T10:05:00.000Z',
+      }, 2),
+      storedEvent('group.member_left', {
+        groupId: activeParty.groupId,
+        playerId: memberId,
+        leftAt: '2026-10-27T10:10:00.000Z',
+      }, 3),
+      storedEvent('group.closed', {
+        groupId: activeParty.groupId,
+        closedByPlayerId: leaderId,
+        closedAt: '2026-10-27T10:15:00.000Z',
+      }, 4),
+    ];
+    const test = harness({
+      playerId: memberId,
+      events: history,
+    });
+
+    const info = await test.queries.get('party.info')!({
+      payload: { afterRevision: 1 },
+    }, test.context) as any;
+
+    expect(info.party).toBeNull();
+    expect(info.revision).toBe(4);
+    expect(info.activity).toEqual([
+      expect.objectContaining({ revision: 2, type: 'joined', playerId: memberId, displayName: 'Briar' }),
+      expect.objectContaining({ revision: 3, type: 'left', playerId: memberId }),
+      expect.objectContaining({ revision: 4, type: 'closed', playerId: leaderId }),
+    ]);
+  });
 });
