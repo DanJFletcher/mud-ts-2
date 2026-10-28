@@ -7,8 +7,10 @@ type BenchmarkConfig = {
 
 type Timings = {
   poolAcquireMs: number;
+  beginMs: number;
   selectOneMs: number;
   indexedReadMs: number;
+  commitMs: number;
   totalMs: number;
 };
 
@@ -70,7 +72,9 @@ export async function runReadOnlyDbBenchmark(config: BenchmarkConfig): Promise<v
       const client = await pool.connect();
       const poolAcquireMs = performance.now() - acquireStarted;
       try {
+        const beginStarted = performance.now();
         await client.query('BEGIN READ ONLY');
+        const beginMs = performance.now() - beginStarted;
         const selectOneStarted = performance.now();
         await client.query('SELECT 1');
         const selectOneMs = performance.now() - selectOneStarted;
@@ -83,11 +87,15 @@ export async function runReadOnlyDbBenchmark(config: BenchmarkConfig): Promise<v
           [catalog.pack_id, catalog.pack_version],
         );
         const indexedReadMs = performance.now() - indexedReadStarted;
+        const commitStarted = performance.now();
         await client.query('COMMIT');
+        const commitMs = performance.now() - commitStarted;
         return {
           poolAcquireMs,
+          beginMs,
           selectOneMs,
           indexedReadMs,
+          commitMs,
           totalMs: performance.now() - totalStarted,
         };
       } catch (error) {
@@ -109,8 +117,10 @@ export async function runReadOnlyDbBenchmark(config: BenchmarkConfig): Promise<v
       samples: timings.length,
       measuredSelectsPerSample: 2,
       poolAcquireMs: summarizeReadOnlyDbBenchmark(timings.map((item) => item.poolAcquireMs)),
+      beginMs: summarizeReadOnlyDbBenchmark(timings.map((item) => item.beginMs)),
       selectOneMs: summarizeReadOnlyDbBenchmark(timings.map((item) => item.selectOneMs)),
       indexedReadMs: summarizeReadOnlyDbBenchmark(timings.map((item) => item.indexedReadMs)),
+      readOnlyCommitMs: summarizeReadOnlyDbBenchmark(timings.map((item) => item.commitMs)),
       sequentialTotalMs: summarizeReadOnlyDbBenchmark(timings.map((item) => item.totalMs)),
       pool: {
         total: pool.totalCount,

@@ -73,6 +73,7 @@ describe('read-only database benchmark runner', () => {
       dataWritten: false,
       pool: { total: 4, idle: 3, waiting: 0 },
     });
+    expect(report).toHaveProperty('readOnlyCommitMs');
     expect(report).not.toHaveProperty('pack_id');
     log.mockRestore();
   });
