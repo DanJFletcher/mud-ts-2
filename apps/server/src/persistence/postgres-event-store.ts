@@ -20,7 +20,7 @@ import {
 } from '../db/schema.js';
 import { db } from '../db/client.js';
 import { retainCharacterReplayPrefix, replayCharacter } from '@mudd/engine-core';
-import { measureDatabaseOperation } from '../performance.js';
+import { measureDatabaseOperation, measureStage } from '../performance.js';
 
 export function toStoredGameEvent(row: typeof gameEvents.$inferSelect): StoredGameEvent {
   return {
@@ -408,15 +408,18 @@ export class PostgresEventStore implements EventStorePort {
   }
 
   async append(request: AppendRequest): Promise<AppendOutcome> {
+    const appendStage = <T>(name: string, run: () => Promise<T>) =>
+      measureStage(`event_store.append.${name}`, run);
     const outcome = await measureDatabaseOperation('event_store.command_append', () => db.transaction(async (tx): Promise<AppendOutcome> => {
       // Lock command identity first so retries cannot race across different stream IDs.
-      await tx.execute(sql`
+      await appendStage('command_lock', () => tx.execute(sql`
         SELECT pg_advisory_xact_lock(hashtext(${request.worldInstanceId}), hashtext(${`${request.actorId}:${request.commandId}`}))`);
-      const [prior] = await tx.select().from(commandReceipts).where(and(
+      ));
+      const [prior] = await appendStage('receipt_lookup', () => tx.select().from(commandReceipts).where(and(
         eq(commandReceipts.worldInstanceId, request.worldInstanceId),
         eq(commandReceipts.actorId, request.actorId),
         eq(commandReceipts.commandId, request.commandId),
-      )).limit(1);
+      )).limit(1));
       if (prior) {
         if (prior.payloadHash !== request.payloadHash) {
           return {
@@ -444,7 +447,7 @@ export class PostgresEventStore implements EventStorePort {
         lockedStreamIds.map((streamId) => sql`(${streamId})`),
         sql`, `,
       );
-      await tx.execute(sql`
+      await appendStage('stream_locks', () => tx.execute(sql`
         WITH ordered_streams AS MATERIALIZED (
           SELECT stream_id
           FROM (VALUES ${lockedStreamValues}) AS streams(stream_id)
@@ -452,16 +455,16 @@ export class PostgresEventStore implements EventStorePort {
         )
         SELECT pg_advisory_xact_lock(hashtext(${request.worldInstanceId}), hashtext(stream_id))
         FROM ordered_streams
-        ORDER BY stream_id`);
+        ORDER BY stream_id`));
 
       // All these heads are authoritative after their advisory locks are held.
-      const headRows = await tx.select({
+      const headRows = await appendStage('head_check', () => tx.select({
         streamId: gameEvents.streamId,
         revision: sql<number>`max(${gameEvents.streamVersion})`,
       }).from(gameEvents).where(and(
         eq(gameEvents.worldInstanceId, request.worldInstanceId),
         inArray(gameEvents.streamId, lockedStreamIds),
-      )).groupBy(gameEvents.streamId);
+      )).groupBy(gameEvents.streamId));
       const revisions = new Map(headRows.map((head) => [head.streamId, Number(head.revision)]));
       for (const check of checks) {
         if ((revisions.get(check.streamId) ?? 0) !== check.expectedVersion) {
@@ -548,10 +551,11 @@ export class PostgresEventStore implements EventStorePort {
           events: appended,
         }).returning({ commandId: commandReceipts.commandId }),
       );
-      const [persisted] = await tx.with(insertedEvents, insertedReceipt).select({
+      const [persisted] = await appendStage('events_and_receipt_write', () =>
+        tx.with(insertedEvents, insertedReceipt).select({
         eventCount: sql<number>`(SELECT count(*)::int FROM ${insertedEvents})`,
         receiptCount: sql<number>`(SELECT count(*)::int FROM ${insertedReceipt})`,
-      }).from(insertedEvents).limit(1);
+        }).from(insertedEvents).limit(1));
       if (persisted?.eventCount !== eventRows.length || persisted.receiptCount !== 1) {
         throw new Error('Command append did not persist its events and receipt.');
       }
@@ -696,16 +700,18 @@ export class PostgresEventStore implements EventStorePort {
         }
       }
 
-      for (const streamId of writeIds) {
-        if (streamId === request.streamId) {
-          await this.refreshRoomState(tx, request.worldInstanceId, streamId, {
-            expectedVersion: currentRevision,
-            events: appended,
-          }, this.scopedCommandReadCache(request.worldInstanceId, streamId) !== undefined);
-        } else {
-          await this.refreshRoomState(tx, request.worldInstanceId, streamId);
+      await appendStage('room_state_projection', async () => {
+        for (const streamId of writeIds) {
+          if (streamId === request.streamId) {
+            await this.refreshRoomState(tx, request.worldInstanceId, streamId, {
+              expectedVersion: currentRevision,
+              events: appended,
+            }, this.scopedCommandReadCache(request.worldInstanceId, streamId) !== undefined);
+          } else {
+            await this.refreshRoomState(tx, request.worldInstanceId, streamId);
+          }
         }
-      }
+      });
       return { kind: 'committed', streamId: request.streamId, events: appended, receipt };
     }));
     if (outcome.kind === 'committed') {
