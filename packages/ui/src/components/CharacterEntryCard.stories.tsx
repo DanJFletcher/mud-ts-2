@@ -7,11 +7,11 @@ const meta = {
   args: {
     name: 'Mira of the Reedbank',
     worldName: 'The Waystone Path',
-    locationLabel: 'North road, beside the old bridge',
     classLabel: 'Wayfinder',
     level: 7,
     statusLabel: 'Ready to continue',
     actionLabel: 'Continue as Mira',
+    detailsHref: '/character/mira',
     onPlay: () => undefined,
   },
 } satisfies Meta<typeof CharacterEntryCard>;
@@ -19,12 +19,14 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const RecentCharacter: Story = {};
+export const CompactRosterRow: Story = {
+  parameters: { viewport: { defaultViewport: 'mobile1' } },
+};
 export const LoadingEntry: Story = { args: { busy: true } };
 export const DisabledEntry: Story = { args: { disabled: true, statusLabel: 'Entry unavailable' } };
 export const LongNameAndLocation: Story = {
   args: {
     name: 'Mira Who Remembers the Names of Every River',
-    locationLabel: 'At the weathered crossroads north of the old observatory, where the road divides toward the coastal settlements',
   },
   parameters: { viewport: { defaultViewport: 'mobile1' } },
 };

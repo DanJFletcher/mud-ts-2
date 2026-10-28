@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Button, CharacterEntryCard, TextInput } from '@mudd/ui';
+import { appHref, characterPath } from './navigation.js';
 import { type LobbyCharacter, entryDisabled } from './useLobby.js';
 
 export function CharacterCard({ character, active, pending, onPlay, onManage }: {
@@ -11,19 +12,17 @@ export function CharacterCard({ character, active, pending, onPlay, onManage }: 
   const [name, setName] = useState(character.name);
   const dead = character.combat?.status === 'defeat' || character.health?.current === 0;
   return <CharacterEntryCard name={character.name} worldName={character.worldName}
-    locationLabel={character.locationTitle} classLabel={character.characterClass?.label}
+    classLabel={character.characterClass?.label}
     level={character.advancement?.level}
     statusLabel={character.archived ? 'Archived' : dead ? 'Deceased' : active ? 'In world' : 'Ready to play'}
     actionLabel={active ? `Continue as ${character.name}` : `Play as ${character.name}`}
+    detailsHref={appHref(characterPath(character.characterId))}
     onPlay={onPlay} disabled={pending || entryDisabled(character)} busy={false}
     secondaryActions={<details className="character-options"><summary aria-label={`Manage ${character.name}`}>Manage</summary>
       <div>{character.archived ? <Button variant="quiet" disabled={pending} onClick={() => void onManage('restore', character)}>Restore</Button>
         : <><Button variant="quiet" disabled={pending} onClick={() => setMode('rename')}>Rename</Button>
           <Button variant="quiet" disabled={pending || active} onClick={() => setMode('archive')}>Archive</Button></>}</div>
     </details>}>
-    <p className="lobby-small">{character.lastPlayedAt
-      ? <>Last played <time dateTime={character.lastPlayedAt}>{new Date(character.lastPlayedAt).toLocaleDateString()}</time></>
-      : 'No recorded play history yet'}</p>
     {mode === 'rename' && <form className="lobby-form" onSubmit={(event) => {
       event.preventDefault(); void onManage('rename', character, name.trim()).then((ok) => { if (ok) setMode(null); });
     }}>

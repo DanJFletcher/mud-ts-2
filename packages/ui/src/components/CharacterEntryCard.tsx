@@ -5,11 +5,12 @@ import { Button } from './Button.js';
 export interface CharacterEntryCardProps {
   name: string;
   worldName?: string;
-  locationLabel: string;
   classLabel?: string;
   level?: number;
   statusLabel: string;
   actionLabel: string;
+  detailsHref?: string;
+  detailsLabel?: string;
   onPlay: () => void;
   disabled?: boolean;
   busy?: boolean;
@@ -18,7 +19,7 @@ export interface CharacterEntryCardProps {
 }
 
 export function CharacterEntryCard({
-  name, worldName, locationLabel, classLabel, level, statusLabel, actionLabel, onPlay,
+  name, worldName, classLabel, level, statusLabel, actionLabel, detailsHref, detailsLabel = 'Details', onPlay,
   disabled = false, busy = false, secondaryActions, children,
 }: CharacterEntryCardProps) {
   const details = [classLabel, typeof level === 'number' ? `Level ${level}` : undefined].filter(Boolean);
@@ -29,21 +30,21 @@ export function CharacterEntryCard({
           <p className="mudd-character-entry__eyebrow">{worldName || 'Your traveler'}</p>
           <h3 className="mudd-character-entry__name">{name}</h3>
           {details.length > 0 ? <p className="mudd-character-entry__details">{details.join(' · ')}</p> : null}
+          <p className="mudd-character-entry__status">{statusLabel}</p>
         </div>
         {secondaryActions ? <div className="mudd-character-entry__secondary">{secondaryActions}</div> : null}
       </div>
-      <dl className="mudd-character-entry__facts">
-        <div><dt>Last known</dt><dd>{locationLabel}</dd></div>
-        <div><dt>State</dt><dd>{statusLabel}</dd></div>
-      </dl>
-      <Button
-        className="mudd-character-entry__action"
-        onClick={onPlay}
-        disabled={disabled || busy}
-        aria-busy={busy || undefined}
-      >
-        {busy ? 'Opening world…' : actionLabel}
-      </Button>
+      <div className="mudd-character-entry__actions">
+        <Button
+          className="mudd-character-entry__action"
+          onClick={onPlay}
+          disabled={disabled || busy}
+          aria-busy={busy || undefined}
+        >
+          {busy ? 'Opening world…' : actionLabel}
+        </Button>
+        {detailsHref ? <a className="mudd-character-entry__details-link" href={detailsHref}>{detailsLabel}</a> : null}
+      </div>
       {children ? <div className="mudd-character-entry__content">{children}</div> : null}
     </article>
   );

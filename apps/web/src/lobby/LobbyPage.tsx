@@ -3,8 +3,8 @@ import { useLocation, useSearch } from 'wouter';
 import { Button, ClassChoice, TextInput, WorldCard, WorldHero } from '@mudd/ui';
 import { AccountShell } from './AccountShell.js';
 import { CharacterCard } from './CharacterCard.js';
-import { appHref, playPath, rememberEntryIntent, worldPath } from './navigation.js';
-import { entryDisabled, recentCharacters, useLobby, worldClient, type LobbyCharacter } from './useLobby.js';
+import { appHref, rememberEntryIntent, worldPath } from './navigation.js';
+import { recentCharacters, useLobby, worldClient, enterCharacter, type LobbyCharacter } from './useLobby.js';
 
 export function LobbyPage({ worldId }: { worldId?: string }) {
   const state = useLobby();
@@ -32,22 +32,7 @@ export function LobbyPage({ worldId }: { worldId?: string }) {
     finally { locked.current = false; setPending(false); }
   }
   async function enter(characterId: string, characterWorld: string) {
-    const fresh = await state.refreshRoster();
-    const character = fresh?.characters.find((item) => item.characterId === characterId && item.worldInstanceId === characterWorld);
-    if (!character || entryDisabled(character)) throw new Error('That character is unavailable. Refresh your characters and choose another.');
-    const occupied = fresh?.activeWorldSessions?.find((session) => session.worldInstanceId === characterWorld);
-    if (occupied && occupied.characterId !== characterId) { setSwitchTarget(character); return; }
-    try {
-      await worldClient(characterWorld).joinWorld(characterId);
-    } catch (failure) {
-      const latest = await state.refreshRoster().catch(() => null);
-      const occupiedNow = latest?.activeWorldSessions?.find((session) => session.worldInstanceId === characterWorld);
-      if (occupiedNow && occupiedNow.characterId !== characterId) { setSwitchTarget(character); return; }
-      throw failure;
-    }
-    localStorage.setItem('mudd-world-instance-id', characterWorld);
-    window.location.hash = '/play';
-    navigate(playPath(characterWorld));
+    await enterCharacter(characterId, characterWorld, state.refreshRoster, setSwitchTarget, navigate);
   }
   function play(character: LobbyCharacter) {
     void run(() => enter(character.characterId, character.worldInstanceId));

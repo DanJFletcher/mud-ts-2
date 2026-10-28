@@ -6,6 +6,7 @@ import CodexScreen from './codex/CodexScreen.js';
 import { AccountShell } from './lobby/AccountShell.js';
 import { LobbyPage } from './lobby/LobbyPage.js';
 import { WorldPlayPage } from './lobby/WorldPlayPage.js';
+import { CharacterDetailPage } from './lobby/CharacterDetailPage.js';
 import { appHref, basePath, entryIntent, playPath } from './lobby/navigation.js';
 import './account.css';
 
@@ -51,6 +52,7 @@ function ClerkAppRoutes() {
       <Route path="/lobby"><LobbyPage /></Route>
       <Route path="/worlds/:worldId/play">{(params) => <WorldPlayPage key={params.worldId} worldId={params.worldId} />}</Route>
       <Route path="/worlds/:worldId">{(params) => <LobbyPage key={params.worldId} worldId={params.worldId} />}</Route>
+      <Route path="/character/:characterId">{(params) => <CharacterDetailPage key={params.characterId} characterId={params.characterId} />}</Route>
       <Route path="/sign-in/*?" component={SignInPage} />
       <Route path="/sign-up/*?" component={SignUpPage} />
       <Route path="/characters"><Redirect to="/" replace /></Route>

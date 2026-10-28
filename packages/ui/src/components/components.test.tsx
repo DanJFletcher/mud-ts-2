@@ -278,12 +278,14 @@ describe('@mudd/ui components', () => {
   it('exposes character details and calls its explicit entry action', () => {
     const onPlay = vi.fn();
     render(<CharacterEntryCard
-      name="Mira" worldName="Orraveth" locationLabel="Salt gate" classLabel="Scout" level={4}
+      name="Mira" worldName="Orraveth" classLabel="Scout" level={4}
       statusLabel="Ready" actionLabel="Continue as Mira" onPlay={onPlay}
+      detailsHref="/character/mira"
       secondaryActions={<button type="button">Manage</button>}
     />);
     expect(screen.getByRole('heading', { level: 3, name: 'Mira' })).toBeInTheDocument();
-    expect(screen.getByText('Salt gate')).toBeInTheDocument();
+    expect(screen.getByText('Ready')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Details' })).toHaveAttribute('href', '/character/mira');
     fireEvent.click(screen.getByRole('button', { name: 'Continue as Mira' }));
     expect(onPlay).toHaveBeenCalledOnce();
     expect(screen.getByRole('button', { name: 'Manage' })).toBeInTheDocument();
@@ -291,7 +293,7 @@ describe('@mudd/ui components', () => {
 
   it('prevents entry while busy and announces the pending state', () => {
     const onPlay = vi.fn();
-    render(<CharacterEntryCard name="Mira" locationLabel="Salt gate" statusLabel="Ready" actionLabel="Play" onPlay={onPlay} busy />);
+    render(<CharacterEntryCard name="Mira" statusLabel="Ready" actionLabel="Play" onPlay={onPlay} busy />);
     const button = screen.getByRole('button', { name: 'Opening world…' });
     expect(button).toBeDisabled();
     expect(button).toHaveAttribute('aria-busy', 'true');

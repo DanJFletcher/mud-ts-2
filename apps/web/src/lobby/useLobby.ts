@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useUser } from '@clerk/react';
 import { MuddHttpClient, MuddHttpError, type CharacterRosterSnapshot, type WorldSummary } from '@mudd/client-sdk';
-import { basePath } from './navigation.js';
+import { basePath, playPath } from './navigation.js';
 
 export const worldClient = (worldInstanceId = 'mudd-demo-instance') => new MuddHttpClient({ worldInstanceId, basePath });
 export type LobbyCharacter = CharacterRosterSnapshot['characters'][number];
@@ -13,6 +13,32 @@ export function recentCharacters(characters: LobbyCharacter[]) {
     (b.lastPlayedAt ? Date.parse(b.lastPlayedAt) : 0) - (a.lastPlayedAt ? Date.parse(a.lastPlayedAt) : 0)
     || a.name.localeCompare(b.name),
   );
+}
+
+/** Refreshes authoritative roster/session state before joining, and never switches an occupied world implicitly. */
+export async function enterCharacter(
+  characterId: string,
+  characterWorld: string,
+  refreshRoster: () => Promise<Awaited<ReturnType<ReturnType<typeof worldClient>['getCharacters']>> | null>,
+  onSwitchRequired: (character: LobbyCharacter) => void,
+  navigate: (path: string) => void,
+) {
+  const fresh = await refreshRoster();
+  const character = fresh?.characters.find((item) => item.characterId === characterId && item.worldInstanceId === characterWorld);
+  if (!character || entryDisabled(character)) throw new Error('That character is unavailable. Refresh your characters and choose another.');
+  const occupied = fresh?.activeWorldSessions?.find((session) => session.worldInstanceId === characterWorld);
+  if (occupied && occupied.characterId !== characterId) { onSwitchRequired(character); return; }
+  try {
+    await worldClient(characterWorld).joinWorld(characterId);
+  } catch (failure) {
+    const latest = await refreshRoster().catch(() => null);
+    const occupiedNow = latest?.activeWorldSessions?.find((session) => session.worldInstanceId === characterWorld);
+    if (occupiedNow && occupiedNow.characterId !== characterId) { onSwitchRequired(character); return; }
+    throw failure;
+  }
+  localStorage.setItem('mudd-world-instance-id', characterWorld);
+  window.location.hash = '/play';
+  navigate(playPath(characterWorld));
 }
 
 export function useLobby() {

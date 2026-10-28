@@ -31,6 +31,8 @@ const two = '22222222-2222-4222-8222-222222222222';
 const three = '33333333-3333-4333-8333-333333333333';
 const sessionId = '44444444-4444-4444-8444-444444444444';
 const playerId = '55555555-5555-4555-8555-555555555555';
+let holdRoster: boolean;
+let releaseRoster: (() => void) | undefined;
 const worlds: WorldSummary[] = [
   { worldInstanceId: demo, packId: 'demo', name: 'The Waystone Path', summary: 'An old bell tower.' },
   { worldInstanceId: orra, packId: 'orraveth', name: 'Orraveth: Bellwold', summary: 'A frontier village.',
@@ -82,13 +84,18 @@ async function fillName(value = 'Aster') {
 beforeEach(() => {
   mocks.fetch.mockReset(); mocks.signOut.mockReset(); mocks.signedIn = true;
   characters = [{ ...fixture }, { ...fixture, characterId: two, worldInstanceId: orra, name: 'Moss', worldName: 'Orraveth: Bellwold', lastPlayedAt: '2026-10-23T10:00:00.000Z' }];
-  sessions = []; guest = false; entryFailure = false; rosterFailure = false; commands.length = 0;
+  characters[0].health = { current: 8, maximum: 12 };
+  characters[0].wallet = { currencyId: 'silver', balance: 27 };
+  characters[0].advancement = { level: 4, experience: 83 };
+  characters[0].inventory = [{ id: 'healing-herb', label: 'Dried yarrow', description: 'A bundle of dried yarrow.', stackable: true, quantity: 3 }];
+  sessions = []; guest = false; entryFailure = false; rosterFailure = false; holdRoster = false; releaseRoster = undefined; commands.length = 0;
   localStorage.clear(); sessionStorage.clear(); window.location.hash = '';
   mocks.fetch.mockImplementation(async (url: string, init: RequestInit = {}) => {
     const method = init.method ?? 'GET';
     const world = (init.headers as Record<string, string>)?.['x-mudd-world-instance'] ?? demo;
     if (url === '/api/worlds') return json(worlds);
     if (url === '/api/characters') {
+      if (holdRoster) await new Promise<void>((resolve) => { releaseRoster = resolve; });
       if (rosterFailure) return json({ message: 'Roster unavailable' }, 503);
       if (!mocks.signedIn && !guest) return json({ message: 'Start a guest session or sign in' }, 401);
       return json(roster());
@@ -276,5 +283,51 @@ describe('world lobby and explicit character entry', () => {
     fireEvent.change(screen.getByLabelText('Character name'), { target: { value: 'Rowan II' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save name' }));
     await screen.findByRole('button', { name: 'Play as Rowan II' });
+  });
+
+  it('loads a character detail route from the roster and shows only projected facts', async () => {
+    open(`/character/${one}`);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Rowan' })).toBeInTheDocument();
+    expect(screen.getAllByText('The Waystone Path')).toHaveLength(1);
+    expect(screen.getByText('Mossgate Clearing')).toBeInTheDocument();
+    expect(screen.getByText('8 / 12')).toBeInTheDocument();
+    expect(screen.getByText('27 silver')).toBeInTheDocument();
+    expect(screen.getByText('3 items')).toBeInTheDocument();
+    expect(screen.getByText('Dried yarrow × 3')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Return to world' })).toHaveAttribute('href', `/worlds/${demo}`);
+    expect(screen.getByRole('button', { name: 'Play as Rowan' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Play as Rowan' }));
+    await screen.findByText(`World play: ${demo}`);
+    expect(calls('POST', '/api/world-session')).toHaveLength(1);
+  });
+
+  it('shows a composed loading state while the roster is pending', async () => {
+    holdRoster = true;
+    open(`/character/${one}`);
+    expect(screen.getByRole('status')).toHaveTextContent('Loading character record');
+    await waitFor(() => expect(releaseRoster).toBeDefined());
+    releaseRoster?.();
+    await screen.findByRole('heading', { name: 'Rowan' });
+  });
+
+  it('handles missing characters and anonymous no-roster state without creating guest sessions', async () => {
+    open('/character/missing-character');
+    expect(await screen.findByRole('heading', { name: 'Character not found' })).toBeInTheDocument();
+    mocks.signedIn = false;
+    visit(`/character/${one}`);
+    expect(await screen.findByRole('heading', { name: 'Your roster is not available' })).toBeInTheDocument();
+    expect(calls('POST', '/api/guest-session')).toHaveLength(0);
+  });
+
+  it('links compact character cards to details while keeping play and management actions', async () => {
+    open(`/worlds/${demo}`);
+    await screen.findByRole('button', { name: 'Play as Rowan' });
+    expect(screen.getByRole('link', { name: 'Details' })).toHaveAttribute('href', `/character/${one}`);
+    expect(screen.queryByText('Last known')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Last played/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Play as Rowan' })).toBeEnabled();
+    fireEvent.click(screen.getByText('Manage'));
+    expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeInTheDocument();
   });
 });
