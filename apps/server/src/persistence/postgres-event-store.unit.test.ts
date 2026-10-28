@@ -815,6 +815,145 @@ describe('PostgresEventStore unit behavior', () => {
     expect(mockDb.select).toHaveBeenCalledTimes(3);
   });
 
+  it('reuses the command-scoped stream while bulk-reading other streams', async () => {
+    const streamA = persistedEventRow('character-a', 'event-a', 1);
+    const streamB = persistedEventRow('character-b', 'event-b', 1);
+    mockDb.select
+      .mockImplementationOnce(revisionSelect(1))
+      .mockImplementationOnce(historySelect([streamA]))
+      .mockImplementationOnce(() => ({
+        from: () => ({
+          where: () => ({
+            groupBy: async () => [{ streamId: 'character-b', revision: 1 }],
+          }),
+        }),
+      }))
+      .mockImplementationOnce(historySelect([streamB]));
+    const store = new PostgresEventStore();
+
+    const result = await store.withCommandReadCache('world-1', 'character-a', async () => {
+      await store.readStream('world-1', 'character-a');
+      return store.readStreams('world-1', ['character-a', 'character-b', 'character-a']);
+    }, 1);
+
+    expect(result.get('character-a')?.map(({ eventId }) => eventId)).toEqual(['event-a']);
+    expect(result.get('character-b')?.map(({ eventId }) => eventId)).toEqual(['event-b']);
+    expect(mockDb.select).toHaveBeenCalledTimes(4);
+  });
+
+  it('populates the scoped cache when bulk reads include its stream before a snapshot exists', async () => {
+    const streamA = persistedEventRow('character-a', 'event-a', 1);
+    const streamB = persistedEventRow('character-b', 'event-b', 1);
+    mockDb.select
+      .mockImplementationOnce(() => ({
+        from: () => ({
+          where: () => ({
+            groupBy: async () => [
+              { streamId: 'character-a', revision: 1 },
+              { streamId: 'character-b', revision: 1 },
+            ],
+          }),
+        }),
+      }))
+      .mockImplementationOnce(historySelect([streamA]))
+      .mockImplementationOnce(historySelect([streamB]));
+    const store = new PostgresEventStore();
+
+    const result = await store.withCommandReadCache('world-1', 'character-a', async () => {
+      const streams = await store.readStreams('world-1', ['character-a', 'character-b']);
+      const scopedRead = await store.readStream('world-1', 'character-a');
+      return { streams, scopedRead };
+    }, 1);
+
+    expect(result.streams.get('character-a')?.map(({ eventId }) => eventId)).toEqual(['event-a']);
+    expect(result.scopedRead.map(({ eventId }) => eventId)).toEqual(['event-a']);
+    expect(mockDb.select).toHaveBeenCalledTimes(3);
+  });
+
+  it('bypasses an empty command scope and can temporarily exit a populated scope', async () => {
+    const store = new PostgresEventStore();
+    expect(store.withCommandReadCache('world-1', '', () => 'without-scope')).toBe('without-scope');
+
+    const row = persistedEventRow('character-a', 'event-a', 1);
+    mockDb.select
+      .mockImplementationOnce(revisionSelect(1))
+      .mockImplementationOnce(historySelect([row]))
+      .mockImplementationOnce(revisionSelect(1));
+
+    const result = await store.withCommandReadCache('world-1', 'character-a', async () => {
+      const scoped = await store.readStream('world-1', 'character-a');
+      const unscoped = await store.withoutCommandReadCache(() =>
+        store.readStream('world-1', 'character-a'));
+      const restoredScope = await store.readStream('world-1', 'character-a');
+      return { scoped, unscoped, restoredScope };
+    }, 1);
+
+    expect(result.scoped).toEqual(result.unscoped);
+    expect(result.scoped).toEqual(result.restoredScope);
+    expect(mockDb.select).toHaveBeenCalledTimes(3);
+  });
+
+  it('drops oversized streams and evicts cached streams at the byte and entry limits', () => {
+    type CacheInternals = {
+      cacheStream(key: string, events: readonly unknown[], knownBytes?: number): void;
+      streamCache: Map<string, { bytes: number }>;
+      cachedStreamBytes: number;
+    };
+    const oversizeStore = new PostgresEventStore() as unknown as CacheInternals;
+    const maxStreamBytes = 8 * 1024 * 1024;
+    oversizeStore.cacheStream('world-1\u0000oversized', [], 10);
+    oversizeStore.cacheStream('world-1\u0000oversized', [], maxStreamBytes + 1);
+    oversizeStore.cacheStream('world-1\u0000never-cached', [], maxStreamBytes + 1);
+    expect(oversizeStore.streamCache.has('world-1\u0000oversized')).toBe(false);
+    expect(oversizeStore.streamCache.has('world-1\u0000never-cached')).toBe(false);
+    expect(oversizeStore.cachedStreamBytes).toBe(0);
+
+    const byteLimited = new PostgresEventStore() as unknown as CacheInternals;
+    const bytesPerStream = 1024 * 1024;
+    for (let index = 0; index < 32; index += 1) {
+      byteLimited.cacheStream(`world-1\u0000byte-${index}`, [], bytesPerStream);
+    }
+    byteLimited.cacheStream('world-1\u0000byte-final', [], bytesPerStream);
+    expect(byteLimited.streamCache.has('world-1\u0000byte-0')).toBe(false);
+    expect(byteLimited.streamCache.size).toBe(32);
+    expect(byteLimited.cachedStreamBytes).toBe(32 * bytesPerStream);
+
+    const entryLimited = new PostgresEventStore() as unknown as CacheInternals;
+    for (let index = 0; index < 128; index += 1) {
+      entryLimited.cacheStream(`world-1\u0000entry-${index}`, [], 0);
+    }
+    entryLimited.cacheStream('world-1\u0000entry-final', [], 0);
+    expect(entryLimited.streamCache.has('world-1\u0000entry-0')).toBe(false);
+    expect(entryLimited.streamCache.size).toBe(128);
+  });
+
+  it('discards a cached stream whose revision differs from the append base', async () => {
+    const streamId = 'revision-mismatch-stream';
+    const staleCachedEvent = persistedEventRow(streamId, 'stale-cached-event', 1);
+    const persistedEvent = persistedEventRow(streamId, 'persisted-after-append', 1);
+    mockDb.select
+      .mockImplementationOnce(revisionSelect(1))
+      .mockImplementationOnce(historySelect([staleCachedEvent]))
+      .mockImplementationOnce(revisionSelect(1))
+      .mockImplementationOnce(historySelect([persistedEvent]));
+    const { tx } = createAppendTransaction();
+    mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(tx));
+    const store = new PostgresEventStore();
+
+    const before = await store.readStream('world-1', streamId);
+    const outcome = await store.append(basicAppendRequest({
+      streamId,
+      commandId: 'revision-mismatch-append',
+      expectedVersion: 0,
+    }));
+    const after = await store.readStream('world-1', streamId);
+
+    expect(before.map(({ eventId }) => eventId)).toEqual(['stale-cached-event']);
+    expect(outcome.kind).toBe('committed');
+    expect(after.map(({ eventId }) => eventId)).toEqual(['persisted-after-append']);
+    expect(mockDb.select).toHaveBeenCalledTimes(4);
+  });
+
   it('looks up an idempotent receipt or reports a payload mismatch', async () => {
     const prior = {
       payloadHash: 'saved-hash',
