@@ -413,8 +413,7 @@ export class PostgresEventStore implements EventStorePort {
     const outcome = await measureDatabaseOperation('event_store.command_append', () => db.transaction(async (tx): Promise<AppendOutcome> => {
       // Lock command identity first so retries cannot race across different stream IDs.
       await appendStage('command_lock', () => tx.execute(sql`
-        SELECT pg_advisory_xact_lock(hashtext(${request.worldInstanceId}), hashtext(${`${request.actorId}:${request.commandId}`}))`);
-      ));
+        SELECT pg_advisory_xact_lock(hashtext(${request.worldInstanceId}), hashtext(${`${request.actorId}:${request.commandId}`}))`));
       const [prior] = await appendStage('receipt_lookup', () => tx.select().from(commandReceipts).where(and(
         eq(commandReceipts.worldInstanceId, request.worldInstanceId),
         eq(commandReceipts.actorId, request.actorId),
@@ -560,8 +559,9 @@ export class PostgresEventStore implements EventStorePort {
         throw new Error('Command append did not persist its events and receipt.');
       }
 
-      if (request.effects?.length) {
-        await tx.insert(durableEffects).values(request.effects.map((effect, index) => ({
+      const effects = request.effects;
+      if (effects?.length) {
+        await appendStage('effects_write', () => tx.insert(durableEffects).values(effects.map((effect, index) => ({
           id: globalThis.crypto.randomUUID(),
           worldInstanceId: request.worldInstanceId,
           sourceStreamId: request.streamId,
@@ -570,7 +570,7 @@ export class PostgresEventStore implements EventStorePort {
           effectVersion: effect.version,
           payload: effect.payload,
           dedupeKey: `command:${request.worldInstanceId}:${request.actorId}:${request.commandId}:${index}`,
-        })));
+        }))));
       }
 
       for (const event of appended) {
