@@ -76,7 +76,7 @@
   .mudd-character-entry--compact .mudd-character-entry__details { font-size: .7rem; }
   .mudd-character-entry--compact .mudd-character-entry__status { padding: .12rem .3rem; font-size: .58rem; }
   .mudd-character-entry--compact .mudd-character-entry__actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .2rem; }
-  .mudd-character-entry--compact .mudd-character-entry__action { width: 100%; min-width: 0; padding-inline: .38rem; font-size: .76rem; }
+  .mudd-character-entry--compact .mudd-character-entry__action { width: 100%; max-width: 11rem; min-width: 0; padding-inline: .38rem; font-size: .76rem; }
   .mudd-character-entry--compact .mudd-character-entry__details-link { padding-inline: .12rem; font-size: .72rem; }
 }
 @media (max-width: 420px) {

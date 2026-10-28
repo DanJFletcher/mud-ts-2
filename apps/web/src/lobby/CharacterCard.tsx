@@ -21,7 +21,10 @@ export function CharacterCard({ character, active, pending, compact = false, onP
     compact={compact}
     detailsHref={appHref(characterPath(character.characterId))}
     onPlay={onPlay} disabled={pending || entryDisabled(character)} busy={false}
-    secondaryActions={<details className="character-options"><summary aria-label={`Manage ${character.name}`}>Manage</summary>
+    secondaryActions={<details className="character-options"><summary aria-label={`Manage ${character.name}`}>
+      <span className="character-options__label">Manage</span>
+      <span className="character-options__compact-label" aria-hidden="true">⋯</span>
+    </summary>
       <div>{character.archived ? <Button variant="quiet" disabled={pending} onClick={() => void onManage('restore', character)}>Restore</Button>
         : <><Button variant="quiet" disabled={pending} onClick={() => setMode('rename')}>Rename</Button>
           <Button variant="quiet" disabled={pending || active} onClick={() => setMode('archive')}>Archive</Button></>}</div>

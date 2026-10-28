@@ -39,6 +39,7 @@
 .lobby-switch h2 { margin-bottom: .5rem; }
 .character-options { position: relative; font-size: .8rem; }
 .character-options summary { cursor: pointer; padding: .5rem; color: var(--mudd-muted); }
+.character-options__compact-label { display: none; }
 .character-options[open] > div { position: absolute; z-index: 2; right: 0; background: var(--mudd-surface-raised); border: 1px solid var(--mudd-border); border-radius: .6rem; padding: .4rem; box-shadow: var(--mudd-shadow); display: grid; }
 .character-detail-link { justify-self: start; min-height: 2.5rem; display: inline-flex; align-items: center; color: var(--mudd-muted); font-size: .82rem; }
 .character-detail-link:hover { color: var(--mudd-accent); }
@@ -127,7 +128,13 @@
   .lobby-worlds, .lobby-recent { width: 100%; min-width: 0; }
   .lobby-recent { order: -1; }
   .lobby-recent .lobby-character-list--recent { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55rem; }
-  .lobby-character-list--recent .character-options summary { padding: .35rem .2rem; font-size: .68rem; }
+  .lobby-recent .lobby-character-list--recent > :only-child { grid-column: 1 / -1; }
+  .lobby-character-list--recent .character-options summary {
+    display: inline-flex; width: 44px; height: 44px; align-items: center; justify-content: center;
+    box-sizing: border-box; padding: 0; font-size: 1.25rem;
+  }
+  .lobby-character-list--recent .character-options__label { display: none; }
+  .lobby-character-list--recent .character-options__compact-label { display: inline; }
   .character-detail__facts { grid-template-columns: minmax(0, 1fr); }
   .character-detail__actions { align-items: flex-start; flex-direction: column; gap: .4rem; }
 }
