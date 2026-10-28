@@ -1231,6 +1231,44 @@ describe('NPC room announcements through the server', () => {
     expect(state.sessions.size).toBe(0);
   });
 
+  it('rejects world entry for defeated characters and blocks switching while occupied', async () => {
+    const postSession = (body: unknown) => fetch(`${baseUrl}/api/world-session`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-user': 'alice',
+      },
+      body: JSON.stringify(body),
+    });
+    state.characterReplayOverride = {
+      ...state.characters['character-alice'],
+      health: { current: 0, maximum: 10 },
+    };
+    const defeated = await postSession({ characterId: 'character-alice' });
+    expect(defeated.status).toBe(409);
+    expect(await defeated.json()).toEqual({
+      message: 'Your character has died. Start a new character to begin again.',
+    });
+    expect(state.sessions.size).toBe(0);
+
+    state.characterReplayOverride = null;
+    await enterWorld('alice', 'character-alice');
+    const originalOwner = state.charactersByOwner['character-bob'];
+    state.charactersByOwner['character-bob'] = 'player-alice';
+    try {
+      const occupied = await postSession({ characterId: 'character-bob' });
+      expect(occupied.status).toBe(409);
+      expect(await occupied.json()).toEqual({
+        message: 'Leave the current world session before switching characters.',
+      });
+      expect(state.sessions.get('player-alice')).toMatchObject({
+        characterId: 'character-alice',
+      });
+    } finally {
+      state.charactersByOwner['character-bob'] = originalOwner;
+    }
+  });
+
   it('returns a game snapshot only after a character enters the world', async () => {
     const headers = { 'x-test-user': 'alice' };
     const unavailable = await fetch(`${baseUrl}/api/game`, { headers });
@@ -1592,6 +1630,78 @@ describe('NPC room announcements through the server', () => {
         occupants: [],
       },
     });
+  });
+
+  it('rejects queries for inactive characters and maps engine query errors to HTTP statuses', async () => {
+    await enterWorld('alice', 'character-alice');
+    const query = {
+      type: 'party.info',
+      version: 1,
+      queryId: 'party-query-coverage',
+      worldInstanceId: instanceId,
+      characterId: 'character-alice',
+      payload: {},
+    };
+    const postQuery = () => fetch(`${baseUrl}/api/queries`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-user': 'alice',
+      },
+      body: JSON.stringify(query),
+    });
+
+    state.characterReplayOverride = {
+      ...state.characters['character-alice'],
+      archived: true,
+    };
+    const archived = await postQuery();
+    expect(archived.status).toBe(409);
+    expect(await archived.json()).toEqual({
+      message: 'Enter the world with an active character before making a query.',
+    });
+
+    state.characterReplayOverride = {
+      ...state.characters['character-alice'],
+      health: { current: 0, maximum: 10 },
+    };
+    const defeated = await postQuery();
+    expect(defeated.status).toBe(409);
+    expect(await defeated.json()).toEqual({
+      message: 'Your character has died. Start a new character to begin again.',
+    });
+    state.characterReplayOverride = null;
+
+    const failures = [
+      { code: 'INTERNAL_ERROR', status: 500, message: 'The query failed.', correlationId: 'query-correlation-id' },
+      { code: 'NOT_FOUND', status: 404, message: 'That party was not found.' },
+      { code: 'RULE_VIOLATION', status: 422, message: 'The query is not allowed.' },
+      { code: 'FORBIDDEN', status: 403, message: 'Access is denied.' },
+    ] as const;
+    for (const failure of failures) {
+      state.queryOverrides.set('party.info', {
+        ok: false,
+        code: failure.code,
+        message: failure.message,
+        ...(failure.correlationId ? { correlationId: failure.correlationId } : {}),
+      });
+      const response = await postQuery();
+      expect(response.status, failure.code).toBe(failure.status);
+      const body = await response.json() as { ok: boolean; code: string; message: string; requestId?: string };
+      expect(body).toMatchObject({
+        ok: false,
+        code: failure.code,
+        message: failure.message,
+      });
+      if (failure.code === 'INTERNAL_ERROR') {
+        expect(body.requestId).toBe('query-correlation-id');
+      }
+    }
+
+    state.queryOverrides.delete('party.info');
+    const successful = await postQuery();
+    expect(successful.status).toBe(200);
+    expect(await successful.json()).toMatchObject({ ok: true, value: { party: null } });
   });
 
   it('returns an interaction inbox for the active character', async () => {
