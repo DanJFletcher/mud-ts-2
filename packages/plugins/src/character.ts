@@ -978,17 +978,19 @@ export const characterPlugin: EnginePlugin = {
         location.id,
         ...availableExits.map((exit) => exit.toLocationId),
       ];
-      const roomNpcsByLocation = await measureQuery('npcPositions', async () => {
-        if (autonomousNpcs) return autonomousNpcs.atLocations(context, projectedLocationIds);
-        return new Map(projectedLocationIds.map((locationId) => [
-          locationId,
-          context.world.locations.find((candidate) => candidate.id === locationId)?.npcs ?? [],
-        ]));
-      });
+      const [roomNpcsByLocation, sharedState] = await Promise.all([
+        measureQuery('npcPositions', async () => {
+          if (autonomousNpcs) return autonomousNpcs.atLocations(context, projectedLocationIds);
+          return new Map(projectedLocationIds.map((locationId) => [
+            locationId,
+            context.world.locations.find((candidate) => candidate.id === locationId)?.npcs ?? [],
+          ]));
+        }),
+        measureQuery('sharedItems', () => worldItems.load(context)),
+      ]);
       const roomNpcsFor = (room: WorldPackDraft['locations'][number]): readonly NpcDefinition[] =>
         roomNpcsByLocation.get(room.id) ?? room.npcs ?? [];
       const roomNpcs = roomNpcsFor(location);
-      const sharedState = await measureQuery('sharedItems', () => worldItems.load(context));
       const sharedItemsByLocation = new Map<string, Array<(typeof sharedState.items)[number]>>();
       for (const item of sharedState.items) {
         if (!item.locationId) continue;
