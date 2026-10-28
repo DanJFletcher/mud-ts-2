@@ -320,6 +320,10 @@ vi.mock('./autonomous-npc-scheduler.js', () => ({
 vi.mock('./stamina-recovery-scheduler.js', () => ({
   createStaminaRecoveryScheduler: () => ({ start: vi.fn(), stop: vi.fn(), tick: vi.fn() }),
 }));
+vi.mock('./room-presence-service.js', () => ({
+  listRoomOccupants: async () => [],
+  touchWorldSessionPresence: async () => true,
+}));
 vi.mock('./realtime-notifications.js', () => ({
   startRealtimeNotifications: () => vi.fn(),
 }));
@@ -479,14 +483,25 @@ vi.mock('./db/client.js', async () => {
       },
     }),
   });
+  const deleteRows = (table: { [key: symbol]: unknown }) => ({
+    where: async (condition: unknown) => {
+      if (table[Symbol.for('drizzle:BaseName')] !== 'world_sessions') return;
+      const filters = filtersFor(condition);
+      for (const [playerId, session] of state.sessions) {
+        if (matches(session as Record<string, unknown>, filters)) state.sessions.delete(playerId);
+      }
+    },
+  });
   const db = {
     select,
     insert,
     update,
+    delete: deleteRows,
     transaction: async (callback: (transaction: unknown) => Promise<unknown>) => callback({
       select,
       insert,
       update,
+      delete: deleteRows,
       execute: async () => undefined,
     }),
   };
@@ -899,6 +914,98 @@ describe('NPC room announcements through the server', () => {
     expect(wrongRoomRead.response.status).toBe(409);
     expect(wrongRoomWrite.status).toBe(409);
     expect(state.messages).toHaveLength(messagesBeforeWrongRoomRequests);
+  });
+
+  it('validates world-session requests and reports unavailable characters', async () => {
+    const postSession = (body: unknown) => fetch(`${baseUrl}/api/world-session`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-user': 'alice',
+      },
+      body: JSON.stringify(body),
+    });
+
+    const malformed = await postSession({ characterId: '' });
+    expect(malformed.status).toBe(400);
+    expect(await malformed.json()).toEqual({ message: 'Choose a valid character.' });
+
+    const wrongWorld = await postSession({
+      characterId: 'character-alice',
+      worldInstanceId: 'another-world',
+    });
+    expect(wrongWorld.status).toBe(400);
+    expect(await wrongWorld.json()).toEqual({
+      message: 'Choose a character from the selected world.',
+    });
+
+    const unavailable = await postSession({ characterId: 'character-does-not-exist' });
+    expect(unavailable.status).toBe(404);
+    expect(await unavailable.json()).toEqual({ message: 'That character is unavailable.' });
+    expect(state.sessions.size).toBe(0);
+  });
+
+  it('returns a game snapshot only after a character enters the world', async () => {
+    const headers = { 'x-test-user': 'alice' };
+    const unavailable = await fetch(`${baseUrl}/api/game`, { headers });
+    expect(unavailable.status).toBe(409);
+    expect(await unavailable.json()).toEqual({
+      message: 'Choose a character before entering the world.',
+    });
+
+    await enterWorld('alice', 'character-alice');
+    const snapshot = await fetch(`${baseUrl}/api/game`, { headers });
+    expect(snapshot.status).toBe(200);
+    expect(await snapshot.json()).toMatchObject({
+      player: { id: 'player-alice', displayName: 'Alice' },
+      character: {
+        characterId: 'character-alice',
+        name: 'Alice',
+        locationId: 'npc-room',
+      },
+      location: {
+        locationId: 'npc-room',
+        title: 'NPC Room',
+        description: 'A quiet test room.',
+      },
+      stats: { attackPower: 0, spellPower: 0 },
+      map: { currentLocationId: 'npc-room' },
+    });
+  });
+
+  it('refreshes an active session heartbeat and removes only the leaving player session', async () => {
+    const heartbeat = (userId: string) => fetch(`${baseUrl}/api/world-session/heartbeat`, {
+      method: 'POST',
+      headers: { 'x-test-user': userId },
+    });
+    const noSession = await heartbeat('alice');
+    expect(noSession.status).toBe(409);
+
+    await enterWorld('alice', 'character-alice');
+    await enterWorld('bob', 'character-bob');
+    const aliceSession = state.sessions.get('player-alice') as { lastSeenAt?: Date };
+    aliceSession.lastSeenAt = new Date();
+
+    const refreshed = await heartbeat('alice');
+    expect(refreshed.status).toBe(200);
+    expect(await refreshed.json()).toEqual({
+      worldInstanceId: instanceId,
+      locationId: 'npc-room',
+      occupants: [],
+    });
+
+    const left = await fetch(`${baseUrl}/api/world-session`, {
+      method: 'DELETE',
+      headers: { 'x-test-user': 'alice' },
+    });
+    expect(left.status).toBe(204);
+    expect(state.sessions.has('player-alice')).toBe(false);
+    expect(state.sessions.has('player-bob')).toBe(true);
+
+    const noLongerInWorld = await fetch(`${baseUrl}/api/game`, {
+      headers: { 'x-test-user': 'alice' },
+    });
+    expect(noLongerInWorld.status).toBe(409);
   });
 
   afterAll(async () => {
