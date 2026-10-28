@@ -316,19 +316,56 @@ export class PostgresEventStore implements EventStorePort {
       return new Map(rows.map((row) => [row.streamId, Number(row.revision)]));
     });
 
-    const entries = await Promise.all(uniqueStreamIds.map(async (streamId) => [
+    const streamReads = uniqueStreamIds.map((streamId) => ({
       streamId,
-      cachedScoped && streamId === cachedScoped.streamId && cachedScoped.events
-        ? cachedScoped.events
-        : await this.readStreamAtRevision(
-            worldInstanceId,
-            streamId,
-            streamId === cachedScoped?.streamId
-              ? cachedScoped.revision!
-              : revisions.get(streamId) ?? 0,
-          ),
-    ] as const));
-    const result = new Map(entries);
+      revision: streamId === cachedScoped?.streamId
+        ? cachedScoped.revision!
+        : revisions.get(streamId) ?? 0,
+      cached: this.touchCachedStream(this.streamKey(worldInstanceId, streamId)),
+    }));
+    const result = new Map<string, readonly StoredGameEvent[]>();
+    for (const { streamId, revision, cached } of streamReads) {
+      if (cached?.revision === revision) result.set(streamId, cached.events);
+    }
+
+    const streamsNeedingRead = streamReads.filter(({ revision, cached }) => cached?.revision !== revision);
+    if (streamsNeedingRead.length > 0) {
+      const streamFilters = streamsNeedingRead.flatMap(({ streamId, revision, cached }) => {
+        const condition = cached && revision > cached.revision
+          ? and(
+              eq(gameEvents.streamId, streamId),
+              sql`${gameEvents.streamVersion} > ${cached.revision}`,
+            )
+          : eq(gameEvents.streamId, streamId);
+        return condition ? [condition] : [];
+      });
+      const rows = await measureDatabaseOperation('event_store.stream_rows_read', () =>
+        db.select().from(gameEvents)
+          .where(and(
+            eq(gameEvents.worldInstanceId, worldInstanceId),
+            or(...streamFilters),
+          ))
+          .orderBy(asc(gameEvents.streamId), asc(gameEvents.streamVersion)));
+      const rowsByStream = new Map<string, StoredGameEvent[]>();
+      for (const row of rows) {
+        const events = rowsByStream.get(row.streamId) ?? [];
+        events.push(toStoredGameEvent(row));
+        rowsByStream.set(row.streamId, events);
+      }
+
+      for (const { streamId, revision, cached } of streamsNeedingRead) {
+        const tail = rowsByStream.get(streamId) ?? [];
+        const events = cached && revision > cached.revision
+          ? [...cached.events, ...tail]
+          : tail;
+        if (cached && revision > cached.revision) retainCharacterReplayPrefix(events, cached.events);
+        this.cacheStream(this.streamKey(worldInstanceId, streamId), events, cached && revision > cached.revision
+          ? cached.bytes + Buffer.byteLength(JSON.stringify(tail))
+          : undefined);
+        result.set(streamId, events);
+      }
+    }
+
     if (cachedScoped) {
       const events = result.get(cachedScoped.streamId);
       if (events) cachedScoped.events = events;

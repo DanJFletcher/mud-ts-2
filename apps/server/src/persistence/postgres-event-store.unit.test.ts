@@ -770,7 +770,6 @@ describe('PostgresEventStore unit behavior', () => {
   });
 
   it('returns empty stream batches without querying and de-duplicates requested streams', async () => {
-    const occurredAt = new Date('2026-10-27T12:34:56.000Z');
     const revisionsQuery = () => ({
       from: () => ({
         where: () => ({
@@ -781,28 +780,11 @@ describe('PostgresEventStore unit behavior', () => {
         }),
       }),
     });
-    const eventsQuery = (streamId: string, eventId: string) => () => ({
-      from: () => ({
-        where: () => ({
-          orderBy: async () => [{
-            type: 'character.moved',
-            contractVersion: 1,
-            payload: { toLocationId: `room-${streamId}` },
-            eventId,
-            worldInstanceId: 'world-1',
-            streamId,
-            streamVersion: 1,
-            causationCommandId: 'command-1',
-            actorId: 'player-1',
-            occurredAt,
-            tick: 1,
-          }],
-        }),
-      }),
-    });
     mockDb.select.mockImplementationOnce(revisionsQuery)
-      .mockImplementationOnce(eventsQuery('character-a', 'event-a'))
-      .mockImplementationOnce(eventsQuery('character-b', 'event-b'));
+      .mockImplementationOnce(historySelect([
+        persistedEventRow('character-a', 'event-a', 1),
+        persistedEventRow('character-b', 'event-b', 1),
+      ]));
     const store = new PostgresEventStore();
 
     const empty = await store.readStreams('world-1', []);
@@ -812,7 +794,7 @@ describe('PostgresEventStore unit behavior', () => {
     expect(streams.size).toBe(2);
     expect(streams.get('character-a')?.map(({ eventId }) => eventId)).toEqual(['event-a']);
     expect(streams.get('character-b')?.map(({ eventId }) => eventId)).toEqual(['event-b']);
-    expect(mockDb.select).toHaveBeenCalledTimes(3);
+    expect(mockDb.select).toHaveBeenCalledTimes(2);
   });
 
   it('reuses the command-scoped stream while bulk-reading other streams', async () => {
@@ -855,8 +837,7 @@ describe('PostgresEventStore unit behavior', () => {
           }),
         }),
       }))
-      .mockImplementationOnce(historySelect([streamA]))
-      .mockImplementationOnce(historySelect([streamB]));
+      .mockImplementationOnce(historySelect([streamA, streamB]));
     const store = new PostgresEventStore();
 
     const result = await store.withCommandReadCache('world-1', 'character-a', async () => {
@@ -867,7 +848,7 @@ describe('PostgresEventStore unit behavior', () => {
 
     expect(result.streams.get('character-a')?.map(({ eventId }) => eventId)).toEqual(['event-a']);
     expect(result.scopedRead.map(({ eventId }) => eventId)).toEqual(['event-a']);
-    expect(mockDb.select).toHaveBeenCalledTimes(3);
+    expect(mockDb.select).toHaveBeenCalledTimes(2);
   });
 
   it('bypasses an empty command scope and can temporarily exit a populated scope', async () => {

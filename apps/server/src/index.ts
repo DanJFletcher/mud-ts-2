@@ -260,6 +260,7 @@ app.use((req, res, next) => {
   const traceableRoute =
     (req.method === 'POST' && req.path === '/api/commands' && tracePhase === 'command') ||
     (req.method === 'GET' && req.path === '/api/game' && tracePhase === 'snapshot') ||
+    (req.method === 'GET' && req.path === '/api/characters' && tracePhase === 'characters') ||
     (req.method === 'POST' && req.path === '/api/world-session/heartbeat' && tracePhase === 'heartbeat');
   const traceId = traceableRoute && /^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i.test(requestedTraceId)
     ? requestedTraceId
@@ -577,11 +578,31 @@ app.get('/api/characters', async (req, res, next) => {
       lastPlayedAt: characters.lastPlayedAt,
     }).from(characters).where(eq(characters.playerId, identity.playerId))
       .orderBy(desc(characters.createdAt));
-    const characterList = await Promise.all(rows.map(async (row) => {
-      const projection = replayCharacter(await store.readStream(row.worldInstanceId, row.id));
+    const rowsByWorld = new Map<string, typeof rows>();
+    for (const row of rows) {
+      const worldRows = rowsByWorld.get(row.worldInstanceId) ?? [];
+      worldRows.push(row);
+      rowsByWorld.set(row.worldInstanceId, worldRows);
+    }
+    const worldCharacterData = new Map(await Promise.all([...rowsByWorld].map(async ([worldInstanceId, worldRows]) => {
+      const runtime = runtimeFor(worldInstanceId);
+      const [streams, locationGroupCatalog] = await Promise.all([
+        store.readStreams
+          ? store.readStreams(worldInstanceId, worldRows.map((row) => row.id))
+          : Promise.all(worldRows.map(async (row) => [
+              row.id,
+              await store.readStream(worldInstanceId, row.id),
+            ] as const)).then((entries) => new Map(entries)),
+        runtime.locationGroupsFeature.catalog.read(),
+      ]);
+      return [worldInstanceId, { runtime, streams, locationGroupCatalog }] as const;
+    })));
+    const characterList = rows.map((row) => {
+      const worldData = worldCharacterData.get(row.worldInstanceId);
+      if (!worldData) throw new Error('A character world could not be loaded.');
+      const { runtime, locationGroupCatalog } = worldData;
+      const projection = replayCharacter(worldData.streams.get(row.id) ?? []);
       if (!projection) throw new Error('A character record exists without its creation event.');
-      const runtime = runtimeFor(row.worldInstanceId);
-      const locationGroupCatalog = await runtime.locationGroupsFeature.catalog.read();
       const location = runtime.world.locations.find((item) => item.id === projection.locationId);
       const locationGroups = locationGroupMembershipsForLocation(
         locationGroupCatalog.groups,
@@ -597,7 +618,7 @@ app.get('/api/characters', async (req, res, next) => {
         worldName: runtime.world.displayName,
         lastPlayedAt: row.lastPlayedAt?.toISOString() ?? null,
       };
-    }));
+    });
     const activeSessions = await db.select().from(worldSessions)
       .where(eq(worldSessions.playerId, identity.playerId));
     const selectedSession = activeSessions.find((session) => session.worldInstanceId === selected.worldInstanceId);
