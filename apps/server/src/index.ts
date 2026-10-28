@@ -75,9 +75,8 @@ import {
   createRateLimiter,
   createRequestId,
   createTrustedHostGuard,
-  parseAllowedOrigins,
-  parseTrustedHosts,
 } from './request-security.js';
+import { readServerConfiguration } from './server-config.js';
 import {
   createWorldRuntimes,
   registeredWorlds,
@@ -87,23 +86,7 @@ import {
   type WorldRuntime,
 } from './world-registry.js';
 
-const trustedProxyHops = Number(process.env.TRUSTED_PROXY_HOPS ?? (process.env.NODE_ENV === 'production' ? '1' : '0'));
-if (!Number.isInteger(trustedProxyHops) || trustedProxyHops < 0) {
-  throw new Error('TRUSTED_PROXY_HOPS must be a non-negative integer.');
-}
-const allowedOrigins = parseAllowedOrigins(
-  process.env.CORS_ALLOWED_ORIGINS,
-  process.env.NODE_ENV === 'production'
-    ? undefined
-    : [process.env.REPLIT_DEV_DOMAIN, process.env.REPLIT_DOMAINS].filter(Boolean).join(','),
-);
-const trustedHosts = parseTrustedHosts([
-  process.env.TRUSTED_HOSTS,
-  process.env.NODE_ENV === 'production' ? process.env.REPLIT_DOMAINS : undefined,
-].filter(Boolean).join(','));
-if (process.env.NODE_ENV === 'production' && trustedHosts.size === 0) {
-  throw new Error('TRUSTED_HOSTS must be configured before starting the production server.');
-}
+const { trustedProxyHops, allowedOrigins, trustedHosts } = readServerConfiguration(process.env);
 
 const store = new PostgresEventStore();
 await store.rebuildRoomStates();

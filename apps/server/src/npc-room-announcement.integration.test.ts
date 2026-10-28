@@ -1790,6 +1790,60 @@ describe('NPC room announcements through the server', () => {
     expect(await successful.json()).toMatchObject({ ok: true, value: { party: null } });
   });
 
+  it('returns safe status codes and request IDs for unexpected route errors', async () => {
+    await enterWorld('alice', 'character-alice');
+    const query = {
+      type: 'party.info',
+      version: 1,
+      queryId: 'unexpected-query-error',
+      worldInstanceId: instanceId,
+      characterId: 'character-alice',
+      payload: {},
+    };
+    const postQuery = () => fetch(`${baseUrl}/api/queries`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-user': 'alice',
+      },
+      body: JSON.stringify(query),
+    });
+    const cases: Array<{ error: unknown; status: number }> = [
+      { error: Object.assign(new Error('unprocessable'), { status: 422 }), status: 422 },
+      { error: Object.assign(new Error('out of range'), { status: 399 }), status: 500 },
+      { error: 'unstructured failure', status: 500 },
+    ];
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      for (const testCase of cases) {
+        state.queryOverrides.set('party.info', () => {
+          throw testCase.error;
+        });
+        const response = await postQuery();
+        expect(response.status).toBe(testCase.status);
+        const body = await response.json() as { message: string; requestId: string };
+        expect(body.message).toBe('The game server could not complete that request.');
+        expect(body.requestId).toBe(response.headers.get('x-request-id'));
+      }
+    } finally {
+      state.queryOverrides.delete('party.info');
+      errorLog.mockRestore();
+    }
+  });
+
+  it('returns a specific error when JSON request bodies exceed the configured limit', async () => {
+    const response = await fetch(`${baseUrl}/api/queries`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ payload: 'x'.repeat(17 * 1024) }),
+    });
+
+    expect(response.status).toBe(413);
+    const body = await response.json() as { message: string; requestId: string };
+    expect(body).toMatchObject({ message: 'The request body is too large.' });
+    expect(body.requestId).toBe(response.headers.get('x-request-id'));
+  });
+
   it('returns an interaction inbox for the active character', async () => {
     const unauthenticated = await fetch(`${baseUrl}/api/interactions`);
     expect(unauthenticated.status).toBe(401);
