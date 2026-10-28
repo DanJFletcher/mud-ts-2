@@ -2,6 +2,7 @@
 .lobby-header { position: relative; z-index: 10; max-width: 1160px; margin: auto; padding: 1.1rem 1.5rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-bottom: 1px solid var(--mudd-border); }
 .lobby-brand { display: inline-flex; align-items: center; gap: .65rem; font-family: "DM Mono", monospace; font-weight: 600; letter-spacing: .14em; text-decoration: none; }
 .lobby-brand img { width: 30px; height: 30px; }
+.lobby-mobile-primary-nav { display: none; }
 .lobby-mobile-menu-toggle { display: none; }
 .lobby-header nav { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; font-size: .88rem; }
 .lobby-header nav a { padding-block: .6rem; text-decoration: none; }
@@ -72,6 +73,15 @@
   .lobby-header { padding: .6rem 1rem; gap: .5rem; }
   .lobby-brand { font-size: .85rem; gap: .4rem; }
   .lobby-brand img { width: 24px; height: 24px; }
+  .lobby-mobile-primary-nav { display: flex; align-items: center; gap: .15rem; margin-left: auto; }
+  .lobby-mobile-primary-nav > a,
+  .lobby-mobile-primary-nav > button {
+    display: inline-flex; align-items: center; justify-content: center; min-height: 44px;
+    padding: .3rem .2rem; color: var(--mudd-text); font-size: .68rem; line-height: 1.2;
+    text-decoration: none; white-space: nowrap;
+  }
+  .lobby-mobile-primary-nav > button { border: 0; background: transparent; cursor: pointer; font-weight: 600; }
+  #account-navigation .lobby-desktop-nav-item { display: none; }
   .lobby-mobile-menu-toggle {
     display: inline-flex;
     align-items: center;
@@ -147,6 +157,12 @@
   .lobby-world-characters .lobby-character-list .character-options__compact-label { display: inline; }
   .character-detail__facts { grid-template-columns: minmax(0, 1fr); }
   .character-detail__actions { align-items: flex-start; flex-direction: column; gap: .4rem; }
+}
+@media (max-width: 360px) {
+  .lobby-header { gap: .25rem; padding-inline: .65rem; }
+  .lobby-mobile-primary-nav { gap: 0; }
+  .lobby-mobile-primary-nav > a,
+  .lobby-mobile-primary-nav > button { padding-inline: .1rem; font-size: .64rem; }
 }
 @media (prefers-reduced-motion: reduce) {
   .character-detail__skeleton span { animation: none; }

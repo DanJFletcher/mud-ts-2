@@ -139,14 +139,29 @@ describe('world lobby and explicit character entry', () => {
     fireEvent.click(toggle!);
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     expect(navigation).toHaveClass('is-open');
-    expect(within(navigation!).getByRole('link', { name: 'Worlds' })).toBeInTheDocument();
-    expect(within(navigation!).getByRole('link', { name: 'Characters' })).toHaveAttribute('href', '/characters');
+    const primary = container.querySelector<HTMLElement>('[aria-label="Primary navigation"]');
+    expect(primary).not.toBeNull();
+    expect(within(primary!).getByRole('link', { name: 'Worlds' })).toHaveAttribute('href', '/');
+    expect(within(primary!).getByRole('link', { name: 'Characters' })).toHaveAttribute('href', '/characters');
+    expect(within(primary!).getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    expect(within(navigation!).getByRole('link', { name: 'Worlds' })).toHaveClass('lobby-desktop-nav-item');
+    expect(within(navigation!).getByRole('link', { name: 'Characters' })).toHaveClass('lobby-desktop-nav-item');
+    expect(within(navigation!).getByRole('button', { name: 'Sign out' })).toHaveClass('lobby-desktop-nav-item');
     expect(within(navigation!).getByRole('link', { name: 'Codex' })).toBeInTheDocument();
-    expect(within(navigation!).getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
 
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     expect(navigation).not.toHaveClass('is-open');
+  });
+  it('keeps sign-in outside the mobile menu when signed out', async () => {
+    mocks.signedIn = false;
+    const { container } = open();
+    const primary = container.querySelector<HTMLElement>('[aria-label="Primary navigation"]');
+    const navigation = container.querySelector<HTMLElement>('#account-navigation');
+    expect(primary).not.toBeNull();
+    expect(within(primary!).getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/sign-in');
+    fireEvent.click(container.querySelector<HTMLButtonElement>('.lobby-mobile-menu-toggle')!);
+    expect(within(navigation!).getByRole('link', { name: 'Sign in' })).toHaveClass('lobby-desktop-nav-item');
   });
 
   it('orders real recent history ahead of legacy nulls without auto-entering an active session', async () => {
