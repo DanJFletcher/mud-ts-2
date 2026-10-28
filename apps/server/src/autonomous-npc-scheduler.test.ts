@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { EngineHost, InMemoryEventStore } from '@mudd/engine-core';
+import type { WorldPackDraft } from '@mudd/contracts';
 import {
   autonomousNpcsPlugin,
   autonomousNpcStreamId,
@@ -212,6 +213,63 @@ describe('autonomous NPC scheduler and room movement messages', () => {
       }));
     } finally {
       await engine.stop();
+    }
+  });
+
+  it('reports NPC stream and dispatch failures without aborting the rest of a tick', async () => {
+    const onError = vi.fn();
+    const now = new Date('2026-10-21T12:00:00.000Z');
+    const store = {
+      readStream: vi.fn(async () => []),
+    } as unknown as EventStorePort;
+    const engine = {
+      dispatchSystem: vi.fn(async () => ({
+        receipt: { ok: false, code: 'RULE_VIOLATION', message: 'Movement rejected.' },
+      })),
+    } as unknown as EngineHost;
+    const scheduler = createAutonomousNpcScheduler({
+      engine,
+      store,
+      world: demoWorld,
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      now: () => now,
+      onError,
+    });
+
+    expect(await scheduler.tick()).toBe(2);
+    expect(onError).toHaveBeenCalledTimes(2);
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'Movement rejected.' }), expect.any(String));
+
+    vi.mocked(store.readStream).mockRejectedValue(new Error('Stream unavailable.'));
+    expect(await scheduler.tick()).toBe(0);
+    expect(onError).toHaveBeenCalledTimes(4);
+    expect(onError).toHaveBeenLastCalledWith(expect.any(Error), expect.any(String));
+  });
+
+  it('starts and stops its polling timer idempotently', () => {
+    const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
+    const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval');
+    const engine = { dispatchSystem: vi.fn() } as unknown as EngineHost;
+    const store = { readStream: vi.fn() } as unknown as EventStorePort;
+    const scheduler = createAutonomousNpcScheduler({
+      engine,
+      store,
+      world: { ...demoWorld, locations: [] } as WorldPackDraft,
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+    });
+
+    try {
+      scheduler.start();
+      scheduler.start();
+      expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+
+      scheduler.stop();
+      scheduler.stop();
+      expect(clearIntervalSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      scheduler.stop();
+      setIntervalSpy.mockRestore();
+      clearIntervalSpy.mockRestore();
     }
   });
 });

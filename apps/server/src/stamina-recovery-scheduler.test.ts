@@ -230,4 +230,81 @@ describe('online stamina recovery scheduler', () => {
     expect(await scheduler.tick()).toBe(0);
     expect(dispatchSystem).not.toHaveBeenCalled();
   });
+
+  it('skips recovery when every vital is full and no fractional carry remains', async () => {
+    const now = new Date('2026-10-23T12:00:00.000Z');
+    const dispatchSystem = vi.fn();
+    const scheduler = createStaminaRecoveryScheduler({
+      engine: { dispatchSystem } as unknown as EngineHost,
+      store: {
+        readStream: async () => characterEvents(null, true, 6, 100),
+      } as Pick<EventStorePort, 'readStream'>,
+      worldInstanceId: 'world',
+      listSessions: async () => [{ characterId: 'character', lastSeenAt: now }],
+      now: () => now,
+    });
+
+    expect(await scheduler.tick()).toBe(0);
+    expect(dispatchSystem).not.toHaveBeenCalled();
+  });
+
+  it('reports rejected recovery commands and retries thrown dispatches', async () => {
+    const now = new Date('2026-10-23T12:00:00.000Z');
+    const onError = vi.fn();
+    const rejectedScheduler = createStaminaRecoveryScheduler({
+      engine: {
+        dispatchSystem: async () => ({
+          receipt: { ok: false, code: 'RULE_VIOLATION', message: 'Recovery rejected.' },
+        }),
+      } as unknown as EngineHost,
+      store: { readStream: async () => characterEvents(null) },
+      worldInstanceId: 'world',
+      listSessions: async () => [{ characterId: 'character', lastSeenAt: now }],
+      now: () => now,
+      onError,
+    });
+    expect(await rejectedScheduler.tick()).toBe(1);
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'Recovery rejected.' }), 'character');
+
+    const dispatchSystem = vi.fn()
+      .mockRejectedValueOnce(new Error('Temporary engine failure.'))
+      .mockResolvedValue({ receipt: { ok: true } });
+    const retryScheduler = createStaminaRecoveryScheduler({
+      engine: { dispatchSystem } as unknown as EngineHost,
+      store: { readStream: async () => characterEvents(null) },
+      worldInstanceId: 'world',
+      listSessions: async () => [{ characterId: 'character', lastSeenAt: now }],
+      now: () => now,
+      onError,
+    });
+    expect(await retryScheduler.tick()).toBe(0);
+    expect(await retryScheduler.tick()).toBe(1);
+    expect(dispatchSystem).toHaveBeenCalledTimes(2);
+    expect(onError).toHaveBeenLastCalledWith(expect.any(Error), 'character');
+  });
+
+  it('starts and stops its polling timer idempotently', () => {
+    const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
+    const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval');
+    const listSessions = vi.fn(async () => []);
+    const scheduler = createStaminaRecoveryScheduler({
+      engine: { dispatchSystem: vi.fn() } as unknown as EngineHost,
+      store: { readStream: vi.fn() } as unknown as Pick<EventStorePort, 'readStream'>,
+      worldInstanceId: 'world',
+      listSessions,
+    });
+
+    try {
+      scheduler.start();
+      scheduler.start();
+      expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+      scheduler.stop();
+      scheduler.stop();
+      expect(clearIntervalSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      scheduler.stop();
+      setIntervalSpy.mockRestore();
+      clearIntervalSpy.mockRestore();
+    }
+  });
 });
