@@ -770,10 +770,197 @@ describe('MuddHttpClient', () => {
     expect(commandCount).toBe(1);
     expect(gameReads).toBe(0);
 
-    await expect(client.move('character-1', 'clearing-to-street', 3, 'move-repeat-conflict'))
+    await expect(client.rest('character-1', 3, 'rest-repeat-conflict'))
       .rejects.toThrow('The world updated while you were acting. Please try again.');
     expect(commandCount).toBe(3);
     expect(gameReads).toBe(1);
+  });
+
+  it('retries navigation through repeated revision races while the character remains in the source room', async () => {
+    const commandBodies: Record<string, unknown>[] = [];
+    let gameReads = 0;
+    let currentRevision = 4;
+    const fetcher: typeof fetch = async (input, init = {}) => {
+      const path = String(input);
+      if (path === '/api/game') {
+        gameReads += 1;
+        return Response.json({
+          player: { id: 'player-1', displayName: 'Player' },
+          character: {
+            worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+            characterId: 'character-1',
+            name: 'Fern',
+            locationId: 'room-a',
+            revision: currentRevision,
+          },
+        });
+      }
+      if (path === '/api/commands') {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        commandBodies.push(body);
+        if (commandBodies.length < 3) {
+          const expectedVersion = Number(body.expectedVersion);
+          currentRevision = expectedVersion + 1;
+          return Response.json({
+            receipt: {
+              ok: false,
+              commandId: body.commandId,
+              code: 'VERSION_CONFLICT',
+              message: `Expected revision ${expectedVersion}; current revision is ${currentRevision}.`,
+              retryable: true,
+            },
+            streamId: 'character-1',
+            events: [],
+          });
+        }
+        return Response.json({
+          receipt: {
+            ok: true,
+            commandId: body.commandId,
+            eventIds: ['event-1'],
+            newAggregateVersion: Number(body.expectedVersion) + 1,
+          },
+          streamId: 'character-1',
+          events: [],
+        });
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    };
+    const client = new MuddHttpClient({ worldInstanceId: DEMO_WORLD_INSTANCE_ID, fetcher });
+
+    const result = await client.move(
+      'character-1',
+      'room-a-to-room-b',
+      3,
+      'move-through-races',
+      undefined,
+      'room-a',
+    );
+
+    expect(result.receipt.ok).toBe(true);
+    expect(gameReads).toBe(2);
+    expect(commandBodies.map((body) => body.expectedVersion)).toEqual([3, 4, 5]);
+    expect(commandBodies.every((body) => body.commandId === 'move-through-races')).toBe(true);
+  });
+
+  it('does not retry navigation from a different authoritative room', async () => {
+    let commandAttempts = 0;
+    let gameReads = 0;
+    const client = new MuddHttpClient({
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      fetcher: async (input) => {
+        const path = String(input);
+        if (path === '/api/game') {
+          gameReads += 1;
+          return Response.json({
+            player: { id: 'player-1', displayName: 'Player' },
+            character: {
+              worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+              characterId: 'character-1',
+              name: 'Fern',
+              locationId: 'room-c',
+              revision: 4,
+            },
+          });
+        }
+        if (path === '/api/commands') {
+          commandAttempts += 1;
+          return Response.json({
+            receipt: {
+              ok: false,
+              commandId: 'move-after-room-change',
+              code: 'VERSION_CONFLICT',
+              message: 'Expected revision 3; current revision is 4.',
+              retryable: true,
+            },
+            streamId: 'character-1',
+            events: [],
+          });
+        }
+        throw new Error(`Unexpected request: ${path}`);
+      },
+    });
+
+    await expect(client.move(
+      'character-1',
+      'room-a-to-room-b',
+      3,
+      'move-after-room-change',
+      undefined,
+      'room-a',
+    )).rejects.toThrow('The world updated while you were acting. Please try again.');
+    expect(commandAttempts).toBe(1);
+    expect(gameReads).toBe(1);
+  });
+
+  it('applies the same conflict recovery to road-segment travel', async () => {
+    const commandBodies: Record<string, unknown>[] = [];
+    let currentRevision = 4;
+    const client = new MuddHttpClient({
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      fetcher: async (input, init = {}) => {
+        const path = String(input);
+        if (path === '/api/game') {
+          return Response.json({
+            player: { id: 'player-1', displayName: 'Player' },
+            character: {
+              worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+              characterId: 'character-1',
+              name: 'Fern',
+              locationId: 'road-room-a',
+              revision: currentRevision,
+            },
+          });
+        }
+        if (path === '/api/commands') {
+          const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+          commandBodies.push(body);
+          if (commandBodies.length === 1) {
+            currentRevision = 4;
+            return Response.json({
+              receipt: {
+                ok: false,
+                commandId: body.commandId,
+                code: 'VERSION_CONFLICT',
+                message: 'Expected revision 3; current revision is 4.',
+                retryable: true,
+              },
+              streamId: 'character-1',
+              events: [],
+            });
+          }
+          return Response.json({
+            receipt: {
+              ok: true,
+              commandId: body.commandId,
+              eventIds: ['road-step-event'],
+              newAggregateVersion: 5,
+            },
+            streamId: 'character-1',
+            events: [],
+          });
+        }
+        throw new Error(`Unexpected request: ${path}`);
+      },
+    });
+
+    const result = await client.roadStep(
+      'character-1',
+      'road-room-a-to-road-room-b',
+      3,
+      'road-step-through-race',
+      undefined,
+      'road-room-a',
+    );
+
+    expect(result.receipt.ok).toBe(true);
+    expect(commandBodies).toHaveLength(2);
+    expect(commandBodies.map((body) => body.type)).toEqual([
+      'character.road.step',
+      'character.road.step',
+    ]);
+    expect(commandBodies.map((body) => body.expectedVersion)).toEqual([3, 4]);
+    expect(commandBodies.every((body) => body.commandId === 'road-step-through-race')).toBe(true);
   });
 
   it('sends Zod-validated commands and queries to the authoritative engine', async () => {

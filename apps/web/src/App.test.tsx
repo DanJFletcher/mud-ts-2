@@ -1393,6 +1393,49 @@ describe('single-character world session client', () => {
     });
   });
 
+  it('refreshes quietly if navigation still conflicts after automatic retries', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    let moveAttempts = 0;
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as {
+          type?: string;
+          commandId?: string;
+          expectedVersion?: number;
+        };
+        if (command.type === 'character.move') {
+          moveAttempts += 1;
+          const expectedVersion = command.expectedVersion ?? revision;
+          revision = expectedVersion + 1;
+          return json({
+            receipt: {
+              ok: false,
+              commandId: command.commandId,
+              code: 'VERSION_CONFLICT',
+              message: `Expected revision ${expectedVersion}; current revision is ${revision}.`,
+              retryable: true,
+            },
+            streamId: characterId,
+            events: [],
+          });
+        }
+      }
+      return original(path, init);
+    });
+
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    quickGo('north');
+
+    await waitFor(() => {
+      expect(moveAttempts).toBe(4);
+      expect(screen.getByRole('heading', { name: 'Mossgate Clearing' })).toBeVisible();
+    });
+    expect(screen.queryByText('The world updated while you were acting. Please try again.'))
+      .not.toBeInTheDocument();
+  });
+
   it('shows an uncertain PvP challenge and reuses its command ID when retried', async () => {
     roomOccupants = [{ id: 'mira-character', displayName: 'Mira' }];
     heartbeatOccupants = [{ id: 'mira-character', displayName: 'Mira' }];

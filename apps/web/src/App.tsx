@@ -2201,8 +2201,22 @@ export function WorldClient({
     let commandAccepted = false;
     try {
       const response = exit.roadId
-        ? await client.roadStep(snapshot.character.characterId, exit.id, snapshot.location.revision, commandId, traceId)
-        : await client.move(snapshot.character.characterId, exit.id, snapshot.location.revision, commandId, traceId);
+        ? await client.roadStep(
+            snapshot.character.characterId,
+            exit.id,
+            snapshot.location.revision,
+            commandId,
+            traceId,
+            fromLocationId,
+          )
+        : await client.move(
+            snapshot.character.characterId,
+            exit.id,
+            snapshot.location.revision,
+            commandId,
+            traceId,
+            fromLocationId,
+          );
       client.pendingActions.acknowledge(commandId);
       commandAccepted = true;
       const partyAmbush = response.events?.some((event) => event.type === "team.road_encounter_started");
@@ -2247,7 +2261,37 @@ export function WorldClient({
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to move.";
-      if (isRejectedAction(error) && !commandAccepted) {
+      if (error instanceof MuddCommandError && error.code === "VERSION_CONFLICT" && !commandAccepted) {
+        client.pendingActions.clearWhere((action) => action.id === commandId);
+        try {
+          const refreshed = await client.getGame(traceId);
+          setSnapshot(refreshed);
+          setConnectionError("");
+          const actualLocation = refreshed.location;
+          if (
+            actualLocation &&
+            exit.destinationPreview &&
+            actualLocation.locationId === exit.destinationPreview.locationId
+          ) {
+            const reconciled = reconcileOptimisticTravel(actualLocation, commandId);
+            if (!reconciled) addDefaultLook(actualLocation);
+          } else {
+            rollbackOptimisticTravel(commandId);
+            if (actualLocation && actualLocation.locationId !== fromLocationId) {
+              addDefaultLook(actualLocation);
+            }
+          }
+          if (actualLocation && actualLocation.locationId !== fromLocationId) {
+            announceNewQuestObjectives(refreshed);
+            if (!dialogueModalOpen) setActiveDialogue(null);
+            setActiveMerchantCatalog(null);
+          }
+          logMoveTrace("error");
+        } catch {
+          rollbackOptimisticTravel(commandId);
+          logMoveTrace("uncertain");
+        }
+      } else if (isRejectedAction(error) && !commandAccepted) {
         client.pendingActions.reject(commandId, message);
         rollbackOptimisticTravel(commandId);
         addEntry("error", message);

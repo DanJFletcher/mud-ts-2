@@ -903,6 +903,7 @@ export class MuddHttpClient {
     expectedVersion: number,
     commandId = crypto.randomUUID(),
     traceId?: string,
+    originLocationId?: string,
   ): Promise<CommandResponse> {
     const command = MoveCharacterCommandSchema.parse({
       type: 'character.move',
@@ -913,7 +914,10 @@ export class MuddHttpClient {
       expectedVersion,
       payload: { exitId },
     });
-    return this.send(command, traceId);
+    return this.send(command, traceId, {
+      maxVersionRetries: 3,
+      ...(originLocationId ? { expectedLocationId: originLocationId } : {}),
+    });
   }
 
   async roadStep(
@@ -922,6 +926,7 @@ export class MuddHttpClient {
     expectedVersion: number,
     commandId = crypto.randomUUID(),
     traceId?: string,
+    originLocationId?: string,
   ): Promise<CommandResponse> {
     const command = RoadStepCommandSchema.parse({
       type: 'character.road.step',
@@ -932,7 +937,10 @@ export class MuddHttpClient {
       expectedVersion,
       payload: { exitId },
     });
-    return this.send(command, traceId);
+    return this.send(command, traceId, {
+      maxVersionRetries: 3,
+      ...(originLocationId ? { expectedLocationId: originLocationId } : {}),
+    });
   }
 
   async take(characterId: string, itemId: string, expectedVersion: number, commandId = crypto.randomUUID()): Promise<CommandResponse> {
@@ -1029,49 +1037,57 @@ export class MuddHttpClient {
     return { interactionId: payload.data.interactionId, response: payload.data.response };
   }
 
-  private async send(command: unknown, traceId?: string): Promise<CommandResponse> {
-    const result = await this.postCommand(command, traceId);
-    if (result.receipt.ok) return result;
+  private async send(
+    command: unknown,
+    traceId?: string,
+    retryOptions: { maxVersionRetries?: number; expectedLocationId?: string } = {},
+  ): Promise<CommandResponse> {
+    const maxVersionRetries = retryOptions.maxVersionRetries ?? 1;
+    let retries = 0;
+    let commandToSend = command;
 
-    const commandDetails = VersionedCharacterCommandSchema.safeParse(command);
-    const conflict = /^Expected revision (\d+); current revision is (\d+)\.$/.exec(result.receipt.message);
-    if (
-      result.receipt.code !== 'VERSION_CONFLICT' ||
-      !commandDetails.success ||
-      !conflict
-    ) {
-      throw new MuddCommandError(result.receipt.message, result.receipt.code);
-    }
+    while (true) {
+      const result = await this.postCommand(commandToSend, traceId);
+      if (result.receipt.ok) return result;
 
-    const expectedVersion = Number(conflict[1]);
-    const reportedCurrentVersion = Number(conflict[2]);
-    let latest: GameSnapshot;
-    try {
-      latest = await this.getGame(traceId);
-    } catch {
-      throw new MuddCommandError('The world updated while you were acting. Please try again.', 'VERSION_CONFLICT');
-    }
-    const character = latest.character;
-    if (
-      !character ||
-      character.characterId !== commandDetails.data.characterId ||
-      character.revision < reportedCurrentVersion ||
-      character.revision <= expectedVersion
-    ) {
-      throw new MuddCommandError('The world updated while you were acting. Please try again.', 'VERSION_CONFLICT');
-    }
-
-    const retried = await this.postCommand({
-      ...(command as Record<string, unknown>),
-      expectedVersion: character.revision,
-    }, traceId);
-    if (!retried.receipt.ok) {
-      if (retried.receipt.code === 'VERSION_CONFLICT') {
+      const commandDetails = VersionedCharacterCommandSchema.safeParse(commandToSend);
+      const conflict = /^Expected revision (\d+); current revision is (\d+)\.$/.exec(result.receipt.message);
+      if (
+        result.receipt.code !== 'VERSION_CONFLICT' ||
+        !commandDetails.success ||
+        !conflict
+      ) {
+        throw new MuddCommandError(result.receipt.message, result.receipt.code);
+      }
+      if (retries >= maxVersionRetries) {
         throw new MuddCommandError('The world updated while you were acting. Please try again.', 'VERSION_CONFLICT');
       }
-      throw new MuddCommandError(retried.receipt.message, retried.receipt.code);
+
+      const expectedVersion = Number(conflict[1]);
+      const reportedCurrentVersion = Number(conflict[2]);
+      let latest: GameSnapshot;
+      try {
+        latest = await this.getGame(traceId);
+      } catch {
+        throw new MuddCommandError('The world updated while you were acting. Please try again.', 'VERSION_CONFLICT');
+      }
+      const character = latest.character;
+      if (
+        !character ||
+        character.characterId !== commandDetails.data.characterId ||
+        character.revision < reportedCurrentVersion ||
+        character.revision <= expectedVersion ||
+        (retryOptions.expectedLocationId && character.locationId !== retryOptions.expectedLocationId)
+      ) {
+        throw new MuddCommandError('The world updated while you were acting. Please try again.', 'VERSION_CONFLICT');
+      }
+
+      commandToSend = {
+        ...(commandToSend as Record<string, unknown>),
+        expectedVersion: character.revision,
+      };
+      retries += 1;
     }
-    return retried;
   }
 
   private async postCommand(command: unknown, traceId?: string): Promise<CommandResponse> {
