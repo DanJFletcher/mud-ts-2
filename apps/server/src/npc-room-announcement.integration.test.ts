@@ -1230,6 +1230,67 @@ describe('NPC room announcements through the server', () => {
     expect(departure.status).toBe(200);
   });
 
+  it('validates world queries and enriches location descriptions for the active character', async () => {
+    const query = {
+      type: 'location.describe',
+      version: 1,
+      queryId: 'location-query-test',
+      worldInstanceId: instanceId,
+      characterId: 'character-alice',
+      payload: {},
+    };
+    const postQuery = (body: unknown) => fetch(`${baseUrl}/api/queries`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-user': 'alice',
+      },
+      body: JSON.stringify(body),
+    });
+
+    const malformed = await postQuery({ ...query, payload: { unexpected: true } });
+    expect(malformed.status).toBe(400);
+    expect(await malformed.json()).toEqual({ message: 'Invalid world query.' });
+
+    const withoutSession = await postQuery(query);
+    expect(withoutSession.status).toBe(409);
+    expect(await withoutSession.json()).toEqual({
+      message: 'Enter the world with a character before making a query.',
+    });
+
+    await enterWorld('alice', 'character-alice');
+    const wrongCharacter = await postQuery({ ...query, characterId: 'character-bob' });
+    expect(wrongCharacter.status).toBe(403);
+    expect(await wrongCharacter.json()).toEqual({
+      message: 'This world session is bound to a different character.',
+    });
+
+    const description = await postQuery(query);
+    expect(description.status).toBe(200);
+    expect(await description.json()).toMatchObject({
+      ok: true,
+      value: {
+        worldInstanceId: instanceId,
+        locationId: 'npc-room',
+        title: 'NPC Room',
+        description: 'A quiet test room.',
+        occupants: [],
+      },
+    });
+  });
+
+  it('returns an interaction inbox for the active character', async () => {
+    const unauthenticated = await fetch(`${baseUrl}/api/interactions`);
+    expect(unauthenticated.status).toBe(401);
+
+    await enterWorld('alice', 'character-alice');
+    const inbox = await fetch(`${baseUrl}/api/interactions`, {
+      headers: { 'x-test-user': 'alice' },
+    });
+    expect(inbox.status).toBe(200);
+    expect(await inbox.json()).toEqual({ requests: [], encounter: null });
+  });
+
   afterAll(async () => {
     if (server?.listening) {
       await new Promise<void>((resolve, reject) => {
