@@ -111,6 +111,8 @@ const state = vi.hoisted(() => ({
   nextChatSubmissionId: 1,
   moveReceipts: new Map(),
   nextMoveId: 1,
+  interactionEncounter: null as unknown,
+  teamCombatProjection: { encounter: null } as unknown,
 }));
 
 const announcementState = vi.hoisted(() => ({ attempts: 0 }));
@@ -156,7 +158,7 @@ vi.mock('@mudd/core-plugins', async () => ({
   interactionPlugin: {},
   interactionStreamId: (worldInstanceId: string) => `world-interactions:${worldInstanceId}`,
   projectInteractionEvents: () => ({ requests: [], latestEncounterEvent: undefined }),
-  projectCharacterInteractions: () => ({ requests: [], encounter: null }),
+  projectCharacterInteractions: () => ({ requests: [], encounter: state.interactionEncounter }),
   updateInteractionRequestStatus: async () => false,
   movementPlugin: {},
   roadTravelPlugin: {},
@@ -196,6 +198,9 @@ vi.mock('@mudd/engine-core', async () => ({
     async query(query: { type?: string; characterId?: string }) {
       if (query.type === 'party.info') {
         return { ok: true, value: { party: null, revision: 0, activity: [] } };
+      }
+      if (query.type === 'team.combat.info') {
+        return { ok: true, value: state.teamCombatProjection };
       }
       if (query.type === 'location.describe') {
         const character = state.characters[query.characterId as keyof typeof state.characters];
@@ -802,6 +807,8 @@ describe('NPC room announcements through the server', () => {
       registerEventHandler: () => undefined,
     } as never);
     state.nextMoveId = 1;
+    state.interactionEncounter = null;
+    state.teamCombatProjection = { encounter: null };
     announcementState.attempts = 0;
     state.characters['character-alice'].locationId = 'npc-room';
     state.characters['character-bob'].locationId = 'npc-room';
@@ -1006,6 +1013,221 @@ describe('NPC room announcements through the server', () => {
       headers: { 'x-test-user': 'alice' },
     });
     expect(noLongerInWorld.status).toBe(409);
+  });
+
+  it('binds world commands to the active character and rejects PvP actions without an encounter', async () => {
+    const postCommand = (userId: string, body: unknown) => fetch(`${baseUrl}/api/commands`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-user': userId,
+      },
+      body: JSON.stringify(body),
+    });
+    const movement = {
+      type: 'character.move',
+      version: 1,
+      commandId: 'guard-move',
+      worldInstanceId: instanceId,
+      characterId: 'character-alice',
+      expectedVersion: 0,
+      payload: { exitId: 'exit-north' },
+    };
+
+    const withoutSession = await postCommand('alice', movement);
+    expect(withoutSession.status).toBe(409);
+    expect(await withoutSession.json()).toEqual({
+      message: 'Enter the world with a character before taking world actions.',
+    });
+
+    await enterWorld('alice', 'character-alice');
+    const wrongCharacter = await postCommand('alice', {
+      ...movement,
+      commandId: 'guard-wrong-character',
+      characterId: 'character-bob',
+    });
+    expect(wrongCharacter.status).toBe(403);
+    expect(await wrongCharacter.json()).toEqual({
+      message: 'This world session is bound to a different character.',
+    });
+
+    const noEncounter = await postCommand('alice', {
+      type: 'pvp.action',
+      worldInstanceId: instanceId,
+      characterId: 'character-alice',
+      payload: {},
+    });
+    expect(noEncounter.status).toBe(409);
+    expect(await noEncounter.json()).toEqual({
+      message: 'There is no active PvP encounter for this character.',
+    });
+
+    const noTeamEncounter = await postCommand('alice', {
+      type: 'team.combat.action',
+      worldInstanceId: instanceId,
+      characterId: 'character-alice',
+      payload: {},
+    });
+    expect(noTeamEncounter.status).toBe(409);
+    expect(await noTeamEncounter.json()).toEqual({
+      message: 'There is no active team encounter for this character.',
+    });
+  });
+
+  it('requires an interaction recipient and rejects players who are not online', async () => {
+    const postChallenge = (payload: unknown) => fetch(`${baseUrl}/api/commands`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-user': 'alice',
+      },
+      body: JSON.stringify({
+        type: 'interaction.request',
+        worldInstanceId: instanceId,
+        characterId: 'character-alice',
+        payload,
+      }),
+    });
+    await enterWorld('alice', 'character-alice');
+
+    const missingRecipient = await postChallenge({ kind: 'pvp.challenge' });
+    expect(missingRecipient.status).toBe(400);
+    expect(await missingRecipient.json()).toEqual({ message: 'Choose a player to challenge.' });
+
+    const offlineRecipient = await postChallenge({
+      kind: 'pvp.challenge',
+      recipientCharacterId: 'character-offline',
+    });
+    expect(offlineRecipient.status).toBe(409);
+    expect(await offlineRecipient.json()).toEqual({ message: 'That player is not online right now.' });
+
+    await enterWorld('bob', 'character-bob');
+    const bobSession = state.sessions.get('player-bob') as { lastSeenAt?: Date };
+    bobSession.lastSeenAt = new Date();
+    const onlineRecipient = await postChallenge({
+      kind: 'pvp.challenge',
+      recipientCharacterId: 'character-bob',
+    });
+    expect(onlineRecipient.status).toBe(200);
+  });
+
+  it('restricts active PvP sessions to PvP actions', async () => {
+    await enterWorld('alice', 'character-alice');
+    state.interactionEncounter = {
+      encounterId: 'pvp-encounter',
+      requestId: 'pvp-request',
+      locationId: 'npc-room',
+      participants: [
+        { characterId: 'character-alice', name: 'Alice', health: 10, maximumHealth: 10 },
+        { characterId: 'character-bob', name: 'Bob', health: 10, maximumHealth: 10 },
+      ],
+      turnCharacterId: 'character-alice',
+      round: 0,
+      status: 'active',
+      lastNarration: 'A duel begins.',
+      updatedAt: new Date().toISOString(),
+    };
+    const postCommand = (body: unknown) => fetch(`${baseUrl}/api/commands`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-user': 'alice',
+      },
+      body: JSON.stringify(body),
+    });
+    const baseCommand = {
+      worldInstanceId: instanceId,
+      characterId: 'character-alice',
+    };
+
+    const movement = await postCommand({
+      ...baseCommand,
+      type: 'character.move',
+      payload: { exitId: 'exit-north' },
+    });
+    expect(movement.status).toBe(409);
+    expect(await movement.json()).toEqual({
+      message: 'Only combat actions are available during a PvP encounter.',
+    });
+
+    const newChallenge = await postCommand({
+      ...baseCommand,
+      type: 'interaction.request',
+      payload: {},
+    });
+    expect(newChallenge.status).toBe(409);
+
+    const pvpAction = await postCommand({
+      ...baseCommand,
+      type: 'pvp.action',
+      payload: {},
+    });
+    expect(pvpAction.status).toBe(200);
+  });
+
+  it('restricts active team combat to combat actions while allowing party departure', async () => {
+    await enterWorld('alice', 'character-alice');
+    state.teamCombatProjection = {
+      encounter: {
+        encounterId: 'team-encounter',
+        locationId: 'npc-room',
+        participants: [
+          {
+            participantId: 'alice-participant',
+            teamId: 'party-team',
+            kind: 'player',
+            characterId: 'character-alice',
+            playerId: 'player-alice',
+            displayName: 'Alice',
+            health: 17,
+            maximumHealth: 17,
+            defending: false,
+            status: 'active',
+          },
+          {
+            participantId: 'bandit-participant',
+            teamId: 'bandit-team',
+            kind: 'npc',
+            npcId: 'bandit',
+            displayName: 'Bandit',
+            health: 10,
+            maximumHealth: 10,
+            defending: false,
+            status: 'active',
+          },
+        ],
+        contributingPlayerIds: ['player-alice'],
+        currentParticipantId: 'alice-participant',
+        round: 1,
+        status: 'active',
+        lastNarration: 'The fight begins.',
+        consumedItemIdsByCharacter: {},
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    };
+    const postCommand = (type: string) => fetch(`${baseUrl}/api/commands`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-user': 'alice',
+      },
+      body: JSON.stringify({
+        type,
+        worldInstanceId: instanceId,
+        characterId: 'character-alice',
+        payload: {},
+      }),
+    });
+
+    const movement = await postCommand('character.move');
+    expect(movement.status).toBe(409);
+    expect(await movement.json()).toEqual({
+      message: 'Only combat actions are available during a team encounter.',
+    });
+
+    const departure = await postCommand('party.leave');
+    expect(departure.status).toBe(200);
   });
 
   afterAll(async () => {
