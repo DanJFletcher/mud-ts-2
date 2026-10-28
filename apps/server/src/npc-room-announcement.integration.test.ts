@@ -1,6 +1,7 @@
 import { createServer } from 'node:net';
 import { once } from 'node:events';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import WebSocket from 'ws';
 
 const state = vi.hoisted(() => ({
   world: {
@@ -122,6 +123,12 @@ const state = vi.hoisted(() => ({
     commitOutcome?: string;
     commandId?: string;
   },
+  enableAutonomousScheduler: false,
+  autonomousSchedulers: [] as Array<{
+    options: { onError: (error: unknown, npcId: string) => void };
+    start: ReturnType<typeof vi.fn>;
+    stop: ReturnType<typeof vi.fn>;
+  }>,
 }));
 
 const announcementState = vi.hoisted(() => ({ attempts: 0 }));
@@ -153,7 +160,7 @@ vi.mock('@mudd/core-plugins', async () => ({
       read: async () => ({ packId: 'test-pack', packVersion: '1.0.0', revision: 0, groups: [] }),
     },
   }),
-  mobileNpcDefinitions: () => [],
+  mobileNpcDefinitions: () => state.enableAutonomousScheduler ? [{}] : [],
   autonomousNpcsPlugin: {},
   characterPlugin: {},
   createClassRulesetPlugin: () => ({}),
@@ -335,11 +342,12 @@ vi.mock('@mudd/engine-core', async () => ({
 }));
 
 vi.mock('./autonomous-npc-scheduler.js', () => ({
-  createAutonomousNpcScheduler: () => ({
-    start: vi.fn(),
-    stop: vi.fn(),
-    tick: vi.fn(),
-  }),
+  createAutonomousNpcScheduler: (options: { onError: (error: unknown, npcId: string) => void }) => {
+    const start = vi.fn();
+    const stop = vi.fn();
+    state.autonomousSchedulers.push({ options, start, stop });
+    return { start, stop, tick: vi.fn() };
+  },
 }));
 
 // This HTTP routing fixture does not model recovery histories/heartbeats.
@@ -790,6 +798,7 @@ vi.mock('./session-service.js', () => ({
 describe('NPC room announcements through the server', () => {
   let baseUrl: string;
   let server: typeof import('./index.js').server;
+  let shutdownOnSigterm: (() => void) | undefined;
 
   beforeAll(async () => {
     const probe = createServer();
@@ -802,9 +811,13 @@ describe('NPC room announcements through the server', () => {
     const port = address.port;
     await new Promise<void>((resolve, reject) => probe.close((error) => error ? reject(error) : resolve()));
 
+    state.enableAutonomousScheduler = true;
+    const existingSigtermHandlers = new Set(process.listeners('SIGTERM'));
     process.env.API_PORT = String(port);
     const serverModule = await import('./index.js');
     server = serverModule.server;
+    shutdownOnSigterm = process.listeners('SIGTERM')
+      .find((handler) => !existingSigtermHandlers.has(handler)) as (() => void) | undefined;
     if (!server.listening) await once(server, 'listening');
     baseUrl = `http://127.0.0.1:${port}`;
   });
@@ -1869,6 +1882,53 @@ describe('NPC room announcements through the server', () => {
     });
     expect(inbox.status).toBe(200);
     expect(await inbox.json()).toEqual({ requests: [], encounter: null });
+  });
+
+  it('rejects unsafe real-time origins and closes subscriptions for unavailable worlds', async () => {
+    const websocketUrl = `${baseUrl.replace(/^http/, 'ws')}/api/realtime`;
+    const closeCode = (socket: WebSocket, subscribe = false) => new Promise<number>((resolve, reject) => {
+      socket.once('close', (code) => resolve(code));
+      socket.once('error', reject);
+      if (subscribe) {
+        socket.once('open', () => socket.send(JSON.stringify({
+          type: 'subscribe',
+          version: 1,
+          channels: ['chat'],
+        })));
+      }
+    });
+
+    expect(await closeCode(new WebSocket(websocketUrl, { headers: {} }))).toBe(1008);
+    expect(await closeCode(new WebSocket(websocketUrl, {
+      headers: { Origin: 'https://untrusted.example' },
+    }))).toBe(1008);
+
+    const guestSession = await fetch(`${baseUrl}/api/guest-session`, { method: 'POST' });
+    const cookie = guestSession.headers.get('set-cookie')?.split(';', 1)[0];
+    expect(cookie).toBeTruthy();
+    const unauthorizedWorldSocket = new WebSocket(`${websocketUrl}?world=not-registered`, {
+      headers: { Origin: baseUrl, Cookie: cookie! },
+    });
+    expect(await closeCode(unauthorizedWorldSocket, true)).toBe(1005);
+  });
+
+  it('reports scheduler errors and runs server cleanup from its SIGTERM handler', async () => {
+    expect(state.autonomousSchedulers.length).toBeGreaterThan(0);
+
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const scheduler = state.autonomousSchedulers[0];
+    scheduler?.options.onError(new Error('scheduler failure'), 'mara');
+    expect(errorLog).toHaveBeenCalledWith(
+      expect.stringContaining('NPC mara'),
+      expect.any(Error),
+    );
+    errorLog.mockRestore();
+
+    expect(shutdownOnSigterm).toBeTypeOf('function');
+    const closed = once(server, 'close');
+    shutdownOnSigterm?.();
+    await closed;
+    expect(server.listening).toBe(false);
   });
 
   afterAll(async () => {
