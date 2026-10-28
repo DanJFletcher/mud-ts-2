@@ -833,6 +833,63 @@ describe('NPC room announcements through the server', () => {
     });
   });
 
+  it('lists registered worlds without requiring an account', async () => {
+    const response = await fetch(`${baseUrl}/api/worlds`);
+    expect(response.status).toBe(200);
+    const worlds = await response.json() as Array<{
+      worldInstanceId: string;
+      packId: string;
+      summary: string;
+    }>;
+    expect(worlds).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        worldInstanceId: instanceId,
+        packId: state.world.packId,
+        summary: expect.any(String),
+      }),
+    ]));
+  });
+
+  it('lists only the signed-in player’s characters and selected world sessions', async () => {
+    const unauthorized = await fetch(`${baseUrl}/api/characters`);
+    expect(unauthorized.status).toBe(401);
+
+    const headers = { 'x-test-user': 'alice' };
+    const rosterBeforeEntry = await fetch(`${baseUrl}/api/characters`, { headers });
+    expect(rosterBeforeEntry.status).toBe(200);
+    expect(await rosterBeforeEntry.json()).toMatchObject({
+      player: { id: 'player-alice', displayName: 'Alice' },
+      characters: [expect.objectContaining({
+        characterId: 'character-alice',
+        locationTitle: 'NPC Room',
+        lastPlayedAt: null,
+      })],
+      activeWorldSession: null,
+      activeWorldSessions: [],
+    });
+
+    await enterWorld('alice', 'character-alice');
+    const rosterInWorld = await fetch(`${baseUrl}/api/characters`, { headers });
+    expect(rosterInWorld.status).toBe(200);
+    expect(await rosterInWorld.json()).toMatchObject({
+      player: { id: 'player-alice', displayName: 'Alice' },
+      characters: [expect.objectContaining({
+        characterId: 'character-alice',
+        locationTitle: 'NPC Room',
+        lastPlayedAt: expect.any(String),
+      })],
+      activeWorldSession: {
+        id: expect.any(String),
+        characterId: 'character-alice',
+      },
+      activeWorldSessions: [{
+        worldInstanceId: instanceId,
+        id: expect.any(String),
+        characterId: 'character-alice',
+      }],
+    });
+  });
+
   it('rejects unauthenticated, unavailable-world, and malformed chat requests', async () => {
     const unauthenticated = await fetch(`${baseUrl}/api/chat?roomId=npc-room`);
     expect(unauthenticated.status).toBe(401);
