@@ -97,6 +97,40 @@ function basicAppendRequest(overrides: Partial<AppendRequest> = {}): AppendReque
   };
 }
 
+function persistedEventRow(streamId: string, eventId: string, streamVersion: number) {
+  return {
+    type: 'character.progress.changed',
+    contractVersion: 1,
+    payload: { progress: streamVersion },
+    eventId,
+    worldInstanceId: 'world-1',
+    streamId,
+    streamVersion,
+    causationCommandId: `command-${streamVersion}`,
+    actorId: 'player-1',
+    occurredAt: new Date(`2026-10-28T12:00:0${streamVersion}.000Z`),
+    tick: streamVersion,
+  } as Parameters<typeof toStoredGameEvent>[0];
+}
+
+function revisionSelect(revision: number) {
+  return () => ({
+    from: () => ({
+      where: () => ({
+        orderBy: () => ({ limit: async () => [{ revision }] }),
+      }),
+    }),
+  });
+}
+
+function historySelect(rows: Array<Parameters<typeof toStoredGameEvent>[0]>) {
+  return () => ({
+    from: () => ({
+      where: () => ({ orderBy: async () => rows }),
+    }),
+  });
+}
+
 describe('PostgresEventStore unit behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -280,6 +314,143 @@ describe('PostgresEventStore unit behavior', () => {
         archived: false,
       },
     });
+  });
+
+  it('loads a successful append into the scoped cache when no snapshot was read first', async () => {
+    const streamId = 'uncached-stream';
+    mockDb.select.mockImplementationOnce(historySelect([
+      persistedEventRow(streamId, 'event-new', 1),
+    ]));
+    const { tx } = createAppendTransaction();
+    mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(tx));
+    const store = new PostgresEventStore();
+
+    const result = await store.withCommandReadCache('world-1', streamId, async () => {
+      const outcome = await store.append(basicAppendRequest({
+        streamId,
+        commandId: 'uncached-command',
+        expectedVersion: 0,
+      }));
+      const events = await store.readStream('world-1', streamId);
+      return { outcome, events };
+    }, 0);
+
+    expect(result.outcome.kind).toBe('committed');
+    expect(result.events.map(({ eventId }) => eventId)).toEqual(['event-new']);
+    expect(mockDb.select).toHaveBeenCalledOnce();
+  });
+
+  it('invalidates the primary scoped snapshot after a version conflict', async () => {
+    const streamId = 'primary-cache';
+    const previous = persistedEventRow(streamId, 'event-before', 1);
+    const latest = persistedEventRow(streamId, 'event-after', 2);
+    mockDb.select
+      .mockImplementationOnce(revisionSelect(1))
+      .mockImplementationOnce(historySelect([previous]))
+      .mockImplementationOnce(revisionSelect(2))
+      .mockImplementationOnce(historySelect([latest]));
+    const { tx } = createAppendTransaction({
+      heads: [{ streamId, revision: 2 }],
+    });
+    mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(tx));
+    const store = new PostgresEventStore();
+
+    const result = await store.withCommandReadCache('world-1', streamId, async () => {
+      const before = await store.readStream('world-1', streamId);
+      const outcome = await store.append(basicAppendRequest({
+        streamId,
+        commandId: 'stale-primary-command',
+        expectedVersion: 1,
+      }));
+      const after = await store.readStream('world-1', streamId);
+      return { before, outcome, after };
+    }, 1);
+
+    expect(result.before.map(({ eventId }) => eventId)).toEqual(['event-before']);
+    expect(result.outcome.kind).toBe('conflict');
+    expect(result.after.map(({ eventId }) => eventId)).toEqual(['event-before', 'event-after']);
+    expect(mockDb.select).toHaveBeenCalledTimes(4);
+  });
+
+  it('invalidates companion stream caches after a successful atomic write', async () => {
+    const companionStreamId = 'companion-cache';
+    const previous = persistedEventRow(companionStreamId, 'companion-before', 1);
+    const latest = persistedEventRow(companionStreamId, 'companion-after', 2);
+    mockDb.select
+      .mockImplementationOnce(revisionSelect(1))
+      .mockImplementationOnce(historySelect([previous]))
+      .mockImplementationOnce(revisionSelect(2))
+      .mockImplementationOnce(historySelect([previous, latest]));
+    const { tx } = createAppendTransaction({
+      heads: [{ streamId: companionStreamId, revision: 1 }],
+      persistedCounts: [{ eventCount: 2, receiptCount: 1 }],
+    });
+    mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(tx));
+    const store = new PostgresEventStore();
+    const request = basicAppendRequest({
+      streamId: 'primary-stream',
+      commandId: 'companion-write',
+      companions: [{
+        streamId: companionStreamId,
+        expectedVersion: 1,
+        events: [{ type: 'world.team.changed', version: 1, payload: { teamId: 'team-1' } }],
+      }],
+    });
+
+    const result = await store.withCommandReadCache('world-1', companionStreamId, async () => {
+      const before = await store.readStream('world-1', companionStreamId);
+      const outcome = await store.append(request);
+      const after = await store.readStream('world-1', companionStreamId);
+      return { before, outcome, after };
+    }, 1);
+
+    expect(result.before.map(({ eventId }) => eventId)).toEqual(['companion-before']);
+    expect(result.outcome.kind).toBe('committed');
+    expect(result.after.map(({ eventId }) => eventId)).toEqual([
+      'companion-before',
+      'companion-after',
+    ]);
+    expect(mockDb.select).toHaveBeenCalledTimes(4);
+  });
+
+  it('invalidates a companion scoped snapshot when the atomic command conflicts', async () => {
+    const companionStreamId = 'companion-cache';
+    const previous = persistedEventRow(companionStreamId, 'companion-before', 1);
+    const latest = persistedEventRow(companionStreamId, 'companion-after', 2);
+    mockDb.select
+      .mockImplementationOnce(revisionSelect(1))
+      .mockImplementationOnce(historySelect([previous]))
+      .mockImplementationOnce(revisionSelect(2))
+      .mockImplementationOnce(historySelect([latest]));
+    const { tx } = createAppendTransaction({
+      heads: [{ streamId: companionStreamId, revision: 2 }],
+    });
+    mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(tx));
+    const store = new PostgresEventStore();
+    const request = basicAppendRequest({
+      streamId: 'primary-stream',
+      commandId: 'stale-companion-write',
+      companions: [{
+        streamId: companionStreamId,
+        expectedVersion: 1,
+        events: [{ type: 'world.team.changed', version: 1, payload: { teamId: 'team-1' } }],
+      }],
+    });
+
+    const result = await store.withCommandReadCache('world-1', companionStreamId, async () => {
+      const before = await store.readStream('world-1', companionStreamId);
+      const outcome = await store.append(request);
+      const after = await store.readStream('world-1', companionStreamId);
+      return { before, outcome, after };
+    }, 1);
+
+    expect(result.before.map(({ eventId }) => eventId)).toEqual(['companion-before']);
+    expect(result.outcome.kind).toBe('conflict');
+    expect(result.after.map(({ eventId }) => eventId)).toEqual([
+      'companion-before',
+      'companion-after',
+    ]);
+    expect(mockDb.select).toHaveBeenCalledTimes(4);
   });
 
   it('rebuilds a missing room-state projection from persisted character history', async () => {
