@@ -5,6 +5,7 @@ const { mockDb } = vi.hoisted(() => ({
   mockDb: {
     transaction: vi.fn(),
     update: vi.fn(),
+    select: vi.fn(),
   },
 }));
 
@@ -18,6 +19,16 @@ function mockUpdateReturning(rows: unknown[]) {
   const set = vi.fn(() => ({ where }));
   mockDb.update.mockReturnValue({ set });
   return { set, where, returning };
+}
+
+function mockSelectLimit(rows: unknown[]) {
+  const limit = vi.fn(async () => rows);
+  mockDb.select.mockReturnValue({
+    from: () => ({
+      where: () => ({ limit }),
+    }),
+  });
+  return { limit };
 }
 
 function createAppendTransaction(options: {
@@ -118,6 +129,162 @@ describe('PostgresEventStore unit behavior', () => {
       occurredAt: occurredAt.toISOString(),
       tick: 7,
     });
+  });
+
+  it('reuses a command-scoped stream snapshot only when its expected revision matches', async () => {
+    const occurredAt = new Date('2026-10-27T12:34:56.000Z');
+    const row = {
+      type: 'character.moved',
+      contractVersion: 1,
+      payload: { fromLocationId: 'room-a', toLocationId: 'room-b' },
+      eventId: 'event-1',
+      worldInstanceId: 'world-1',
+      streamId: 'character-1',
+      streamVersion: 1,
+      causationCommandId: 'command-1',
+      actorId: 'player-1',
+      occurredAt,
+      tick: 1,
+    } as Parameters<typeof toStoredGameEvent>[0];
+    const revisionQuery = () => ({
+      from: () => ({
+        where: () => ({
+          orderBy: () => ({ limit: async () => [{ revision: 1 }] }),
+        }),
+      }),
+    });
+    const eventsQuery = () => ({
+      from: () => ({
+        where: () => ({ orderBy: async () => [row] }),
+      }),
+    });
+    mockDb.select.mockImplementationOnce(revisionQuery)
+      .mockImplementationOnce(eventsQuery)
+      .mockImplementationOnce(revisionQuery);
+    const store = new PostgresEventStore();
+
+    const matchingSnapshot = await store.withCommandReadCache(
+      'world-1',
+      'character-1',
+      async () => {
+        const first = await store.readStream('world-1', 'character-1');
+        const second = await store.readStream('world-1', 'character-1');
+        return { first, second };
+      },
+      1,
+    );
+    expect(matchingSnapshot.first).toBe(matchingSnapshot.second);
+    expect(matchingSnapshot.first).toHaveLength(1);
+    expect(mockDb.select).toHaveBeenCalledTimes(2);
+
+    const staleExpectedVersion = await store.withCommandReadCache(
+      'world-1',
+      'character-1',
+      () => store.readStream('world-1', 'character-1'),
+      2,
+    );
+    expect(staleExpectedVersion).toEqual(matchingSnapshot.first);
+    expect(mockDb.select).toHaveBeenCalledTimes(3);
+  });
+
+  it('returns empty stream batches without querying and de-duplicates requested streams', async () => {
+    const occurredAt = new Date('2026-10-27T12:34:56.000Z');
+    const revisionsQuery = () => ({
+      from: () => ({
+        where: () => ({
+          groupBy: async () => [
+            { streamId: 'character-a', revision: 1 },
+            { streamId: 'character-b', revision: 1 },
+          ],
+        }),
+      }),
+    });
+    const eventsQuery = (streamId: string, eventId: string) => () => ({
+      from: () => ({
+        where: () => ({
+          orderBy: async () => [{
+            type: 'character.moved',
+            contractVersion: 1,
+            payload: { toLocationId: `room-${streamId}` },
+            eventId,
+            worldInstanceId: 'world-1',
+            streamId,
+            streamVersion: 1,
+            causationCommandId: 'command-1',
+            actorId: 'player-1',
+            occurredAt,
+            tick: 1,
+          }],
+        }),
+      }),
+    });
+    mockDb.select.mockImplementationOnce(revisionsQuery)
+      .mockImplementationOnce(eventsQuery('character-a', 'event-a'))
+      .mockImplementationOnce(eventsQuery('character-b', 'event-b'));
+    const store = new PostgresEventStore();
+
+    const empty = await store.readStreams('world-1', []);
+    const streams = await store.readStreams('world-1', ['character-a', 'character-a', 'character-b']);
+
+    expect(empty.size).toBe(0);
+    expect(streams.size).toBe(2);
+    expect(streams.get('character-a')?.map(({ eventId }) => eventId)).toEqual(['event-a']);
+    expect(streams.get('character-b')?.map(({ eventId }) => eventId)).toEqual(['event-b']);
+    expect(mockDb.select).toHaveBeenCalledTimes(3);
+  });
+
+  it('looks up an idempotent receipt or reports a payload mismatch', async () => {
+    const prior = {
+      payloadHash: 'saved-hash',
+      streamId: 'character-1',
+      events: [{
+        type: 'character.moved',
+        version: 1,
+        eventId: 'event-1',
+        worldInstanceId: 'world-1',
+        streamId: 'character-1',
+        aggregateId: 'character-1',
+        aggregateVersion: 1,
+        causationCommandId: 'command-1',
+        actorId: 'player-1',
+        occurredAt: '2026-10-27T12:34:56.000Z',
+        tick: 1,
+        payload: { toLocationId: 'room-b' },
+      }],
+      receipt: {
+        ok: true,
+        commandId: 'command-1',
+        eventIds: ['event-1'],
+        newAggregateVersion: 1,
+      },
+    };
+    const store = new PostgresEventStore();
+
+    mockSelectLimit([prior]);
+    const duplicate = await store.lookupCommand('world-1', 'player-1', 'command-1', 'saved-hash');
+    expect(duplicate).toMatchObject({
+      kind: 'duplicate',
+      streamId: 'character-1',
+      receipt: { ok: true, eventIds: ['event-1'] },
+      events: [{ eventId: 'event-1' }],
+    });
+
+    mockSelectLimit([prior]);
+    const conflict = await store.lookupCommand('world-1', 'player-1', 'command-1', 'different-hash');
+    expect(conflict).toMatchObject({
+      kind: 'conflict',
+      streamId: 'character-1',
+      receipt: {
+        ok: false,
+        code: 'INVALID_COMMAND',
+        retryable: false,
+      },
+      events: [{ eventId: 'event-1' }],
+    });
+
+    mockSelectLimit([]);
+    await expect(store.lookupCommand('world-1', 'player-1', 'missing-command', 'hash'))
+      .resolves.toBeUndefined();
   });
 
   it('checks the command lock before reading a prior receipt and returns an idempotent retry', async () => {
@@ -250,6 +417,59 @@ describe('PostgresEventStore unit behavior', () => {
       kind: 'conflict',
       receipt: { ok: false, code: 'VERSION_CONFLICT', retryable: true },
     });
+  });
+
+  it('rejects duplicate streams in one atomic write before inserting anything', async () => {
+    const { tx, persistedValues } = createAppendTransaction();
+    mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(tx));
+
+    await expect(new PostgresEventStore().append(basicAppendRequest({
+      companions: [{
+        streamId: 'shared-character-stream',
+        expectedVersion: 0,
+        events: [{ type: 'world.team.changed', version: 1, payload: {} }],
+      }],
+    }))).rejects.toThrow('Duplicate atomic write stream.');
+
+    expect(persistedValues).toHaveLength(0);
+    expect(tx.insert).not.toHaveBeenCalled();
+  });
+
+  it('rejects empty primary or companion event batches', async () => {
+    const primary = createAppendTransaction();
+    mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(primary.tx));
+
+    await expect(new PostgresEventStore().append(basicAppendRequest({ events: [] })))
+      .rejects.toThrow('A command must append at least one event.');
+    expect(primary.tx.insert).not.toHaveBeenCalled();
+
+    const companion = createAppendTransaction();
+    mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(companion.tx));
+    await expect(new PostgresEventStore().append(basicAppendRequest({
+      companions: [{ streamId: 'world-team', expectedVersion: 0, events: [] }],
+    }))).rejects.toThrow('An atomic companion write must contain events.');
+    expect(companion.tx.insert).not.toHaveBeenCalled();
+  });
+
+  it('returns a retryable conflict when the primary stream head has advanced', async () => {
+    const { tx, persistedValues } = createAppendTransaction({
+      heads: [{ streamId: 'shared-character-stream', revision: 3 }],
+    });
+    mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(tx));
+
+    const outcome = await new PostgresEventStore().append(basicAppendRequest());
+
+    expect(outcome).toMatchObject({
+      kind: 'conflict',
+      streamId: 'shared-character-stream',
+      receipt: {
+        ok: false,
+        code: 'VERSION_CONFLICT',
+        retryable: true,
+      },
+    });
+    expect(persistedValues).toHaveLength(0);
+    expect(tx.insert).not.toHaveBeenCalled();
   });
 
   it('commits primary and companion events, receipt, and effects in one atomic append', async () => {
