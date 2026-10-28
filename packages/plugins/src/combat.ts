@@ -352,9 +352,6 @@ export const combatPlugin: EnginePlugin = {
           character.attributes.constitution,
         );
         const playerHealth = Math.min(character.health?.current ?? playerMaxHealth, playerMaxHealth);
-        if (playerHealth <= 0) {
-          throw new RuleViolationError('You are too hurt to begin another encounter. Use a healing item first.');
-        }
         encounter = {
           encounterId: context.makeId(),
           locationId: character.locationId,

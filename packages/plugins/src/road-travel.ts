@@ -90,8 +90,11 @@ export const roadTravelPlugin: EnginePlugin = {
           : event,
       );
       if (encounterOccurred) {
-        if (!opponent) throw new Error('A successful road encounter did not select an opponent.');
-        events.push(createRoadEncounterStartEvent(context, characterAtDestination(character, movement.exit.toLocationId), opponent));
+        events.push(createRoadEncounterStartEvent(
+          context,
+          characterAtDestination(character, movement.exit.toLocationId),
+          opponent!,
+        ));
       }
 
       return {

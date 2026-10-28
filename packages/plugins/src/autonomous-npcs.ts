@@ -148,8 +148,7 @@ export const autonomousNpcsPlugin: EnginePlugin = {
       positionCache.delete(cacheKey);
       positionCache.set(cacheKey, { revision, position });
       while (positionCache.size > 256) {
-        const oldestKey = positionCache.keys().next().value as string | undefined;
-        if (!oldestKey) break;
+        const oldestKey = positionCache.keys().next().value!;
         positionCache.delete(oldestKey);
       }
       return position;

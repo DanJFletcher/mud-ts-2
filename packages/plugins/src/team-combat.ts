@@ -93,12 +93,6 @@ function project(events: readonly CombatEvent[]) {
     roadTravelByEncounter: state.roadTravelByEncounter, revision: state.revision };
 }
 
-function encounterFor(events: ReturnType<typeof project>['encounters'], characterId: string) {
-  return [...events].reverse().find((encounter) =>
-    encounter.participants.some((participant) => participant.characterId === characterId),
-  ) ?? null;
-}
-
 function maximumHealth(character: {
   health?: { maximum: number };
   advancement?: { level: number };
@@ -835,19 +829,6 @@ export const teamCombatPlugin: EnginePlugin = {
             }),
           }],
         });
-      } else if (restingTargetCharacter) {
-        companions[0]!.events = [
-          ...companions[0]!.events,
-          {
-            type: 'character.posture_changed',
-            version: 1,
-            payload: CharacterPostureChangedEventSchema.shape.payload.parse({
-              characterId: restingTargetCharacter.characterId,
-              posture: 'standing',
-              locationId: restingTargetCharacter.locationId,
-            }),
-          },
-        ];
       }
       return { streamId: STREAM_ID, expectedVersion: state.revision, events, effects,
         guards,

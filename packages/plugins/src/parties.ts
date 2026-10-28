@@ -18,7 +18,6 @@ import type {
   EngineCommandContext,
   EnginePlugin,
   QueryContext,
-  StoredGameEvent,
 } from '@mudd/engine-core';
 import { RuleViolationError } from '@mudd/engine-core';
 import {
@@ -45,37 +44,6 @@ function activePartyForPlayer(
     group.status === 'active' &&
     group.members.some((member) => member.playerId === playerId),
   );
-}
-
-function eventGroupId(event: StoredGameEvent): string | undefined {
-  const payload = event.payload as Record<string, unknown>;
-  return typeof payload.groupId === 'string' ? payload.groupId : undefined;
-}
-
-function eventPlayer(event: StoredGameEvent): { playerId?: string; displayName?: string } {
-  const payload = event.payload as Record<string, unknown>;
-  if (event.type === 'group.created' || event.type === 'group.member_joined') {
-    const member = payload.member as Record<string, unknown> | undefined;
-    return {
-      playerId: typeof member?.playerId === 'string' ? member.playerId : undefined,
-      displayName: typeof member?.displayName === 'string' ? member.displayName : undefined,
-    };
-  }
-  if (event.type === 'group.member_left') {
-    return { playerId: typeof payload.playerId === 'string' ? payload.playerId : undefined };
-  }
-  if (event.type === 'group.closed') {
-    return { playerId: typeof payload.closedByPlayerId === 'string' ? payload.closedByPlayerId : undefined };
-  }
-  return {};
-}
-
-function activityType(event: StoredGameEvent): 'created' | 'joined' | 'left' | 'closed' | undefined {
-  if (event.type === 'group.created') return 'created';
-  if (event.type === 'group.member_joined') return 'joined';
-  if (event.type === 'group.member_left') return 'left';
-  if (event.type === 'group.closed') return 'closed';
-  return undefined;
 }
 
 async function requireAvailableCharacter(

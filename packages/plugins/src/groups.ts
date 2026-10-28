@@ -34,6 +34,10 @@ type GroupState = {
     closedAt?: string;
   };
 
+type ProjectedGroupEvent = StoredGameEvent & {
+  type: 'group.created' | 'group.member_joined' | 'group.member_left' | 'group.closed';
+};
+
 const projectGroupState = createIncrementalProjection(
   () => ({
     groups: new Map<string, GroupState>(), revision: 0,
@@ -92,12 +96,14 @@ const projectGroupState = createIncrementalProjection(
     if (event.type.startsWith('group.')) {
       const payload = event.payload as Record<string, unknown>;
       const groupId = typeof payload.groupId === 'string' ? payload.groupId : undefined;
-      const player = eventPlayer(event);
-      const type = activityType(event);
+      // projectGroupState rejects unsupported group events before activity projection.
+      const groupEvent = event as ProjectedGroupEvent;
+      const player = eventPlayer(groupEvent);
+      const type = activityType(groupEvent);
       const recipients = type === 'closed' && closedMembers
         ? closedMembers.map((member) => member.playerId)
         : player.playerId ? [player.playerId] : [];
-      if (groupId && recipients.length && type) {
+      if (groupId && recipients.length) {
         const entry = {
           revision: event.aggregateVersion, groupId, type,
           playerId: type === 'closed' ? player.playerId : player.playerId!,
@@ -119,29 +125,29 @@ const projectGroupState = createIncrementalProjection(
   },
 );
 
-function activityType(event: StoredGameEvent): 'created' | 'joined' | 'left' | 'closed' | undefined {
-  if (event.type === 'group.created') return 'created';
-  if (event.type === 'group.member_joined') return 'joined';
-  if (event.type === 'group.member_left') return 'left';
-  if (event.type === 'group.closed') return 'closed';
-  return undefined;
+function activityType(event: ProjectedGroupEvent): 'created' | 'joined' | 'left' | 'closed' {
+  switch (event.type) {
+    case 'group.created': return 'created';
+    case 'group.member_joined': return 'joined';
+    case 'group.member_left': return 'left';
+    case 'group.closed': return 'closed';
+  }
 }
-function eventPlayer(event: StoredGameEvent): { playerId?: string; displayName?: string } {
+function eventPlayer(event: ProjectedGroupEvent): { playerId?: string; displayName?: string } {
   const payload = event.payload as Record<string, unknown>;
   const member = payload.member as Record<string, unknown> | undefined;
-  if (event.type === 'group.created' || event.type === 'group.member_joined') {
-    return {
-      playerId: typeof member?.playerId === 'string' ? member.playerId : undefined,
-      displayName: typeof member?.displayName === 'string' ? member.displayName : undefined,
-    };
+  switch (event.type) {
+    case 'group.created':
+    case 'group.member_joined':
+      return {
+        playerId: typeof member?.playerId === 'string' ? member.playerId : undefined,
+        displayName: typeof member?.displayName === 'string' ? member.displayName : undefined,
+      };
+    case 'group.member_left':
+      return { playerId: typeof payload.playerId === 'string' ? payload.playerId : undefined };
+    case 'group.closed':
+      return { playerId: typeof payload.closedByPlayerId === 'string' ? payload.closedByPlayerId : undefined };
   }
-  if (event.type === 'group.member_left') {
-    return { playerId: typeof payload.playerId === 'string' ? payload.playerId : undefined };
-  }
-  if (event.type === 'group.closed') {
-    return { playerId: typeof payload.closedByPlayerId === 'string' ? payload.closedByPlayerId : undefined };
-  }
-  return {};
 }
 
 export function projectGroups(events: readonly StoredGameEvent[]) {

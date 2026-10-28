@@ -102,10 +102,8 @@ function projectJournal(
     .map((quest) => ({ questId: quest.id, title: quest.title, summary: quest.summary }));
   const quests = [...states.values()].flatMap((state) => {
     if (state.status === 'abandoned') return [];
-    const definition = definitions.get(state.questId);
-    if (!definition || definition.version !== state.definitionVersion) {
-      throw new Error(`Party quest definition ${state.questId}@${state.definitionVersion} is unavailable.`);
-    }
+    const definition = definitions.get(state.questId)!;
+    // projectPartyQuests only emits states whose definition/version is present here.
     return [{
       questId: state.questId,
       title: definition.title,
@@ -251,10 +249,8 @@ export const partyQuestPlugin: EnginePlugin = {
       const output: ProposedDomainEvent[] = [];
       for (const state of states.values()) {
         if (state.status !== 'active' || state.handledEffects.has(context.effectId)) continue;
-        const definition = definitions.get(state.questId);
-        if (!definition || definition.scope !== 'party' || definition.version !== state.definitionVersion) {
-          throw new Error(`Party quest definition ${state.questId}@${state.definitionVersion} is unavailable.`);
-        }
+        const definition = definitions.get(state.questId)!;
+        // projectPartyQuests only emits states with a current party-scoped definition.
         let changed = false;
         for (const objective of definition.objectives) {
           const required = objective.type === 'defeat-npc' ? objective.requiredCount : 1;

@@ -564,8 +564,7 @@ export const worldItemsPlugin: EnginePlugin = {
         projectionCache.delete(context.worldInstanceId);
         projectionCache.set(context.worldInstanceId, { revision, state: structuredClone(state) });
         while (projectionCache.size > 16) {
-          const oldestWorldId = projectionCache.keys().next().value as string | undefined;
-          if (!oldestWorldId) break;
+          const oldestWorldId = projectionCache.keys().next().value as string;
           projectionCache.delete(oldestWorldId);
         }
         return state;

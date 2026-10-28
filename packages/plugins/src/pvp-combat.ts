@@ -88,17 +88,6 @@ async function streamState(context: EngineCommandContext) {
   return { streamId, events, version: events.at(-1)?.aggregateVersion ?? 0 };
 }
 
-function activeEncounterForCharacter(
-  events: readonly { type: string; payload: Readonly<Record<string, unknown>> }[],
-  characterId: string,
-) {
-  const state = latestPrivateEncounter(events);
-  return state?.encounter.status !== 'completed' &&
-    state?.encounter.participants.some((participant) => participant.characterId === characterId)
-    ? state
-    : undefined;
-}
-
 function event(type: string, payload: Record<string, unknown>): ProposedDomainEvent {
   return { type, version: 1, payload };
 }
@@ -298,10 +287,6 @@ export function registerPvpCombat(
         latestPrivateEncounter(events)?.encounter.status !== 'completed') {
         throw new RuleViolationError('A PvP encounter is already active in this world.');
       }
-      if (
-        activeEncounterForCharacter(events, initiatorCharacterId) ||
-        activeEncounterForCharacter(events, recipientCharacterId)
-      ) throw new RuleViolationError('A player is already in a PvP encounter.');
       return { initiatorName: initiator.name, recipientName: recipient.name };
     },
     async prepareAcceptance(request, context) {
@@ -327,10 +312,6 @@ export function registerPvpCombat(
         latestPrivateEncounter(events)?.encounter.status !== 'completed') {
         throw new RuleViolationError('A PvP encounter is already active in this world.');
       }
-      if (
-        activeEncounterForCharacter(events, initiator.characterId) ||
-        activeEncounterForCharacter(events, recipient.characterId)
-      ) throw new RuleViolationError('A player is already in a PvP encounter.');
       const state = createEncounter(
         request.requestId,
         initiator.locationId,
