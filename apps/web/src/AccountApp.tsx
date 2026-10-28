@@ -53,9 +53,9 @@ function ClerkAppRoutes() {
       <Route path="/worlds/:worldId/play">{(params) => <WorldPlayPage key={params.worldId} worldId={params.worldId} />}</Route>
       <Route path="/worlds/:worldId">{(params) => <LobbyPage key={params.worldId} worldId={params.worldId} />}</Route>
       <Route path="/character/:characterId">{(params) => <CharacterDetailPage key={params.characterId} characterId={params.characterId} />}</Route>
+      <Route path="/characters"><LobbyPage showAllCharacters /></Route>
       <Route path="/sign-in/*?" component={SignInPage} />
       <Route path="/sign-up/*?" component={SignUpPage} />
-      <Route path="/characters"><Redirect to="/" replace /></Route>
       <Route path="/guest-world"><Redirect to="/" replace /></Route>
       <Route path="/world" component={LegacyWorldPage} />
       <Route path="/codex"><AccountShell><CodexScreen /></AccountShell></Route>

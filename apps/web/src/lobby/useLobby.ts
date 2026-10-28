@@ -8,11 +8,14 @@ export type LobbyCharacter = CharacterRosterSnapshot['characters'][number];
 export const entryDisabled = (character: LobbyCharacter) => Boolean(
   character.archived || character.combat?.status === 'defeat' || character.health?.current === 0,
 );
-export function recentCharacters(characters: LobbyCharacter[]) {
-  return characters.filter((character) => !character.archived).slice().sort((a, b) =>
+export function sortCharactersByActivity(characters: LobbyCharacter[]) {
+  return characters.slice().sort((a, b) =>
     (b.lastPlayedAt ? Date.parse(b.lastPlayedAt) : 0) - (a.lastPlayedAt ? Date.parse(a.lastPlayedAt) : 0)
     || a.name.localeCompare(b.name),
   );
+}
+export function recentCharacters(characters: LobbyCharacter[]) {
+  return sortCharactersByActivity(characters.filter((character) => !character.archived));
 }
 
 /** Refreshes authoritative roster/session state before joining, and never switches an occupied world implicitly. */

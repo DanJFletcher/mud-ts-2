@@ -27,6 +27,11 @@
 .lobby-world-characters, .lobby-create { margin-top: 2.3rem; }
 .lobby-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
 .lobby-section-heading h2 { margin: 0; }
+.lobby-all-characters-link { display: inline-flex; min-height: 2.75rem; align-items: center; color: var(--mudd-muted); font-size: .82rem; }
+.lobby-all-characters-link:hover { color: var(--mudd-accent); }
+.lobby-all-characters { width: min(100%, 52rem); }
+.lobby-all-characters > h2 { margin-bottom: 1rem; }
+.lobby-character-list--all { grid-template-columns: minmax(0, 1fr); }
 .lobby-world-characters .lobby-character-list { grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr)); }
 .lobby-create { border-top: 1px solid var(--mudd-border); padding-top: 2rem; }
 .lobby-create > p { max-width: 650px; color: var(--mudd-muted); }

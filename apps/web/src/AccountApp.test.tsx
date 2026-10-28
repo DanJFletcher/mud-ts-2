@@ -157,6 +157,7 @@ describe('world lobby and explicit character entry', () => {
     expect(screen.getByRole('button', { name: 'Continue as Rowan' })).toBeEnabled();
     expect(calls('POST', '/api/world-session')).toHaveLength(0);
     expect(screen.getByRole('link', { name: /Orraveth: Bellwold/ })).toHaveAttribute('href', `/worlds/${orra}`);
+    expect(within(recent).getByRole('link', { name: 'All characters' })).toHaveAttribute('href', '/characters');
   });
   it('limits the home recent-character section to the four most recently played characters', async () => {
     characters = Array.from({ length: 6 }, (_, index) => ({
@@ -172,6 +173,24 @@ describe('world lobby and explicit character entry', () => {
       'Traveler 6', 'Traveler 5', 'Traveler 4', 'Traveler 3',
     ]);
     expect(within(recent).getAllByRole('heading', { level: 3 })).toHaveLength(4);
+  });
+  it('shows every character, including archived ones, on the single-column roster page', async () => {
+    characters = Array.from({ length: 6 }, (_, index) => ({
+      ...fixture,
+      characterId: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      name: `Traveler ${index + 1}`,
+      archived: index === 0,
+      lastPlayedAt: `2026-10-${String(index + 1).padStart(2, '0')}T10:00:00.000Z`,
+    }));
+    open('/characters');
+    await screen.findByRole('heading', { level: 1, name: 'All characters' });
+    const section = screen.getByRole('region', { name: 'Characters' });
+    expect(section.querySelector('.lobby-character-list--all')).toBeInTheDocument();
+    expect(within(section).getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual([
+      'Traveler 6', 'Traveler 5', 'Traveler 4', 'Traveler 3', 'Traveler 2', 'Traveler 1',
+    ]);
+    expect(within(section).getByText('Archived')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Back to worlds' })).toHaveAttribute('href', '/');
   });
   it('browses anonymously without creating a guest and resolves direct world detail URLs', async () => {
     mocks.signedIn = false;
@@ -248,7 +267,7 @@ describe('world lobby and explicit character entry', () => {
     expect(location.pathname).toBe(`/worlds/${orra}`);
   });
   it('handles legacy routes and browser back/forward without automatically joining', async () => {
-    open('/characters');
+    open('/lobby');
     await screen.findByRole('heading', { name: 'Recent characters' });
     visit(`/worlds/${orra}`);
     await screen.findByRole('heading', { level: 1, name: 'Orraveth: Bellwold' });
