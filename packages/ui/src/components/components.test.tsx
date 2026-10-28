@@ -300,6 +300,11 @@ describe('@mudd/ui components', () => {
     expect(screen.getByRole('button', { name: 'Play as Mira' })).toBeInTheDocument();
   });
 
+  it('omits a placeholder world label when the roster already supplies that context', () => {
+    render(<CharacterEntryCard name="Mira" statusLabel="Ready" actionLabel="Play as Mira" onPlay={() => undefined} />);
+    expect(screen.queryByText('Your traveler')).not.toBeInTheDocument();
+  });
+
   it('prevents entry while busy and announces the pending state', () => {
     const onPlay = vi.fn();
     render(<CharacterEntryCard name="Mira" statusLabel="Ready" actionLabel="Play" onPlay={onPlay} busy />);

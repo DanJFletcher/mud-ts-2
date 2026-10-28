@@ -77,7 +77,8 @@
   .mudd-character-entry--compact .mudd-character-entry__status { padding: .12rem .3rem; font-size: .58rem; }
   .mudd-character-entry--compact .mudd-character-entry__actions { display: flex; }
   .mudd-character-entry--compact .mudd-character-entry__action {
-    width: min(100%, 11rem); max-width: 11rem; min-width: 0; padding-inline: .5rem; font-size: .76rem;
+    width: fit-content; max-width: 100%; min-width: 0; min-height: 2.75rem;
+    padding-inline: .55rem; font-size: .68rem; line-height: 1.2;
   }
 }
 @media (max-width: 420px) {
@@ -85,7 +86,7 @@
   .mudd-world-card__content { padding: 1rem; }
   .mudd-world-hero { min-height: 17rem; border-radius: .85rem; }
   .mudd-world-hero__veil { background: linear-gradient(90deg, rgb(17 25 22 / 88%), rgb(17 25 22 / 48%)), linear-gradient(0deg, rgb(17 25 22 / 60%), transparent); }
-  .mudd-character-entry { gap: .42rem; padding: .65rem .72rem; border-radius: .72rem; }
+  .mudd-character-entry:not(.mudd-character-entry--compact) { gap: .42rem; padding: .65rem .72rem; border-radius: .72rem; }
 }
 @media (prefers-reduced-motion: reduce) {
   .mudd-world-card, .mudd-world-card__link-cue span { transition: none; }

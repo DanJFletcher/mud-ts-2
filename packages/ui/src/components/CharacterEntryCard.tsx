@@ -27,7 +27,7 @@ export function CharacterEntryCard({
     <article className={`mudd-character-entry${compact ? ' mudd-character-entry--compact' : ''}`}>
       <div className="mudd-character-entry__top">
         <div className="mudd-character-entry__identity">
-          <p className="mudd-character-entry__eyebrow">{worldName || 'Your traveler'}</p>
+          {worldName ? <p className="mudd-character-entry__eyebrow">{worldName}</p> : null}
           <h3 className="mudd-character-entry__name">
             {detailsHref ? <a className="mudd-character-entry__name-link" href={detailsHref}>{name}</a> : name}
           </h3>

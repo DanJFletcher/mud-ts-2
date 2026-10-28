@@ -131,12 +131,15 @@
   .lobby-world-characters .lobby-character-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55rem; }
   .lobby-recent .lobby-character-list--recent > :only-child { grid-column: 1 / -1; }
   .lobby-world-characters .lobby-character-list > :only-child { grid-column: 1 / -1; }
-  .lobby-character-list--recent .character-options summary {
+  .lobby-character-list--recent .character-options summary,
+  .lobby-world-characters .lobby-character-list .character-options summary {
     display: inline-flex; width: 44px; height: 44px; align-items: center; justify-content: center;
     box-sizing: border-box; padding: 0; font-size: 1.25rem;
   }
-  .lobby-character-list--recent .character-options__label { display: none; }
-  .lobby-character-list--recent .character-options__compact-label { display: inline; }
+  .lobby-character-list--recent .character-options__label,
+  .lobby-world-characters .lobby-character-list .character-options__label { display: none; }
+  .lobby-character-list--recent .character-options__compact-label,
+  .lobby-world-characters .lobby-character-list .character-options__compact-label { display: inline; }
   .character-detail__facts { grid-template-columns: minmax(0, 1fr); }
   .character-detail__actions { align-items: flex-start; flex-direction: column; gap: .4rem; }
 }
