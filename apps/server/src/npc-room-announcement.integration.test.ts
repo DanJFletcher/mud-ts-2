@@ -1912,7 +1912,7 @@ describe('NPC room announcements through the server', () => {
     expect(await closeCode(unauthorizedWorldSocket, true)).toBe(1005);
   });
 
-  it('reports scheduler errors and runs server cleanup from its SIGTERM handler', async () => {
+  it('reports autonomous scheduler errors', async () => {
     expect(state.autonomousSchedulers.length).toBeGreaterThan(0);
 
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -1923,12 +1923,6 @@ describe('NPC room announcements through the server', () => {
       expect.any(Error),
     );
     errorLog.mockRestore();
-
-    expect(shutdownOnSigterm).toBeTypeOf('function');
-    const closed = once(server, 'close');
-    shutdownOnSigterm?.();
-    await closed;
-    expect(server.listening).toBe(false);
   });
 
   afterAll(async () => {
@@ -2233,5 +2227,13 @@ describe('NPC room announcements through the server', () => {
     expect(state.messages.filter((message) =>
       message.roomId === 'arrival-room' && message.speakerType === 'npc',
     )).toHaveLength(1);
+  });
+
+  it('closes the server from its SIGTERM handler', async () => {
+    expect(shutdownOnSigterm).toBeTypeOf('function');
+    const closed = once(server, 'close');
+    shutdownOnSigterm?.();
+    await closed;
+    expect(server.listening).toBe(false);
   });
 });

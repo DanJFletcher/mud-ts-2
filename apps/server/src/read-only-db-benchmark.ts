@@ -48,7 +48,7 @@ export function summarizeReadOnlyDbBenchmark(values: number[]) {
   };
 }
 
-async function runBenchmark(config: BenchmarkConfig): Promise<void> {
+export async function runReadOnlyDbBenchmark(config: BenchmarkConfig): Promise<void> {
   const { pool } = await import('./db/client.js');
   const timings: Timings[] = [];
   try {
@@ -126,5 +126,5 @@ async function runBenchmark(config: BenchmarkConfig): Promise<void> {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const config = readBenchmarkConfig(process.env);
-  await runBenchmark(config);
+  await runReadOnlyDbBenchmark(config);
 }

@@ -172,4 +172,58 @@ describe('PostgresLocationGroupCatalogStore unit behavior', () => {
     expect(deleteFn).not.toHaveBeenCalled();
     expect(insert).not.toHaveBeenCalled();
   });
+
+  it('replaces groups after a matching revision and normalizes optional fields', async () => {
+    const replacementGroups: LocationGroupDefinition[] = [{
+      id: 'mill-quarter',
+      name: 'Mill Quarter',
+      type: 'district',
+      memberships: [],
+    }];
+    const insertValues = vi.fn(async () => undefined);
+    const tx = {
+      update: vi.fn(() => ({
+        set: () => ({
+          where: () => ({ returning: async () => [{ revision: 4 }] }),
+        }),
+      })),
+      delete: vi.fn(() => ({ where: vi.fn(async () => undefined) })),
+      insert: vi.fn(() => ({ values: insertValues })),
+    };
+    setTransaction(tx);
+
+    const result = await new PostgresLocationGroupCatalogStore()
+      .replace('orraveth', '1.0.0', 3, replacementGroups);
+
+    expect(result).toEqual({
+      packId: 'orraveth',
+      packVersion: '1.0.0',
+      revision: 4,
+      groups: replacementGroups,
+    });
+    expect(tx.delete).toHaveBeenCalledTimes(1);
+    expect(insertValues).toHaveBeenCalledTimes(1);
+    expect(insertValues).toHaveBeenCalledWith([{
+      packId: 'orraveth',
+      packVersion: '1.0.0',
+      id: 'mill-quarter',
+      name: 'Mill Quarter',
+      type: 'district',
+      description: null,
+      metadata: null,
+    }]);
+  });
+
+  it('evicts the oldest cached catalog after reaching the cache limit', async () => {
+    mockDb.select.mockImplementation(() => queryResult([{ revision: 1 }]));
+    const store = new PostgresLocationGroupCatalogStore();
+
+    for (let index = 0; index < 33; index += 1) {
+      await store.read(`pack-${index}`, '1.0.0');
+    }
+    await store.read('pack-0', '1.0.0');
+
+    // The first catalog was evicted, so it needs fresh group and membership reads.
+    expect(mockDb.select).toHaveBeenCalledTimes(102);
+  });
 });

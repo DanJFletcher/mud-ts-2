@@ -290,4 +290,135 @@ describe('room-chat-service unit behavior', () => {
       cursor: 20,
     });
   });
+
+  it('creates an authorized player message and its durable publication effect', async () => {
+    const insertedMessage = chatRow({
+      message: 'The square is busy today.',
+      submissionId: 'new-submission',
+    });
+    const messageValues = vi.fn();
+    const effectValues = vi.fn();
+    const tx = setTransaction([[], ...authorizedChatReads([])], {
+      insert: vi.fn()
+        .mockReturnValueOnce({
+          values: messageValues.mockReturnValue({
+            onConflictDoNothing: () => ({ returning: async () => [insertedMessage] }),
+          }),
+        })
+        .mockReturnValueOnce({ values: effectValues }),
+    });
+
+    const result = await createPlayerRoomChatMessage({
+      worldInstanceId: 'world-1',
+      playerId: 'player-1',
+      roomId: 'market-square',
+      characterId: 'character-1',
+      clientMessageId: 'new-submission',
+      text: '  The square is busy today.  ',
+    });
+
+    expect(result).toMatchObject({
+      kind: 'created',
+      message: {
+        roomId: 'market-square',
+        speakerType: 'player',
+        speakerName: 'Rowan',
+        text: 'The square is busy today.',
+      },
+    });
+    expect(result.kind).toBe('created');
+    if (result.kind !== 'created') throw new Error('Expected a created chat submission.');
+    expect(result.effectId).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(messageValues).toHaveBeenCalledWith(expect.objectContaining({
+      worldInstanceId: 'world-1',
+      playerId: 'player-1',
+      submissionId: 'new-submission',
+      message: 'The square is busy today.',
+      sourceEffectId: null,
+    }));
+    expect(effectValues).toHaveBeenCalledWith(expect.objectContaining({
+      id: result.effectId,
+      effectType: PLAYER_ROOM_MESSAGE_EFFECT,
+      payload: { roomChatMessageId: insertedMessage.id },
+      dedupeKey: 'room-chat:world-1:player-1:new-submission',
+    }));
+    expect(tx.execute).toHaveBeenCalledTimes(4);
+  });
+
+  it('rejects chat history when the room-state projection is stale', async () => {
+    const reads = authorizedChatReads([[]]);
+    reads[3] = [{ revision: 6 }];
+    setTransaction(reads);
+
+    await expect(listRoomChatMessages({
+      worldInstanceId: 'world-1',
+      playerId: 'player-1',
+      characterId: 'character-1',
+      roomId: 'market-square',
+    })).resolves.toBeUndefined();
+  });
+
+  it('reconciles a matching message when the insert loses an idempotency race', async () => {
+    const racedMessage = chatRow({ message: 'Hello after reconnect.' });
+    const effectValues = vi.fn();
+    const tx = setTransaction(
+      [[], ...authorizedChatReads([]), [racedMessage], [{ id: 'effect-raced' }]],
+      {
+        insert: vi.fn().mockReturnValue({
+          values: () => ({
+            onConflictDoNothing: () => ({ returning: async () => [] }),
+          }),
+        }),
+      },
+    );
+
+    const result = await createPlayerRoomChatMessage({
+      worldInstanceId: 'world-1',
+      playerId: 'player-1',
+      roomId: 'market-square',
+      characterId: 'character-1',
+      clientMessageId: 'submission-1',
+      text: 'Hello after reconnect.',
+    });
+
+    expect(result).toMatchObject({
+      kind: 'duplicate',
+      message: { id: racedMessage.id, text: 'Hello after reconnect.' },
+      effectId: 'effect-raced',
+    });
+    expect(effectValues).not.toHaveBeenCalled();
+    expect(tx.select).toHaveBeenCalledTimes(7);
+  });
+
+  it('keeps the requested cursor when an incremental poll has no new messages', async () => {
+    setTransaction(authorizedChatReads([[]]));
+
+    await expect(listRoomChatMessages({
+      worldInstanceId: 'world-1',
+      playerId: 'player-1',
+      characterId: 'character-1',
+      roomId: 'market-square',
+      afterId: 42,
+    })).resolves.toMatchObject({
+      messages: [],
+      terminalEvents: [],
+      cursor: 42,
+    });
+  });
+
+  it('fails explicitly if a non-deduplicated NPC message insert returns no row', async () => {
+    setTransaction([], {
+      insert: vi.fn(() => ({
+        values: () => ({ returning: async () => [] }),
+      })),
+    });
+
+    await expect(publishNpcRoomMessage({
+      worldInstanceId: 'world-1',
+      roomId: 'market-square',
+      npcId: 'orin-vale',
+      npcName: 'Orin Vale',
+      text: 'The river is high.',
+    })).rejects.toThrow('Could not store the room message.');
+  });
 });
