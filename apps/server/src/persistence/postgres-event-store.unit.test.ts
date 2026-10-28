@@ -55,7 +55,10 @@ function createAppendTransaction(options: {
         values: (values: unknown) => {
           persistedValues.push(values);
           if (index === options.failOnInsertIndex) throw new Error('durable effect insert failed');
-          return { returning: () => ({ values }) };
+          return {
+            returning: () => ({ values }),
+            onConflictDoUpdate: () => Promise.resolve(),
+          };
         },
       };
     }),
@@ -185,6 +188,218 @@ describe('PostgresEventStore unit behavior', () => {
     );
     expect(staleExpectedVersion).toEqual(matchingSnapshot.first);
     expect(mockDb.select).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps the command cache and room-state projection current after a cached character append', async () => {
+    const characterId = '123e4567-e89b-42d3-a456-426614174000';
+    const occurredAt = new Date('2026-10-28T12:00:00.000Z');
+    const createdRow = {
+      type: 'character.created',
+      contractVersion: 1,
+      payload: {
+        characterId,
+        playerId: 'player-1',
+        name: 'Rowan',
+        startingLocationId: 'room-a',
+      },
+      eventId: 'event-created',
+      worldInstanceId: 'world-1',
+      streamId: characterId,
+      streamVersion: 1,
+      causationCommandId: 'create-command',
+      actorId: 'player-1',
+      occurredAt,
+      tick: 1,
+    } as Parameters<typeof toStoredGameEvent>[0];
+    const revisionQuery = () => ({
+      from: () => ({
+        where: () => ({
+          orderBy: () => ({ limit: async () => [{ revision: 1 }] }),
+        }),
+      }),
+    });
+    const historyQuery = () => ({
+      from: () => ({
+        where: () => ({ orderBy: async () => [createdRow] }),
+      }),
+    });
+    mockDb.select.mockImplementationOnce(revisionQuery).mockImplementationOnce(historyQuery);
+
+    const { tx, persistedValues } = createAppendTransaction({
+      heads: [{ streamId: characterId, revision: 1 }],
+    });
+    mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(tx));
+    const store = new PostgresEventStore();
+    const request: AppendRequest = {
+      worldInstanceId: 'world-1',
+      streamId: characterId,
+      actorId: 'player-1',
+      commandId: 'move-command',
+      payloadHash: 'move-payload',
+      expectedVersion: 1,
+      events: [{
+        type: 'character.moved',
+        version: 1,
+        payload: {
+          characterId,
+          fromLocationId: 'room-a',
+          toLocationId: 'room-b',
+          exitId: 'east-exit',
+        },
+      }],
+    };
+
+    const result = await store.withCommandReadCache('world-1', characterId, async () => {
+      const before = await store.readStream('world-1', characterId);
+      const outcome = await store.append(request);
+      const after = await store.readStream('world-1', characterId);
+      return { before, outcome, after };
+    }, 1);
+
+    expect(result.before).toHaveLength(1);
+    expect(result.outcome.kind).toBe('committed');
+    expect(result.after).toHaveLength(2);
+    expect(result.after[1]).toMatchObject({
+      type: 'character.moved',
+      aggregateVersion: 2,
+      payload: { fromLocationId: 'room-a', toLocationId: 'room-b' },
+    });
+    expect(mockDb.select).toHaveBeenCalledTimes(2);
+
+    expect(persistedValues[2]).toMatchObject({
+      characterId,
+      worldInstanceId: 'world-1',
+      locationId: 'room-b',
+      revision: 2,
+      schemaVersion: 1,
+      state: {
+        characterId,
+        worldInstanceId: 'world-1',
+        locationId: 'room-b',
+        name: 'Rowan',
+        archived: false,
+      },
+    });
+  });
+
+  it('rebuilds a missing room-state projection from persisted character history', async () => {
+    const characterId = '123e4567-e89b-42d3-a456-426614174000';
+    const occurredAt = new Date('2026-10-28T12:00:00.000Z');
+    const createdRow = {
+      type: 'character.created',
+      contractVersion: 1,
+      payload: {
+        characterId,
+        playerId: 'player-1',
+        name: 'Rowan',
+        startingLocationId: 'room-a',
+      },
+      eventId: 'event-created',
+      worldInstanceId: 'world-1',
+      streamId: characterId,
+      streamVersion: 1,
+      causationCommandId: 'create-command',
+      actorId: 'player-1',
+      occurredAt,
+      tick: 1,
+    } as Parameters<typeof toStoredGameEvent>[0];
+    mockDb.select.mockReturnValue({
+      from: () => ({
+        where: async () => [{ id: characterId, world: 'world-1' }],
+      }),
+    });
+
+    const selectResults = [
+      {
+        from: () => ({
+          where: () => ({
+            orderBy: () => ({ limit: async () => [{ revision: 1 }] }),
+          }),
+        }),
+      },
+      {
+        from: () => ({
+          where: () => ({ limit: async () => [] }),
+        }),
+      },
+      {
+        from: () => ({
+          where: () => ({ limit: async () => [{ id: characterId }] }),
+        }),
+      },
+      {
+        from: () => ({
+          where: () => ({ orderBy: async () => [createdRow] }),
+        }),
+      },
+    ];
+    const projectionWrites: Array<{ values: unknown; conflict: unknown }> = [];
+    const tx = {
+      execute: vi.fn(async () => undefined),
+      select: vi.fn(() => selectResults.shift()),
+      insert: vi.fn(() => ({
+        values: (values: unknown) => ({
+          onConflictDoUpdate: (conflict: unknown) => {
+            projectionWrites.push({ values, conflict });
+            return Promise.resolve();
+          },
+        }),
+      })),
+    };
+    mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(tx));
+
+    await new PostgresEventStore().rebuildRoomStates('world-1', characterId);
+
+    expect(tx.execute).toHaveBeenCalledOnce();
+    expect(tx.select).toHaveBeenCalledTimes(4);
+    expect(projectionWrites).toHaveLength(1);
+    expect(projectionWrites[0]?.values).toMatchObject({
+      characterId,
+      worldInstanceId: 'world-1',
+      locationId: 'room-a',
+      revision: 1,
+      schemaVersion: 1,
+      state: {
+        characterId,
+        worldInstanceId: 'world-1',
+        locationId: 'room-a',
+        name: 'Rowan',
+        archived: false,
+      },
+    });
+  });
+
+  it('skips rebuilding a room-state projection already at the current schema and revision', async () => {
+    const characterId = '123e4567-e89b-42d3-a456-426614174000';
+    mockDb.select.mockReturnValue({
+      from: () => ({
+        where: async () => [{ id: characterId, world: 'world-1' }],
+      }),
+    });
+    const tx = {
+      execute: vi.fn(async () => undefined),
+      select: vi.fn()
+        .mockImplementationOnce(() => ({
+          from: () => ({
+            where: () => ({
+              orderBy: () => ({ limit: async () => [{ revision: 4 }] }),
+            }),
+          }),
+        }))
+        .mockImplementationOnce(() => ({
+          from: () => ({
+            where: () => ({ limit: async () => [{ revision: 4, schemaVersion: 1 }] }),
+          }),
+        })),
+      insert: vi.fn(),
+    };
+    mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(tx));
+
+    await new PostgresEventStore().rebuildRoomStates('world-1', characterId);
+
+    expect(tx.execute).toHaveBeenCalledOnce();
+    expect(tx.select).toHaveBeenCalledTimes(2);
+    expect(tx.insert).not.toHaveBeenCalled();
   });
 
   it('returns empty stream batches without querying and de-duplicates requested streams', async () => {
