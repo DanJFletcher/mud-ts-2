@@ -863,6 +863,21 @@ describe('NPC room announcements through the server', () => {
     });
   });
 
+  it('serves health checks and prevents signed-in users from starting guest sessions', async () => {
+    const health = await fetch(`${baseUrl}/api/health`);
+    expect(health.status).toBe(200);
+    expect(await health.json()).toEqual({ status: 'ok' });
+
+    const guestSession = await fetch(`${baseUrl}/api/guest-session`, {
+      method: 'POST',
+      headers: { 'x-test-user': 'alice' },
+    });
+    expect(guestSession.status).toBe(409);
+    expect(await guestSession.json()).toEqual({
+      message: 'Sign out before starting a guest session.',
+    });
+  });
+
   it('lists registered worlds without requiring an account', async () => {
     const response = await fetch(`${baseUrl}/api/worlds`);
     expect(response.status).toBe(200);

@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { getTableConfig } from 'drizzle-orm/pg-core';
 import {
   characters,
   commandReceipts,
   gameEvents,
   players,
+  roomCharacterStates,
   roomChatMessages,
   sessions,
   worldSessions,
@@ -20,5 +22,15 @@ describe('PostgreSQL schema definitions', () => {
     expect(roomChatMessages).toBeDefined();
     expect(players.clerkUserId).toBeDefined();
     expect(characters.archivedAt).toBeDefined();
+  });
+
+  it('materializes the foreign-key references for session, character, and room state', () => {
+    const tables = [sessions, characters, worldSessions, roomCharacterStates, roomChatMessages];
+    const foreignKeys = tables.flatMap((table) => getTableConfig(table).foreignKeys);
+
+    expect(foreignKeys).toHaveLength(6);
+    for (const foreignKey of foreignKeys) {
+      expect(foreignKey.reference().foreignColumns.length).toBeGreaterThan(0);
+    }
   });
 });
