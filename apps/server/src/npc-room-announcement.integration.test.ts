@@ -678,6 +678,7 @@ vi.mock('./middlewares/clerkProxyMiddleware.js', () => ({
 vi.mock('./persistence/postgres-event-store.js', () => ({
   PostgresEventStore: class {
     async rebuildRoomStates() {}
+    async claimDueObjectLifecycles() { return []; }
     withCommandReadCache<T>(
       _worldInstanceId: string,
       _streamId: string,
@@ -808,6 +809,96 @@ describe('NPC room announcements through the server', () => {
       characters: [],
       activeWorldSession: null,
     });
+  });
+
+  it('rejects unauthenticated, unavailable-world, and malformed chat requests', async () => {
+    const unauthenticated = await fetch(`${baseUrl}/api/chat?roomId=npc-room`);
+    expect(unauthenticated.status).toBe(401);
+
+    const unavailableWorld = await fetch(`${baseUrl}/api/chat?roomId=npc-room`, {
+      headers: {
+        'x-test-user': 'alice',
+        'x-mudd-world-instance': 'missing-world',
+      },
+    });
+    expect(unavailableWorld.status).toBe(404);
+
+    const missingRoom = await fetch(`${baseUrl}/api/chat`);
+    const malformedRoom = await fetch(`${baseUrl}/api/chat?roomId=npc-room&afterId=not-a-number`, {
+      headers: { 'x-test-user': 'alice' },
+    });
+    expect(missingRoom.status).toBe(401);
+    expect(malformedRoom.status).toBe(400);
+    expect(await malformedRoom.json()).toEqual({ message: 'Invalid room chat request.' });
+
+    const malformedMessage = await fetch(`${baseUrl}/api/chat`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-user': 'alice',
+      },
+      body: JSON.stringify({ roomId: 'npc-room', clientMessageId: 'invalid-chat', text: '   ' }),
+    });
+    expect(malformedMessage.status).toBe(400);
+    expect(await malformedMessage.json()).toEqual({
+      message: 'Enter a message up to 500 characters.',
+    });
+    expect(state.messages).toEqual([]);
+  });
+
+  it('validates character command schemas and selected-world ownership before dispatch', async () => {
+    const postCommand = (body: unknown) => fetch(`${baseUrl}/api/commands`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-user': 'alice',
+      },
+      body: JSON.stringify(body),
+    });
+
+    const wrongWorld = await postCommand({
+      type: 'character.create',
+      version: 1,
+      commandId: 'wrong-world-command',
+      worldInstanceId: 'another-world',
+      payload: { name: 'Rill' },
+    });
+    expect(wrongWorld.status).toBe(400);
+    expect(await wrongWorld.json()).toEqual({
+      message: 'Choose a command for the selected world.',
+    });
+
+    for (const type of [
+      'character.create',
+      'character.rename',
+      'character.archive',
+      'character.restore',
+    ]) {
+      const invalid = await postCommand({ type, worldInstanceId: instanceId });
+      expect(invalid.status, type).toBe(400);
+      expect(await invalid.json()).toMatchObject({ message: expect.stringContaining('Invalid character') });
+    }
+  });
+
+  it('requires an active world character and rejects chat requests for another room', async () => {
+    const missingReadSession = await fetch(`${baseUrl}/api/chat?roomId=npc-room`, {
+      headers: { 'x-test-user': 'alice' },
+    });
+    const missingWriteSession = await sendRoomMessage('alice', 'npc-room', 'Hello.', 'no-world-session');
+    const missingInteractionSession = await fetch(`${baseUrl}/api/interactions`, {
+      headers: { 'x-test-user': 'alice' },
+    });
+    expect(missingReadSession.status).toBe(409);
+    expect(missingWriteSession.status).toBe(409);
+    expect(missingInteractionSession.status).toBe(409);
+
+    await enterWorld('alice', 'character-alice');
+    const messagesBeforeWrongRoomRequests = state.messages.length;
+    const wrongRoomRead = await readRoom('alice', 'other-room');
+    const wrongRoomWrite = await sendRoomMessage('alice', 'other-room', 'Hello.', 'wrong-room-chat');
+    expect(wrongRoomRead.response.status).toBe(409);
+    expect(wrongRoomWrite.status).toBe(409);
+    expect(state.messages).toHaveLength(messagesBeforeWrongRoomRequests);
   });
 
   afterAll(async () => {
