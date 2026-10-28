@@ -140,6 +140,7 @@ describe('world lobby and explicit character entry', () => {
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     expect(navigation).toHaveClass('is-open');
     expect(within(navigation!).getByRole('link', { name: 'Worlds' })).toBeInTheDocument();
+    expect(within(navigation!).getByRole('link', { name: 'Characters' })).toHaveAttribute('href', '/characters');
     expect(within(navigation!).getByRole('link', { name: 'Codex' })).toBeInTheDocument();
     expect(within(navigation!).getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
 

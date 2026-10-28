@@ -43,6 +43,7 @@ export function AccountShell({ children }: { children: ReactNode }) {
       </button>
       <nav id="account-navigation" className={mobileMenuOpen ? 'is-open' : undefined} aria-label="Account navigation">
         <a href={appHref('/')} onClick={closeMobileMenu}>Worlds</a>
+        <a href={appHref('/characters')} onClick={closeMobileMenu}>Characters</a>
         <a href={appHref('/codex')} onClick={closeMobileMenu}>Codex</a>
         <PwaInstallAction className="pwa-install-action__nav-button" />
         {isSignedIn ? <Button variant="quiet" onClick={() => { closeMobileMenu(); void signOut({ redirectUrl: appHref('/') }); }}>Sign out</Button>
