@@ -253,6 +253,25 @@ describe('corpse lifecycle expiration effect', () => {
     expect(request.effects[0].payload.message).toContain('returned to their owner');
   });
 
+  it('rejects recovery storage when a player corpse has no owner', async () => {
+    const effect = corpseEffect({ policy: 'destroy' });
+    const corpse = (effect.payload as any).corpse;
+    corpse.corpseType = 'player';
+    delete corpse.ownerCharacterId;
+    delete corpse.expirationPolicy;
+    const histories = new Map([
+      [objectLifecycleStreamId(corpse.corpseId), lifecycleHistory(corpse.corpseId, 'expiring', corpse.expiresAt)],
+      [worldItemsStreamId(worldId), corpseHistory(effect)],
+    ]);
+
+    await expect(handle({
+      objectId: corpse.corpseId,
+      objectType: 'corpse',
+      locationId: corpse.locationId,
+      expiresAt: corpse.expiresAt,
+    }, context(histories))).rejects.toThrow(`Corpse ${corpse.corpseId} requires an owner for recovery storage.`);
+  });
+
   it('rejects a failed atomic append without partially expiring the corpse', async () => {
     const effect = corpseEffect({ corpseType: 'player', contents: true });
     const corpse = (effect.payload as any).corpse;

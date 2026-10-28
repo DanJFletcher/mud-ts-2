@@ -19,6 +19,23 @@ function character(characterId: string, name: string, overrides: Record<string, 
   });
 }
 
+function activeCharacterCombat() {
+  return {
+    encounterId: 'personal-encounter',
+    locationId: 'market-square',
+    opponentNpcId: 'bandit',
+    opponentName: 'Bandit',
+    round: 1,
+    playerHealth: 6,
+    playerMaxHealth: 6,
+    opponentHealth: 5,
+    opponentMaxHealth: 5,
+    lastAction: 'attack',
+    lastNarration: 'The fight continues.',
+    status: 'active',
+  };
+}
+
 function participant(characterId: string, name: string, health = 6) {
   return { characterId, name, health, maximumHealth: 6 };
 }
@@ -183,10 +200,43 @@ describe('PvP combat plugin', () => {
       initiatorCharacterId: 'character-one',
       recipientCharacterId: 'character-two',
     }, unavailable.context as any)).rejects.toThrow();
+
+    const archived = harness({
+      first: character('character-one', 'Aster', { archived: true }),
+      events: [],
+    });
+    await expect(archived.policies.get('pvp.challenge')!.prepareRequest({
+      initiatorCharacterId: 'character-one',
+      recipientCharacterId: 'character-two',
+    }, archived.context as any)).rejects.toThrow('That player is not available.');
+
+    const fighting = harness({
+      first: character('character-one', 'Aster', { combat: activeCharacterCombat() }),
+      events: [],
+    });
+    await expect(fighting.policies.get('pvp.challenge')!.prepareRequest({
+      initiatorCharacterId: 'character-one',
+      recipientCharacterId: 'character-two',
+    }, fighting.context as any)).rejects.toThrow('A player already has an active encounter.');
+
+    const worldBusy = harness();
+    await expect(worldBusy.policies.get('pvp.challenge')!.prepareRequest({
+      initiatorCharacterId: 'character-one',
+      recipientCharacterId: 'character-two',
+    }, worldBusy.context as any)).rejects.toThrow('A PvP encounter is already active in this world.');
   });
 
   it('starts a duel on acceptance and adds character revision guards', async () => {
-    const test = harness({ events: [] });
+    const tonic = {
+      id: 'challenge-tonic',
+      label: 'Challenge tonic',
+      description: 'A healing tonic.',
+      consumable: { effect: 'heal', amount: 2 },
+    };
+    const test = harness({
+      first: character('character-one', 'Aster', { inventory: [tonic] }),
+      events: [],
+    });
     const policy = test.policies.get('pvp.challenge')!;
     const result = await policy.prepareAcceptance({
       requestId: 'request-one',
@@ -206,12 +256,68 @@ describe('PvP combat plugin', () => {
             expect.objectContaining({ characterId: 'character-two', name: 'Briar' }),
           ],
         }),
+        participants: expect.arrayContaining([expect.objectContaining({
+          characterId: 'character-one',
+          consumables: [{ itemId: 'challenge-tonic', amount: 2 }],
+        })]),
       }),
     })]);
+
+    const ruleset = harness({ events: [], world: { classCatalog: {} } });
+    const guarded = await ruleset.policies.get('pvp.challenge')!.prepareAcceptance({
+      requestId: 'request-ruleset',
+      initiatorCharacterId: 'character-one',
+      recipientCharacterId: 'character-two',
+    } as any, ruleset.context as any);
+    expect(guarded).toMatchObject({
+      guards: expect.arrayContaining([
+        { streamId: 'character-one', expectedVersion: 3 },
+        { streamId: 'character-two', expectedVersion: 3 },
+        { streamId: 'world-team-combat', expectedVersion: 0 },
+        { streamId: interactionStreamId(worldInstanceId), expectedVersion: 0 },
+      ]),
+    });
+
+    const archived = harness({
+      first: character('character-one', 'Aster', { archived: true }),
+      events: [],
+    });
+    await expect(archived.policies.get('pvp.challenge')!.prepareAcceptance({
+      requestId: 'request-one',
+      initiatorCharacterId: 'character-one',
+      recipientCharacterId: 'character-two',
+    } as any, archived.context as any)).rejects.toThrow('A player is no longer available.');
+
+    const apart = harness({
+      second: character('character-two', 'Briar', { locationId: 'south-bridge' }),
+      events: [],
+    });
+    await expect(apart.policies.get('pvp.challenge')!.prepareAcceptance({
+      requestId: 'request-one',
+      initiatorCharacterId: 'character-one',
+      recipientCharacterId: 'character-two',
+    } as any, apart.context as any)).rejects.toThrow('same room');
+
+    const fighting = harness({
+      first: character('character-one', 'Aster', { combat: activeCharacterCombat() }),
+      events: [],
+    });
+    await expect(fighting.policies.get('pvp.challenge')!.prepareAcceptance({
+      requestId: 'request-one',
+      initiatorCharacterId: 'character-one',
+      recipientCharacterId: 'character-two',
+    } as any, fighting.context as any)).rejects.toThrow('A player already has an active encounter.');
+
+    const worldBusy = harness();
+    await expect(worldBusy.policies.get('pvp.challenge')!.prepareAcceptance({
+      requestId: 'request-one',
+      initiatorCharacterId: 'character-one',
+      recipientCharacterId: 'character-two',
+    } as any, worldBusy.context as any)).rejects.toThrow('A PvP encounter is already active in this world.');
   });
 
   it('records attack and defend actions while enforcing turn and encounter ownership', async () => {
-    const test = harness();
+    const test = harness({ world: { classCatalog: {} } });
     const action = test.commands.get('pvp.action')!;
     const attack = await action({
       characterId: 'character-one',
@@ -242,6 +348,28 @@ describe('PvP combat plugin', () => {
       characterId: 'character-one',
       payload: { encounterId: 'duel-one', action: 'attack' },
     }, missing.context)).rejects.toThrow('no longer active');
+  });
+
+  it('rejects an outsider and characters that disappear during a PvP action', async () => {
+    const outsider = harness();
+    await expect(outsider.commands.get('pvp.action')!({
+      characterId: 'unrelated-character',
+      payload: { encounterId: 'duel-one', action: 'attack' },
+    }, outsider.context)).rejects.toThrow('You are not part of that encounter.');
+
+    const missingActor = harness();
+    missingActor.characters.delete('character-one');
+    await expect(missingActor.commands.get('pvp.action')!({
+      characterId: 'character-one',
+      payload: { encounterId: 'duel-one', action: 'attack' },
+    }, missingActor.context)).rejects.toThrow('That character is no longer available.');
+
+    const missingOpponent = harness();
+    missingOpponent.characters.delete('character-two');
+    await expect(missingOpponent.commands.get('pvp.action')!({
+      characterId: 'character-one',
+      payload: { encounterId: 'duel-one', action: 'attack' },
+    }, missingOpponent.context)).rejects.toThrow('A PvP participant is no longer available.');
   });
 
   it('finishes flee actions with an outcome effect and clears a defender on the next hit', async () => {
@@ -344,6 +472,29 @@ describe('PvP combat plugin', () => {
     expect(result.events[0].payload.encounter.participants[0].health).toBe(5);
     expect(result.events[0].payload.participants[0].consumedItemIds).toEqual(['small-tonic']);
 
+    const fullHealthState = {
+      ...healingState,
+      encounter: {
+        ...healingState.encounter,
+        participants: [participant('character-one', 'Aster'), participant('character-two', 'Briar')],
+      },
+      participants: [
+        { ...healingState.participants[0], characterHealthAnchor: 6 },
+        healingState.participants[1],
+      ],
+    };
+    const fullHealth = harness({
+      first: character('character-one', 'Aster', {
+        inventory: [tonic],
+        health: { current: 6, maximum: 6 },
+      }),
+      events: [stored('pvp.encounter.started', fullHealthState)],
+    });
+    await expect(fullHealth.commands.get('pvp.action')!({
+      characterId: 'character-one',
+      payload: { encounterId: 'duel-one', action: 'use-item', itemId: 'small-tonic' },
+    }, fullHealth.context)).rejects.toThrow('You are already at full health.');
+
     const absent = harness();
     await expect(absent.commands.get('pvp.action')!({
       characterId: 'character-one',
@@ -406,6 +557,101 @@ describe('PvP combat plugin', () => {
     expect(test.store.append).toHaveBeenCalledTimes(3);
   });
 
+  it('skips a participant outcome already committed under its idempotency receipt', async () => {
+    const test = harness();
+    test.store.lookupCommand.mockImplementation(async (
+      _world: string,
+      _actor: string,
+      commandId: string,
+    ) => commandId === 'pvp-outcome:duel-one:character-one' ? { commandId } : undefined);
+    await test.effects.get('pvp.apply_outcome')!({
+      interactionStreamId: interactionStreamId(worldInstanceId),
+      encounter: {
+        ...encounter('resolving'),
+        participants: [participant('character-one', 'Aster', 5), participant('character-two', 'Briar', 4)],
+      },
+      consumedItemIdsByCharacter: { 'character-one': [], 'character-two': [] },
+      healthDeltaByCharacter: { 'character-one': -1, 'character-two': -2 },
+      respawnsByCharacter: {},
+    }, test.context);
+    expect(test.store.append).toHaveBeenCalledTimes(2);
+    expect(test.store.append.mock.calls[0]?.[0]).toMatchObject({
+      streamId: 'character-two',
+    });
+  });
+
+  it('rejects missing participant history and failed outcome appends', async () => {
+    const test = harness();
+    const effect = test.effects.get('pvp.apply_outcome')!;
+    const outcome = {
+      interactionStreamId: interactionStreamId(worldInstanceId),
+      encounter: {
+        ...encounter('resolving'),
+        participants: [participant('character-one', 'Aster', 5), participant('character-two', 'Briar', 4)],
+      },
+      consumedItemIdsByCharacter: { 'character-one': [], 'character-two': [] },
+      healthDeltaByCharacter: { 'character-one': -1, 'character-two': -2 },
+      respawnsByCharacter: {},
+    };
+
+    test.streams.set('character-one', []);
+    await expect(effect(outcome, test.context))
+      .rejects.toThrow('PvP participant state changed before the outcome could be applied.');
+
+    const failed = harness();
+    const failedEffect = failed.effects.get('pvp.apply_outcome')!;
+    failed.store.append.mockImplementationOnce(async () => ({ receipt: { ok: false }, events: [] }));
+    await expect(failedEffect(outcome, failed.context))
+      .rejects.toThrow('Could not append the PvP outcome to a character stream.');
+  });
+
+  it('rejects a changed encounter and skips already-receipted finalization', async () => {
+    const outcome = {
+      interactionStreamId: interactionStreamId(worldInstanceId),
+      encounter: {
+        ...encounter('resolving'),
+        participants: [participant('character-one', 'Aster', 5), participant('character-two', 'Briar', 4)],
+      },
+      consumedItemIdsByCharacter: { 'character-one': [], 'character-two': [] },
+      healthDeltaByCharacter: { 'character-one': -1, 'character-two': -2 },
+      respawnsByCharacter: {},
+    };
+    const changed = harness();
+    const originalRead = changed.store.readStream.getMockImplementation()!;
+    changed.store.readStream.mockImplementation(async (world: string, streamId: string) =>
+      streamId === interactionStreamId(world) ? [] : originalRead(world, streamId));
+    await expect(changed.effects.get('pvp.apply_outcome')!(outcome, changed.context))
+      .rejects.toThrow('The PvP encounter changed before outcome finalization.');
+
+    const receipted = harness();
+    receipted.store.lookupCommand.mockImplementation(async (
+      _world: string,
+      _actor: string,
+      commandId: string,
+    ) => commandId === 'pvp-outcome:duel-one:complete' ? { commandId } : undefined);
+    await receipted.effects.get('pvp.apply_outcome')!(outcome, receipted.context);
+    expect(receipted.store.append).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects a failed shared encounter finalization append', async () => {
+    const test = harness();
+    const append = test.store.append.getMockImplementation()!;
+    test.store.append
+      .mockImplementationOnce((input: any) => append(input))
+      .mockImplementationOnce((input: any) => append(input))
+      .mockImplementationOnce(async () => ({ receipt: { ok: false }, events: [] }));
+    await expect(test.effects.get('pvp.apply_outcome')!({
+      interactionStreamId: interactionStreamId(worldInstanceId),
+      encounter: {
+        ...encounter('resolving'),
+        participants: [participant('character-one', 'Aster', 5), participant('character-two', 'Briar', 4)],
+      },
+      consumedItemIdsByCharacter: { 'character-one': [], 'character-two': [] },
+      healthDeltaByCharacter: { 'character-one': -1, 'character-two': -2 },
+      respawnsByCharacter: {},
+    }, test.context)).rejects.toThrow('Could not finalize the PvP encounter.');
+  });
+
   it('prepares and applies the respawn when a duel defeats a player', async () => {
     const lethalState = {
       encounter: {
@@ -451,10 +697,21 @@ describe('PvP combat plugin', () => {
       respawnLocationId: 'market-square',
       health: { current: 6, maximum: 6 },
     });
+    outcomeEffect.payload.respawnsByCharacter['character-two'].droppedItem = {
+      sourceItemId: 'knife-lost-in-duel',
+      item: {
+        id: 'knife-lost-in-duel',
+        typeId: 'knife',
+        label: 'Knife',
+        description: 'A narrow knife.',
+      },
+    };
 
     await test.effects.get('pvp.apply_outcome')!(outcomeEffect.payload, test.context);
     expect(test.streams.get('character-two')?.map((entry: any) => entry.type))
       .toContain('character.respawned');
+    expect(test.store.append.mock.calls.some(([input]: [any]) => input.effects?.length))
+      .toBe(true);
   });
 
   it('resolves class abilities through the optional ruleset capability and records its event', async () => {

@@ -155,6 +155,40 @@ describe('@mudd/ui components', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it('closes the crafting quantity dialog when the native dialog is cancelled', () => {
+    const onClose = vi.fn();
+    render(
+      <CraftingQuantityDialog
+        itemLabel="Leather gloves"
+        choices={[{ quantity: 1 }]}
+        onSelect={vi.fn()}
+        onClose={onClose}
+      />,
+    );
+    const dialog = screen.getByRole('dialog', { name: 'How many?' });
+    const cancel = new Event('cancel', { cancelable: true });
+    fireEvent(dialog, cancel);
+    expect(cancel.defaultPrevented).toBe(true);
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('closes the interaction dialog when the native dialog is cancelled', () => {
+    const onClose = vi.fn();
+    render(
+      <InteractionOptionsDialog
+        targetLabel="Bulletin board"
+        options={[{ id: 'look', label: 'Look' }]}
+        onSelect={vi.fn()}
+        onClose={onClose}
+      />,
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Choose an action for Bulletin board' });
+    const cancel = new Event('cancel', { cancelable: true });
+    fireEvent(dialog, cancel);
+    expect(cancel.defaultPrevented).toBe(true);
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   it('shows NPC speech and response choices in a closeable conversation dialog', () => {
     const onSelect = vi.fn();
     const onClose = vi.fn();
@@ -178,6 +212,25 @@ describe('@mudd/ui components', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Ask about the marker' }));
     expect(onSelect).toHaveBeenCalledWith('marker');
     fireEvent.click(screen.getByRole('button', { name: 'Close conversation' }));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('closes the NPC conversation when the native dialog is cancelled', () => {
+    const onClose = vi.fn();
+    render(
+      <NpcDialogueDialog
+        npcName="Mara"
+        dialogue="The old paths still have their stories."
+        farewellLabel="Goodbye"
+        choices={[]}
+        onSelect={vi.fn()}
+        onClose={onClose}
+      />,
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Conversation with Mara' });
+    const cancel = new Event('cancel', { cancelable: true });
+    fireEvent(dialog, cancel);
+    expect(cancel.defaultPrevented).toBe(true);
     expect(onClose).toHaveBeenCalledOnce();
   });
 
@@ -210,6 +263,16 @@ describe('@mudd/ui components', () => {
     render(<WorldHero name="The Waystone Path" summary="An old road." introduction={['Listen for the bells.']} />);
     expect(screen.getByRole('heading', { level: 1, name: 'The Waystone Path' })).toBeInTheDocument();
     expect(screen.getByText('Listen for the bells.')).toBeInTheDocument();
+  });
+
+  it('uses supplied artwork and falls back to the text cover if it fails', () => {
+    const { container } = render(
+      <WorldHero name="The Waystone Path" summary="An old road." imageSrc="/missing-world-art.jpg" />,
+    );
+    const hero = container.querySelector('header')!;
+    expect(hero).toHaveClass('has-art');
+    fireEvent.error(container.querySelector('img')!);
+    expect(hero).toHaveClass('is-text-cover');
   });
 
   it('exposes character details and calls its explicit entry action', () => {
@@ -346,6 +409,8 @@ describe('@mudd/ui components', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Loading class choices');
     rerender(<ClassChoice classes={[]} onChange={vi.fn()} error="Catalog unavailable." />);
     expect(screen.getByRole('alert')).toHaveTextContent('Catalog unavailable.');
+    rerender(<ClassChoice classes={[]} onChange={vi.fn()} />);
+    expect(screen.getByText('No classes are available in this world.')).toBeInTheDocument();
   });
 
   it('uses server availability and exposes the reason for unavailable actions', () => {
@@ -364,6 +429,16 @@ describe('@mudd/ui components', () => {
   it('announces a loading state for projected actions', () => {
     render(<ClassAbilityList actions={[]} onUse={vi.fn()} loading />);
     expect(screen.getByRole('status')).toHaveTextContent('Loading class actions');
+  });
+
+  it('shows action errors and the empty state', () => {
+    const onUse = vi.fn();
+    const { rerender } = render(
+      <ClassAbilityList actions={[]} onUse={onUse} error="Actions unavailable." />,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('Actions unavailable.');
+    rerender(<ClassAbilityList actions={[]} onUse={onUse} />);
+    expect(screen.getByText('No class actions are available.')).toBeInTheDocument();
   });
 
   it('shows the board in a closeable modal and sends accessible posting actions', () => {
@@ -404,5 +479,24 @@ describe('@mudd/ui components', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Bulletin unavailable.');
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(onRetry).toHaveBeenCalledOnce();
+  });
+
+  it('closes the daily board when its native dialog is cancelled', () => {
+    const onClose = vi.fn();
+    render(
+      <DailyBoard
+        name="Board"
+        cycle="2026-10-23"
+        jobs={[]}
+        onAccept={vi.fn()}
+        onDeliver={vi.fn()}
+        onClose={onClose}
+      />,
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Board' });
+    const cancel = new Event('cancel', { cancelable: true });
+    fireEvent(dialog, cancel);
+    expect(cancel.defaultPrevented).toBe(true);
+    expect(onClose).toHaveBeenCalledOnce();
   });
 });

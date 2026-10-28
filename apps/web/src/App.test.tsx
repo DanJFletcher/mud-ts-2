@@ -2726,7 +2726,7 @@ describe('single-character world session client', () => {
 
     submitWorldCommand('talk Mara');
     await waitFor(() => expect(history).toHaveTextContent('Mara: The old paths still have their stories.'));
-    expect(screen.getByRole('dialog', { name: 'Conversation with Mara' })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'Conversation with Mara' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Close conversation' }));
 
     submitWorldCommand('quests');

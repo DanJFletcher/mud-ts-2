@@ -127,7 +127,9 @@ describe('woodcutting world validation', () => {
 describe('woodcutting.start', () => {
   it('starts a timed action for a carried and level-eligible axe beside a live tree', async () => {
     const player = character();
-    const { handlers, context } = harness(player);
+    const { handlers, context } = harness(player, {
+      treeEvents: [{ type: 'unrelated.world_event', payload: {} }],
+    });
     const start = handlers.get('woodcutting.start')!;
 
     const result = await start(commandPayload(player.characterId, player.revision, {
@@ -246,6 +248,18 @@ describe('woodcutting.advance', () => {
       commandPayload(player.characterId, player.revision, { actionId: 'wrong-action' }),
       context,
     )).rejects.toThrow('That woodcutting action is no longer active.');
+
+    const missingCharacterHandlers = new Map<string, (command: any, context: any) => Promise<unknown>>();
+    woodcuttingPlugin.register({
+      registerCommand: (name: string, _schema: unknown, handler: (command: any, context: any) => Promise<unknown>) => {
+        missingCharacterHandlers.set(name, handler);
+      },
+      requireCapability: () => ({ load: vi.fn(async () => undefined) }),
+    } as never);
+    await expect(missingCharacterHandlers.get('woodcutting.advance')!(
+      commandPayload(player.characterId, player.revision, { actionId: 'woodcut-action-1' }),
+      context,
+    )).rejects.toThrow('That character is no longer available.');
   });
 
   it('finishes an action as interrupted when its tree is no longer available', async () => {

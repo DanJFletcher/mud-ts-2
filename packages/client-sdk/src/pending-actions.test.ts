@@ -19,6 +19,24 @@ afterEach(() => {
 });
 
 describe("PendingActionCoordinator", () => {
+  it("validates IDs and scopes and rejects changed details for a reused ID", () => {
+    const coordinator = new PendingActionCoordinator();
+    expect(() => coordinator.begin({ ...movement("blank"), id: " " }))
+      .toThrow("Pending actions require an ID and world scope.");
+    expect(() => coordinator.begin({
+      ...movement("missing-world"),
+      scope: { ...movement("missing-world").scope, worldInstanceId: " " },
+    })).toThrow("Pending actions require an ID and world scope.");
+
+    const first = coordinator.begin(movement("same-id"));
+    expect(coordinator.begin(movement("same-id"))).toBe(first);
+    expect(() => coordinator.begin({
+      ...movement("same-id"),
+      details: { ...movement("same-id").details, direction: "south" },
+    })).toThrow("A pending action ID cannot be reused for different action details.");
+    coordinator.clearWhere(() => true);
+  });
+
   it("publishes the sending, acknowledged, and confirmed lifecycle without mutating projections", () => {
     const coordinator = new PendingActionCoordinator();
     const listener = vi.fn();
@@ -77,6 +95,20 @@ describe("PendingActionCoordinator", () => {
 
     vi.advanceTimersByTime(120_000);
     expect(coordinator.getSnapshot()).toEqual([]);
+  });
+
+  it("publishes rejected and failed terminal states and reschedules an early cleanup pass", () => {
+    vi.useFakeTimers();
+    const coordinator = new PendingActionCoordinator({ now: () => 1_000 });
+    coordinator.begin(movement("rejected"));
+    expect(coordinator.reject("rejected", "Not allowed")?.state).toBe("rejected");
+    coordinator.begin(movement("failed"));
+    expect(coordinator.fail("failed", "Request failed")?.state).toBe("failed");
+
+    const fresh = coordinator.begin(movement("still-sending"));
+    (coordinator as any).expire();
+    expect(coordinator.getSnapshot()).toContain(fresh);
+    coordinator.clearWhere(() => true);
   });
 
   it("keeps the published snapshot referentially stable between updates and enforces a size bound", () => {

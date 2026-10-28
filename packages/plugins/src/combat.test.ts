@@ -401,6 +401,39 @@ describe('hostile NPC room-entry effect', () => {
       store: failing.store,
     } as any)).rejects.toThrow('Could not start hostile encounter: version-conflict');
   });
+
+  it('does not start a hostile encounter for a defeated character', async () => {
+    const created = storedCharacterCreated('combat-test-character', 'room-a');
+    const dead = effectFixture({
+      history: [
+        created,
+        {
+        ...created,
+          eventId: 'combat-test-character-pvp-outcome',
+          aggregateVersion: 2,
+          type: 'character.pvp_outcome_applied',
+          payload: {
+            characterId: 'combat-test-character',
+            encounterId: 'pvp-one',
+            health: { current: 0, maximum: 6 },
+            consumedItemIds: [],
+          },
+        },
+      ],
+    });
+
+    await dead.effect({
+      characterId: dead.characterId,
+      fromLocationId: 'road',
+      toLocationId: 'room-a',
+    }, {
+      effectId: 'defeated-entry',
+      worldInstanceId: 'combat-test-world',
+      world: dead.world,
+      store: dead.store,
+    } as any);
+    expect(dead.store.append).not.toHaveBeenCalled();
+  });
 });
 
 describe('combat action command', () => {
@@ -469,6 +502,16 @@ describe('combat action command', () => {
         opponentNpcId: roadOpponent.id,
         status: expect.any(String),
       });
+  });
+
+  it('rejects defeated characters before starting combat', async () => {
+    const defeated = character({ health: { current: 0, maximum: 6 } });
+    const command = captureCombatCommands(defeated).get('combat.action')!;
+    await expect(command({
+      characterId: defeated.characterId,
+      expectedVersion: defeated.revision,
+      payload: { action: 'attack', targetNpcId: 'hostile-scout' },
+    }, { world: demoWorld } as any)).rejects.toThrow();
   });
 
   it('ends an active encounter when fleeing and spends the configured stamina', async () => {

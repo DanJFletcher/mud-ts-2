@@ -380,6 +380,285 @@ describe('MuddHttpClient', () => {
     }
   });
 
+  it('routes typed client helpers to their HTTP endpoints and propagates server failures', async () => {
+    const requests: Array<{ path: string; method: string; body?: Record<string, unknown> }> = [];
+    const client = new MuddHttpClient({
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      fetcher: async (input, init = {}) => {
+        requests.push({
+          path: String(input),
+          method: init.method ?? 'GET',
+          ...(init.body ? { body: JSON.parse(String(init.body)) as Record<string, unknown> } : {}),
+        });
+        return Response.json({ message: 'Service unavailable.' }, { status: 503 });
+      },
+    });
+
+    expect(() => client.setWorldInstanceId(' ')).toThrow('Choose a valid world.');
+
+    const calls: Array<{ path: string; type?: string; run: () => Promise<unknown> }> = [
+      { path: '/api/worlds', run: () => client.getWorlds() },
+      { path: '/api/game', run: () => client.getGame() },
+      { path: '/api/world-session/heartbeat', run: () => client.heartbeatWorldSession() },
+      { path: '/api/characters', run: () => client.getCharacters() },
+      { path: '/api/guest-session', run: () => client.createGuestSession() },
+      { path: '/api/world-session', run: () => client.joinWorld('character-1', DEMO_WORLD_INSTANCE_ID) },
+      { path: '/api/world-session', run: () => client.leaveWorld() },
+      { path: '/api/commands', type: 'character.create', run: () => client.createCharacter('Aster', 'create-1') },
+      { path: '/api/commands', type: 'character.class.choose', run: () => client.chooseCharacterClass('character-1', 1, 'warden', 'class-1') },
+      { path: '/api/commands', type: 'character.rename', run: () => client.renameCharacter('character-1', 'Aster Vale', 1, 'rename-1') },
+      { path: '/api/commands', type: 'character.archive', run: () => client.archiveCharacter('character-1', 1, 'archive-1') },
+      { path: '/api/commands', type: 'character.restore', run: () => client.restoreCharacter('character-1', 1, 'restore-1') },
+      { path: '/api/queries', type: 'location.describe', run: () => client.look('character-1', 'look-1') },
+      { path: '/api/queries', type: 'location.groups.list', run: () => client.getLocationGroups('character-1', 'groups-1') },
+      { path: '/api/commands', type: 'character.read', run: () => client.read('character-1', 'notice', 1, 'read-1') },
+      { path: '/api/queries', type: 'object.inspect', run: () => client.inspect('character-1', 'notice', 'inspect-1') },
+      { path: '/api/queries', type: 'daily.board', run: () => client.dailyBoard('character-1', 'town-board') },
+      { path: '/api/commands', type: 'daily.job', run: () => client.dailyJob('character-1', 1, {
+        boardId: 'town-board', cycle: '2026-10-27', jobId: 'job-1', action: 'accept',
+      }, 'daily-1') },
+      { path: '/api/commands', type: 'supply.gather', run: () => client.gatherSupply('character-1', 1, 'herb-patch', '2026-10-27', 'gather-1') },
+      { path: '/api/commands', type: 'fishing.cast', run: () => client.startFishingCast('character-1', 'old-rod', 1, 'fish-start') },
+      { path: '/api/commands', type: 'fishing.advance', run: () => client.advanceFishingCast('character-1', 'cast-1', 1, 'fish-advance') },
+      { path: '/api/commands', type: 'fishing.cancel', run: () => client.cancelFishingCast('character-1', 'cast-1', 1, 'fish-cancel') },
+      { path: '/api/commands', type: 'woodcutting.start', run: () => client.startWoodcutting('character-1', 'copper-axe', 'pine-1', 1, 'wood-start') },
+      { path: '/api/commands', type: 'woodcutting.advance', run: () => client.advanceWoodcutting('character-1', 'wood-action-1', 1, 'wood-advance') },
+      { path: '/api/commands', type: 'woodcutting.cancel', run: () => client.cancelWoodcutting('character-1', 'wood-action-1', 1, 'wood-cancel') },
+      { path: '/api/queries', type: 'crafting.catalog', run: () => client.getCraftingCatalog('character-1', 'craft-list') },
+      { path: '/api/commands', type: 'crafting.craft', run: () => client.craft('character-1', 1, 'leather-gloves', 1, 'craft-1') },
+      { path: '/api/queries', type: 'npc.talk', run: () => client.talk('character-1', 'mara', undefined, 'talk-1') },
+      { path: '/api/queries', type: 'merchant.catalog', run: () => client.getMerchantCatalog('character-1', 'marr', 'merchant-1') },
+      { path: '/api/commands', type: 'merchant.purchase', run: () => client.purchaseMerchantListing('character-1', 'marr', 'needle', 1, 'purchase-1') },
+      { path: '/api/commands', type: 'inn.rest', run: () => client.restAtInn('character-1', 'inn-1', 1, 'inn-rest-1') },
+      { path: '/api/commands', type: 'character.rest', run: () => client.rest('character-1', 1, 'rest-1') },
+      { path: '/api/commands', type: 'character.stand', run: () => client.stand('character-1', 1, 'stand-1') },
+      { path: '/api/commands', type: 'combat.action', run: () => client.performCombatAction('character-1', 'attack', 1, { encounterId: 'combat-1' }, 'combat-1') },
+      { path: '/api/interactions', run: () => client.getInteractionInbox() },
+      { path: '/api/commands', type: 'interaction.request', run: () => client.requestInteraction('character-1', 'character-2', 'pvp.challenge', 'interaction-1') },
+      { path: '/api/commands', type: 'interaction.respond', run: () => client.respondToInteraction('character-2', 'interaction-1', 'accept', 'interaction-2') },
+      { path: '/api/commands', type: 'pvp.action', run: () => client.performPvpAction('character-1', 'duel-1', 'attack') },
+      { path: '/api/commands', type: 'party.create', run: () => client.createParty('character-1') },
+      { path: '/api/commands', type: 'party.join', run: () => client.joinParty('character-1', 'party-1') },
+      { path: '/api/commands', type: 'party.leave', run: () => client.leaveParty('character-1') },
+      { path: '/api/commands', type: 'party.close', run: () => client.closeParty('character-1') },
+      { path: '/api/queries', type: 'party.list', run: () => client.listParties('character-1') },
+      { path: '/api/queries', type: 'party.info', run: () => client.getPartyInfo('character-1', 0) },
+      { path: '/api/commands', type: 'party.quest.start', run: () => client.startPartyQuest('character-1', 'quest-1') },
+      { path: '/api/queries', type: 'party.quests', run: () => client.getPartyQuests('character-1') },
+      { path: '/api/commands', type: 'team.combat.start', run: () => client.startTeamCombat('character-1', 'sentinel', 1) },
+      { path: '/api/commands', type: 'team.combat.action', run: () => client.performTeamCombatAction('character-1', 'team-1', 'attack') },
+      { path: '/api/queries', type: 'team.combat.info', run: () => client.getTeamCombatInfo('character-1') },
+      { path: '/api/commands', type: 'npc.dialogue.choose', run: () => client.chooseNpcDialogue('character-1', 'mara', 'marker', 1, 'dialogue-1') },
+      { path: '/api/commands', type: 'npc.dialogue.restart', run: () => client.restartNpcDialogue('character-1', 'mara', 1, 'dialogue-2') },
+      { path: '/api/commands', type: 'character.move', run: () => client.move('character-1', 'exit-1', 1, 'move-1') },
+      { path: '/api/commands', type: 'character.road.step', run: () => client.roadStep('character-1', 'road-exit-1', 1, 'road-step-1') },
+      { path: '/api/commands', type: 'character.take', run: () => client.take('character-1', 'item-1', 1, 'take-1') },
+      { path: '/api/commands', type: 'character.drop', run: () => client.drop('character-1', 'item-1', 1, 'drop-1') },
+      { path: '/api/commands', type: 'character.put', run: () => client.put('character-1', 'item-1', 'chest-1', 1, 'put-1') },
+      { path: '/api/commands', type: 'character.equip', run: () => client.equip('character-1', 'item-1', 1, 'equip-1') },
+      { path: '/api/commands', type: 'character.unequip', run: () => client.unequip('character-1', 'weapon', 1, 'unequip-1') },
+      { path: '/api/commands', type: 'character.use', run: () => client.use('character-1', 'item-1', 'target-1', 1, 'use-1') },
+    ];
+
+    for (const call of calls) {
+      const index = requests.length;
+      await expect(call.run()).rejects.toThrow('Service unavailable.');
+      expect(requests).toHaveLength(index + 1);
+      expect(requests[index]?.path).toBe(call.path);
+      if (call.type) expect(requests[index]?.body?.type).toBe(call.type);
+    }
+  });
+
+  it('returns validated daily, crafting, party, and team-combat projections', async () => {
+    const projections: Record<string, unknown> = {
+      'daily.board': {
+        boardId: 'town-board',
+        name: 'Town board',
+        cycle: '2026-10-27',
+        resetsAt: '2026-10-28T00:00:00.000Z',
+        jobs: [],
+      },
+      'crafting.catalog': {
+        skill: { level: 1, experienceHundredths: 0 },
+        atWorkbench: false,
+        recipes: [],
+      },
+      'party.list': { parties: [] },
+      'party.info': { party: null, revision: 0, activity: [] },
+      'party.quests': { partyId: null, available: [], quests: [] },
+      'team.combat.info': { encounter: null },
+    };
+    const client = new MuddHttpClient({
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      fetcher: async (_input, init = {}) => {
+        const query = JSON.parse(String(init.body)) as { type: string };
+        return Response.json({ ok: true, value: projections[query.type] });
+      },
+    });
+
+    await expect(client.dailyBoard('character-1', 'town-board')).resolves.toMatchObject({
+      boardId: 'town-board',
+      jobs: [],
+    });
+    await expect(client.getCraftingCatalog('character-1')).resolves.toMatchObject({
+      skill: { level: 1 },
+      recipes: [],
+    });
+    await expect(client.listParties('character-1')).resolves.toEqual({ parties: [] });
+    await expect(client.getPartyInfo('character-1')).resolves.toMatchObject({
+      party: null,
+      revision: 0,
+    });
+    await expect(client.getPartyQuests('character-1')).resolves.toMatchObject({
+      partyId: null,
+      available: [],
+      quests: [],
+    });
+    await expect(client.getTeamCombatInfo('character-1')).resolves.toEqual({ encounter: null });
+  });
+
+  it('builds the scoped WebSocket URL through the client real-time facade', () => {
+    class MockSocket {
+      static urls: string[] = [];
+      static instances: MockSocket[] = [];
+      readyState = 0;
+      bufferedAmount = 0;
+      onopen?: () => void;
+      onmessage?: (event: { data: string }) => void;
+      onclose?: () => void;
+      onerror?: () => void;
+      constructor(readonly url: string) {
+        MockSocket.urls.push(url);
+        MockSocket.instances.push(this);
+      }
+      send() {}
+      close() { this.readyState = 3; }
+    }
+
+    vi.stubGlobal('location', { origin: 'https://mudd.example' });
+    vi.stubGlobal('WebSocket', MockSocket);
+    let stop: (() => void) | undefined;
+    try {
+      const client = new MuddHttpClient({
+        worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+        basePath: '/proxy/',
+        fetcher: async () => Response.json({}),
+      });
+      stop = client.watchRealtime('chat', vi.fn(), 1_000);
+      expect(MockSocket.urls).toEqual([
+        `wss://mudd.example/proxy/api/realtime?world=${DEMO_WORLD_INSTANCE_ID}`,
+      ]);
+      expect(client.realtimeConnectionState).toBeDefined();
+      const socket = MockSocket.instances[0]!;
+      socket.onopen?.();
+      socket.onmessage?.({ data: JSON.stringify({ type: 'ready', version: 1, connectionId: 'connection-1' }) });
+      socket.onmessage?.({ data: JSON.stringify({
+        type: 'invalidate',
+        version: 1,
+        connectionId: 'connection-1',
+        sequence: 1,
+        eventId: 'event-1',
+        worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+        channels: ['chat'],
+      }) });
+    } finally {
+      stop?.();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('records traced fetch failures and traced HTTP errors before rethrowing', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    try {
+      const fetchFailure = new MuddHttpClient({
+        worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+        fetcher: async () => { throw new Error('network disconnected'); },
+      });
+      await expect(fetchFailure.getGame('trace-network-failure')).rejects.toThrow('network disconnected');
+      expect(info).toHaveBeenCalledWith(
+        '[mudd_perf_trace_request]',
+        expect.stringContaining('"status":null'),
+      );
+
+      const httpFailure = new MuddHttpClient({
+        worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+        fetcher: async () => Response.json(
+          { message: 'Upstream unavailable.' },
+          { status: 503, headers: { 'x-request-id': 'request-503' } },
+        ),
+      });
+      await expect(httpFailure.getGame('trace-http-failure')).rejects.toThrow('Upstream unavailable.');
+      expect(info).toHaveBeenCalledWith(
+        '[mudd_perf_trace_request]',
+        expect.stringContaining('"serverRequestId":"request-503"'),
+      );
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it('rejects an unchanged snapshot and surfaces a non-conflict retry failure', async () => {
+    const conflictResponse = () => Response.json({
+      receipt: {
+        ok: false,
+        commandId: 'move-conflict',
+        code: 'VERSION_CONFLICT',
+        message: 'Expected revision 1; current revision is 2.',
+        retryable: true,
+      },
+      streamId: 'character-1',
+      events: [],
+    });
+    const snapshotResponse = (revision: number) => Response.json({
+      player: { id: 'player-1', displayName: 'Player' },
+      character: {
+        worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+        characterId: 'character-1',
+        name: 'Fern',
+        locationId: 'mossgate-clearing',
+        revision,
+      },
+    });
+
+    const staleCalls: string[] = [];
+    const staleClient = new MuddHttpClient({
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      fetcher: async (input) => {
+        const path = String(input);
+        staleCalls.push(path);
+        return path === '/api/commands' ? conflictResponse() : snapshotResponse(1);
+      },
+    });
+    await expect(staleClient.move('character-1', 'north-exit', 1, 'move-conflict'))
+      .rejects.toThrow('The world updated while you were acting. Please try again.');
+    expect(staleCalls).toEqual(['/api/commands', '/api/game']);
+
+    let commandAttempts = 0;
+    const retryClient = new MuddHttpClient({
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      fetcher: async (input) => {
+        const path = String(input);
+        if (path === '/api/game') return snapshotResponse(2);
+        commandAttempts += 1;
+        if (commandAttempts === 1) return conflictResponse();
+        return Response.json({
+          receipt: {
+            ok: false,
+            commandId: 'move-conflict',
+            code: 'INVALID_COMMAND',
+            message: 'The route is no longer available.',
+            retryable: false,
+          },
+          streamId: 'character-1',
+          events: [],
+        });
+      },
+    });
+    await expect(retryClient.move('character-1', 'north-exit', 1, 'move-conflict'))
+      .rejects.toThrow('The route is no longer available.');
+    expect(commandAttempts).toBe(2);
+  });
+
   it('refreshes and retries once when a passive character update makes a command revision stale', async () => {
     const commandBodies: Record<string, unknown>[] = [];
     let gameReads = 0;

@@ -45,7 +45,10 @@ function character(overrides: Record<string, unknown> = {}) {
   });
 }
 
-function harness(player: ReturnType<typeof character>) {
+function harness(
+  player: ReturnType<typeof character>,
+  options: { characterAvailable?: boolean } = {},
+) {
   const commands = new Map<string, (command: any, context: any) => Promise<unknown>>();
   const queries = new Map<string, (query: any, context: any) => Promise<unknown>>();
   merchantPlugin.register({
@@ -55,7 +58,9 @@ function harness(player: ReturnType<typeof character>) {
     registerQuery: (name: string, _schema: unknown, handler: (query: any, context: any) => Promise<unknown>) => {
       queries.set(name, handler);
     },
-    requireCapability: () => ({ load: vi.fn(async () => player) }),
+    requireCapability: () => ({
+      load: vi.fn(async () => options.characterAvailable === false ? undefined : player),
+    }),
   } as never);
   return {
     commands,
@@ -148,6 +153,18 @@ describe('merchant catalog query', () => {
     const wrongCurrency = character({ wallet: { currencyId: 'other-currency', balance: 20 } });
     await expect(harness(wrongCurrency).queries.get('merchant.catalog')!(query, context))
       .rejects.toThrow('This character’s wallet is not ready yet.');
+  });
+
+  it('rejects catalog and purchase requests for an unavailable character', async () => {
+    const player = character();
+    const { queries, commands, context } = harness(player, { characterAvailable: false });
+    const query = { characterId: player.characterId, payload: { merchantNpcId: 'marr' } };
+    await expect(queries.get('merchant.catalog')!(query, context))
+      .rejects.toThrow('That character is no longer available.');
+    await expect(commands.get('merchant.purchase')!(
+      command(player, { merchantNpcId: 'marr', listingId: 'needle-listing' }),
+      context,
+    )).rejects.toThrow('That character is no longer available.');
   });
 });
 

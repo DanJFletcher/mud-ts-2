@@ -131,6 +131,44 @@ describe('party combat roster policy', () => {
     expect(roster?.players.map(({ characterId }: { characterId: string }) => characterId)).toEqual(['char-1']);
   });
 
+  it('excludes active PvP participants and resolves the remaining party roster', async () => {
+    const { policy, context } = harness({
+      party: PARTY,
+      members: MEMBERS,
+      characters: {
+        'char-1': character('char-1'),
+        'char-2': character('char-2'),
+        'char-3': character('char-3'),
+        'char-outsider': character('char-outsider'),
+      },
+      pvpEvents: [{
+        type: 'pvp.encounter.started',
+        version: 1,
+        aggregateVersion: 1,
+        payload: {
+          encounter: {
+            encounterId: 'duel-one',
+            requestId: 'request-one',
+            locationId: 'market',
+            participants: [
+              { characterId: 'char-2', name: 'Second', health: 6, maximumHealth: 6 },
+              { characterId: 'char-3', name: 'Third', health: 6, maximumHealth: 6 },
+            ],
+            turnCharacterId: 'char-2',
+            round: 1,
+            status: 'active',
+            lastNarration: 'The duel begins.',
+            updatedAt: '2026-10-27T12:00:00.000Z',
+          },
+        },
+      }],
+    });
+    await expect(policy.resolve(context, 'char-1', 'market')).resolves.toMatchObject({
+      sourceGroupId: 'party-1',
+      players: [{ playerId: 'player-1', characterId: 'char-1' }],
+    });
+  });
+
   it('requires the initiator to be present, alive, and eligible', async () => {
     const absent = harness({ party: PARTY, members: [] });
     await expect(absent.policy.resolveIfPartyPresent(absent.context, 'char-1', 'market'))

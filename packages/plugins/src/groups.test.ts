@@ -138,6 +138,13 @@ describe('group event projections', () => {
       }, 1),
     ])).toThrow('Group membership history is inconsistent.');
     expect(() => projectGroups([
+      storedEvent('group.member_left', {
+        groupId,
+        playerId: secondMember.playerId,
+        leftAt: createdAt,
+      }, 1),
+    ])).toThrow('Group membership history is inconsistent.');
+    expect(() => projectGroups([
       createdEvent(),
       storedEvent('group.closed', {
         groupId,

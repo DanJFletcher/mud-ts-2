@@ -10,6 +10,7 @@ import {
   teamCombatRosterPolicyCapability,
   type TeamCombatRosterPolicy,
 } from './team-combat-policy.js';
+import type { ClassCombatPolicy } from './classes.js';
 import { teamCombatPlugin } from './team-combat.js';
 
 const now = new Date('2026-10-27T12:00:00.000Z');
@@ -33,6 +34,7 @@ function harness(projection = player()) {
   let teamHistory: StoredGameEvent[] = [];
   const characterHistories = new Map<string, StoredGameEvent[]>();
   const projections = new Map([[projection.characterId, projection]]);
+  let classCombatPolicy: ClassCombatPolicy | undefined;
   let nextId = 0;
   const roster: TeamCombatRosterPolicy = {
     resolve: vi.fn(async () => ({
@@ -69,7 +71,7 @@ function harness(projection = player()) {
       if (token.id === teamCombatRosterPolicyCapability.id) return roster;
       throw new Error(`Unexpected capability: ${token.id}`);
     },
-    optionalCapability: () => undefined,
+    optionalCapability: () => classCombatPolicy,
   } as never);
 
   const context = {
@@ -100,6 +102,12 @@ function harness(projection = player()) {
     },
     setProjection(value: ReturnType<typeof player>) {
       projections.set(value.characterId, value);
+    },
+    removeProjection(characterId: string) {
+      projections.delete(characterId);
+    },
+    setClassCombatPolicy(value: ClassCombatPolicy) {
+      classCombatPolicy = value;
     },
   };
 }
@@ -225,8 +233,461 @@ describe('team combat commands and projections', () => {
     expect(test.roster.resolveIfPartyPresent).toHaveBeenCalled();
   });
 
+  it('rejects road encounters with invalid, active, absent, or exhausted party members', async () => {
+    const opponent = {
+      id: 'road-bandit',
+      name: 'Road Bandit',
+      combatProfile: { maxHealth: 5, attackDamage: 2, style: 'steady' as const },
+    };
+    const roadTravel = {
+      roadId: 'glasswater-road',
+      exitId: 'clearing-to-glasswater-road',
+      fromLocationId: 'mossgate-clearing',
+      toLocationId: 'glasswater-approach',
+      segmentIndex: 1,
+      encounterRoll: 7,
+    };
+    const partyRoster = {
+      sourceGroupId: 'party-one',
+      maxPlayers: 2,
+      players: [
+        { characterId: 'character-one', playerId: 'player-one', displayName: 'Aster' },
+        { characterId: 'character-two', playerId: 'player-two', displayName: 'Briar' },
+      ],
+    };
+
+    const invalidLimit = harness();
+    vi.mocked(invalidLimit.roster.resolveIfPartyPresent).mockResolvedValue({
+      ...partyRoster,
+      maxPlayers: 1,
+    });
+    await expect(invalidLimit.roadCapability.plan(
+      invalidLimit.context,
+      player(),
+      opponent,
+      roadTravel,
+    )).rejects.toThrow('not enough eligible party members');
+
+    const activeMember = harness();
+    vi.mocked(activeMember.roster.resolveIfPartyPresent).mockResolvedValue(partyRoster);
+    await startEncounter(activeMember);
+    await expect(activeMember.roadCapability.plan(
+      activeMember.context,
+      player(),
+      opponent,
+      roadTravel,
+    )).rejects.toThrow('already participating');
+
+    const tiredMember = harness();
+    const tired = CharacterProjectionSchema.parse({
+      ...player(),
+      characterId: 'character-two',
+      name: 'Briar',
+      resources: {
+        ...player().resources,
+        stamina: { ...player().resources.stamina, current: 0 },
+      },
+      staminaRecovery: { ...player().staminaRecovery, lastSettledAt: now.toISOString() },
+    });
+    tiredMember.setProjection(tired);
+    vi.mocked(tiredMember.roster.resolveIfPartyPresent).mockResolvedValue(partyRoster);
+    await expect(tiredMember.roadCapability.plan(
+      tiredMember.context,
+      player(),
+      opponent,
+      roadTravel,
+    )).rejects.toThrow('stamina to take this road step');
+
+    const missingInitiator = harness();
+    const second = CharacterProjectionSchema.parse({
+      ...player(),
+      characterId: 'character-two',
+      name: 'Briar',
+    });
+    const third = CharacterProjectionSchema.parse({
+      ...player(),
+      characterId: 'character-three',
+      name: 'Rowan',
+    });
+    missingInitiator.setProjection(second);
+    missingInitiator.setProjection(third);
+    vi.mocked(missingInitiator.roster.resolveIfPartyPresent).mockResolvedValue({
+      sourceGroupId: 'party-two',
+      maxPlayers: 3,
+      players: [
+        { characterId: 'character-two', playerId: 'player-two', displayName: 'Briar' },
+        { characterId: 'character-three', playerId: 'player-three', displayName: 'Rowan' },
+      ],
+    });
+    await expect(missingInitiator.roadCapability.plan(
+      missingInitiator.context,
+      player(),
+      opponent,
+      roadTravel,
+    )).rejects.toThrow('You must be present with your party');
+
+    const displacedMember = harness();
+    displacedMember.setProjection(CharacterProjectionSchema.parse({
+      ...player(),
+      characterId: 'character-two',
+      name: 'Briar',
+      locationId: 'stillwater-path',
+    }));
+    vi.mocked(displacedMember.roster.resolveIfPartyPresent).mockResolvedValue(partyRoster);
+    await expect(displacedMember.roadCapability.plan(
+      displacedMember.context,
+      player(),
+      opponent,
+      roadTravel,
+    )).rejects.toThrow('no longer in this room');
+  });
+
+  it('rejects active encounters, invalid rosters, and party members who are no longer present', async () => {
+    const active = harness();
+    await startEncounter(active);
+    await expect(active.commands.get('team.combat.start')!({
+      characterId: 'character-one',
+      payload: { targetNpcId: 'mossgate-training-sentinel' },
+    }, active.context)).rejects.toThrow('already participating');
+
+    const invalidRoster = harness();
+    vi.mocked(invalidRoster.roster.resolve).mockResolvedValue({ maxPlayers: 0, players: [] });
+    await expect(invalidRoster.commands.get('team.combat.start')!({
+      characterId: 'character-one',
+      payload: { targetNpcId: 'mossgate-training-sentinel' },
+    }, invalidRoster.context)).rejects.toThrow('no eligible party members');
+
+    const missingMember = harness();
+    vi.mocked(missingMember.roster.resolve).mockResolvedValue({
+      maxPlayers: 2,
+      players: [
+        { characterId: 'character-one', playerId: 'player-one', displayName: 'Aster' },
+        { characterId: 'missing-character', playerId: 'player-two', displayName: 'Briar' },
+      ],
+    });
+    await expect(missingMember.commands.get('team.combat.start')!({
+      characterId: 'character-one',
+      payload: { targetNpcId: 'mossgate-training-sentinel' },
+    }, missingMember.context)).rejects.toThrow('no longer in this room');
+
+    const archived = harness(CharacterProjectionSchema.parse({ ...player(), archived: true }));
+    await expect(archived.commands.get('team.combat.start')!({
+      characterId: 'character-one',
+      payload: { targetNpcId: 'mossgate-training-sentinel' },
+    }, archived.context)).rejects.toThrow('character is no longer available');
+  });
+
+  it('rejects actions outside an active turn or for an inactive participant', async () => {
+    const test = harness();
+    const action = test.commands.get('team.combat.action')!;
+    const command = {
+      characterId: 'character-one',
+      payload: { encounterId: 'missing-encounter', action: 'attack' },
+    };
+    await expect(action(command, test.context)).rejects.toThrow('no longer active');
+
+    const encounter = await startEncounter(test);
+    await expect(action({
+      ...command,
+      characterId: 'character-two',
+      payload: { encounterId: encounter.encounterId, action: 'attack' },
+    }, test.context)).rejects.toThrow('not your turn');
+
+    test.setTeamHistory([stored('team.combat_started', {
+      encounter: {
+        ...encounter,
+        participants: encounter.participants.map((participant: any) =>
+          participant.characterId === 'character-one'
+            ? { ...participant, status: 'defeated' }
+            : participant,
+        ),
+      },
+    })]);
+    await expect(action({
+      ...command,
+      payload: { encounterId: encounter.encounterId, action: 'attack' },
+    }, test.context)).rejects.toThrow('cannot act in this encounter');
+  });
+
+  it('rejects a combat turn when the acting character has been archived', async () => {
+    const test = harness();
+    const encounter = await startEncounter(test);
+    test.setProjection(CharacterProjectionSchema.parse({ ...player(), archived: true }));
+    await expect(test.commands.get('team.combat.action')!({
+      characterId: 'character-one',
+      payload: { encounterId: encounter.encounterId, action: 'defend' },
+    }, test.context)).rejects.toThrow('character is no longer available');
+  });
+
+  it('runs class adoption guards for combat starts and actions when classes are enabled', async () => {
+    const test = harness();
+    test.context.world.classCatalog = {} as any;
+    const encounter = await startEncounter(test);
+    const action = await test.commands.get('team.combat.action')!({
+      characterId: 'character-one',
+      payload: { encounterId: encounter.encounterId, action: 'defend' },
+    }, test.context);
+    expect(action.guards).toEqual(expect.arrayContaining([
+      expect.objectContaining({ streamId: 'world-team-combat' }),
+    ]));
+
+    test.setProjection(CharacterProjectionSchema.parse({
+      ...player(),
+      combat: {
+        status: 'active',
+        encounterId: 'another-encounter',
+        locationId: 'mossgate-clearing',
+        opponentNpcId: 'another-opponent',
+        opponentName: 'Another opponent',
+        round: 1,
+        playerHealth: 6,
+        playerMaxHealth: 6,
+        opponentHealth: 6,
+        opponentMaxHealth: 6,
+        lastAction: 'attack',
+        lastNarration: 'Already fighting.',
+      },
+    }));
+    await expect(test.commands.get('team.combat.action')!({
+      characterId: 'character-one',
+      payload: { encounterId: encounter.encounterId, action: 'defend' },
+    }, test.context)).rejects.toThrow('Another combat encounter is active');
+  });
+
+  it('rejects party encounters when a member is already fighting or no longer available', async () => {
+    const second = CharacterProjectionSchema.parse({
+      ...player(),
+      characterId: 'character-two',
+      name: 'Briar',
+    });
+    const activeCombat = {
+      status: 'active',
+      encounterId: 'another-encounter',
+      locationId: 'mossgate-clearing',
+      opponentNpcId: 'another-opponent',
+      opponentName: 'Another opponent',
+      round: 1,
+      playerHealth: 6,
+      playerMaxHealth: 6,
+      opponentHealth: 6,
+      opponentMaxHealth: 6,
+      lastAction: 'attack',
+      lastNarration: 'Already fighting.',
+    };
+    const roster = {
+      sourceGroupId: 'party-one',
+      maxPlayers: 2,
+      players: [
+        { characterId: 'character-one', playerId: 'player-one', displayName: 'Aster' },
+        { characterId: 'character-two', playerId: 'player-two', displayName: 'Briar' },
+      ],
+    };
+
+    const blockedStart = harness();
+    blockedStart.context.world.classCatalog = {} as any;
+    blockedStart.setProjection(CharacterProjectionSchema.parse({ ...second, combat: activeCombat }));
+    vi.mocked(blockedStart.roster.resolve).mockResolvedValue(roster);
+    await expect(blockedStart.commands.get('team.combat.start')!({
+      characterId: 'character-one',
+      payload: { targetNpcId: 'mossgate-training-sentinel' },
+    }, blockedStart.context)).rejects.toThrow('A party member is already in combat.');
+
+    const unavailable = harness();
+    unavailable.setProjection(second);
+    vi.mocked(unavailable.roster.resolve).mockResolvedValue(roster);
+    const unavailableEncounter = await startEncounter(unavailable);
+    unavailable.removeProjection('character-two');
+    await expect(unavailable.commands.get('team.combat.action')!({
+      characterId: 'character-one',
+      payload: { encounterId: unavailableEncounter.encounterId, action: 'defend' },
+    }, unavailable.context)).rejects.toThrow('A party member is no longer available.');
+  });
+
+  it('resolves class combat abilities through the registered class policy', async () => {
+    const test = harness();
+    const policy = {
+      catalog: {} as any,
+      select: vi.fn(),
+      resolve: vi.fn(() => ({
+        damage: 3,
+        event: {
+          type: 'character.class_ability_used',
+          version: 1,
+          payload: { characterId: 'character-one', abilityId: 'quick-strike' },
+        },
+      })),
+    } as unknown as ClassCombatPolicy;
+    test.setClassCombatPolicy(policy);
+    const encounter = await startEncounter(test);
+    const result = await test.commands.get('team.combat.action')!({
+      characterId: 'character-one',
+      payload: {
+        encounterId: encounter.encounterId,
+        action: 'ability',
+        abilityId: 'quick-strike',
+      },
+    }, test.context);
+    expect(policy.resolve).toHaveBeenCalledWith(
+      expect.objectContaining({ characterId: 'character-one' }),
+      'quick-strike',
+      encounter.encounterId,
+      'command-one',
+    );
+    expect(result.companions[0].events).toContainEqual(expect.objectContaining({
+      type: 'character.class_ability_used',
+    }));
+  });
+
+  it('records party defeats after synchronizing member health and a heavy strike', async () => {
+    const test = harness();
+    const second = CharacterProjectionSchema.parse({
+      ...player(),
+      characterId: 'character-two',
+      name: 'Briar',
+    });
+    test.setProjection(second);
+    vi.mocked(test.roster.resolve).mockResolvedValue({
+      sourceGroupId: 'party-one',
+      maxPlayers: 2,
+      players: [
+        { characterId: 'character-one', playerId: 'player-one', displayName: 'Aster' },
+        { characterId: 'character-two', playerId: 'player-two', displayName: 'Briar' },
+      ],
+    });
+    const sentinel = test.context.world.locations
+      .find((location: any) => location.id === 'mossgate-clearing')?.npcs
+      ?.find((npc: any) => npc.id === 'mossgate-training-sentinel');
+    if (!sentinel?.combatProfile) throw new Error('Training sentinel fixture is missing its combat profile.');
+    sentinel.combatProfile.attackDamage = 100;
+
+    const start = await test.commands.get('team.combat.start')!({
+      characterId: 'character-one',
+      payload: { targetNpcId: sentinel.id },
+    }, test.context);
+    const encounter = start.events[0].payload.encounter;
+    test.setTeamHistory([stored('team.combat_started', {
+      encounter: {
+        ...encounter,
+        participants: encounter.participants.map((participant: any) =>
+          participant.characterId === 'character-two'
+            ? { ...participant, health: 1, characterHealthAnchor: 1 }
+            : participant,
+        ),
+      },
+    })]);
+    test.setProjection(CharacterProjectionSchema.parse({
+      ...second,
+      health: { current: 0, maximum: 6 },
+    }));
+
+    const action = await test.commands.get('team.combat.action')!({
+      characterId: 'character-one',
+      payload: { encounterId: encounter.encounterId, action: 'defend' },
+    }, test.context);
+    expect(action.events.at(-1)?.payload).toMatchObject({ result: 'defeat' });
+  });
+
+  it('rejects victory resolution when the defeated opponent is no longer in the world', async () => {
+    const test = harness();
+    const encounter = await startEncounter(test);
+    test.setTeamHistory([stored('team.combat_started', {
+      encounter: {
+        ...encounter,
+        participants: encounter.participants.map((participant: any) =>
+          participant.kind === 'npc'
+            ? { ...participant, health: 0, status: 'defeated' }
+            : participant,
+        ),
+      },
+    })]);
+    test.context.world.locations
+      .find((location: any) => location.id === encounter.locationId)!.npcs = [];
+
+    await expect(test.commands.get('team.combat.action')!({
+      characterId: 'character-one',
+      payload: { encounterId: encounter.encounterId, action: 'defend' },
+    }, test.context)).rejects.toThrow('The defeated opponent is no longer available.');
+  });
+
+  it('rejects unavailable combat items, unsupported abilities, low-stamina fleeing, and absent enemies', async () => {
+    const attackOrAction = async (
+      test: ReturnType<typeof harness>,
+      encounterId: string,
+      actionName: string,
+      extra: Record<string, unknown> = {},
+    ) => test.commands.get('team.combat.action')!({
+      characterId: 'character-one',
+      payload: { encounterId, action: actionName, ...extra },
+    }, test.context);
+
+    const missingItem = harness();
+    const itemEncounter = await startEncounter(missingItem);
+    await expect(attackOrAction(missingItem, itemEncounter.encounterId, 'use-item', {
+      itemId: 'not-carried',
+    })).rejects.toThrow('not available to use');
+
+    const fullHealthTonic = {
+      id: 'full-health-tonic',
+      label: 'Full health tonic',
+      description: 'A bottle of medicine.',
+      consumable: { effect: 'heal', amount: 2 },
+    };
+    const healthyPlayer = CharacterProjectionSchema.parse({
+      ...player(),
+      inventory: [fullHealthTonic],
+    });
+    const alreadyWell = harness(healthyPlayer);
+    const healthyEncounter = await startEncounter(alreadyWell);
+    await expect(attackOrAction(alreadyWell, healthyEncounter.encounterId, 'use-item', {
+      itemId: fullHealthTonic.id,
+    })).rejects.toThrow('health is already full');
+
+    const tiredPlayer = CharacterProjectionSchema.parse({
+      ...player(),
+      resources: {
+        ...player().resources,
+        stamina: { ...player().resources.stamina, current: 0 },
+      },
+      staminaRecovery: {
+        ...player().staminaRecovery,
+        lastSettledAt: now.toISOString(),
+      },
+    });
+    const tired = harness(tiredPlayer);
+    const tiredEncounter = await startEncounter(tired);
+    await expect(attackOrAction(tired, tiredEncounter.encounterId, 'flee'))
+      .rejects.toThrow('stamina to flee');
+
+    const noAbilityPolicy = harness();
+    const policyEncounter = await startEncounter(noAbilityPolicy);
+    await expect(attackOrAction(noAbilityPolicy, policyEncounter.encounterId, 'ability', {
+      abilityId: 'unavailable-ability',
+    })).rejects.toThrow('ABILITY_UNSUPPORTED');
+
+    const noEnemy = harness();
+    const encounter = await startEncounter(noEnemy);
+    noEnemy.setTeamHistory([stored('team.combat_started', {
+      encounter: {
+        ...encounter,
+        participants: encounter.participants.map((participant: any) =>
+          participant.kind === 'npc' ? { ...participant, status: 'defeated' } : participant,
+        ),
+      },
+    })]);
+    await expect(attackOrAction(noEnemy, encounter.encounterId, 'attack'))
+      .rejects.toThrow('no active enemy');
+
+    const missingOpponent = harness();
+    const opponentEncounter = await startEncounter(missingOpponent);
+    missingOpponent.context.world.locations
+      .find((location: any) => location.id === opponentEncounter.locationId)!.npcs = [];
+    await expect(attackOrAction(missingOpponent, opponentEncounter.encounterId, 'attack'))
+      .rejects.toThrow('opponent is no longer available');
+  });
+
   it('plans a shared road encounter for present, standing party members', async () => {
     const test = harness();
+    test.context.world.classCatalog = {} as any;
     const second = CharacterProjectionSchema.parse({
       ...player(),
       characterId: 'character-two',
@@ -289,6 +750,213 @@ describe('team combat commands and projections', () => {
         }),
       ]),
     });
+
+    test.setProjection(CharacterProjectionSchema.parse({ ...second, combat: {
+      status: 'active',
+      encounterId: 'another-encounter',
+      locationId: 'mossgate-clearing',
+      opponentNpcId: 'another-opponent',
+      opponentName: 'Another opponent',
+      round: 1,
+      playerHealth: 6,
+      playerMaxHealth: 6,
+      opponentHealth: 6,
+      opponentMaxHealth: 6,
+      lastAction: 'attack',
+      lastNarration: 'Already fighting.',
+    } }));
+    await expect(test.roadCapability.plan(
+      test.context,
+      player(),
+      {
+        id: 'road-bandit',
+        name: 'Road Bandit',
+        combatProfile: { maxHealth: 5, attackDamage: 2, style: 'heavy' },
+      },
+      {
+        roadId: 'glasswater-road',
+        exitId: 'clearing-to-glasswater-road',
+        fromLocationId: 'mossgate-clearing',
+        toLocationId: 'glasswater-approach',
+        segmentIndex: 1,
+        encounterRoll: 7,
+      },
+    )).rejects.toThrow('A party member is already in combat.');
+    test.setProjection(second);
+
+    test.setTeamHistory([stored('team.road_encounter_started', plan.events[0]!.payload)]);
+    await expect(test.queries.get('team.combat.info')!({
+      characterId: 'character-one',
+      payload: {},
+    }, test.context)).resolves.toMatchObject({
+      encounter: { status: 'active' },
+      roadTravel: plan.events[0]!.payload.roadTravel,
+    });
+
+    const roadDefinition = test.context.world.roads
+      .find((candidate: any) => candidate.id === 'glasswater-road') as any;
+    roadDefinition.encounters = [{
+      id: 'road-bandit',
+      name: 'Road Bandit',
+      combatProfile: { maxHealth: 5, attackDamage: 2, style: 'steady' },
+    }];
+    const roadAction = await test.commands.get('team.combat.action')!({
+      characterId: 'character-one',
+      payload: {
+        encounterId: plan.events[0]!.payload.encounter.encounterId,
+        action: 'attack',
+      },
+    }, test.context);
+    expect(roadAction.events[0].payload).toMatchObject({
+      actingCharacterId: 'character-one',
+      action: 'attack',
+      encounter: { currentParticipantId: 'character-two' },
+    });
+
+    test.setCharacterHistory('character-one', [storedCharacter('character.created', {
+      characterId: 'character-one',
+      playerId: 'player-one',
+      name: 'Aster',
+      startingLocationId: 'mossgate-clearing',
+    })]);
+    await test.effects.get('team-combat.apply-outcomes')!({
+      encounterId: 'road-victory',
+      locationId: 'mossgate-clearing',
+      result: 'victory',
+      roadTravel: plan.events[0]!.payload.roadTravel,
+      players: [{
+        characterId: 'character-one',
+        health: 6,
+        maximumHealth: 6,
+        consumedItemIds: [],
+      }],
+    }, { ...test.context, effectId: 'road-victory-effect' });
+    const moved = (test.context.store.append as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
+    expect(moved.events.map((event: any) => event.type)).toContain('character.moved');
+    expect(moved.effects.map((effect: any) => effect.type)).toEqual([
+      'world.location.entered',
+      'engine.domain_event_dispatch',
+    ]);
+  });
+
+  it('advances turns across party members and stands a resting ally after a heavy blow', async () => {
+    const test = harness();
+    const second = CharacterProjectionSchema.parse({
+      ...player(),
+      characterId: 'character-two',
+      name: 'Briar',
+      revision: 4,
+    });
+    test.setProjection(second);
+    vi.mocked(test.roster.resolve).mockResolvedValue({
+      sourceGroupId: 'party-one',
+      maxPlayers: 2,
+      players: [
+        { characterId: 'character-one', playerId: 'player-one', displayName: 'Aster' },
+        { characterId: 'character-two', playerId: 'player-two', displayName: 'Briar' },
+      ],
+    });
+    const sentinel = test.context.world.locations
+      .find((location: any) => location.id === 'mossgate-clearing')?.npcs
+      ?.find((npc: any) => npc.id === 'mossgate-training-sentinel');
+    if (!sentinel?.combatProfile) throw new Error('Training sentinel fixture is missing its combat profile.');
+    sentinel.combatProfile.attackDamage = 100;
+    sentinel.combatProfile.style = 'steady';
+
+    const start = await test.commands.get('team.combat.start')!({
+      characterId: 'character-one',
+      payload: { targetNpcId: sentinel.id },
+    }, test.context);
+    const startedEvent = stored('team.combat_started', start.events[0].payload);
+    const encounter = start.events[0].payload.encounter;
+    test.setTeamHistory([startedEvent]);
+    const firstTurn = await test.commands.get('team.combat.action')!({
+      characterId: 'character-one',
+      payload: { encounterId: encounter.encounterId, action: 'defend' },
+    }, test.context);
+    expect(firstTurn.events[0].payload.encounter.currentParticipantId).toBe('character-two');
+    test.setTeamHistory([
+      startedEvent,
+      stored('team.combat_action_resolved', firstTurn.events[0].payload),
+    ]);
+
+    test.setProjection(CharacterProjectionSchema.parse({
+      ...player(),
+      staminaRecovery: {
+        ...player().staminaRecovery,
+        posture: 'resting',
+      },
+    }));
+    const secondTurn = await test.commands.get('team.combat.action')!({
+      characterId: 'character-two',
+      payload: { encounterId: encounter.encounterId, action: 'defend' },
+    }, test.context);
+    expect(secondTurn.events[0].payload).toMatchObject({
+      damageTaken: 6,
+      encounter: {
+        status: 'active',
+        currentParticipantId: 'character-two',
+        participants: expect.arrayContaining([
+          expect.objectContaining({ characterId: 'character-one', status: 'defeated' }),
+        ]),
+      },
+    });
+    expect(secondTurn.companions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        streamId: 'character-one',
+        events: [expect.objectContaining({
+          type: 'character.posture_changed',
+          payload: expect.objectContaining({ posture: 'standing' }),
+        })],
+      }),
+    ]));
+    const projected = await test.queries.get('team.combat.info')!({
+      characterId: 'character-one',
+      payload: {},
+    }, {
+      ...test.context,
+      store: {
+        ...test.context.store,
+        readStream: vi.fn(async () => [
+          startedEvent,
+          stored('team.combat_action_resolved', firstTurn.events[0].payload),
+          stored('team.combat_action_resolved', secondTurn.events[0].payload),
+        ]),
+      },
+    });
+    expect(projected).toMatchObject({
+      encounter: { participants: expect.arrayContaining([
+        expect.objectContaining({ characterId: 'character-one', status: 'defeated' }),
+      ]) },
+    });
+  });
+
+  it('respawns a party member defeated when combat outcomes are applied', async () => {
+    const test = harness();
+    const created = storedCharacter('character.created', {
+      characterId: 'character-one',
+      playerId: 'player-one',
+      name: 'Aster',
+      startingLocationId: 'mossgate-clearing',
+    });
+    test.setCharacterHistory('character-one', [created]);
+    test.context.world.respawn = { locationId: 'mossgate-clearing' };
+    const apply = test.effects.get('team-combat.apply-outcomes')!;
+    await apply({
+      encounterId: 'encounter-defeat',
+      locationId: 'mossgate-clearing',
+      result: 'defeat',
+      players: [{
+        characterId: 'character-one',
+        health: 0,
+        maximumHealth: 6,
+        consumedItemIds: [],
+      }],
+    }, { ...test.context, effectId: 'defeat-respawn-effect' });
+    const append = test.context.store.append as ReturnType<typeof vi.fn>;
+    expect(append).toHaveBeenCalledOnce();
+    expect(append.mock.calls[0]?.[0].events.map((event: any) => event.type))
+      .toContain('character.respawned');
   });
 
   it('resolves defensive, healing, fleeing, and victory turns with the expected effects', async () => {
@@ -411,5 +1079,29 @@ describe('team combat commands and projections', () => {
     ]);
     await apply(payload, effectContext);
     expect(append).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects outcome application after a character leaves the encounter room', async () => {
+    const test = harness();
+    const createdElsewhere = storedCharacter('character.created', {
+      characterId: 'character-one',
+      playerId: 'player-one',
+      name: 'Aster',
+      startingLocationId: 'stillwater-path',
+    });
+    test.setCharacterHistory('character-one', [createdElsewhere]);
+    const apply = test.effects.get('team-combat.apply-outcomes')!;
+    await expect(apply({
+      encounterId: 'encounter-one',
+      locationId: 'mossgate-clearing',
+      result: 'victory',
+      players: [{
+        characterId: 'character-one',
+        health: 6,
+        maximumHealth: 6,
+        consumedItemIds: [],
+      }],
+    }, { ...test.context, effectId: 'stale-location-effect' }))
+      .rejects.toThrow('changed locations');
   });
 });

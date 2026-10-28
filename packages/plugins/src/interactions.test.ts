@@ -195,6 +195,23 @@ describe('interaction request lifecycle helpers', () => {
 });
 
 describe('interaction request commands', () => {
+  it('rejects duplicate interaction policy registrations', () => {
+    const test = harness();
+    test.registry.register('challenge', {});
+    expect(() => test.registry.register('challenge', {}))
+      .toThrow('Duplicate interaction policy: challenge');
+  });
+
+  it('rejects acceptance when the request policy is no longer registered', async () => {
+    const test = harness({
+      history: requestHistory(request({ kind: 'retired-challenge' })),
+    });
+    await expect(test.commands.get('interaction.respond')!(
+      respondCommand(),
+      test.context,
+    )).rejects.toThrow('That interaction is no longer supported.');
+  });
+
   it('creates only valid requests and enforces policy, self, availability, and request limits', async () => {
     const test = harness();
     await expect(test.commands.get('interaction.request')!(requestCommand(), test.context))

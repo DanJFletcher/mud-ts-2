@@ -225,5 +225,19 @@ describe('road travel command', () => {
       expectedVersion: player.revision,
       payload: { exitId: fixture.exit.id },
     }, context)).rejects.toThrow('The random source returned an invalid road encounter selection.');
+
+    const missingOpponentFixture = roadFixture();
+    missingOpponentFixture.road.encounterChancePercent = 100;
+    missingOpponentFixture.road.encounters = Array(1) as any;
+    const missingOpponent = harness(
+      character(missingOpponentFixture.fromLocationId),
+      missingOpponentFixture,
+      { rolls: [1, 1] },
+    );
+    await expect(missingOpponent.handlers.get('character.road.step')!({
+      characterId: 'road-traveler',
+      expectedVersion: 4,
+      payload: { exitId: missingOpponentFixture.exit.id },
+    }, missingOpponent.context)).rejects.toThrow('A successful road encounter did not select an opponent.');
   });
 });

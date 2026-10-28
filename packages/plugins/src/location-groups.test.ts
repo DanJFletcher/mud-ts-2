@@ -49,8 +49,19 @@ class InMemoryLocationGroupStore implements LocationGroupCatalogStoragePort {
   }
 }
 
-async function createCatalog() {
-  const catalog = new LocationGroupCatalogService(demoWorld, new InMemoryLocationGroupStore());
+class ConflictingLocationGroupStore extends InMemoryLocationGroupStore {
+  override async replace(
+    _packId: string,
+    _packVersion: string,
+    _expectedRevision: number,
+    _groups: readonly LocationGroupDefinition[],
+  ): Promise<LocationGroupCatalogSnapshot | undefined> {
+    return undefined;
+  }
+}
+
+async function createCatalog(storage: LocationGroupCatalogStoragePort = new InMemoryLocationGroupStore()) {
+  const catalog = new LocationGroupCatalogService(demoWorld, storage);
   await catalog.initialize();
   return catalog;
 }
@@ -65,6 +76,7 @@ describe('location-group catalog capability', () => {
       'glasswater-river',
       'kings-road',
     ]);
+    expect(await catalog.locationsInGroup('clearwater')).toContain('glasswater-bridge');
     expect(bridgeGroups.find((group) => group.isPrimary)?.id).toBe('clearwater');
     expect(await catalog.qualifiedLocationName('glasswater-bridge')).toEqual({
       shortName: 'Glasswater Bridge',
@@ -99,6 +111,73 @@ describe('location-group catalog capability', () => {
     const deleted = await catalog.deleteGroup('south-bank', 2);
     expect(deleted.groups.some((group) => group.id === 'south-bank')).toBe(false);
     expect(demoWorld.locations.some((location) => location.id === 'glasswater-approach')).toBe(true);
+  });
+
+  it('reports catalog, group, and revision conflicts and clears nullable fields', async () => {
+    const storage = new InMemoryLocationGroupStore();
+    const uninitialized = new LocationGroupCatalogService(demoWorld, storage);
+    await expect(uninitialized.read()).rejects.toThrow('Catalog not found.');
+
+    const catalog = await createCatalog(storage);
+    await expect(catalog.createGroup({
+      id: 'clearwater',
+      name: 'Duplicate',
+      type: 'district',
+      memberships: [],
+    }, 0)).rejects.toMatchObject({ code: 'already-exists' });
+    await expect(catalog.updateGroup('missing-group', { name: 'Missing' }, 0))
+      .rejects.toMatchObject({ code: 'not-found' });
+
+    const cleared = await catalog.updateGroup('clearwater', {
+      description: null,
+      metadata: null,
+    }, 0);
+    const group = cleared.groups.find((candidate) => candidate.id === 'clearwater')!;
+    expect(group).not.toHaveProperty('description');
+    expect(group).not.toHaveProperty('metadata');
+
+    await expect(catalog.updateGroup('clearwater', { name: 'Stale' }, 0))
+      .rejects.toMatchObject({ code: 'revision-conflict' });
+    await expect(catalog.deleteGroup('missing-group', 1))
+      .rejects.toMatchObject({ code: 'not-found' });
+  });
+
+  it('supports removing memberships, clearing primary groups, and reports unknown catalog entries', async () => {
+    const catalog = await createCatalog();
+    await expect(catalog.addLocationToGroup('missing-group', 'glasswater-bridge', false, 0))
+      .rejects.toMatchObject({ code: 'not-found' });
+    await expect(catalog.addLocationToGroup('clearwater', 'missing-room', false, 0))
+      .rejects.toMatchObject({ code: 'not-found' });
+    await expect(catalog.setPrimaryGroup('glasswater-bridge', 'missing-group', 0))
+      .rejects.toMatchObject({ code: 'not-found' });
+    await expect(catalog.removeLocationFromGroup('missing-group', 'glasswater-bridge', 0))
+      .rejects.toMatchObject({ code: 'not-found' });
+    await expect(catalog.removeLocationFromGroup('clearwater', 'glasswater-approach', 0))
+      .rejects.toMatchObject({ code: 'not-found' });
+
+    const updated = await catalog.addLocationToGroup('clearwater', 'glasswater-bridge', false, 0);
+    expect(updated.groups.find((group) => group.id === 'clearwater')?.memberships)
+      .toContainEqual({ locationId: 'glasswater-bridge', isPrimary: false });
+    const removed = await catalog.removeLocationFromGroup('clearwater', 'glasswater-bridge', 1);
+    expect(removed.groups.find((group) => group.id === 'clearwater')?.memberships)
+      .not.toContainEqual(expect.objectContaining({ locationId: 'glasswater-bridge' }));
+
+    const clearedPrimary = await catalog.setPrimaryGroup('glasswater-bridge', null, 2);
+    expect(clearedPrimary.groups.flatMap((group) => group.memberships)
+      .filter((membership) => membership.locationId === 'glasswater-bridge')
+      .every((membership) => !membership.isPrimary)).toBe(true);
+    await expect(catalog.locationsInGroup('missing-group')).rejects.toMatchObject({ code: 'not-found' });
+    await expect(catalog.qualifiedLocationName('missing-room')).rejects.toMatchObject({ code: 'not-found' });
+  });
+
+  it('surfaces a storage revision race as a catalog conflict', async () => {
+    const catalog = await createCatalog(new ConflictingLocationGroupStore());
+    await expect(catalog.createGroup({
+      id: 'race',
+      name: 'Race',
+      type: 'district',
+      memberships: [],
+    }, 0)).rejects.toMatchObject({ code: 'revision-conflict' });
   });
 
   it('moves the primary membership atomically and rejects stale catalog revisions', async () => {
@@ -178,6 +257,47 @@ describe('location-group catalog capability', () => {
         .not.toContain('willowrest-inn');
       expect(projection.groups.find((group) => group.id === 'glasswater-river')?.locationIds)
         .toContain('glasswater-west-reach');
+
+      const session = {
+        sessionId: 'location-group-session',
+        playerId: 'location-group-player',
+        actorId: 'location-group-player',
+        worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+        grantedPermissions: [],
+        authenticated: true,
+      };
+      const baseQuery = {
+        type: 'location.groups.list',
+        version: 1,
+        worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+        characterId: character.characterId,
+        payload: {},
+      };
+      const missingContext = await engine.query({
+        ...baseQuery,
+        queryId: 'groups-without-character',
+      }, session, {});
+      expect(missingContext.ok).toBe(false);
+
+      const mismatchedCharacter = CharacterProjectionSchema.parse({
+        ...character,
+        characterId: 'different-character',
+      });
+      const mismatch = await engine.query({
+        ...baseQuery,
+        queryId: 'groups-for-another-character',
+      }, session, { characterProjection: mismatchedCharacter });
+      expect(mismatch.ok).toBe(false);
+
+      const invalidCurrentLocation = CharacterProjectionSchema.parse({
+        ...character,
+        locationId: 'missing-current-room',
+      });
+      const invalidLocation = await engine.query({
+        ...baseQuery,
+        queryId: 'groups-for-missing-room',
+      }, session, { characterProjection: invalidCurrentLocation });
+      expect(invalidLocation.ok).toBe(false);
     } finally {
       await engine.stop();
     }

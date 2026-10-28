@@ -139,7 +139,9 @@ describe('crafting catalog query', () => {
 
   it('omits recipes above the current skill or without tools and materials', async () => {
     const advancedRecipe = { ...RECIPE, id: 'leather-shield', requiredLevel: 19 };
-    const player = character({ inventory: [item('needle', 'crafting-needle')] });
+    const player = character({
+      inventory: materials().filter((entry) => entry.typeId !== 'crafting-needle'),
+    });
     const { queries, context } = harness(player, {
       world: { craftingRecipes: [RECIPE, advancedRecipe] },
     });

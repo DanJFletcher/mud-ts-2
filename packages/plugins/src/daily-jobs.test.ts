@@ -339,6 +339,26 @@ describe('daily job commands', () => {
       jobCommand(resting),
       harness(resting).context,
     )).rejects.toThrow();
+    const personalCombat = character({
+      combat: {
+        encounterId: 'encounter-1',
+        locationId: 'market',
+        opponentNpcId: 'bandit',
+        opponentName: 'Bandit',
+        round: 1,
+        playerHealth: 10,
+        playerMaxHealth: 10,
+        opponentHealth: 5,
+        opponentMaxHealth: 10,
+        lastAction: 'attack',
+        lastNarration: 'The fight continues.',
+        status: 'active',
+      },
+    });
+    await expect(harness(personalCombat).commands.get('daily.job')!(
+      jobCommand(personalCombat),
+      harness(personalCombat).context,
+    )).rejects.toThrow('Finish the encounter first.');
     const sharedCombat = harness(character(), {
       teamEvents: [{
         type: 'team.combat_started',

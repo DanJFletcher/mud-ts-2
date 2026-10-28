@@ -130,6 +130,32 @@ describe('world item projection cache', () => {
     }];
     await expect(capability.load(context)).rejects.toThrow('Unsupported world item event');
   });
+
+  it('evicts the least recently used world projection when the cache reaches its limit', async () => {
+    const iterations = new Map<string, number>();
+    const readStream = vi.fn(async (instanceId: string) => new Proxy([] as StoredGameEvent[], {
+      get(target, property, receiver) {
+        if (property === Symbol.iterator) {
+          iterations.set(instanceId, (iterations.get(instanceId) ?? 0) + 1);
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    }));
+    const capability = captureWorldItemsCapability();
+    for (let index = 0; index < 17; index += 1) {
+      await capability.load({
+        worldInstanceId: `world-cache-${index}`,
+        store: { readStream },
+      } as never);
+    }
+    expect(iterations.get('world-cache-0')).toBe(1);
+
+    await capability.load({
+      worldInstanceId: 'world-cache-0',
+      store: { readStream },
+    } as never);
+    expect(iterations.get('world-cache-0')).toBe(2);
+  });
 });
 
 describe('world item event projection', () => {
@@ -283,6 +309,162 @@ describe('world item event projection', () => {
       }],
       currencyDrops: [{ dropId: corpse.goldItemId, corpseId: corpse.corpseId, amount: 7 }],
     });
+  });
+
+  it('destroys corpse contents and records them as consumed when the expiry policy is destroy', () => {
+    const created = corpseEffect({
+      id: 'destroyed-corpse',
+      loot: { items: [{ label: 'Knife', description: 'A narrow knife.' }] },
+      override: { expirationPolicy: 'destroy' },
+    });
+    const corpse = (created.payload as any).corpse;
+    const state = projectWorldItems([
+      event('world.item_dropped', {
+        worldItemId: 'loose-item',
+        fromCharacterId: 'character-1',
+        locationId: 'southbound-track',
+        item: {
+          id: 'loose-item',
+          sharedItemId: 'loose-item',
+          label: 'Loose item',
+          description: 'Not inside the corpse.',
+        },
+      }, 1),
+      event('world.corpse_created', created.payload as Record<string, unknown>, 2),
+      event('world.corpse_expired', {
+        corpseId: corpse.corpseId,
+        corpseName: corpse.opponentName,
+        locationId: corpse.locationId,
+        policy: 'destroy',
+        expiredAt: '2026-10-27T10:05:00.000Z',
+      }, 3),
+    ]);
+    expect(state).toMatchObject({
+      corpses: [],
+      items: [{ worldItemId: 'loose-item', locationId: 'southbound-track' }],
+      currencyDrops: [],
+    });
+  });
+
+  it('rejects invalid ownership transitions, duplicate corpses, and quest-bound corpse loot', () => {
+    const dropped = event('world.item_dropped', {
+      worldItemId: item.id,
+      fromCharacterId: 'character-1',
+      locationId: 'market',
+      item,
+    }, 1);
+    const claimed = event('world.item_claimed', {
+      worldItemId: item.id,
+      characterId: 'character-2',
+      locationId: 'market',
+    }, 2);
+    const invalidDrop = event('world.item_dropped', {
+      worldItemId: item.id,
+      fromCharacterId: 'character-1',
+      locationId: 'road',
+      item,
+    }, 3);
+    expect(() => projectWorldItems([dropped, claimed, invalidDrop]))
+      .toThrow('Invalid shared item ownership transition at revision 3.');
+
+    const created = corpseEffect({ id: 'duplicate-corpse' });
+    expect(() => projectWorldItems([
+      event('world.corpse_created', created.payload as Record<string, unknown>, 1),
+      event('world.corpse_created', created.payload as Record<string, unknown>, 2),
+    ])).toThrow('Duplicate corpse creation at revision 2.');
+
+    const questBoundLoot = corpseEffect({
+      id: 'quest-bound-loot',
+      preservedItems: [{
+        id: 'quest-item',
+        sharedItemId: 'quest-item',
+        label: 'Quest item',
+        description: 'A bound object.',
+        questBound: true,
+      }],
+    });
+    expect(() => projectWorldItems([
+      event('world.corpse_created', questBoundLoot.payload as Record<string, unknown>, 1),
+    ])).toThrow('Invalid corpse loot item at revision 1.');
+  });
+
+  it('rejects mismatched corpse and loose-currency claims', () => {
+    const created = corpseEffect({
+      id: 'gold-corpse',
+      loot: { currencyAmount: 7 },
+    });
+    const corpse = (created.payload as any).corpse;
+    const badCorpseClaim = event('world.corpse_gold_claimed', {
+      corpseId: corpse.corpseId,
+      characterId: 'character-1',
+      locationId: corpse.locationId,
+      currencyId: 'gold',
+      amount: 6,
+    }, 2);
+    expect(() => projectWorldItems([
+      event('world.corpse_created', created.payload as Record<string, unknown>, 1),
+      badCorpseClaim,
+    ])).toThrow('Invalid corpse gold claim at revision 2.');
+
+    const expired = event('world.corpse_expired', {
+      corpseId: corpse.corpseId,
+      corpseName: corpse.opponentName,
+      locationId: corpse.locationId,
+      policy: 'drop',
+      expiredAt: '2026-10-27T10:05:00.000Z',
+    }, 2);
+    const badLooseClaim = event('world.corpse_gold_claimed', {
+      corpseId: corpse.corpseId,
+      characterId: 'character-1',
+      locationId: corpse.locationId,
+      currencyId: 'gold',
+      amount: 6,
+    }, 3);
+    expect(() => projectWorldItems([
+      event('world.corpse_created', created.payload as Record<string, unknown>, 1),
+      expired,
+      badLooseClaim,
+    ])).toThrow('Invalid loose currency claim at revision 3.');
+  });
+
+  it('marks corpse gold claimed and removes a claimed loose currency drop', () => {
+    const created = corpseEffect({
+      id: 'claimed-gold-corpse',
+      loot: { currencyAmount: 7 },
+    });
+    const corpse = (created.payload as any).corpse;
+    const corpseClaimed = projectWorldItems([
+      event('world.corpse_created', created.payload as Record<string, unknown>, 1),
+      event('world.corpse_gold_claimed', {
+        corpseId: corpse.corpseId,
+        characterId: 'character-1',
+        locationId: corpse.locationId,
+        currencyId: 'gold',
+        amount: 7,
+      }, 2),
+    ]);
+    expect(corpseClaimed.corpses).toMatchObject([{ corpseId: corpse.corpseId, goldClaimed: true }]);
+    expect(corpseClaimed.currencyDrops).toEqual([]);
+
+    const looseGoldClaimed = projectWorldItems([
+      event('world.corpse_created', created.payload as Record<string, unknown>, 1),
+      event('world.corpse_expired', {
+        corpseId: corpse.corpseId,
+        corpseName: corpse.opponentName,
+        locationId: corpse.locationId,
+        policy: 'drop',
+        expiredAt: '2026-10-27T10:05:00.000Z',
+      }, 2),
+      event('world.corpse_gold_claimed', {
+        corpseId: corpse.corpseId,
+        characterId: 'character-1',
+        locationId: corpse.locationId,
+        currencyId: 'gold',
+        amount: 7,
+      }, 3),
+    ]);
+    expect(looseGoldClaimed.corpses).toEqual([]);
+    expect(looseGoldClaimed.currencyDrops).toEqual([]);
   });
 
   it('rejects out-of-order, unsupported, unowned, and quest-bound shared-item events', () => {
@@ -462,6 +644,43 @@ describe('world item effect persistence', () => {
       worldInstanceId: worldId,
       effectId: 'failed-corpse',
     })).rejects.toThrow('Could not commit the shared corpse.');
+  });
+
+  it('honors stored effect receipts before reading or appending any shared transfer', async () => {
+    const effects = captureWorldItemEffects();
+    const eventStore = store();
+    eventStore.lookupCommand.mockResolvedValue({} as never);
+    const context = {
+      store: eventStore,
+      worldInstanceId: worldId,
+    };
+
+    await effects.get(WORLD_ITEM_DROP_EFFECT)!({
+      worldItemId: item.id,
+      fromCharacterId: 'character-1',
+      locationId: 'market',
+      item,
+    }, { ...context, effectId: 'receipt-drop' });
+    await effects.get(WORLD_CORPSE_CREATE_EFFECT)!(corpseEffect().payload, {
+      ...context,
+      effectId: 'receipt-corpse',
+    });
+    await effects.get(WORLD_ITEM_CLAIM_EFFECT)!({
+      worldItemId: item.id,
+      characterId: 'character-1',
+      sourceLocationId: 'market',
+      item,
+    }, { ...context, effectId: 'receipt-claim' });
+    await effects.get('world-corpse.gold-credit')!({
+      characterId: 'character-1',
+      corpseId: 'corpse-1',
+      currencyId: 'gold',
+      amount: 3,
+    }, { ...context, effectId: 'receipt-gold' });
+
+    expect(eventStore.lookupCommand).toHaveBeenCalledTimes(4);
+    expect(eventStore.readStream).not.toHaveBeenCalled();
+    expect(eventStore.append).not.toHaveBeenCalled();
   });
 
   it('writes a claimant receipt once and rejects absent or conflicting character items', async () => {

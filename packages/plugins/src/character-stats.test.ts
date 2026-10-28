@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { CharacterProjectionSchema } from '@mudd/contracts';
-import { calculateCharacterStats, characterAttackDamage, maximumHealthForLevel } from './character-stats.js';
+import {
+  calculateCharacterStats,
+  characterAttackDamage,
+  levelAfterExperience,
+  maximumHealthForLevel,
+} from './character-stats.js';
 
 function character(overrides: Record<string, unknown> = {}) {
   return CharacterProjectionSchema.parse({
@@ -38,6 +43,11 @@ describe('character stats', () => {
       resiliencePercent: 0,
       dodgePercent: 0,
     });
+  });
+
+  it('levels from accumulated experience and stops at the level cap', () => {
+    expect(levelAfterExperience(1, 100)).toBe(6);
+    expect(levelAfterExperience(1, 10_000)).toBe(10);
   });
 
   it('uses Strength, Constitution, and equipped gear in derived combat values', () => {
