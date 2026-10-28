@@ -24,7 +24,27 @@ export default defineConfig({
           { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
         ],
       },
-      workbox: { globPatterns: ['**/*.{js,css,html,svg,woff2}'] },
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,svg,woff2}'],
+        globIgnores: [
+          '**/WorldPlayPage-*.js',
+          '**/CharacterDetailPage-*.js',
+          '**/CodexScreen-*.js',
+          '**/CodexScreen-*.css',
+        ],
+        runtimeCaching: [{
+          urlPattern: ({ request, url }) =>
+            url.origin === self.location.origin
+            && url.pathname.startsWith('/assets/')
+            && (request.destination === 'script' || request.destination === 'style'),
+          handler: 'CacheFirst',
+          options: {
+            cacheName: 'mudd-versioned-assets',
+            cacheableResponse: { statuses: [200] },
+            expiration: { maxEntries: 40, maxAgeSeconds: 60 * 60 * 24 * 30 },
+          },
+        }],
+      },
     }),
   ],
   server: {

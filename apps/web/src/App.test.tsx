@@ -8,6 +8,10 @@ const { apiFetch } = vi.hoisted(() => {
   return { apiFetch };
 });
 
+vi.mock('./codex/CodexScreen.js', () => ({
+  default: () => <><h1>A world, carefully remembered</h1><p>Orraveth is separate from the active MUDD world.</p></>,
+}));
+
 import { WorldClient } from './App.js';
 
 const classDefinition = {

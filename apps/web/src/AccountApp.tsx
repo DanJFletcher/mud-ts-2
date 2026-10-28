@@ -1,14 +1,17 @@
-import { ClerkProvider, SignIn, SignUp } from '@clerk/react';
+import { ClerkProvider } from '@clerk/react';
 import { publishableKeyFromHost } from '@clerk/react/internal';
 import { shadcn } from '@clerk/themes';
+import { lazy, Suspense } from 'react';
 import { Redirect, Route, Router as WouterRouter, Switch, useLocation } from 'wouter';
-import CodexScreen from './codex/CodexScreen.js';
 import { AccountShell } from './lobby/AccountShell.js';
 import { LobbyPage } from './lobby/LobbyPage.js';
-import { WorldPlayPage } from './lobby/WorldPlayPage.js';
-import { CharacterDetailPage } from './lobby/CharacterDetailPage.js';
-import { appHref, basePath, entryIntent, playPath } from './lobby/navigation.js';
+import { appHref, basePath, playPath } from './lobby/navigation.js';
 import './account.css';
+
+const WorldPlayPage = lazy(() => import('./lobby/WorldPlayPage.js').then(({ WorldPlayPage }) => ({ default: WorldPlayPage })));
+const CharacterDetailPage = lazy(() => import('./lobby/CharacterDetailPage.js').then(({ CharacterDetailPage }) => ({ default: CharacterDetailPage })));
+const CodexScreen = lazy(() => import('./codex/CodexScreen.js'));
+const AuthPage = lazy(() => import('./lobby/AuthPages.js').then(({ AuthPage }) => ({ default: AuthPage })));
 
 const clerkPubKey = publishableKeyFromHost(window.location.hostname, import.meta.env.VITE_CLERK_PUBLISHABLE_KEY);
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL
@@ -29,17 +32,12 @@ const clerkAppearance = {
   },
 };
 
-function SignInPage() {
-  return <AccountShell><div className="auth-content"><SignIn routing="path" path={appHref('/sign-in')} signUpUrl={appHref('/sign-up')}
-    forceRedirectUrl={appHref(entryIntent())} /></div></AccountShell>;
-}
-function SignUpPage() {
-  return <AccountShell><div className="auth-content"><SignUp routing="path" path={appHref('/sign-up')} signInUrl={appHref('/sign-in')}
-    forceRedirectUrl={appHref(entryIntent())} /></div></AccountShell>;
-}
 function LegacyWorldPage() {
   const id = localStorage.getItem('mudd-world-instance-id');
   return <Redirect to={id ? playPath(id) : '/'} replace />;
+}
+function RouteLoading({ label }: { label: string }) {
+  return <AccountShell><p role="status">{label}</p></AccountShell>;
 }
 function ClerkAppRoutes() {
   const [, setLocation] = useLocation();
@@ -50,15 +48,25 @@ function ClerkAppRoutes() {
     <Switch>
       <Route path="/"><LobbyPage /></Route>
       <Route path="/lobby"><LobbyPage /></Route>
-      <Route path="/worlds/:worldId/play">{(params) => <WorldPlayPage key={params.worldId} worldId={params.worldId} />}</Route>
+      <Route path="/worlds/:worldId/play">{(params) => <Suspense fallback={<RouteLoading label="Loading world…" />}>
+        <WorldPlayPage key={params.worldId} worldId={params.worldId} />
+      </Suspense>}</Route>
       <Route path="/worlds/:worldId">{(params) => <LobbyPage key={params.worldId} worldId={params.worldId} />}</Route>
-      <Route path="/character/:characterId">{(params) => <CharacterDetailPage key={params.characterId} characterId={params.characterId} />}</Route>
+      <Route path="/character/:characterId">{(params) => <Suspense fallback={<RouteLoading label="Loading character…" />}>
+        <CharacterDetailPage key={params.characterId} characterId={params.characterId} />
+      </Suspense>}</Route>
       <Route path="/characters"><LobbyPage showAllCharacters /></Route>
-      <Route path="/sign-in/*?" component={SignInPage} />
-      <Route path="/sign-up/*?" component={SignUpPage} />
+      <Route path="/sign-in/*?"><Suspense fallback={<RouteLoading label="Loading sign in…" />}>
+        <AuthPage kind="sign-in" />
+      </Suspense></Route>
+      <Route path="/sign-up/*?"><Suspense fallback={<RouteLoading label="Loading sign up…" />}>
+        <AuthPage kind="sign-up" />
+      </Suspense></Route>
       <Route path="/guest-world"><Redirect to="/" replace /></Route>
       <Route path="/world" component={LegacyWorldPage} />
-      <Route path="/codex"><AccountShell><CodexScreen /></AccountShell></Route>
+      <Route path="/codex"><Suspense fallback={<RouteLoading label="Loading the Codex…" />}>
+        <AccountShell><CodexScreen /></AccountShell>
+      </Suspense></Route>
       <Route><AccountShell><h1>Page not found</h1><a href={appHref('/')}>Back to worlds</a></AccountShell></Route>
     </Switch>
   </ClerkProvider>;

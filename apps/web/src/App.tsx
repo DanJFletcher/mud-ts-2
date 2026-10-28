@@ -2,10 +2,12 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  lazy,
   useMemo,
   useRef,
   useState,
   useSyncExternalStore,
+  Suspense,
   type FormEvent,
   type TouchEvent as ReactTouchEvent,
 } from "react";
@@ -52,9 +54,10 @@ import { RoomChatPanel, type RoomChatMessage } from "./RoomChatPanel.js";
 import { ActionRefreshGate } from "./action-refresh-gate.js";
 import { TerminalPanel } from "./TerminalPanel.js";
 import { WorldMapPanel } from "./WorldMapPanel.js";
-import CodexScreen from "./codex/CodexScreen.js";
 import { PwaInstallAction } from "./lobby/PwaInstallAction.js";
 import { getNpcFarewellLabel } from "./npc-farewell.js";
+
+const CodexScreen = lazy(() => import("./codex/CodexScreen.js"));
 
 const client = new MuddHttpClient({ worldInstanceId: "mudd-demo-instance", basePath: import.meta.env.BASE_URL });
 type ClassCatalogSummary = { id: string; revision: number; classes: CharacterClassDefinition[] };
@@ -5530,7 +5533,9 @@ export function WorldClient({
         {!isGameOver && screen === "codex" && (
           <div className="focused-screen focused-codex-screen" aria-label="Orraveth Codex">
             {infoTabs}
-            <CodexScreen />
+            <Suspense fallback={<p role="status">Loading the Codex…</p>}>
+              <CodexScreen />
+            </Suspense>
           </div>
         )}
       </section>
