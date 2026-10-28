@@ -115,6 +115,8 @@ const state = vi.hoisted(() => ({
   teamCombatProjection: { encounter: null } as unknown,
   queryOverrides: new Map<string, unknown>(),
   characterReplayOverride: null as unknown,
+  systemCommands: [] as Array<Record<string, unknown>>,
+  presenceTouches: [] as unknown[][],
   nextCommandResult: null as null | {
     receipt: { ok: boolean; code?: string; message?: string; commandId?: string };
     commitOutcome?: string;
@@ -314,7 +316,8 @@ vi.mock('@mudd/engine-core', async () => ({
       }
       return { receipt: { ok: true }, commitOutcome: 'committed' };
     }
-    async dispatchSystem() {
+    async dispatchSystem(command: Record<string, unknown>) {
+      state.systemCommands.push(command);
       return { receipt: { ok: true } };
     }
   },
@@ -346,7 +349,10 @@ vi.mock('./stamina-recovery-scheduler.js', () => ({
 }));
 vi.mock('./room-presence-service.js', () => ({
   listRoomOccupants: async () => [],
-  touchWorldSessionPresence: async () => true,
+  touchWorldSessionPresence: async (...args: unknown[]) => {
+    state.presenceTouches.push(args);
+    return true;
+  },
 }));
 vi.mock('./realtime-notifications.js', () => ({
   startRealtimeNotifications: () => vi.fn(),
@@ -830,6 +836,8 @@ describe('NPC room announcements through the server', () => {
     state.teamCombatProjection = { encounter: null };
     state.queryOverrides.clear();
     state.characterReplayOverride = null;
+    state.systemCommands.length = 0;
+    state.presenceTouches.length = 0;
     state.nextCommandResult = null;
     announcementState.attempts = 0;
     state.characters['character-alice'].locationId = 'npc-room';
@@ -1297,6 +1305,41 @@ describe('NPC room announcements through the server', () => {
     });
   });
 
+  it('reports unavailable characters and location/stat projection failures in game snapshots', async () => {
+    await enterWorld('alice', 'character-alice');
+    const getGame = () => fetch(`${baseUrl}/api/game`, {
+      headers: { 'x-test-user': 'alice' },
+    });
+
+    state.characterReplayOverride = undefined;
+    const unavailableCharacter = await getGame();
+    expect(unavailableCharacter.status).toBe(409);
+    expect(await unavailableCharacter.json()).toEqual({
+      message: 'That character is no longer available.',
+    });
+    state.characterReplayOverride = null;
+
+    const failures = [
+      { queryType: 'location.describe', code: 'NOT_FOUND', status: 404, message: 'Room not found.' },
+      { queryType: 'location.describe', code: 'FORBIDDEN', status: 403, message: 'Room access denied.' },
+      { queryType: 'character.stats', code: 'INTERNAL_ERROR', status: 500, message: 'Stats projection failed.' },
+      { queryType: 'character.stats', code: 'NOT_FOUND', status: 404, message: 'Stats not found.' },
+    ] as const;
+    for (const failure of failures) {
+      state.queryOverrides.set(failure.queryType, {
+        ok: false,
+        code: failure.code,
+        message: failure.message,
+      });
+      const response = await getGame();
+      expect(response.status, `${failure.queryType}:${failure.code}`).toBe(failure.status);
+      const body = await response.json() as { message: string; requestId?: string };
+      expect(body.message).toBe(failure.message);
+      if (failure.status === 500) expect(body.requestId).toEqual(expect.any(String));
+      state.queryOverrides.delete(failure.queryType);
+    }
+  });
+
   it('refreshes an active session heartbeat and removes only the leaving player session', async () => {
     const heartbeat = (userId: string) => fetch(`${baseUrl}/api/world-session/heartbeat`, {
       method: 'POST',
@@ -1330,6 +1373,49 @@ describe('NPC room announcements through the server', () => {
       headers: { 'x-test-user': 'alice' },
     });
     expect(noLongerInWorld.status).toBe(409);
+  });
+
+  it('refreshes stale presence and resets recovery when heartbeating or re-entering', async () => {
+    await enterWorld('alice', 'character-alice');
+    const session = state.sessions.get('player-alice') as { id: string; lastSeenAt?: Date };
+    const staleTime = () => new Date(Date.now() - 60 * 60 * 1000);
+    session.lastSeenAt = staleTime();
+
+    const heartbeat = await fetch(`${baseUrl}/api/world-session/heartbeat`, {
+      method: 'POST',
+      headers: { 'x-test-user': 'alice' },
+    });
+    expect(heartbeat.status).toBe(200);
+    expect(state.presenceTouches).toHaveLength(1);
+    expect(state.presenceTouches[0]).toEqual([
+      'player-alice',
+      instanceId,
+      session.id,
+    ]);
+    expect(state.systemCommands).toHaveLength(2);
+    expect(state.systemCommands[1]).toMatchObject({
+      type: 'character.stamina.recover',
+      characterId: 'character-alice',
+      payload: { resetAnchor: true },
+    });
+
+    session.lastSeenAt = staleTime();
+    const reentered = await fetch(`${baseUrl}/api/world-session`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-user': 'alice',
+      },
+      body: JSON.stringify({ characterId: 'character-alice' }),
+    });
+    expect(reentered.status).toBe(200);
+    expect(state.presenceTouches).toHaveLength(2);
+    expect(state.systemCommands).toHaveLength(3);
+    expect(state.systemCommands[2]).toMatchObject({
+      type: 'character.stamina.recover',
+      characterId: 'character-alice',
+      payload: { resetAnchor: true },
+    });
   });
 
   it('binds world commands to the active character and rejects PvP actions without an encounter', async () => {
