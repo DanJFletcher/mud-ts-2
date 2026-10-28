@@ -681,6 +681,151 @@ describe('PostgresEventStore unit behavior', () => {
     expect(tx.update).toHaveBeenCalledTimes(1);
   });
 
+  it('validates effect lease durations and returns no claim when the queue is empty', async () => {
+    const store = new PostgresEventStore();
+    for (const leaseMs of [0, -1, 1.5]) {
+      await expect(store.claimNextEffect(leaseMs))
+        .rejects.toThrow('Effect lease must be a positive integer.');
+    }
+
+    const tx = {
+      select: vi.fn(() => ({
+        from: () => ({
+          where: () => ({
+            orderBy: () => ({
+              limit: () => ({
+                for: async () => [],
+              }),
+            }),
+          }),
+        }),
+      })),
+      update: vi.fn(),
+    };
+    mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(tx));
+
+    await expect(store.claimNextEffect(1_000)).resolves.toBeUndefined();
+    expect(tx.update).not.toHaveBeenCalled();
+  });
+
+  it('returns no effect when a pending row loses its lease before update', async () => {
+    const pending = {
+      id: 'effect-raced',
+      worldInstanceId: 'world-1',
+      sourceStreamId: 'character-1',
+      causationCommandId: 'command-1',
+      effectType: 'world.location.entered',
+      effectVersion: 1,
+      payload: { toLocationId: 'room-b' },
+      attempts: 0,
+    };
+    const tx = {
+      select: vi.fn(() => ({
+        from: () => ({
+          where: () => ({
+            orderBy: () => ({
+              limit: () => ({
+                for: async () => [pending],
+              }),
+            }),
+          }),
+        }),
+      })),
+      update: vi.fn(() => ({
+        set: () => ({
+          where: () => ({
+            returning: async () => [],
+          }),
+        }),
+      })),
+    };
+    mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(tx));
+
+    await expect(new PostgresEventStore().claimNextEffect(5_000, 'world-1'))
+      .resolves.toBeUndefined();
+    expect(tx.update).toHaveBeenCalledOnce();
+  });
+
+  it('claims due object lifecycles with bounded leases and releases a claim', async () => {
+    const now = new Date('2026-10-28T12:00:00.000Z');
+    const rows = [
+      { objectId: 'corpse-a', revision: 4 },
+      { objectId: 'dropped-item-b', revision: 7 },
+    ];
+    const updates: Array<Record<string, unknown>> = [];
+    const forUpdate = vi.fn(async () => rows);
+    const tx = {
+      select: vi.fn(() => ({
+        from: () => ({
+          where: () => ({
+            orderBy: () => ({
+              limit: () => ({
+                for: forUpdate,
+              }),
+            }),
+          }),
+        }),
+      })),
+      update: vi.fn(() => ({
+        set: (values: Record<string, unknown>) => {
+          updates.push(values);
+          return { where: async () => undefined };
+        },
+      })),
+    };
+    mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(tx));
+    const store = new PostgresEventStore();
+
+    const claims = await store.claimDueObjectLifecycles('world-1', now, 2, 5_000);
+
+    expect(forUpdate).toHaveBeenCalledWith('update', { skipLocked: true });
+    expect(claims).toHaveLength(2);
+    expect(claims.map(({ objectId, revision }) => ({ objectId, revision }))).toEqual(rows);
+    expect(new Set(claims.map(({ leaseToken }) => leaseToken)).size).toBe(2);
+    expect(updates).toEqual(claims.map(({ leaseToken }) => ({
+      leaseToken,
+      leaseUntil: new Date(now.getTime() + 5_000),
+    })));
+
+    const where = vi.fn(async () => undefined);
+    const set = vi.fn(() => ({ where }));
+    mockDb.update.mockReturnValue({ set });
+    await store.releaseObjectLifecycleClaim('world-1', 'corpse-a', claims[0]!.leaseToken);
+    expect(set).toHaveBeenCalledWith({ leaseToken: null, leaseUntil: null });
+    expect(where).toHaveBeenCalledOnce();
+  });
+
+  it('validates lifecycle claim limits and returns no rows when nothing is due', async () => {
+    const store = new PostgresEventStore();
+    const now = new Date('2026-10-28T12:00:00.000Z');
+    await expect(store.claimDueObjectLifecycles('world-1', now, 0))
+      .rejects.toThrow('Lifecycle batch size must be positive.');
+    await expect(store.claimDueObjectLifecycles('world-1', now, 1, 0))
+      .rejects.toThrow('Lifecycle lease must be positive.');
+    expect(mockDb.transaction).not.toHaveBeenCalled();
+
+    const forUpdate = vi.fn(async () => []);
+    const tx = {
+      select: vi.fn(() => ({
+        from: () => ({
+          where: () => ({
+            orderBy: () => ({
+              limit: () => ({
+                for: forUpdate,
+              }),
+            }),
+          }),
+        }),
+      })),
+      update: vi.fn(),
+    };
+    mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(tx));
+
+    await expect(store.claimDueObjectLifecycles('world-1', now)).resolves.toEqual([]);
+    expect(forUpdate).toHaveBeenCalledWith('update', { skipLocked: true });
+    expect(tx.update).not.toHaveBeenCalled();
+  });
+
   it('marks leased effects complete or dead only when the database returns a matched row', async () => {
     const store = new PostgresEventStore();
     mockUpdateReturning([{ id: 'effect-1' }]);
