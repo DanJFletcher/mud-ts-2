@@ -65,7 +65,7 @@ export function LobbyPage({ worldId }: { worldId?: string }) {
     : recentCharacters(state.roster?.characters ?? []).slice(0, 4);
   const characterList = <div className={`lobby-character-list${worldId ? '' : ' lobby-character-list--recent'}`}>{characters.map((character) =>
     <CharacterCard key={character.characterId} character={character} active={activeId(character.worldInstanceId) === character.characterId}
-      pending={pending} compact={!worldId} onPlay={() => play(character)} onManage={manage} />,
+      pending={pending} compact showWorldName={!worldId} onPlay={() => play(character)} onManage={manage} />,
   )}</div>;
   const errors = <>
     {error && <div className="lobby-error" role="alert">{error}</div>}

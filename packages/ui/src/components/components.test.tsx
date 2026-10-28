@@ -285,7 +285,7 @@ describe('@mudd/ui components', () => {
     />);
     expect(screen.getByRole('heading', { level: 3, name: 'Mira' })).toBeInTheDocument();
     expect(screen.getByText('Ready')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Details' })).toHaveAttribute('href', '/character/mira');
+    expect(screen.getByRole('link', { name: 'Mira' })).toHaveAttribute('href', '/character/mira');
     fireEvent.click(screen.getByRole('button', { name: 'Continue as Mira' }));
     expect(onPlay).toHaveBeenCalledOnce();
     expect(screen.getByRole('button', { name: 'Manage' })).toBeInTheDocument();
@@ -294,10 +294,10 @@ describe('@mudd/ui components', () => {
   it('keeps compact character actions visually short but accessibly named', () => {
     render(<CharacterEntryCard
       name="Mira" worldName="Orraveth" statusLabel="Ready"
-      actionLabel="Play" actionAriaLabel="Play as Mira" compact onPlay={() => undefined}
+      actionLabel="Play as Mira" compact onPlay={() => undefined}
     />);
     expect(screen.getByRole('article')).toHaveClass('mudd-character-entry--compact');
-    expect(screen.getByRole('button', { name: 'Play as Mira' })).toHaveTextContent('Play');
+    expect(screen.getByRole('button', { name: 'Play as Mira' })).toBeInTheDocument();
   });
 
   it('prevents entry while busy and announces the pending state', () => {

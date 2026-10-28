@@ -337,7 +337,7 @@ describe('world lobby and explicit character entry', () => {
   it('links compact character cards to details while keeping play and management actions', async () => {
     open(`/worlds/${demo}`);
     await screen.findByRole('button', { name: 'Play as Rowan' });
-    expect(screen.getByRole('link', { name: 'Details' })).toHaveAttribute('href', `/character/${one}`);
+    expect(screen.getByRole('link', { name: 'Rowan' })).toHaveAttribute('href', `/character/${one}`);
     expect(screen.queryByText('Last known')).not.toBeInTheDocument();
     expect(screen.queryByText(/Last played/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Play as Rowan' })).toBeEnabled();

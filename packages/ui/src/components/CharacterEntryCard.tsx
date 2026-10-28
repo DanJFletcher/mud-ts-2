@@ -7,12 +7,10 @@ export interface CharacterEntryCardProps {
   worldName?: string;
   classLabel?: string;
   level?: number;
-  statusLabel: string;
+  statusLabel?: string;
   actionLabel: string;
-  actionAriaLabel?: string;
   compact?: boolean;
   detailsHref?: string;
-  detailsLabel?: string;
   onPlay: () => void;
   disabled?: boolean;
   busy?: boolean;
@@ -21,7 +19,7 @@ export interface CharacterEntryCardProps {
 }
 
 export function CharacterEntryCard({
-  name, worldName, classLabel, level, statusLabel, actionLabel, actionAriaLabel, compact = false, detailsHref, detailsLabel = 'Details', onPlay,
+  name, worldName, classLabel, level, statusLabel, actionLabel, compact = false, detailsHref, onPlay,
   disabled = false, busy = false, secondaryActions, children,
 }: CharacterEntryCardProps) {
   const details = [classLabel, typeof level === 'number' ? `Level ${level}` : undefined].filter(Boolean);
@@ -30,9 +28,11 @@ export function CharacterEntryCard({
       <div className="mudd-character-entry__top">
         <div className="mudd-character-entry__identity">
           <p className="mudd-character-entry__eyebrow">{worldName || 'Your traveler'}</p>
-          <h3 className="mudd-character-entry__name">{name}</h3>
+          <h3 className="mudd-character-entry__name">
+            {detailsHref ? <a className="mudd-character-entry__name-link" href={detailsHref}>{name}</a> : name}
+          </h3>
           {details.length > 0 ? <p className="mudd-character-entry__details">{details.join(' · ')}</p> : null}
-          <p className="mudd-character-entry__status">{statusLabel}</p>
+          {statusLabel ? <p className="mudd-character-entry__status">{statusLabel}</p> : null}
         </div>
         {secondaryActions ? <div className="mudd-character-entry__secondary">{secondaryActions}</div> : null}
       </div>
@@ -42,11 +42,9 @@ export function CharacterEntryCard({
           onClick={onPlay}
           disabled={disabled || busy}
           aria-busy={busy || undefined}
-          aria-label={actionAriaLabel}
         >
           {busy ? 'Opening world…' : actionLabel}
         </Button>
-        {detailsHref ? <a className="mudd-character-entry__details-link" href={detailsHref}>{detailsLabel}</a> : null}
       </div>
       {children ? <div className="mudd-character-entry__content">{children}</div> : null}
     </article>

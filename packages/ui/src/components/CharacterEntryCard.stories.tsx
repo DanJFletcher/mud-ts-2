@@ -22,8 +22,7 @@ export const RecentCharacter: Story = {};
 export const CompactRosterRow: Story = {
   args: {
     compact: true,
-    actionLabel: 'Play',
-    actionAriaLabel: 'Play as Mira',
+    actionLabel: 'Play as Mira',
   },
   parameters: { viewport: { defaultViewport: 'mobile1' } },
 };
