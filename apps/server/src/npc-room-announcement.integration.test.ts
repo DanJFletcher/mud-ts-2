@@ -113,6 +113,12 @@ const state = vi.hoisted(() => ({
   nextMoveId: 1,
   interactionEncounter: null as unknown,
   teamCombatProjection: { encounter: null } as unknown,
+  queryOverrides: new Map<string, unknown>(),
+  nextCommandResult: null as null | {
+    receipt: { ok: boolean; code?: string; message?: string; commandId?: string };
+    commitOutcome?: string;
+    commandId?: string;
+  },
 }));
 
 const announcementState = vi.hoisted(() => ({ attempts: 0 }));
@@ -196,6 +202,12 @@ vi.mock('@mudd/engine-core', async () => ({
     async start() {}
     async stop() {}
     async query(query: { type?: string; characterId?: string }) {
+      const override = state.queryOverrides.get(query.type ?? '');
+      if (override !== undefined) {
+        return typeof override === 'function'
+          ? await (override as () => unknown)()
+          : override;
+      }
       if (query.type === 'party.info') {
         return { ok: true, value: { party: null, revision: 0, activity: [] } };
       }
@@ -261,6 +273,11 @@ vi.mock('@mudd/engine-core', async () => ({
       characterId?: string;
       payload?: { exitId?: string };
     }) {
+      const nextCommandResult = state.nextCommandResult;
+      if (nextCommandResult) {
+        state.nextCommandResult = null;
+        return nextCommandResult;
+      }
       if (command.type === 'character.move' && command.characterId && command.payload?.exitId) {
         const prior = state.moveReceipts.get(command.commandId ?? '');
         if (prior) return { ...prior, commitOutcome: 'duplicate' };
@@ -809,6 +826,8 @@ describe('NPC room announcements through the server', () => {
     state.nextMoveId = 1;
     state.interactionEncounter = null;
     state.teamCombatProjection = { encounter: null };
+    state.queryOverrides.clear();
+    state.nextCommandResult = null;
     announcementState.attempts = 0;
     state.characters['character-alice'].locationId = 'npc-room';
     state.characters['character-bob'].locationId = 'npc-room';
@@ -956,6 +975,159 @@ describe('NPC room announcements through the server', () => {
       const invalid = await postCommand({ type, worldInstanceId: instanceId });
       expect(invalid.status, type).toBe(400);
       expect(await invalid.json()).toMatchObject({ message: expect.stringContaining('Invalid character') });
+    }
+  });
+
+  it('rejects archiving the active character and commands for another player’s character', async () => {
+    await enterWorld('alice', 'character-alice');
+    const postCommand = (body: unknown) => fetch(`${baseUrl}/api/commands`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-user': 'alice',
+      },
+      body: JSON.stringify(body),
+    });
+
+    const archive = await postCommand({
+      type: 'character.archive',
+      version: 1,
+      commandId: 'archive-active-character',
+      worldInstanceId: instanceId,
+      characterId: 'character-alice',
+      expectedVersion: 0,
+      payload: {},
+    });
+    expect(archive.status).toBe(409);
+    expect(await archive.json()).toEqual({
+      message: 'Leave the world before archiving this character.',
+    });
+
+    const rename = await postCommand({
+      type: 'character.rename',
+      version: 1,
+      commandId: 'rename-bobs-character',
+      worldInstanceId: instanceId,
+      characterId: 'character-bob',
+      expectedVersion: 0,
+      payload: { name: 'Not Alice’s character' },
+    });
+    expect(rename.status).toBe(404);
+    expect(await rename.json()).toEqual({
+      message: 'That character does not belong to this world.',
+    });
+  });
+
+  it('returns a request-scoped server error for command dispatch failures', async () => {
+    state.nextCommandResult = {
+      receipt: {
+        ok: false,
+        code: 'INTERNAL_ERROR',
+        message: 'The command failed in the engine.',
+      },
+      commitOutcome: 'committed',
+      commandId: 'failed-create',
+    };
+    const response = await fetch(`${baseUrl}/api/commands`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-user': 'alice',
+      },
+      body: JSON.stringify({
+        type: 'character.create',
+        version: 1,
+        commandId: 'failed-create',
+        worldInstanceId: instanceId,
+        payload: { name: 'Rill' },
+      }),
+    });
+
+    expect(response.status).toBe(500);
+    const body = await response.json() as { message: string; requestId: string };
+    expect(body.message).toBe('The command failed in the engine.');
+    expect(body.requestId).toEqual(expect.any(String));
+  });
+
+  it('fails closed when party or team-combat prechecks return invalid projections', async () => {
+    await enterWorld('alice', 'character-alice');
+    const postCommand = (body: unknown) => fetch(`${baseUrl}/api/commands`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-user': 'alice',
+      },
+      body: JSON.stringify(body),
+    });
+    const movement = {
+      type: 'character.move',
+      version: 1,
+      worldInstanceId: instanceId,
+      characterId: 'character-alice',
+      expectedVersion: 0,
+      payload: { exitId: 'exit-north' },
+    };
+    state.queryOverrides.set('team.combat.info', { ok: true, value: {} });
+
+    const invalidTeamStatus = await postCommand({
+      ...movement,
+      commandId: 'invalid-team-status',
+    });
+    expect(invalidTeamStatus.status).toBe(500);
+    expect(await invalidTeamStatus.json()).toEqual({
+      message: 'The team combat state could not be checked.',
+    });
+
+    state.queryOverrides.delete('team.combat.info');
+    state.queryOverrides.set('party.info', { ok: true, value: {} });
+    const invalidPartyStatus = await postCommand({
+      type: 'combat.action',
+      version: 1,
+      commandId: 'invalid-party-status',
+      worldInstanceId: instanceId,
+      characterId: 'character-alice',
+      expectedVersion: 0,
+      payload: { action: 'attack', targetNpcId: 'wild-deer' },
+    });
+    expect(invalidPartyStatus.status).toBe(500);
+    expect(await invalidPartyStatus.json()).toEqual({
+      message: 'The party status could not be checked before combat.',
+    });
+  });
+
+  it('keeps a successful move response when its location projection fails or throws', async () => {
+    await enterWorld('mover', 'character-mover');
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      state.queryOverrides.set('location.describe', {
+        ok: false,
+        code: 'NOT_FOUND',
+        message: 'The location could not be described.',
+      });
+      const unavailableProjection = await move(
+        'mover',
+        'character-mover',
+        'to-arrival-room',
+        'move-with-unavailable-projection',
+      );
+      expect(unavailableProjection.status).toBe(200);
+      expect(await unavailableProjection.json()).not.toHaveProperty('movementProjection');
+
+      state.queryOverrides.set('location.describe', () => {
+        throw new Error('Projection service unavailable.');
+      });
+      const thrownProjection = await move(
+        'mover',
+        'character-mover',
+        'back-to-entry',
+        'move-with-thrown-projection',
+      );
+      expect(thrownProjection.status).toBe(200);
+      expect(await thrownProjection.json()).not.toHaveProperty('movementProjection');
+      expect(warning).toHaveBeenCalledWith(expect.stringContaining('movement_projection_unavailable'));
+      expect(warning).toHaveBeenCalledTimes(2);
+    } finally {
+      warning.mockRestore();
     }
   });
 
