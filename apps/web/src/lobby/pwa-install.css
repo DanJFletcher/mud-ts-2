@@ -1,5 +1,11 @@
 .pwa-install-action { min-width: 0; }
 .pwa-install-action__nav-button { min-height: 40px; padding: .35rem .5rem; font-size: .8rem; }
+@media (min-width: 701px) {
+  .lobby-header nav .pwa-install-action { width: max-content; flex: 0 0 auto; }
+  .lobby-header nav .pwa-install-action__nav-button {
+    display: inline-flex; align-items: center; gap: .4rem; white-space: nowrap;
+  }
+}
 .pwa-install-action__instructions {
   margin: 0;
   padding: .5rem .7rem;
