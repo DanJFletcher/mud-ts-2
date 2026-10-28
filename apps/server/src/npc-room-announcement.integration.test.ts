@@ -2,6 +2,7 @@ import { createServer } from 'node:net';
 import { once } from 'node:events';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
+import { ORRAVETH_WORLD_INSTANCE_ID } from '@mudd/world-orraveth';
 
 const state = vi.hoisted(() => ({
   world: {
@@ -78,6 +79,7 @@ const state = vi.hoisted(() => ({
     'character-elsewhere': 'player-elsewhere',
     'character-mover': 'player-mover',
   },
+  characterWorldInstanceOverrides: new Map<string, string>(),
   sessions: new Map(),
   guestIdentity: null as null | {
     playerId: string;
@@ -96,6 +98,12 @@ const state = vi.hoisted(() => ({
   messages: [],
   nextMessageId: 1,
   chatSubmissions: new Map(),
+  chatSubmitError: null as Error | null,
+  chatSubmitOutcome: null as 'unavailable' | 'conflict' | null,
+  readStreamError: null as Error | null,
+  readStreamGate: null as Promise<void> | null,
+  readStreamSequence: [] as unknown[],
+  streamlessCharacterIds: new Set<string>(),
   pendingEffects: [] as Array<{
     effectId: string;
     type: string;
@@ -117,18 +125,38 @@ const state = vi.hoisted(() => ({
   queryOverrides: new Map<string, unknown>(),
   characterReplayOverride: null as unknown,
   systemCommands: [] as Array<Record<string, unknown>>,
+  systemCommandResults: [] as Array<{
+    receipt: { ok: boolean; code?: string; message?: string };
+  }>,
   presenceTouches: [] as unknown[][],
   nextCommandResult: null as null | {
     receipt: { ok: boolean; code?: string; message?: string; commandId?: string };
     commitOutcome?: string;
     commandId?: string;
   },
+  dispatchError: null as Error | null,
   enableAutonomousScheduler: false,
   autonomousSchedulers: [] as Array<{
     options: { onError: (error: unknown, npcId: string) => void };
     start: ReturnType<typeof vi.fn>;
     stop: ReturnType<typeof vi.fn>;
   }>,
+  staminaSchedulers: [] as Array<{
+    options: {
+      listSessions: (activeSince?: Date) => Promise<unknown[]>;
+      onError: (error: unknown, characterId: string) => void;
+    };
+    start: ReturnType<typeof vi.fn>;
+    stop: ReturnType<typeof vi.fn>;
+  }>,
+  engineAuthorizations: [] as unknown[],
+  objectLifecycleErrorHandlers: [] as Array<
+    (error: unknown, worldInstanceId: string, objectId?: string) => void
+  >,
+  interactionMaintenanceRequests: [] as Array<Record<string, unknown>>,
+  interactionRequestWorldId: '',
+  interactionStatusUpdates: [] as unknown[][],
+  intervalCallbacks: [] as Array<{ delay: number; callback: () => void }>,
 }));
 
 const announcementState = vi.hoisted(() => ({ attempts: 0 }));
@@ -173,9 +201,15 @@ vi.mock('@mudd/core-plugins', async () => ({
   combatRoomPresenceCapability: { id: 'mudd.combat.room-presence.v1', version: '1' },
   interactionPlugin: {},
   interactionStreamId: (worldInstanceId: string) => `world-interactions:${worldInstanceId}`,
-  projectInteractionEvents: () => ({ requests: [], latestEncounterEvent: undefined }),
+  projectInteractionEvents: (events: unknown) => ({
+    requests: Array.isArray(events) ? events as Array<Record<string, unknown>> : [],
+    latestEncounterEvent: undefined,
+  }),
   projectCharacterInteractions: () => ({ requests: [], encounter: state.interactionEncounter }),
-  updateInteractionRequestStatus: async () => false,
+  updateInteractionRequestStatus: async (...args: unknown[]) => {
+    state.interactionStatusUpdates.push(args);
+    return false;
+  },
   movementPlugin: {},
   roadTravelPlugin: {},
   worldItemsPlugin: {},
@@ -190,7 +224,8 @@ vi.mock('@mudd/engine-core', async () => ({
   SYSTEM_ACTOR_ID: 'system-test-actor',
   projectQuestJournal: () => [],
   EngineHost: class {
-    constructor(plugins: unknown[] = []) {
+    constructor(plugins: unknown[] = [], _store?: unknown, authorization?: unknown) {
+      if (authorization) state.engineAuthorizations.push(authorization);
       for (const candidate of plugins) {
         const plugin = candidate as {
           manifest?: { id?: string };
@@ -283,6 +318,11 @@ vi.mock('@mudd/engine-core', async () => ({
       characterId?: string;
       payload?: { exitId?: string };
     }) {
+      if (state.dispatchError) {
+        const error = state.dispatchError;
+        state.dispatchError = null;
+        throw error;
+      }
       const nextCommandResult = state.nextCommandResult;
       if (nextCommandResult) {
         state.nextCommandResult = null;
@@ -325,7 +365,7 @@ vi.mock('@mudd/engine-core', async () => ({
     }
     async dispatchSystem(command: Record<string, unknown>) {
       state.systemCommands.push(command);
-      return { receipt: { ok: true } };
+      return state.systemCommandResults.shift() ?? { receipt: { ok: true } };
     }
   },
   replayCharacter: (character: unknown) => {
@@ -353,7 +393,23 @@ vi.mock('./autonomous-npc-scheduler.js', () => ({
 // This HTTP routing fixture does not model recovery histories/heartbeats.
 // Recovery has its own clock-driven tests.
 vi.mock('./stamina-recovery-scheduler.js', () => ({
-  createStaminaRecoveryScheduler: () => ({ start: vi.fn(), stop: vi.fn(), tick: vi.fn() }),
+  createStaminaRecoveryScheduler: (options: {
+    listSessions: (activeSince?: Date) => Promise<unknown[]>;
+    onError: (error: unknown, characterId: string) => void;
+  }) => {
+    const start = vi.fn();
+    const stop = vi.fn();
+    state.staminaSchedulers.push({ options, start, stop });
+    return { start, stop, tick: vi.fn() };
+  },
+}));
+vi.mock('./object-lifecycle-scheduler.js', () => ({
+  createObjectLifecycleScheduler: (options: {
+    onError: (error: unknown, worldInstanceId: string, objectId?: string) => void;
+  }) => {
+    state.objectLifecycleErrorHandlers.push(options.onError);
+    return { start: vi.fn(), stop: vi.fn(), tick: vi.fn() };
+  },
 }));
 vi.mock('./room-presence-service.js', () => ({
   listRoomOccupants: async () => [],
@@ -428,7 +484,7 @@ vi.mock('./db/client.js', async () => {
             rows = Object.entries(state.characters).map(([id, character]) => ({
               id,
               playerId: state.charactersByOwner[id as keyof typeof state.charactersByOwner],
-              worldInstanceId: instanceId,
+              worldInstanceId: state.characterWorldInstanceOverrides.get(id) ?? instanceId,
               archivedAt: null,
               lastPlayedAt: lastPlayed.get(id) ?? null,
               ...character,
@@ -557,6 +613,16 @@ vi.mock('./room-chat-service.js', () => ({
     clientMessageId: string;
     text: string;
   }) => {
+    if (state.chatSubmitError) {
+      const error = state.chatSubmitError;
+      state.chatSubmitError = null;
+      throw error;
+    }
+    if (state.chatSubmitOutcome) {
+      const outcome = state.chatSubmitOutcome;
+      state.chatSubmitOutcome = null;
+      return { kind: outcome };
+    }
     const key = `${input.worldInstanceId}:${input.playerId}:${input.clientMessageId}`;
     const prior = state.chatSubmissions.get(key);
     if (prior) {
@@ -745,6 +811,15 @@ vi.mock('./persistence/postgres-event-store.js', () => ({
     }
     invalidateCommandReadCache() {}
     async readStream(_worldInstanceId: string, characterId: string) {
+      if (state.readStreamError) throw state.readStreamError;
+      if (state.readStreamGate) await state.readStreamGate;
+      if (state.readStreamSequence.length > 0) return state.readStreamSequence.shift();
+      if (characterId.startsWith('world-interactions:')) {
+        return characterId === `world-interactions:${state.interactionRequestWorldId}`
+          ? state.interactionMaintenanceRequests
+          : [];
+      }
+      if (state.streamlessCharacterIds.has(characterId)) return null;
       return state.characters[characterId as keyof typeof state.characters] ?? null;
     }
   },
@@ -814,7 +889,23 @@ describe('NPC room announcements through the server', () => {
     state.enableAutonomousScheduler = true;
     const existingSigtermHandlers = new Set(process.listeners('SIGTERM'));
     process.env.API_PORT = String(port);
-    const serverModule = await import('./index.js');
+    const nativeSetInterval = globalThis.setInterval;
+    globalThis.setInterval = ((...args: Parameters<typeof setInterval>) => {
+      const [callback, delay] = args;
+      if (typeof callback === 'function') {
+        state.intervalCallbacks.push({ delay: Number(delay ?? 0), callback: callback as () => void });
+      }
+      const timer = nativeSetInterval(...args);
+      if (Number(delay ?? 0) === 2_000) clearInterval(timer);
+      return timer;
+    }) as typeof globalThis.setInterval;
+    let serverModule: typeof import('./index.js') | undefined;
+    try {
+      serverModule = await import('./index.js');
+    } finally {
+      globalThis.setInterval = nativeSetInterval;
+    }
+    if (!serverModule) throw new Error('Could not load the integration server.');
     server = serverModule.server;
     shutdownOnSigterm = process.listeners('SIGTERM')
       .find((handler) => !existingSigtermHandlers.has(handler)) as (() => void) | undefined;
@@ -824,10 +915,17 @@ describe('NPC room announcements through the server', () => {
 
   beforeEach(() => {
     state.sessions.clear();
+    state.characterWorldInstanceOverrides.clear();
     state.guestIdentity = null;
     state.messages.length = 0;
     state.nextMessageId = 1;
     state.chatSubmissions.clear();
+    state.chatSubmitError = null;
+    state.chatSubmitOutcome = null;
+    state.readStreamError = null;
+    state.readStreamGate = null;
+    state.readStreamSequence.length = 0;
+    state.streamlessCharacterIds.clear();
     state.nextChatSubmissionId = 1;
     state.moveReceipts.clear();
     state.pendingEffects.length = 0;
@@ -850,8 +948,12 @@ describe('NPC room announcements through the server', () => {
     state.queryOverrides.clear();
     state.characterReplayOverride = null;
     state.systemCommands.length = 0;
+    state.systemCommandResults.length = 0;
     state.presenceTouches.length = 0;
     state.nextCommandResult = null;
+    state.dispatchError = null;
+    state.interactionMaintenanceRequests.length = 0;
+    state.interactionStatusUpdates.length = 0;
     announcementState.attempts = 0;
     state.characters['character-alice'].locationId = 'npc-room';
     state.characters['character-bob'].locationId = 'npc-room';
@@ -952,6 +1054,19 @@ describe('NPC room announcements through the server', () => {
     const unauthenticated = await fetch(`${baseUrl}/api/chat?roomId=npc-room`);
     expect(unauthenticated.status).toBe(401);
 
+    const unauthenticatedCommand = await fetch(`${baseUrl}/api/commands`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const unauthenticatedQuery = await fetch(`${baseUrl}/api/queries`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(unauthenticatedCommand.status).toBe(401);
+    expect(unauthenticatedQuery.status).toBe(401);
+
     const unavailableWorld = await fetch(`${baseUrl}/api/chat?roomId=npc-room`, {
       headers: {
         'x-test-user': 'alice',
@@ -981,6 +1096,54 @@ describe('NPC room announcements through the server', () => {
       message: 'Enter a message up to 500 characters.',
     });
     expect(state.messages).toEqual([]);
+  });
+
+  it('rejects room chat reads and writes for a defeated character', async () => {
+    await enterWorld('alice', 'character-alice');
+    const character = state.characters['character-alice'];
+    const originalHealth = character.health;
+    try {
+      Object.assign(character, { health: { current: 0 } });
+
+      const read = await fetch(`${baseUrl}/api/chat?roomId=npc-room`, {
+        headers: { 'x-test-user': 'alice' },
+      });
+      const write = await sendRoomMessage(
+        'alice',
+        'npc-room',
+        'Can anyone hear me?',
+        'defeated-chat',
+      );
+
+      expect(read.status).toBe(409);
+      expect(await read.json()).toEqual({
+        message: 'Your character has died. Start a new character to begin again.',
+      });
+      expect(write.status).toBe(409);
+      expect(await write.json()).toEqual({
+        message: 'Your character has died. Start a new character to begin again.',
+      });
+    } finally {
+      character.health = originalHealth;
+    }
+  });
+
+  it('maps chat persistence races to room-changed and message-ID-conflict responses', async () => {
+    await enterWorld('alice', 'character-alice');
+
+    state.chatSubmitOutcome = 'unavailable';
+    const moved = await sendRoomMessage('alice', 'npc-room', 'Still here?', 'moved-during-submit');
+    expect(moved.status).toBe(409);
+    expect(await moved.json()).toEqual({
+      message: 'You have moved to a different room or left the world.',
+    });
+
+    state.chatSubmitOutcome = 'conflict';
+    const duplicateId = await sendRoomMessage('alice', 'npc-room', 'Different text', 'reused-message-id');
+    expect(duplicateId.status).toBe(409);
+    expect(await duplicateId.json()).toEqual({
+      message: 'This message ID was already used for a different message.',
+    });
   });
 
   it('validates character command schemas and selected-world ownership before dispatch', async () => {
@@ -1086,6 +1249,88 @@ describe('NPC room announcements through the server', () => {
     const body = await response.json() as { message: string; requestId: string };
     expect(body.message).toBe('The command failed in the engine.');
     expect(body.requestId).toEqual(expect.any(String));
+  });
+
+  it('routes thrown command dispatch errors through the request error handler', async () => {
+    state.dispatchError = new Error('Engine dispatch threw.');
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const response = await fetch(`${baseUrl}/api/commands`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-test-user': 'alice',
+        },
+        body: JSON.stringify({
+          type: 'character.create',
+          version: 1,
+          commandId: 'throwing-command',
+          worldInstanceId: instanceId,
+          payload: { name: 'Rill' },
+        }),
+      });
+
+      expect(response.status).toBe(500);
+      expect(await response.json()).toMatchObject({
+        message: 'The game server could not complete that request.',
+        requestId: response.headers.get('x-request-id'),
+      });
+      expect(errorLog).toHaveBeenCalledWith(
+        expect.stringContaining('Request failed'),
+        expect.any(Error),
+      );
+    } finally {
+      errorLog.mockRestore();
+    }
+  });
+
+  it('keeps game, chat, and interaction stream read failures behind the request error handler', async () => {
+    await enterWorld('alice', 'character-alice');
+    state.readStreamError = new Error('Stream read failed.');
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      for (const path of [
+        '/api/game',
+        '/api/chat?roomId=npc-room',
+        '/api/interactions',
+      ]) {
+        const response = await fetch(`${baseUrl}${path}`, {
+          headers: { 'x-test-user': 'alice' },
+        });
+        expect(response.status).toBe(500);
+        expect(await response.json()).toMatchObject({
+          message: 'The game server could not complete that request.',
+          requestId: response.headers.get('x-request-id'),
+        });
+      }
+      expect(errorLog).toHaveBeenCalledTimes(3);
+    } finally {
+      state.readStreamError = null;
+      errorLog.mockRestore();
+    }
+  });
+
+  it('routes thrown room-chat submissions through the request error handler', async () => {
+    await enterWorld('alice', 'character-alice');
+    state.chatSubmitError = new Error('Chat persistence failed.');
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const response = await sendRoomMessage(
+        'alice',
+        'npc-room',
+        'Hello there.',
+        'chat-persistence-error',
+      );
+      expect(response.status).toBe(500);
+      expect(await response.json()).toMatchObject({
+        message: 'The game server could not complete that request.',
+        requestId: response.headers.get('x-request-id'),
+      });
+      expect(errorLog).toHaveBeenCalledOnce();
+    } finally {
+      state.chatSubmitError = null;
+      errorLog.mockRestore();
+    }
   });
 
   it('fails closed when party or team-combat prechecks return invalid projections', async () => {
@@ -1210,8 +1455,24 @@ describe('NPC room announcements through the server', () => {
       );
       expect(thrownProjection.status).toBe(200);
       expect(await thrownProjection.json()).not.toHaveProperty('movementProjection');
+
+      state.queryOverrides.delete('location.describe');
+      state.queryOverrides.set('character.stats', { ok: true, value: {} });
+      const invalidProjection = await move(
+        'mover',
+        'character-mover',
+        'to-arrival-room',
+        'move-with-invalid-projection',
+      );
+      expect(invalidProjection.status).toBe(200);
+      expect(await invalidProjection.json()).not.toHaveProperty('movementProjection');
       expect(warning).toHaveBeenCalledWith(expect.stringContaining('movement_projection_unavailable'));
-      expect(warning).toHaveBeenCalledTimes(2);
+      expect(warning).toHaveBeenCalledTimes(3);
+      const schemaWarning = JSON.parse(warning.mock.calls[2]?.[0] as string) as {
+        schemaIssues?: Array<{ path: string; code: string }>;
+      };
+      expect(schemaWarning.schemaIssues?.length).toBeGreaterThan(0);
+      state.queryOverrides.delete('character.stats');
     } finally {
       warning.mockRestore();
     }
@@ -1333,6 +1594,104 @@ describe('NPC room announcements through the server', () => {
     });
   });
 
+  it('projects room-specific fishing, woodcutting, and bulletin-board options', async () => {
+    state.characterWorldInstanceOverrides.set('character-alice', ORRAVETH_WORLD_INSTANCE_ID);
+    const entered = await fetch(`${baseUrl}/api/world-session`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-user': 'alice',
+        'x-mudd-world-instance': ORRAVETH_WORLD_INSTANCE_ID,
+      },
+      body: JSON.stringify({
+        characterId: 'character-alice',
+        worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+      }),
+    });
+    expect(entered.status).toBe(200);
+    const character = state.characters['character-alice'];
+    const originalLocationId = character.locationId;
+    const originalLocations = state.world.locations.slice();
+    const testLocations = [
+      { id: 'bellwold-river-bridge', name: 'South Bridge', exits: [], npcs: [] },
+      { id: 'bellwold-southbound-track', name: 'Southbound Track', exits: [], npcs: [] },
+      { id: 'bellwold-south-common', name: 'South Common', exits: [], npcs: [] },
+    ];
+    state.world.locations.push(...testLocations);
+
+    try {
+      character.locationId = 'bellwold-river-bridge';
+      const bridge = await fetch(`${baseUrl}/api/game`, {
+        headers: {
+          'x-test-user': 'alice',
+          'x-mudd-world-instance': ORRAVETH_WORLD_INSTANCE_ID,
+        },
+      });
+      expect(bridge.status).toBe(200);
+      expect((await bridge.json()).availableFishingSpots).toContainEqual(
+        expect.objectContaining({ id: 'bellwold-south-bridge-fishing' }),
+      );
+
+      character.locationId = 'bellwold-southbound-track';
+      const track = await fetch(`${baseUrl}/api/game`, {
+        headers: {
+          'x-test-user': 'alice',
+          'x-mudd-world-instance': ORRAVETH_WORLD_INSTANCE_ID,
+        },
+      });
+      expect(track.status).toBe(200);
+      expect((await track.json()).availableWoodcuttingTrees).toContainEqual(
+        expect.objectContaining({ id: 'bellwold-southbound-pine' }),
+      );
+
+      character.locationId = 'bellwold-south-common';
+      const common = await fetch(`${baseUrl}/api/game`, {
+        headers: {
+          'x-test-user': 'alice',
+          'x-mudd-world-instance': ORRAVETH_WORLD_INSTANCE_ID,
+        },
+      });
+      expect(common.status).toBe(200);
+      expect((await common.json()).dailyActivities.boards).toContainEqual(
+        expect.objectContaining({ id: 'bellwold-notice-board' }),
+      );
+    } finally {
+      character.locationId = originalLocationId;
+      state.world.locations.splice(0, state.world.locations.length, ...originalLocations);
+    }
+  });
+
+  it('fails explicitly when a character row has no creation event in its stream', async () => {
+    state.streamlessCharacterIds.add('character-alice');
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const response = await fetch(`${baseUrl}/api/characters`, {
+        headers: { 'x-test-user': 'alice' },
+      });
+      const body = await response.json() as { requestId: string };
+
+      expect(response.status).toBe(500);
+      expect(body.requestId).toBe(response.headers.get('x-request-id'));
+      expect(errorLog).toHaveBeenCalledOnce();
+    } finally {
+      state.streamlessCharacterIds.clear();
+      errorLog.mockRestore();
+    }
+  });
+
+  it('fails explicitly when an owned character references an unregistered world', async () => {
+    state.characterWorldInstanceOverrides.set('character-alice', 'missing-world');
+
+    const response = await fetch(`${baseUrl}/api/characters`, {
+      headers: { 'x-test-user': 'alice' },
+    });
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toMatchObject({
+      requestId: response.headers.get('x-request-id'),
+    });
+  });
+
   it('reports unavailable characters and location/stat projection failures in game snapshots', async () => {
     await enterWorld('alice', 'character-alice');
     const getGame = () => fetch(`${baseUrl}/api/game`, {
@@ -1401,6 +1760,88 @@ describe('NPC room announcements through the server', () => {
       headers: { 'x-test-user': 'alice' },
     });
     expect(noLongerInWorld.status).toBe(409);
+  });
+
+  it('rejects archived or defeated heartbeat characters and handles stream failures', async () => {
+    await enterWorld('alice', 'character-alice');
+    const character = state.characters['character-alice'];
+    const savedCharacter = structuredClone(character);
+    const heartbeat = () => fetch(`${baseUrl}/api/world-session/heartbeat`, {
+      method: 'POST',
+      headers: { 'x-test-user': 'alice' },
+    });
+
+    try {
+      Object.assign(character, { archived: true });
+      const archived = await heartbeat();
+      expect(archived.status).toBe(409);
+      expect(await archived.json()).toEqual({
+        message: 'Enter the world with an active character before sending presence.',
+      });
+
+      Object.assign(character, { archived: false, health: { current: 0 } });
+      const defeated = await heartbeat();
+      expect(defeated.status).toBe(409);
+      expect(await defeated.json()).toEqual({
+        message: 'Your character has died. Start a new character to begin again.',
+      });
+    } finally {
+      state.characters['character-alice'] = savedCharacter;
+    }
+
+    state.readStreamError = new Error('Heartbeat stream read failed.');
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const failed = await heartbeat();
+      expect(failed.status).toBe(500);
+      expect(await failed.json()).toMatchObject({ requestId: expect.any(String) });
+      expect(errorLog).toHaveBeenCalledOnce();
+    } finally {
+      state.readStreamError = null;
+      errorLog.mockRestore();
+    }
+  });
+
+  it('returns a conflict when a stale heartbeat cannot re-read its character', async () => {
+    await enterWorld('alice', 'character-alice');
+    const session = state.sessions.get('player-alice') as { lastSeenAt: Date };
+    session.lastSeenAt = new Date(Date.now() - 60_000);
+    state.readStreamSequence.push(state.characters['character-alice'], null);
+
+    const response = await fetch(`${baseUrl}/api/world-session/heartbeat`, {
+      method: 'POST',
+      headers: { 'x-test-user': 'alice' },
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      message: 'Your character is no longer available.',
+    });
+  });
+
+  it('retries stamina-anchor conflicts and safely reports exhaustion', async () => {
+    await enterWorld('alice', 'character-alice');
+    const session = state.sessions.get('player-alice') as { lastSeenAt: Date };
+    session.lastSeenAt = new Date(Date.now() - 60_000);
+    const commandCount = state.systemCommands.length;
+    state.systemCommandResults.push(
+      { receipt: { ok: false, code: 'VERSION_CONFLICT', message: 'revision changed' } },
+      { receipt: { ok: false, code: 'VERSION_CONFLICT', message: 'revision changed' } },
+      { receipt: { ok: false, code: 'VERSION_CONFLICT', message: 'revision changed' } },
+    );
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const response = await fetch(`${baseUrl}/api/world-session/heartbeat`, {
+        method: 'POST',
+        headers: { 'x-test-user': 'alice' },
+      });
+
+      expect(response.status).toBe(500);
+      expect(state.systemCommands).toHaveLength(commandCount + 3);
+      expect(errorLog).toHaveBeenCalledOnce();
+    } finally {
+      errorLog.mockRestore();
+    }
   });
 
   it('refreshes stale presence and resets recovery when heartbeating or re-entering', async () => {
@@ -1818,6 +2259,38 @@ describe('NPC room announcements through the server', () => {
     expect(await successful.json()).toMatchObject({ ok: true, value: { party: null } });
   });
 
+  it('uses the current request ID when an internal query error has no correlation ID', async () => {
+    await enterWorld('alice', 'character-alice');
+    state.queryOverrides.set('party.info', {
+      ok: false,
+      code: 'INTERNAL_ERROR',
+      message: 'The query failed without a correlation ID.',
+    });
+    try {
+      const response = await fetch(`${baseUrl}/api/queries`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-test-user': 'alice',
+        },
+        body: JSON.stringify({
+          type: 'party.info',
+          version: 1,
+          queryId: 'uncorrelated-internal-query',
+          worldInstanceId: instanceId,
+          characterId: 'character-alice',
+          payload: {},
+        }),
+      });
+
+      expect(response.status).toBe(500);
+      const body = await response.json() as { requestId: string };
+      expect(body.requestId).toBe(response.headers.get('x-request-id'));
+    } finally {
+      state.queryOverrides.delete('party.info');
+    }
+  });
+
   it('returns safe status codes and request IDs for unexpected route errors', async () => {
     await enterWorld('alice', 'character-alice');
     const query = {
@@ -1923,6 +2396,143 @@ describe('NPC room announcements through the server', () => {
       expect.any(Error),
     );
     errorLog.mockRestore();
+  });
+
+  it('lists recovery sessions and reports stamina scheduler failures', async () => {
+    const scheduler = state.staminaSchedulers[0];
+    if (!scheduler) throw new Error('Stamina recovery scheduler was not registered.');
+
+    await enterWorld('alice', 'character-alice');
+    const sessions = await scheduler.options.listSessions();
+    expect(sessions).toHaveLength(1);
+    expect(await scheduler.options.listSessions(new Date())).toBeDefined();
+
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      scheduler.options.onError(new Error('recovery failure'), 'character-alice');
+      expect(errorLog).toHaveBeenCalledWith(
+        expect.stringContaining('character character-alice'),
+        expect.any(Error),
+      );
+    } finally {
+      errorLog.mockRestore();
+    }
+  });
+
+  it('checks registered-world access and character ownership against the account', async () => {
+    const authorization = state.engineAuthorizations[0] as {
+      canAccessInstance: (session: { worldInstanceId: string }, id: string) => Promise<boolean>;
+      ownsCharacter: (session: {
+        sessionId: string;
+        playerId: string;
+        actorId: string;
+        worldInstanceId: string;
+        grantedPermissions: never[];
+        authenticated: true;
+        selectedCharacterId?: string;
+      }, characterId: string) => Promise<boolean>;
+    } | undefined;
+    if (!authorization) throw new Error('World runtime authorization was not registered.');
+
+    expect(await authorization.canAccessInstance({ worldInstanceId: instanceId }, instanceId)).toBe(true);
+    expect(await authorization.canAccessInstance({ worldInstanceId: instanceId }, 'missing-world')).toBe(false);
+
+    const session = {
+      sessionId: 'session-one',
+      playerId: 'player-alice',
+      actorId: 'player-alice',
+      worldInstanceId: instanceId,
+      grantedPermissions: [] as never[],
+      authenticated: true as const,
+    };
+    expect(await authorization.ownsCharacter(session, 'character-alice')).toBe(true);
+    expect(await authorization.ownsCharacter(session, 'character-bob')).toBe(false);
+  });
+
+  it('reports lifecycle failures with or without a specific world object', () => {
+    const onError = state.objectLifecycleErrorHandlers[0];
+    if (!onError) throw new Error('Object lifecycle scheduler was not registered.');
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      onError(new Error('decay failure'), instanceId, 'corpse-1');
+      onError(new Error('cleanup failure'), instanceId);
+
+      expect(errorLog).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining('Could not expire world object corpse-1'),
+        expect.any(Error),
+      );
+      expect(errorLog).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining(`Could not expire world object in ${instanceId}`),
+        expect.any(Error),
+      );
+    } finally {
+      errorLog.mockRestore();
+    }
+  });
+
+  it('expires and cancels stale interaction requests on the scheduled maintenance tick', async () => {
+    const callback = state.intervalCallbacks.find(({ delay }) => delay === 2_000)?.callback;
+    if (!callback) throw new Error('Interaction-maintenance interval was not registered.');
+    await enterWorld('alice', 'character-alice');
+    (state.sessions.get('player-alice') as { lastSeenAt: Date }).lastSeenAt = new Date();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    state.interactionMaintenanceRequests.push(
+      {
+        requestId: 'already-settled',
+        status: 'accepted',
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        initiatorCharacterId: 'character-alice',
+        recipientCharacterId: 'character-bob',
+      },
+      {
+        requestId: 'expired-request',
+        status: 'pending',
+        expiresAt: new Date(Date.now() - 1_000).toISOString(),
+        initiatorCharacterId: 'character-alice',
+        recipientCharacterId: 'character-bob',
+      },
+      {
+        requestId: 'offline-recipient',
+        status: 'pending',
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        initiatorCharacterId: 'character-alice',
+        recipientCharacterId: 'character-bob',
+      },
+    );
+
+    callback();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(state.interactionStatusUpdates.map(([, , requestId, status]) => [requestId, status])).toEqual([
+      ['expired-request', 'expired'],
+      ['offline-recipient', 'cancelled'],
+    ]);
+
+    state.interactionStatusUpdates.length = 0;
+    state.interactionMaintenanceRequests.length = 0;
+    let releaseRead: () => void = () => undefined;
+    state.readStreamGate = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    callback();
+    callback();
+    releaseRead();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    state.readStreamGate = null;
+    expect(state.interactionStatusUpdates).toEqual([]);
+
+    state.readStreamError = new Error('Interaction stream read failed.');
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      callback();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(errorLog).toHaveBeenCalledWith('Could not process pending player interaction requests.');
+    } finally {
+      state.readStreamError = null;
+      errorLog.mockRestore();
+    }
   });
 
   afterAll(async () => {

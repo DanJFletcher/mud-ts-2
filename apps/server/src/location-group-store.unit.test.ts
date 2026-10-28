@@ -226,4 +226,29 @@ describe('PostgresLocationGroupCatalogStore unit behavior', () => {
     // The first catalog was evicted, so it needs fresh group and membership reads.
     expect(mockDb.select).toHaveBeenCalledTimes(102);
   });
+
+  it('replaces a catalog with no groups without issuing empty inserts', async () => {
+    const tx = {
+      update: vi.fn(() => ({
+        set: () => ({
+          where: () => ({ returning: async () => [{ revision: 8 }] }),
+        }),
+      })),
+      delete: vi.fn(() => ({ where: vi.fn(async () => undefined) })),
+      insert: vi.fn(),
+    };
+    setTransaction(tx);
+
+    const result = await new PostgresLocationGroupCatalogStore()
+      .replace('orraveth', '1.0.0', 7, []);
+
+    expect(result).toEqual({
+      packId: 'orraveth',
+      packVersion: '1.0.0',
+      revision: 8,
+      groups: [],
+    });
+    expect(tx.delete).toHaveBeenCalledOnce();
+    expect(tx.insert).not.toHaveBeenCalled();
+  });
 });

@@ -124,7 +124,14 @@ export async function runReadOnlyDbBenchmark(config: BenchmarkConfig): Promise<v
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const config = readBenchmarkConfig(process.env);
-  await runReadOnlyDbBenchmark(config);
+export async function runReadOnlyDbBenchmarkCli(
+  argv: string | undefined,
+  moduleUrl: string,
+  env: NodeJS.ProcessEnv,
+): Promise<void> {
+  if (argv && moduleUrl === pathToFileURL(argv).href) {
+    await runReadOnlyDbBenchmark(readBenchmarkConfig(env));
+  }
 }
+
+await runReadOnlyDbBenchmarkCli(process.argv[1], import.meta.url, process.env);

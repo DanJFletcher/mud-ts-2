@@ -67,6 +67,18 @@ describe('account and guest session identity', () => {
     mockDb.transaction.mockImplementation(async (run: (transaction: typeof tx) => Promise<unknown>) => run(tx));
   });
 
+  it('refuses to load guest identity handling without a session secret', async () => {
+    vi.stubEnv('SESSION_SECRET', '');
+    vi.resetModules();
+    try {
+      await expect(import('./session-service.js'))
+        .rejects.toThrow('SESSION_SECRET is required to preserve existing guest accounts.');
+    } finally {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    }
+  });
+
   it('returns no identity for an unauthenticated request without a guest cookie', async () => {
     await expect(getAccountIdentity({ headers: {} }, { userId: null, sessionId: null }))
       .resolves.toBeUndefined();
@@ -156,6 +168,23 @@ describe('account and guest session identity', () => {
     expect(tx.delete).toHaveBeenCalledTimes(2);
   });
 
+  it('does not migrate a guest profile that another request already claimed', async () => {
+    dbSelectRows.push(
+      [guestRow()],
+      [{ id: 'account-2', displayName: 'Account Traveler' }],
+    );
+    txSelectRows.push([]);
+
+    const identity = await getAccountIdentity(
+      { headers: { cookie: cookie('guest-token') } },
+      clerk,
+    );
+
+    expect(identity).toMatchObject({ playerId: 'account-2', clearGuestCookie: true });
+    expect(tx.update).not.toHaveBeenCalled();
+    expect(tx.delete).not.toHaveBeenCalled();
+  });
+
   it('creates a Clerk profile when the transaction finds no prior profile', async () => {
     const created = { id: 'new-account', displayName: 'Traveler ABCD' };
     dbSelectRows.push([]);
@@ -165,6 +194,14 @@ describe('account and guest session identity', () => {
 
     expect(identity).toMatchObject({ playerId: created.id, displayName: created.displayName });
     expect(tx.insert).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails explicitly when a newly inserted Clerk profile cannot be read back', async () => {
+    dbSelectRows.push([], []);
+    txSelectRows.push([], []);
+
+    await expect(getAccountIdentity({ headers: {} }, clerk))
+      .rejects.toThrow('Could not create the account profile.');
   });
 
   it('uses a profile created by a racing transaction', async () => {

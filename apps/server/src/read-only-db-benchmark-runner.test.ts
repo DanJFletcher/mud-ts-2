@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const { database } = vi.hoisted(() => ({
   database: {
@@ -19,7 +20,10 @@ const { database } = vi.hoisted(() => ({
 
 vi.mock('./db/client.js', () => ({ pool: database.pool }));
 
-import { runReadOnlyDbBenchmark } from './read-only-db-benchmark.js';
+import {
+  runReadOnlyDbBenchmark,
+  runReadOnlyDbBenchmarkCli,
+} from './read-only-db-benchmark.js';
 
 describe('read-only database benchmark runner', () => {
   beforeEach(() => {
@@ -34,7 +38,16 @@ describe('read-only database benchmark runner', () => {
     database.client.query.mockResolvedValue({ rows: [] });
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
 
-    await runReadOnlyDbBenchmark({ target: 'development', samples: 10 });
+    const sourcePath = fileURLToPath(new URL('./read-only-db-benchmark.ts', import.meta.url));
+    await runReadOnlyDbBenchmarkCli(
+      sourcePath,
+      pathToFileURL(sourcePath).href,
+      {
+        MUDD_DB_BENCHMARK: '1',
+        MUDD_DB_BENCHMARK_TARGET: 'development',
+        MUDD_DB_BENCHMARK_SAMPLES: '10',
+      },
+    );
 
     expect(database.pool.query).toHaveBeenCalledTimes(1);
     expect(database.pool.connect).toHaveBeenCalledTimes(15);
@@ -81,6 +94,7 @@ describe('read-only database benchmark runner', () => {
     database.pool.connect.mockResolvedValue(database.client);
     database.client.query.mockImplementation(async (query: string) => {
       if (query === 'SELECT 1') throw new Error('read failed');
+      if (query === 'ROLLBACK') throw new Error('rollback failed');
       return { rows: [] };
     });
 

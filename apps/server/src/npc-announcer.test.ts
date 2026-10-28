@@ -2,6 +2,21 @@ import { describe, expect, it, vi } from 'vitest';
 import { createNpcRoomAnnouncer } from './npc-announcer.js';
 
 describe('NPC room announcements', () => {
+  it('skips NPCs without announcement text', async () => {
+    const publish = vi.fn();
+    const announce = createNpcRoomAnnouncer(publish);
+    const baseNpc = {
+      worldInstanceId: 'mudd-demo-instance',
+      roomId: 'mossgate-clearing',
+      npcId: 'mara-waykeeper',
+      npcName: 'Mara',
+    };
+
+    await expect(announce({ ...baseNpc, announcements: [] })).resolves.toBe(false);
+    await expect(announce({ ...baseNpc, announcements: [''] })).resolves.toBe(false);
+    expect(publish).not.toHaveBeenCalled();
+  });
+
   it('publishes an announcement on room entry, observes a cooldown, then cycles the line', async () => {
     let currentTime = 1_000;
     const publish = vi.fn().mockResolvedValue(undefined);

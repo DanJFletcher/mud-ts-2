@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   databaseMeasurementContext,
+  eventLoopDelayMs,
   formatDatabaseOperationTimings,
   measureDatabaseOperation,
   newMeasurements,
@@ -13,12 +14,13 @@ import {
 describe('database operation measurements', () => {
   it('keeps operation labels isolated across concurrent database work', async () => {
     const measurements = newMeasurements();
+    measurements.traceId = 'trace-performance-test';
     await requestMeasurements.run(measurements, async () => {
       await Promise.all([
         measureDatabaseOperation('account.clerk_profile_lookup', async () => {
           const context = databaseMeasurementContext();
           recordDatabaseQueryStart(context);
-          recordDatabaseQueryFinish(context, 12.34);
+          recordDatabaseQueryFinish(context, 12.34, 'select-account');
           recordDatabasePoolWait(context, 2.1);
         }),
         measureDatabaseOperation('room_chat.authorized_history_read', async () => {
@@ -47,6 +49,7 @@ describe('database operation measurements', () => {
       poolWaitMs: 0.7,
       maxPoolWaitMs: 0.7,
     });
+    expect(measurements.queryTimings).toEqual([{ fingerprint: 'select-account', durationMs: 12.3 }]);
   });
 
   it('aggregates repeated calls by static operation name for compact logs', async () => {
@@ -97,5 +100,33 @@ describe('database operation measurements', () => {
       await expect(measureDatabaseOperation('account.user-123', async () => undefined))
         .rejects.toThrow('Database operation names must be registered, static labels.');
     });
+  });
+
+  it('uses pool wait as the tie-breaker when operation query times are equal', async () => {
+    const measurements = newMeasurements();
+    await requestMeasurements.run(measurements, async () => {
+      await measureDatabaseOperation('account.clerk_profile_lookup', async () => {
+        const context = databaseMeasurementContext();
+        recordDatabaseQueryFinish(context, 5);
+        recordDatabasePoolWait(context, 1);
+      });
+      await measureDatabaseOperation('room_chat.authorized_history_read', async () => {
+        const context = databaseMeasurementContext();
+        recordDatabaseQueryFinish(context, 5);
+        recordDatabasePoolWait(context, 2);
+      });
+    });
+
+    expect(formatDatabaseOperationTimings(measurements).map(({ operation }) => operation)).toEqual([
+      'room_chat.authorized_history_read',
+      'account.clerk_profile_lookup',
+    ]);
+  });
+
+  it('returns event-loop delay readings as milliseconds', () => {
+    const delay = eventLoopDelayMs();
+
+    expect(typeof delay.p95).toBe('number');
+    expect(typeof delay.max).toBe('number');
   });
 });

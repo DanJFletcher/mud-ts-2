@@ -100,4 +100,32 @@ describe('object lifecycle scheduler', () => {
     await scheduler.run();
     expect(claimDueObjectLifecycles).toHaveBeenCalledTimes(1);
   });
+
+  it('runs a scheduled poll and clears its timer when stopped', async () => {
+    const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
+    const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval');
+    const runtimes = [runtime({ dispatchSystem: vi.fn() })];
+    const claimDueObjectLifecycles = vi.fn(async () => []);
+    const scheduler = createObjectLifecycleScheduler({
+      runtimes,
+      store: {
+        claimDueObjectLifecycles,
+        releaseObjectLifecycleClaim: vi.fn(async () => undefined),
+      } as unknown as PostgresEventStore,
+    });
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const scheduledPoll = setIntervalSpy.mock.calls.at(-1)?.[0] as () => void;
+      scheduledPoll();
+      await vi.waitFor(() => expect(claimDueObjectLifecycles).toHaveBeenCalledTimes(2));
+
+      scheduler.stop();
+      expect(clearIntervalSpy).toHaveBeenCalledOnce();
+    } finally {
+      scheduler.stop();
+      setIntervalSpy.mockRestore();
+      clearIntervalSpy.mockRestore();
+    }
+  });
 });

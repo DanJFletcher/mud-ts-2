@@ -246,7 +246,64 @@ describe('autonomous NPC scheduler and room movement messages', () => {
     expect(onError).toHaveBeenLastCalledWith(expect.any(Error), expect.any(String));
   });
 
-  it('starts and stops its polling timer idempotently', () => {
+  it('uses the default clock and skips NPCs without movement definitions', async () => {
+    const staticLocation = demoWorld.locations.find((location) =>
+      location.npcs?.some((npc) => !npc.movement),
+    );
+    const stationaryNpc = staticLocation?.npcs?.find((npc) => !npc.movement);
+    if (!staticLocation || !stationaryNpc) throw new Error('Expected a stationary demo NPC.');
+    const store = { readStream: vi.fn() } as unknown as EventStorePort;
+    const engine = { dispatchSystem: vi.fn() } as unknown as EngineHost;
+    const scheduler = createAutonomousNpcScheduler({
+      engine,
+      store,
+      world: {
+        ...demoWorld,
+        locations: [{ ...staticLocation, npcs: [stationaryNpc] }],
+      } as WorldPackDraft,
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+    });
+
+    await expect(scheduler.tick()).resolves.toBe(0);
+    expect(store.readStream).not.toHaveBeenCalled();
+    expect(engine.dispatchSystem).not.toHaveBeenCalled();
+  });
+
+  it('skips a concurrent tick while the current tick is still reading an NPC stream', async () => {
+    const movingLocation = demoWorld.locations.find((location) =>
+      location.npcs?.some((npc) => npc.movement),
+    );
+    const movingNpc = movingLocation?.npcs?.find((npc) => npc.movement);
+    if (!movingLocation || !movingNpc) throw new Error('Expected a moving demo NPC.');
+    let finishRead: ((events: never[]) => void) | undefined;
+    const store = {
+      readStream: vi.fn(() => new Promise<never[]>((resolve) => {
+        finishRead = resolve;
+      })),
+    } as unknown as EventStorePort;
+    const engine = {
+      dispatchSystem: vi.fn(async () => ({
+        receipt: { ok: false, code: 'VERSION_CONFLICT', message: 'Already moved.' },
+      })),
+    } as unknown as EngineHost;
+    const scheduler = createAutonomousNpcScheduler({
+      engine,
+      store,
+      world: {
+        ...demoWorld,
+        locations: [{ ...movingLocation, npcs: [movingNpc] }],
+      } as WorldPackDraft,
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+    });
+
+    const firstTick = scheduler.tick();
+    await expect(scheduler.tick()).resolves.toBe(0);
+    finishRead?.([]);
+    expect(await firstTick).toBe(1);
+    expect(engine.dispatchSystem).toHaveBeenCalledOnce();
+  });
+
+  it('starts and stops its polling timer idempotently', async () => {
     const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
     const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval');
     const engine = { dispatchSystem: vi.fn() } as unknown as EngineHost;
@@ -262,6 +319,9 @@ describe('autonomous NPC scheduler and room movement messages', () => {
       scheduler.start();
       scheduler.start();
       expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+      const intervalCallback = setIntervalSpy.mock.calls[0]?.[0] as () => void;
+      intervalCallback();
+      await Promise.resolve();
 
       scheduler.stop();
       scheduler.stop();

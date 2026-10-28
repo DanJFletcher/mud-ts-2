@@ -21,7 +21,11 @@ import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import { ORRAVETH_WORLD_INSTANCE_ID, orravethWorld } from '@mudd/world-orraveth';
 import { MuddHttpClient } from '@mudd/client-sdk';
 import { projectWorldMap } from './world-map-projection.js';
-import { CharacterProjectionSchema, CharacterStatsQuerySchema } from '@mudd/contracts';
+import {
+  CharacterProjectionSchema,
+  CharacterStatsQuerySchema,
+  type WorldPackDraft,
+} from '@mudd/contracts';
 
 const session = {
   sessionId: 'world-map-session',
@@ -68,6 +72,66 @@ async function moveAlongRoad(
 }
 
 describe('visited world map projection', () => {
+  it('rejects a character location that is not in the world pack', () => {
+    const character = CharacterProjectionSchema.parse({
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: 'missing-map-location-character',
+      name: 'Missing Room',
+      locationId: 'not-in-this-world',
+      visitedLocationIds: [],
+      revision: 1,
+    });
+
+    expect(() => projectWorldMap(character)).toThrow(/location absent from the world/i);
+  });
+
+  it('deduplicates same-direction exit stubs and ignores self-connections', () => {
+    const world = {
+      ...demoWorld,
+      locations: [
+        {
+          id: 'current-room',
+          name: 'Current Room',
+          mapPosition: { x: 0, y: 0 },
+          exits: [
+            { id: 'north-a', fromLocationId: 'current-room', toLocationId: 'unseen-a', direction: 'north' },
+            { id: 'north-b', fromLocationId: 'current-room', toLocationId: 'unseen-b', direction: 'north' },
+            { id: 'self-east', fromLocationId: 'current-room', toLocationId: 'current-room', direction: 'east' },
+          ],
+        },
+        {
+          id: 'unseen-a',
+          name: 'Unseen A',
+          mapPosition: { x: 0, y: 1 },
+          exits: [],
+        },
+        {
+          id: 'unseen-b',
+          name: 'Unseen B',
+          mapPosition: { x: 1, y: 0 },
+          exits: [],
+        },
+      ],
+    } as WorldPackDraft;
+    const character = CharacterProjectionSchema.parse({
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: 'deduplicated-exit-character',
+      name: 'Exit Tester',
+      locationId: 'current-room',
+      visitedLocationIds: ['current-room'],
+      revision: 1,
+    });
+
+    const map = projectWorldMap(character, world);
+
+    expect(map.exitStubs).toEqual([{
+      locationId: 'current-room',
+      direction: 'north',
+      oneWay: true,
+    }]);
+    expect(map.connections).toEqual([]);
+  });
+
   it('shows a directional exit stub without exposing its undiscovered destination', () => {
     const source = demoWorld.locations.find(({ id }) => id === 'mossgate-clearing')!;
     const exit = source.exits.find(({ direction }) =>

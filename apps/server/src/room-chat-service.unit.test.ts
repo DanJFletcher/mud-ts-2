@@ -172,6 +172,39 @@ describe('room-chat-service unit behavior', () => {
     expect(tx.insert).toHaveBeenCalledTimes(1);
   });
 
+  it('publishes a new NPC room message and returns its public projection', async () => {
+    const inserted = chatRow({
+      id: 13,
+      playerId: null,
+      submissionId: null,
+      speakerType: 'npc',
+      speakerId: 'orin-vale',
+      speakerName: 'Orin Vale',
+      message: 'The river runs high today.',
+    });
+    const insert = vi.fn(() => ({
+      values: () => ({ returning: async () => [inserted] }),
+    }));
+    const tx = setTransaction([], { insert });
+
+    const message = await publishNpcRoomMessage({
+      worldInstanceId: 'world-1',
+      roomId: 'market-square',
+      npcId: 'orin-vale',
+      npcName: 'Orin Vale',
+      text: 'The river runs high today.',
+    });
+
+    expect(message).toMatchObject({
+      id: 13,
+      roomId: 'market-square',
+      speakerType: 'npc',
+      speakerName: 'Orin Vale',
+      text: 'The river runs high today.',
+    });
+    expect(tx.insert).toHaveBeenCalledOnce();
+  });
+
   it('stops player chat when the session no longer authorizes the character', async () => {
     const tx = setTransaction([[]]);
 

@@ -13,6 +13,39 @@ const reaction = {
 };
 
 describe('NPC room-chat reactions', () => {
+  it('ignores blank messages and coalesces duplicate in-flight reactions', async () => {
+    let finishPublishing: (() => void) | undefined;
+    const publish = vi.fn(async (input: {
+      worldInstanceId: string;
+      roomId: string;
+      npcId: string;
+      npcName: string;
+      text: string;
+    }) => {
+      await new Promise<void>((resolve) => {
+        finishPublishing = resolve;
+      });
+      return {
+        id: 1,
+        roomId: input.roomId,
+        speakerType: 'npc' as const,
+        speakerName: input.npcName,
+        text: input.text,
+        createdAt: '2026-10-18T00:00:00.000Z',
+      };
+    });
+    const react = createNpcRoomChatReactor(publish);
+
+    await expect(react({ ...reaction, playerMessage: '   ' })).resolves.toBeUndefined();
+    const first = react({ ...reaction, playerMessage: 'The weathered marker points east.' });
+    await expect(react({ ...reaction, playerMessage: 'The weathered marker points east.' }))
+      .resolves.toBeUndefined();
+    expect(publish).toHaveBeenCalledOnce();
+
+    finishPublishing?.();
+    await expect(first).resolves.toMatchObject({ text: 'The marker still points east.' });
+  });
+
   it('publishes the first authored response whose keyword matches the public message', async () => {
     const publish = vi.fn(async (input: {
       worldInstanceId: string;

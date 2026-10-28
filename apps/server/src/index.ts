@@ -10,7 +10,6 @@ import {
   formatDatabaseOperationTimings,
   eventLoopDelayMs,
 } from './performance.js';
-import { fileURLToPath } from 'node:url';
 import cors from 'cors';
 import { getAuth, clerkMiddleware } from '@clerk/express';
 import { publishableKeyFromHost } from '@clerk/shared/keys';
@@ -36,6 +35,7 @@ import {
   type LocationGroupDefinition,
 } from '@mudd/contracts';
 import { WorldQuerySchema } from './world-query-schema.js';
+import { installProductionWebServing } from './web-serving.js';
 import { projectQuestJournal, replayCharacter as reconstructCharacter, SYSTEM_ACTOR_ID } from '@mudd/engine-core';
 import {
   interactionStreamId,
@@ -1141,24 +1141,7 @@ app.post('/api/queries', async (req, res, next) => {
 });
 
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
-if (process.env.NODE_ENV === 'production') {
-  const webDistDirectory = fileURLToPath(new URL('../../web/dist/', import.meta.url));
-  const webIndexFile = fileURLToPath(new URL('../../web/dist/index.html', import.meta.url));
-  app.use(express.static(webDistDirectory));
-  app.use((req, res, next) => {
-    if (
-      req.method !== 'GET' ||
-      req.path === '/api' ||
-      req.path.startsWith('/api/') ||
-      !req.accepts('html')
-    ) {
-      return next();
-    }
-    return res.sendFile(webIndexFile, (error) => {
-      if (error) next(error);
-    });
-  });
-}
+installProductionWebServing(app, express.static, process.env.NODE_ENV === 'production', import.meta.url);
 app.use((error: unknown, _req: Request, res: Response, _next: express.NextFunction) => {
   const requestId = String(res.locals.requestId ?? 'unknown');
   console.error(`[${requestId}] Request failed`, error);

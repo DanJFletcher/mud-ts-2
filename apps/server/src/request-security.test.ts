@@ -38,7 +38,10 @@ describe('request security policy', () => {
     expect(originIsAllowed('https://play.example.test', request, origins)).toBe(true);
     expect(originIsAllowed('https://attacker.example', request, origins)).toBe(false);
     expect(originIsAllowed('null', request, origins)).toBe(false);
+    expect(originIsAllowed('not a URL', request, origins)).toBe(false);
+    expect(originIsAllowed('https://game.example.test/path', request, origins)).toBe(false);
     expect(() => parseAllowedOrigins('https://example.test/path')).toThrow(/bare HTTP\(S\) origins/i);
+    expect(() => parseAllowedOrigins('not a URL')).toThrow();
   });
 
   it('includes the exact Replit development origin without widening the allowlist', () => {
@@ -102,6 +105,7 @@ describe('request security policy', () => {
     expect(parseTrustedHosts('game.example.test, play.example.test')).toEqual(
       new Set(['game.example.test', 'play.example.test']),
     );
+    expect(() => parseAllowedOrigins(undefined, 'bad domain')).toThrow(/must be hostnames/i);
   });
 
   it('rejects unconfigured host and forwarded-host values', () => {
@@ -123,5 +127,10 @@ describe('request security policy', () => {
       allowedNext,
     );
     expect(allowedNext).toHaveBeenCalledOnce();
+  });
+
+  it('rejects invalid rate limiter settings', () => {
+    expect(() => createRateLimiter({ maxRequests: 0, windowMs: 1_000 })).toThrow();
+    expect(() => createRateLimiter({ maxRequests: 1, windowMs: 0 })).toThrow();
   });
 });
