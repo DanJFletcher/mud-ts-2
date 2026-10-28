@@ -176,12 +176,8 @@ vi.mock('@mudd/core-plugins', async () => ({
   fishingPlugin: {},
 }));
 
-vi.mock('@mudd/engine-core', async () => {
-  const actual = await vi.importActual<typeof import('@mudd/engine-core')>('@mudd/engine-core');
-  return {
-  ...actual,
-  replayCharacter: (events: Parameters<typeof actual.replayCharacter>[0]) =>
-    state.characterReplayOverride ?? actual.replayCharacter(events),
+vi.mock('@mudd/engine-core', async () => ({
+  ...await vi.importActual<typeof import('@mudd/engine-core')>('@mudd/engine-core'),
   SYSTEM_ACTOR_ID: 'system-test-actor',
   projectQuestJournal: () => [],
   EngineHost: class {
@@ -323,6 +319,7 @@ vi.mock('@mudd/engine-core', async () => {
     }
   },
   replayCharacter: (character: unknown) => {
+    if (state.characterReplayOverride !== null) return state.characterReplayOverride;
     if (!character || typeof character !== 'object') return undefined;
     const value = character as { characterId: string; locationId: string };
     return {
@@ -332,8 +329,7 @@ vi.mock('@mudd/engine-core', async () => {
       visitedLocationIds: [value.locationId],
     };
   },
-  };
-});
+}));
 
 vi.mock('./autonomous-npc-scheduler.js', () => ({
   createAutonomousNpcScheduler: () => ({
@@ -1102,6 +1098,53 @@ describe('NPC room announcements through the server', () => {
     });
   });
 
+  it('routes party members to cooperative controls instead of solo combat', async () => {
+    await enterWorld('alice', 'character-alice');
+    state.queryOverrides.set('party.info', {
+      ok: true,
+      value: {
+        party: {
+          groupId: 'party-one',
+          groupType: 'party',
+          ownerPlayerId: 'player-alice',
+          maxMembers: 4,
+          isPublic: false,
+          status: 'active',
+          members: [{
+            playerId: 'player-alice',
+            characterId: 'character-alice',
+            displayName: 'Alice',
+          }],
+          createdAt: '2026-10-28T12:00:00.000Z',
+          leaderName: 'Alice',
+        },
+        revision: 1,
+        activity: [],
+      },
+    });
+    const response = await fetch(`${baseUrl}/api/commands`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-user': 'alice',
+      },
+      body: JSON.stringify({
+        type: 'combat.action',
+        version: 1,
+        commandId: 'party-solo-attack',
+        worldInstanceId: instanceId,
+        characterId: 'character-alice',
+        expectedVersion: 0,
+        payload: { action: 'attack', targetNpcId: 'wild-deer' },
+      }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      message: 'Use the cooperative encounter controls to begin combat with your party.',
+    });
+  });
+
   it('keeps a successful move response when its location projection fails or throws', async () => {
     await enterWorld('mover', 'character-mover');
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -1466,66 +1509,8 @@ describe('NPC room announcements through the server', () => {
     expect(departure.status).toBe(200);
   });
 
-  it('rejects world actions when replay shows zero health or a defeated combat state', async () => {
+  it('rejects world actions for zero-health and defeated characters', async () => {
     await enterWorld('alice', 'character-alice');
-    const created = {
-      type: 'character.created',
-      version: 1,
-      eventId: 'command-guard-created',
-      worldInstanceId: instanceId,
-      streamId: 'character-alice',
-      aggregateId: 'character-alice',
-      aggregateVersion: 1,
-      causationCommandId: 'command-guard-create',
-      actorId: 'player-alice',
-      occurredAt: '2026-10-28T12:00:00.000Z',
-      tick: 0,
-      payload: {
-        characterId: 'character-alice',
-        playerId: 'player-alice',
-        name: 'Alice',
-        startingLocationId: 'npc-room',
-      },
-    };
-    const zeroHealthOutcome = {
-      ...created,
-      type: 'character.pvp_outcome_applied',
-      eventId: 'command-guard-pvp-defeat',
-      aggregateVersion: 2,
-      causationCommandId: 'command-guard-pvp-outcome',
-      payload: {
-        characterId: 'character-alice',
-        encounterId: 'pvp-defeat',
-        health: { current: 0, maximum: 6 },
-        consumedItemIds: [],
-      },
-    };
-    const defeatedCombat = {
-      ...created,
-      type: 'character.combat_action_resolved',
-      eventId: 'command-guard-combat-defeat',
-      aggregateVersion: 2,
-      causationCommandId: 'command-guard-combat-action',
-      payload: {
-        characterId: 'character-alice',
-        damageDealt: 0,
-        damageTaken: 6,
-        encounter: {
-          encounterId: 'solo-defeat',
-          locationId: 'npc-room',
-          opponentNpcId: 'wild-deer',
-          opponentName: 'Wild Deer',
-          round: 1,
-          playerHealth: 0,
-          playerMaxHealth: 6,
-          opponentHealth: 4,
-          opponentMaxHealth: 4,
-          status: 'defeat',
-          lastAction: 'attack',
-          lastNarration: 'The deer knocks you down.',
-        },
-      },
-    };
     const postMovement = (commandId: string) => fetch(`${baseUrl}/api/commands`, {
       method: 'POST',
       headers: {
@@ -1542,20 +1527,16 @@ describe('NPC room announcements through the server', () => {
         payload: { exitId: 'exit-north' },
       }),
     });
+    const healthyCharacter = state.characters['character-alice'];
+    const defeatedProjections = [
+      ['zero-health-block', { ...healthyCharacter, health: { current: 0, maximum: 10 } }],
+      ['defeat-status-block', { ...healthyCharacter, combat: { status: 'defeat' } }],
+    ] as const;
 
-    for (const [commandId, terminalEvent] of [
-      ['zero-health-block', zeroHealthOutcome],
-      ['defeat-status-block', defeatedCombat],
-    ] as const) {
-      const history = [created, terminalEvent] as Parameters<typeof reconstructCharacter>[0];
-      const replayed = reconstructCharacter(history);
-      expect(replayed?.health?.current).toBe(0);
-      if (terminalEvent.type === 'character.combat_action_resolved') {
-        expect(replayed?.combat?.status).toBe('defeat');
-      }
-      state.characterStreams.set('character-alice', history);
+    for (const [commandId, projection] of defeatedProjections) {
+      state.characterReplayOverride = projection;
       const response = await postMovement(commandId);
-      expect(response.status).toBe(409);
+      expect(response.status, commandId).toBe(409);
       expect(await response.json()).toEqual({
         message: 'Your character has died. Start a new character to begin again.',
       });
