@@ -252,6 +252,58 @@ describe('character event replay validation', () => {
     ])).toThrow(/unsupported event type/i);
   });
 
+  it('rejects every non-creation event when the stream has no character yet', () => {
+    const eventTypes = [
+      'character.supply_gathered',
+      'character.fishing_cast_started',
+      'character.fishing_cast_advanced',
+      'character.woodcutting_action_started',
+      'character.woodcutting_action_advanced',
+      'character.daily_job_changed',
+      'character.class_selected',
+      'character.ability_resource_spent',
+      'character.wallet_initialized',
+      'character.merchant_item_purchased',
+      'character.crafting_completed',
+      'character.inn_rest_completed',
+      'character.stamina_spent',
+      'character.stamina_recovery_settled',
+      'character.vital_recovery_settled',
+      'character.posture_changed',
+      'character.combat_encounter_started',
+      'character.combat_action_resolved',
+      'character.advancement_awarded',
+      'character.combat_item_used',
+      'character.pvp_outcome_applied',
+      'character.team_combat_outcome_applied',
+      'character.respawned',
+      'character.shared_item_received',
+      'character.shared_item_relinquished',
+      'character.moved',
+      'character.item_taken',
+      'character.item_granted',
+      'character.item_dropped',
+      'character.item_stored',
+      'character.equipment_changed',
+      'character.item_used',
+      'character.object_read',
+      'character.npc_dialogue_choice_made',
+      'character.npc_dialogue_restarted',
+      'quest.accepted',
+      'quest.completed',
+      'character.corpse_gold_received',
+      'character.quest_rewarded',
+      'character.renamed',
+      'character.archived',
+      'character.restored',
+    ];
+
+    for (const type of eventTypes) {
+      expect(() => replayCharacter([event(type, 1, {})]), type)
+        .toThrow(/before (character )?creation/i);
+    }
+  });
+
   it('validates rename payloads against the event contract', () => {
     expect(() => replayCharacter([
       created,
