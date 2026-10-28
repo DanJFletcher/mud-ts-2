@@ -342,6 +342,33 @@ describe('character event replay validation', () => {
     ])).toThrow(/non-contiguous aggregate revision/i);
   });
 
+  it('replays wallet initialization once and rejects duplicates or mismatched owners', () => {
+    const wallet = event('character.wallet_initialized', 2, {
+      characterId: 'character-test',
+      wallet: { currencyId: 'gold', balance: 12 },
+    });
+
+    expect(replayCharacter([created, wallet])?.wallet).toEqual({
+      currencyId: 'gold',
+      balance: 12,
+    });
+    expect(() => replayCharacter([
+      created,
+      wallet,
+      event('character.wallet_initialized', 3, {
+        characterId: 'character-test',
+        wallet: { currencyId: 'gold', balance: 12 },
+      }),
+    ])).toThrow(/invalid wallet initialization/i);
+    expect(() => replayCharacter([
+      created,
+      event('character.wallet_initialized', 2, {
+        characterId: 'different-character',
+        wallet: { currencyId: 'gold', balance: 12 },
+      }),
+    ])).toThrow(/invalid wallet initialization/i);
+  });
+
   it('replays version-1 combat events as steady-style encounters', () => {
     const legacyCombat = event('character.combat_action_resolved', 2, {
       characterId: 'character-test',

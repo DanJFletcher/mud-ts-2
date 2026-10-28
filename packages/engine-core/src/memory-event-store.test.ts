@@ -57,4 +57,61 @@ describe('InMemoryEventStore stream revisions', () => {
     expect(streams.get(second.streamId)?.[0]?.payload).toEqual({ position: 'south' });
     expect(streams.get('world-npc:missing')).toEqual([]);
   });
+
+  it('rejects reused command IDs with changed payloads and stale stream revisions', async () => {
+    const store = new InMemoryEventStore();
+    const request = {
+      worldInstanceId: 'idempotency-test-world',
+      streamId: 'character-one',
+      actorId: 'idempotency-test-actor',
+      commandId: 'idempotency-test-command',
+      payloadHash: 'original-payload',
+      expectedVersion: 0,
+      events: [{ type: 'character.test', version: 1, payload: { value: 'first' } }],
+    };
+
+    await store.append(request);
+    const reusedId = await store.append({ ...request, payloadHash: 'different-payload' });
+    expect(reusedId).toMatchObject({
+      kind: 'conflict',
+      receipt: { ok: false, code: 'INVALID_COMMAND' },
+    });
+
+    const staleVersion = await store.append({
+      ...request,
+      commandId: 'new-command',
+      payloadHash: 'new-payload',
+    });
+    expect(staleVersion).toMatchObject({
+      kind: 'conflict',
+      receipt: { ok: false, code: 'VERSION_CONFLICT' },
+    });
+  });
+
+  it('requires event batches for every atomic write', async () => {
+    const store = new InMemoryEventStore();
+    const request = {
+      worldInstanceId: 'atomic-empty-test-world',
+      streamId: 'encounter',
+      actorId: 'atomic-empty-test-actor',
+      commandId: 'atomic-empty-test-command',
+      payloadHash: 'atomic-empty-test-hash',
+      expectedVersion: 0,
+      events: [{ type: 'encounter.test', version: 1, payload: {} }],
+    };
+
+    await expect(store.append({
+      ...request,
+      companions: [{ streamId: 'character', expectedVersion: 0, events: [] }],
+    })).rejects.toThrow('Atomic writes must contain events.');
+    await expect(store.append({
+      ...request,
+      events: [],
+      companions: [{
+        streamId: 'character',
+        expectedVersion: 0,
+        events: [{ type: 'character.test', version: 1, payload: {} }],
+      }],
+    })).rejects.toThrow('Atomic writes must contain events.');
+  });
 });

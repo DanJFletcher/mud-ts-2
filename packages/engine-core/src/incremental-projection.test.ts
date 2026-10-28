@@ -30,4 +30,24 @@ describe('incremental shared projection', () => {
     history[0]!.n = 3;
     expect(project(history).sum).toBe(3);
   });
+
+  it('returns an isolated selected view from a retained checkpoint', () => {
+    let reductions = 0;
+    const project = createIncrementalProjection(
+      () => ({ sum: 0 }),
+      (state, e: StoredGameEvent) => {
+        reductions++;
+        state.sum += Number(e.payload.n);
+      },
+    );
+    const history = [event(7)];
+    retainCharacterReplayPrefix(history);
+
+    const selected = project.select(history, (state) => ({ sum: state.sum }));
+    expect(selected).toEqual({ sum: 7 });
+    selected.sum = -1;
+
+    expect(project.select(history, (state) => ({ sum: state.sum }))).toEqual({ sum: 7 });
+    expect(reductions).toBe(1);
+  });
 });

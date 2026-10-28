@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
   world: {
     packId: 'npc-announcement-test-pack',
     packVersion: '1.0.0',
+    currency: undefined as { id: string; name: string; symbol: string } | undefined,
     locationGroups: [],
     dailyBoards: [],
     supplySources: [],
@@ -157,6 +158,15 @@ const state = vi.hoisted(() => ({
   interactionRequestWorldId: '',
   interactionStatusUpdates: [] as unknown[][],
   intervalCallbacks: [] as Array<{ delay: number; callback: () => void }>,
+  processPendingEffectsError: null as Error | null,
+  processPendingEffectsGate: null as Promise<void> | null,
+  processPendingEffectsStarted: 0,
+  guestIdentityError: null as Error | null,
+  deleteSessionError: null as Error | null,
+  realtimeNotificationCallbacks: null as null | {
+    invalidate: (change: unknown) => void;
+    refresh: () => void;
+  },
 }));
 
 const announcementState = vi.hoisted(() => ({ attempts: 0 }));
@@ -303,6 +313,13 @@ vi.mock('@mudd/engine-core', async () => ({
       return { ok: true, value: { encounter: null } };
     }
     async processPendingEffects() {
+      state.processPendingEffectsStarted += 1;
+      if (state.processPendingEffectsGate) await state.processPendingEffectsGate;
+      if (state.processPendingEffectsError) {
+        const error = state.processPendingEffectsError;
+        state.processPendingEffectsError = null;
+        throw error;
+      }
       while (state.pendingEffects.length) {
         const effect = state.pendingEffects.shift();
         if (!effect) continue;
@@ -327,6 +344,10 @@ vi.mock('@mudd/engine-core', async () => ({
       if (nextCommandResult) {
         state.nextCommandResult = null;
         return nextCommandResult;
+      }
+      if (command.type === 'character.wallet.initialize' && command.characterId) {
+        const character = state.characters[command.characterId as keyof typeof state.characters];
+        if (character) character.wallet = { currencyId: 'test-currency', balance: 10 };
       }
       if (command.type === 'character.move' && command.characterId && command.payload?.exitId) {
         const prior = state.moveReceipts.get(command.commandId ?? '');
@@ -419,7 +440,13 @@ vi.mock('./room-presence-service.js', () => ({
   },
 }));
 vi.mock('./realtime-notifications.js', () => ({
-  startRealtimeNotifications: () => vi.fn(),
+  startRealtimeNotifications: (
+    invalidate: (change: unknown) => void,
+    refresh: () => void,
+  ) => {
+    state.realtimeNotificationCallbacks = { invalidate, refresh };
+    return vi.fn();
+  },
 }));
 
 vi.mock('./npc-announcer.js', async (importOriginal) => {
@@ -579,6 +606,11 @@ vi.mock('./db/client.js', async () => {
   });
   const deleteRows = (table: { [key: symbol]: unknown }) => ({
     where: async (condition: unknown) => {
+      if (state.deleteSessionError) {
+        const error = state.deleteSessionError;
+        state.deleteSessionError = null;
+        throw error;
+      }
       if (table[Symbol.for('drizzle:BaseName')] !== 'world_sessions') return;
       const filters = filtersFor(condition);
       for (const [playerId, session] of state.sessions) {
@@ -828,6 +860,11 @@ vi.mock('./persistence/postgres-event-store.js', () => ({
 vi.mock('./session-service.js', () => ({
   expiredGuestCookie: '',
   createGuestIdentity: async () => {
+    if (state.guestIdentityError) {
+      const error = state.guestIdentityError;
+      state.guestIdentityError = null;
+      throw error;
+    }
     const playerId = 'player-guest';
     const identity = {
       playerId,
@@ -953,7 +990,13 @@ describe('NPC room announcements through the server', () => {
     state.nextCommandResult = null;
     state.dispatchError = null;
     state.interactionMaintenanceRequests.length = 0;
+    state.interactionRequestWorldId = instanceId;
     state.interactionStatusUpdates.length = 0;
+    state.processPendingEffectsError = null;
+    state.processPendingEffectsGate = null;
+    state.processPendingEffectsStarted = 0;
+    state.guestIdentityError = null;
+    state.deleteSessionError = null;
     announcementState.attempts = 0;
     state.characters['character-alice'].locationId = 'npc-room';
     state.characters['character-bob'].locationId = 'npc-room';
@@ -991,6 +1034,58 @@ describe('NPC room announcements through the server', () => {
     expect(await guestSession.json()).toEqual({
       message: 'Sign out before starting a guest session.',
     });
+  });
+
+  it('routes guest-session creation failures through standard error handling', async () => {
+    state.guestIdentityError = new Error('Guest identity unavailable.');
+
+    const response = await fetch(`${baseUrl}/api/guest-session`, { method: 'POST' });
+
+    expect(response.status).toBe(500);
+  });
+
+  it('emits structured measurements for an explicitly traced snapshot request', async () => {
+    const traceId = '3b47bd31-7242-40fb-9d8f-4d3a1d9f6e4f';
+    const infoLog = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    try {
+      const response = await fetch(`${baseUrl}/api/game`, {
+        headers: {
+          'x-test-user': 'alice',
+          'x-mudd-trace-id': traceId,
+          'x-mudd-trace-phase': 'snapshot',
+        },
+      });
+      expect(response.status).toBe(409);
+      await response.json();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(response.headers.get('x-mudd-trace-id')).toBe(traceId);
+      expect(infoLog).toHaveBeenCalledWith(expect.stringContaining('"event":"mudd_traced_http_request"'));
+    } finally {
+      infoLog.mockRestore();
+    }
+  });
+
+  it('forwards session-entry and session-leave storage failures to error handling', async () => {
+    state.readStreamError = new Error('Character history unavailable.');
+    const entry = await fetch(`${baseUrl}/api/world-session`, {
+      method: 'POST',
+      headers: {
+        'x-test-user': 'alice',
+        'x-mudd-world-instance': instanceId,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ characterId: 'character-alice' }),
+    });
+    expect(entry.status).toBe(500);
+
+    state.readStreamError = null;
+    state.deleteSessionError = new Error('Session storage unavailable.');
+    const leave = await fetch(`${baseUrl}/api/world-session`, {
+      method: 'DELETE',
+      headers: { 'x-test-user': 'alice', 'x-mudd-world-instance': instanceId },
+    });
+    expect(leave.status).toBe(500);
   });
 
   it('lists registered worlds without requiring an account', async () => {
@@ -1661,6 +1756,44 @@ describe('NPC room announcements through the server', () => {
     }
   });
 
+  it('initializes a missing wallet when building a snapshot for a currency world', async () => {
+    await enterWorld('alice', 'character-alice');
+    const character = state.characters['character-alice'];
+    const originalWallet = character.wallet;
+    const originalCurrency = state.world.currency;
+    const originalSupplySources = state.world.supplySources.slice();
+
+    try {
+      character.wallet = undefined as never;
+      state.world.currency = { id: 'test-currency', name: 'Gold', symbol: 'g' };
+      state.world.supplySources.push({
+        id: 'npc-room-supply',
+        locationId: 'npc-room',
+        label: 'Test supply source',
+        dailyLimit: 1,
+        supply: { typeId: 'test-item', label: 'Test item', description: 'A test supply.' },
+      } as never);
+
+      const response = await fetch(`${baseUrl}/api/game`, {
+        headers: { 'x-test-user': 'alice', 'x-mudd-world-instance': instanceId },
+      });
+
+      expect(response.status).toBe(200);
+      const snapshot = await response.json();
+      expect(snapshot.currency).toEqual({ id: 'test-currency', name: 'Gold', symbol: 'g' });
+      expect(snapshot.character.wallet).toEqual({ currencyId: 'test-currency', balance: 10 });
+      expect(character.wallet).toEqual({ currencyId: 'test-currency', balance: 10 });
+      expect(snapshot.dailyActivities.sources).toContainEqual(expect.objectContaining({
+        id: 'npc-room-supply',
+        locationId: 'npc-room',
+      }));
+    } finally {
+      character.wallet = originalWallet;
+      state.world.currency = originalCurrency;
+      state.world.supplySources.splice(0, state.world.supplySources.length, ...originalSupplySources);
+    }
+  });
+
   it('fails explicitly when a character row has no creation event in its stream', async () => {
     state.streamlessCharacterIds.add('character-alice');
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -1842,6 +1975,64 @@ describe('NPC room announcements through the server', () => {
     } finally {
       errorLog.mockRestore();
     }
+  });
+
+  it('reports non-conflict stamina-anchor failures without retrying them', async () => {
+    await enterWorld('alice', 'character-alice');
+    const session = state.sessions.get('player-alice') as { lastSeenAt: Date };
+    session.lastSeenAt = new Date(Date.now() - 60_000);
+    const commandCount = state.systemCommands.length;
+    state.systemCommandResults.push({
+      receipt: { ok: false, code: 'RULE_VIOLATION', message: 'Recovery is unavailable.' },
+    });
+
+    const response = await fetch(`${baseUrl}/api/world-session/heartbeat`, {
+      method: 'POST',
+      headers: { 'x-test-user': 'alice' },
+    });
+
+    expect(response.status).toBe(500);
+    expect(state.systemCommands).toHaveLength(commandCount + 1);
+  });
+
+  it('logs durable-effect failures and prevents overlapping batches', async () => {
+    await enterWorld('alice', 'character-alice');
+    const request = () => fetch(`${baseUrl}/api/world-session`, {
+      method: 'POST',
+      headers: {
+        'x-test-user': 'alice',
+        'x-mudd-world-instance': instanceId,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ characterId: 'character-alice' }),
+    });
+
+    state.processPendingEffectsError = new Error('effect storage unavailable');
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const failureResponse = await request();
+      expect(failureResponse.status).toBe(200);
+      expect(errorLog).toHaveBeenCalledWith('Could not process durable event effects.');
+    } finally {
+      errorLog.mockRestore();
+    }
+
+    let releaseBatch: () => void = () => undefined;
+    state.processPendingEffectsGate = new Promise<void>((resolve) => {
+      releaseBatch = resolve;
+    });
+    const startedBefore = state.processPendingEffectsStarted;
+    const first = request();
+    for (let attempt = 0; attempt < 20 && state.processPendingEffectsStarted === startedBefore; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    expect(state.processPendingEffectsStarted).toBeGreaterThan(startedBefore);
+
+    const secondResponse = await request();
+    expect(secondResponse.status).toBe(200);
+    releaseBatch();
+    expect((await first).status).toBe(200);
+    state.processPendingEffectsGate = null;
   });
 
   it('refreshes stale presence and resets recovery when heartbeating or re-entering', async () => {
@@ -2383,6 +2574,44 @@ describe('NPC room announcements through the server', () => {
       headers: { Origin: baseUrl, Cookie: cookie! },
     });
     expect(await closeCode(unauthorizedWorldSocket, true)).toBe(1005);
+
+    await enterWorld('alice', 'character-alice');
+    const liveSocket = new WebSocket(`${websocketUrl}?world=${encodeURIComponent(instanceId)}`, {
+      headers: { Origin: baseUrl, 'x-test-user': 'alice' },
+    });
+    const frames: Array<{ type?: string }> = [];
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Realtime subscription did not resync.')), 3_000);
+        liveSocket.on('message', (data) => {
+          const frame = JSON.parse(data.toString()) as { type?: string };
+          frames.push(frame);
+          if (frame.type === 'resync_required') {
+            clearTimeout(timeout);
+            resolve();
+          }
+        });
+        liveSocket.once('error', reject);
+        liveSocket.once('open', () => liveSocket.send(JSON.stringify({
+          type: 'subscribe',
+          version: 1,
+          channels: ['chat', 'presence', 'interactions', 'party', 'team', 'character'],
+        })));
+      });
+      expect(frames.map(({ type }) => type)).toContain('ready');
+      expect(frames.map(({ type }) => type)).toContain('resync_required');
+
+      const notifications = state.realtimeNotificationCallbacks;
+      if (!notifications) throw new Error('Realtime notification callbacks were not registered.');
+      notifications.invalidate({ world: instanceId, kind: 'room', roomId: 'npc-room' });
+      notifications.refresh();
+    } finally {
+      if (liveSocket.readyState !== WebSocket.CLOSED) {
+        const closed = once(liveSocket, 'close');
+        liveSocket.close();
+        await closed;
+      }
+    }
   });
 
   it('reports autonomous scheduler errors', async () => {

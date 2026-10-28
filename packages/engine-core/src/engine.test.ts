@@ -217,6 +217,108 @@ describe('MUDD engine host', () => {
     await expect(engine.stop()).resolves.toBeUndefined();
   });
 
+  it('rejects invalid plugin registrations and incompatible declared capabilities', () => {
+    const host = (plugins: EnginePlugin[]) => new EngineHost(
+      plugins,
+      new InMemoryEventStore(),
+      authorization,
+      demoWorld,
+    );
+    const plugin = (
+      id: string,
+      register: EnginePlugin['register'],
+      manifest: Partial<EnginePlugin['manifest']> = {},
+    ): EnginePlugin => ({
+      manifest: { id, version: '1.0.0', apiVersion: '1.0', category: 'core', ...manifest },
+      register,
+    });
+
+    const handler = async () => ({ streamId: 'test', expectedVersion: 0, events: [] });
+    const commandSchema = z.object({ type: z.string() });
+    const duplicateCommand = plugin('test.duplicate-command', ({ registerCommand }) => {
+      registerCommand('duplicate', commandSchema, handler);
+      registerCommand('duplicate', commandSchema, handler);
+    });
+    expect(() => host([duplicateCommand])).toThrow('Duplicate command registration');
+
+    const duplicateSystemCommand = plugin('test.duplicate-system-command', ({ registerSystemCommand }) => {
+      registerSystemCommand('duplicate', commandSchema, handler);
+      registerSystemCommand('duplicate', commandSchema, handler);
+    });
+    expect(() => host([duplicateSystemCommand])).toThrow('Duplicate command registration');
+
+    const invalidSubscription = plugin('test.invalid-subscription', ({ registerEventHandler }) => {
+      registerEventHandler('', 0, z.object({}), async () => undefined);
+    });
+    expect(() => host([invalidSubscription])).toThrow('Invalid event subscription');
+
+    const v1 = { id: 'mudd.test.versioned', version: '1' } as const satisfies CapabilityToken<{ ready: boolean }>;
+    const v2 = { id: 'mudd.test.versioned', version: '2' } as const satisfies CapabilityToken<{ ready: boolean }>;
+    expect(() => host([plugin('test.require-version', ({ provideCapability, requireCapability }) => {
+      provideCapability(v1, { ready: true });
+      requireCapability(v2);
+    })])).toThrow('requires version 2');
+    expect(() => host([plugin('test.optional-version', ({ provideCapability, optionalCapability }) => {
+      provideCapability(v1, { ready: true });
+      optionalCapability(v2);
+    })])).toThrow('requires version 2');
+
+    expect(() => host([plugin('test.missing-capability', () => undefined, {
+      requires: ['mudd.test.not-provided'],
+    })])).toThrow('requires missing capability');
+    const unsafeVersion = plugin('test.unsafe-version', () => undefined, {
+      version: '9007199254740992.0.0',
+    });
+    const versionConsumer = plugin('test.version-consumer', () => undefined, {
+      requiredPlugins: { 'test.unsafe-version': '*' },
+    });
+    expect(() => host([unsafeVersion, versionConsumer])).toThrow('version components must be safe integers');
+  });
+
+  it('rejects invalid secure RNG bounds and effect processing limits', async () => {
+    const plugin: EnginePlugin = {
+      manifest: {
+        id: 'test.invalid-roll',
+        version: '1.0.0',
+        apiVersion: '1.0',
+        category: 'core',
+      },
+      register({ registerCommand }) {
+        registerCommand('test.invalid-roll', z.object({
+          type: z.literal('test.invalid-roll'),
+          version: z.literal(1),
+          commandId: z.string(),
+          worldInstanceId: z.string(),
+        }), async (_command, context) => {
+          context.rng.roll(0);
+          return { streamId: 'test-character', expectedVersion: 0, events: [] };
+        });
+      },
+    };
+    const engine = new EngineHost([plugin], new InMemoryEventStore(), authorization, demoWorld);
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await engine.start();
+    try {
+      await expect(engine.processPendingEffects(0)).rejects.toThrow(
+        'Effect processing limit must be an integer from 1 to 500.',
+      );
+      const result = await engine.dispatch({
+        type: 'test.invalid-roll',
+        version: 1,
+        commandId: 'invalid-roll-command',
+        worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      }, session, 'invalid-roll-correlation');
+      expect(result.receipt).toMatchObject({ ok: false, code: 'INTERNAL_ERROR' });
+      expect(errorLog).toHaveBeenCalledWith(
+        '[invalid-roll-correlation] Engine command failed',
+        expect.any(RangeError),
+      );
+    } finally {
+      errorLog.mockRestore();
+      await engine.stop();
+    }
+  });
+
   it('retries versioned durable effects without duplicating a command effect', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-18T12:00:00.000Z'));
