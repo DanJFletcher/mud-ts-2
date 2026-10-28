@@ -35,20 +35,27 @@ function createAppendTransaction(options: {
   heads?: Array<{ streamId: string; revision: number }>;
   persistedCounts?: Array<{ eventCount: number; receiptCount: number }>;
   failOnInsertIndex?: number;
+  activeSession?: boolean;
 } = {}) {
   const persistedValues: unknown[] = [];
   const ctes: unknown[] = [];
+  const upserts: Array<{ values: unknown; conflict: unknown }> = [];
+  const updates: Array<{ table: unknown; values: unknown; condition: unknown }> = [];
   let insertIndex = 0;
+  let selectIndex = 0;
   const tx = {
     execute: vi.fn(async () => undefined),
-    select: vi.fn(() => ({
-      from: () => ({
-        where: () => ({
-          limit: async () => [],
-          groupBy: async () => options.heads ?? [],
+    select: vi.fn(() => {
+      const index = selectIndex++;
+      return {
+        from: () => ({
+          where: () => ({
+            limit: async () => options.activeSession && index === 2 ? [{ id: 'session-1' }] : [],
+            groupBy: async () => options.heads ?? [],
+          }),
         }),
-      }),
-    })),
+      };
+    }),
     insert: vi.fn(() => {
       const index = insertIndex++;
       return {
@@ -57,11 +64,23 @@ function createAppendTransaction(options: {
           if (index === options.failOnInsertIndex) throw new Error('durable effect insert failed');
           return {
             returning: () => ({ values }),
-            onConflictDoUpdate: () => Promise.resolve(),
+            onConflictDoUpdate: (conflict: unknown) => {
+              upserts.push({ values, conflict });
+              return Promise.resolve();
+            },
+            onConflictDoNothing: () => Promise.resolve(),
           };
         },
       };
     }),
+    update: vi.fn((table: unknown) => ({
+      set: (values: unknown) => ({
+        where: (condition: unknown) => {
+          updates.push({ table, values, condition });
+          return Promise.resolve();
+        },
+      }),
+    })),
     $with: vi.fn((name: string) => ({
       as: (query: unknown) => {
         const cte = { name, query };
@@ -77,7 +96,7 @@ function createAppendTransaction(options: {
       }),
     })),
   };
-  return { tx, persistedValues, ctes };
+  return { tx, persistedValues, ctes, upserts, updates };
 }
 
 function basicAppendRequest(overrides: Partial<AppendRequest> = {}): AppendRequest {
@@ -451,6 +470,183 @@ describe('PostgresEventStore unit behavior', () => {
       'companion-after',
     ]);
     expect(mockDb.select).toHaveBeenCalledTimes(4);
+  });
+
+  it('persists every object lifecycle transition with its new revision', async () => {
+    const { tx, persistedValues, upserts, updates } = createAppendTransaction({
+      persistedCounts: [{ eventCount: 5, receiptCount: 1 }],
+    });
+    mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(tx));
+    const outcome = await new PostgresEventStore().append({
+      worldInstanceId: 'world-1',
+      streamId: 'world-object-lifecycle:corpse-1',
+      actorId: 'system',
+      commandId: 'lifecycle-transitions',
+      payloadHash: 'lifecycle-payload',
+      expectedVersion: 0,
+      events: [
+        {
+          type: 'world.object_lifecycle_scheduled',
+          version: 1,
+          payload: {
+            objectId: 'corpse-1',
+            objectType: 'corpse',
+            locationId: 'southbound-track',
+            createdAt: '2026-10-28T12:00:00.000Z',
+            expiresAt: '2026-10-28T12:01:00.000Z',
+          },
+        },
+        {
+          type: 'world.object_lifecycle_rescheduled',
+          version: 1,
+          payload: {
+            objectId: 'corpse-1',
+            objectType: 'corpse',
+            locationId: 'southbound-track',
+            expiresAt: '2026-10-28T12:02:00.000Z',
+          },
+        },
+        {
+          type: 'world.object_lifecycle_cancelled',
+          version: 1,
+          payload: {
+            objectId: 'corpse-1',
+            objectType: 'corpse',
+            locationId: 'southbound-track',
+          },
+        },
+        {
+          type: 'world.object_expiring',
+          version: 1,
+          payload: {
+            objectId: 'corpse-1',
+            objectType: 'corpse',
+            locationId: 'southbound-track',
+            expiresAt: '2026-10-28T12:02:00.000Z',
+          },
+        },
+        {
+          type: 'world.object_expired',
+          version: 1,
+          payload: {
+            objectId: 'corpse-1',
+            objectType: 'corpse',
+            locationId: 'southbound-track',
+            expiredAt: '2026-10-28T12:02:00.000Z',
+          },
+        },
+      ],
+    });
+
+    expect(outcome.kind).toBe('committed');
+    expect(upserts).toHaveLength(1);
+    expect(upserts[0]?.values).toMatchObject({
+      worldInstanceId: 'world-1',
+      objectId: 'corpse-1',
+      objectType: 'corpse',
+      locationId: 'southbound-track',
+      state: 'scheduled',
+      revision: 1,
+      attempts: 0,
+      leaseToken: null,
+      leaseUntil: null,
+    });
+    expect(upserts[0]?.conflict).toMatchObject({
+      set: {
+        objectType: 'corpse',
+        locationId: 'southbound-track',
+        state: 'scheduled',
+        revision: 1,
+        attempts: 0,
+        leaseToken: null,
+        leaseUntil: null,
+      },
+    });
+
+    const updatedLifecycleStates = updates.map(({ values }) =>
+      (values as { state: string; revision: number }).state);
+    const updatedLifecycleRevisions = updates.map(({ values }) =>
+      (values as { state: string; revision: number }).revision);
+    expect(updatedLifecycleStates).toEqual(['scheduled', 'cancelled', 'expiring', 'expired']);
+    expect(updatedLifecycleRevisions).toEqual([2, 3, 4, 5]);
+    expect((updates[2]?.values as { attempts?: unknown }).attempts).toBeDefined();
+    expect((updates[3]?.values as { locationId: string }).locationId).toBe('southbound-track');
+    expect(persistedValues).toHaveLength(3);
+  });
+
+  it('updates character metadata for create, rename, archive, and restore events', async () => {
+    const { tx, persistedValues, updates } = createAppendTransaction({
+      persistedCounts: [{ eventCount: 4, receiptCount: 1 }],
+    });
+    mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(tx));
+
+    const outcome = await new PostgresEventStore().append({
+      worldInstanceId: 'world-1',
+      streamId: 'character-1',
+      actorId: 'player-1',
+      commandId: 'character-lifecycle',
+      payloadHash: 'character-lifecycle-payload',
+      expectedVersion: 0,
+      events: [
+        {
+          type: 'character.created',
+          version: 1,
+          payload: {
+            characterId: 'character-1',
+            playerId: 'player-1',
+            name: 'Rowan',
+            startingLocationId: 'market-square',
+          },
+        },
+        {
+          type: 'character.renamed',
+          version: 1,
+          payload: { characterId: 'character-1', name: 'Rowan Vale' },
+        },
+        {
+          type: 'character.archived',
+          version: 1,
+          payload: { characterId: 'character-1' },
+        },
+        {
+          type: 'character.restored',
+          version: 1,
+          payload: { characterId: 'character-1' },
+        },
+      ],
+    });
+
+    expect(outcome.kind).toBe('committed');
+    expect(persistedValues[2]).toMatchObject({
+      id: 'character-1',
+      playerId: 'player-1',
+      worldInstanceId: 'world-1',
+      name: 'Rowan',
+    });
+    expect(updates.map(({ values }) => values)).toMatchObject([
+      { name: 'Rowan Vale' },
+      { archivedAt: expect.any(Date) },
+      { archivedAt: null },
+    ]);
+    expect(tx.select).toHaveBeenCalledTimes(3);
+  });
+
+  it('rejects character archival while an active world session exists', async () => {
+    const { tx } = createAppendTransaction({ activeSession: true });
+    mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(tx));
+
+    await expect(new PostgresEventStore().append(basicAppendRequest({
+      streamId: 'character-1',
+      commandId: 'archive-active-character',
+      events: [{
+        type: 'character.archived',
+        version: 1,
+        payload: { characterId: 'character-1' },
+      }],
+    }))).rejects.toThrow('Leave the world before archiving this character.');
+
+    expect(tx.select).toHaveBeenCalledTimes(3);
+    expect(tx.update).not.toHaveBeenCalled();
   });
 
   it('rebuilds a missing room-state projection from persisted character history', async () => {
