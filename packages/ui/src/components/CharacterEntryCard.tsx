@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { Children, type ReactNode } from 'react';
 import { Button } from './Button.js';
 
 /** A world-scoped character summary with an explicit primary entry action and optional management/form slots. */
@@ -23,6 +23,7 @@ export function CharacterEntryCard({
   disabled = false, busy = false, secondaryActions, children,
 }: CharacterEntryCardProps) {
   const details = [classLabel, typeof level === 'number' ? `Level ${level}` : undefined].filter(Boolean);
+  const content = Children.toArray(children);
   return (
     <article className={`mudd-character-entry${compact ? ' mudd-character-entry--compact' : ''}`}>
       <div className="mudd-character-entry__top">
@@ -46,7 +47,7 @@ export function CharacterEntryCard({
           {busy ? 'Opening world…' : actionLabel}
         </Button>
       </div>
-      {children ? <div className="mudd-character-entry__content">{children}</div> : null}
+      {content.length > 0 ? <div className="mudd-character-entry__content">{content}</div> : null}
     </article>
   );
 }

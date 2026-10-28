@@ -305,6 +305,15 @@ describe('@mudd/ui components', () => {
     expect(screen.queryByText('Your traveler')).not.toBeInTheDocument();
   });
 
+  it('does not render a divider for empty conditional content, but keeps real card content', () => {
+    const props = { name: 'Mira', statusLabel: 'Ready', actionLabel: 'Play as Mira', onPlay: () => undefined };
+    const { container, rerender } = render(<CharacterEntryCard {...props}>{false}{false}</CharacterEntryCard>);
+    expect(container.querySelector('.mudd-character-entry__content')).not.toBeInTheDocument();
+
+    rerender(<CharacterEntryCard {...props}><p>Rename this character</p></CharacterEntryCard>);
+    expect(container.querySelector('.mudd-character-entry__content')).toHaveTextContent('Rename this character');
+  });
+
   it('prevents entry while busy and announces the pending state', () => {
     const onPlay = vi.fn();
     render(<CharacterEntryCard name="Mira" statusLabel="Ready" actionLabel="Play" onPlay={onPlay} busy />);
