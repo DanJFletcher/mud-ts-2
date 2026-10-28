@@ -9,6 +9,8 @@ export interface CharacterEntryCardProps {
   level?: number;
   statusLabel: string;
   actionLabel: string;
+  actionAriaLabel?: string;
+  compact?: boolean;
   detailsHref?: string;
   detailsLabel?: string;
   onPlay: () => void;
@@ -19,12 +21,12 @@ export interface CharacterEntryCardProps {
 }
 
 export function CharacterEntryCard({
-  name, worldName, classLabel, level, statusLabel, actionLabel, detailsHref, detailsLabel = 'Details', onPlay,
+  name, worldName, classLabel, level, statusLabel, actionLabel, actionAriaLabel, compact = false, detailsHref, detailsLabel = 'Details', onPlay,
   disabled = false, busy = false, secondaryActions, children,
 }: CharacterEntryCardProps) {
   const details = [classLabel, typeof level === 'number' ? `Level ${level}` : undefined].filter(Boolean);
   return (
-    <article className="mudd-character-entry">
+    <article className={`mudd-character-entry${compact ? ' mudd-character-entry--compact' : ''}`}>
       <div className="mudd-character-entry__top">
         <div className="mudd-character-entry__identity">
           <p className="mudd-character-entry__eyebrow">{worldName || 'Your traveler'}</p>
@@ -40,6 +42,7 @@ export function CharacterEntryCard({
           onClick={onPlay}
           disabled={disabled || busy}
           aria-busy={busy || undefined}
+          aria-label={actionAriaLabel}
         >
           {busy ? 'Opening world…' : actionLabel}
         </Button>

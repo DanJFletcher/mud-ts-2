@@ -62,10 +62,10 @@ export function LobbyPage({ worldId }: { worldId?: string }) {
   function authLink() { rememberEntryIntent(worldId ? `${worldPath(worldId)}?create=1` : '/'); }
   const characters = worldId
     ? (state.roster?.characters ?? []).filter((character) => character.worldInstanceId === worldId && Boolean(character.archived) === showArchived)
-    : recentCharacters(state.roster?.characters ?? []).slice(0, 6);
-  const characterList = <div className="lobby-character-list">{characters.map((character) =>
+    : recentCharacters(state.roster?.characters ?? []).slice(0, 4);
+  const characterList = <div className={`lobby-character-list${worldId ? '' : ' lobby-character-list--recent'}`}>{characters.map((character) =>
     <CharacterCard key={character.characterId} character={character} active={activeId(character.worldInstanceId) === character.characterId}
-      pending={pending} onPlay={() => play(character)} onManage={manage} />,
+      pending={pending} compact={!worldId} onPlay={() => play(character)} onManage={manage} />,
   )}</div>;
   const errors = <>
     {error && <div className="lobby-error" role="alert">{error}</div>}

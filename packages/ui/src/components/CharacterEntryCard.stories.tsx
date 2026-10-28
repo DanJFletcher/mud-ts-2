@@ -20,6 +20,11 @@ type Story = StoryObj<typeof meta>;
 
 export const RecentCharacter: Story = {};
 export const CompactRosterRow: Story = {
+  args: {
+    compact: true,
+    actionLabel: 'Play',
+    actionAriaLabel: 'Play as Mira',
+  },
   parameters: { viewport: { defaultViewport: 'mobile1' } },
 };
 export const LoadingEntry: Story = { args: { busy: true } };

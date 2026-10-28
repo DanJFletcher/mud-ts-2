@@ -158,6 +158,21 @@ describe('world lobby and explicit character entry', () => {
     expect(calls('POST', '/api/world-session')).toHaveLength(0);
     expect(screen.getByRole('link', { name: /Orraveth: Bellwold/ })).toHaveAttribute('href', `/worlds/${orra}`);
   });
+  it('limits the home recent-character section to the four most recently played characters', async () => {
+    characters = Array.from({ length: 6 }, (_, index) => ({
+      ...fixture,
+      characterId: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      name: `Traveler ${index + 1}`,
+      lastPlayedAt: `2026-10-${String(index + 1).padStart(2, '0')}T10:00:00.000Z`,
+    }));
+    open();
+    await screen.findByRole('heading', { name: 'Recent characters' });
+    const recent = screen.getByRole('region', { name: 'Recent characters' });
+    expect(within(recent).getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual([
+      'Traveler 6', 'Traveler 5', 'Traveler 4', 'Traveler 3',
+    ]);
+    expect(within(recent).getAllByRole('heading', { level: 3 })).toHaveLength(4);
+  });
   it('browses anonymously without creating a guest and resolves direct world detail URLs', async () => {
     mocks.signedIn = false;
     open(`/worlds/${orra}`);

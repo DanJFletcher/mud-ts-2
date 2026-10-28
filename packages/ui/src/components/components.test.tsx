@@ -291,6 +291,15 @@ describe('@mudd/ui components', () => {
     expect(screen.getByRole('button', { name: 'Manage' })).toBeInTheDocument();
   });
 
+  it('keeps compact character actions visually short but accessibly named', () => {
+    render(<CharacterEntryCard
+      name="Mira" worldName="Orraveth" statusLabel="Ready"
+      actionLabel="Play" actionAriaLabel="Play as Mira" compact onPlay={() => undefined}
+    />);
+    expect(screen.getByRole('article')).toHaveClass('mudd-character-entry--compact');
+    expect(screen.getByRole('button', { name: 'Play as Mira' })).toHaveTextContent('Play');
+  });
+
   it('prevents entry while busy and announces the pending state', () => {
     const onPlay = vi.fn();
     render(<CharacterEntryCard name="Mira" statusLabel="Ready" actionLabel="Play" onPlay={onPlay} busy />);

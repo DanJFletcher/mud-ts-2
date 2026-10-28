@@ -66,6 +66,19 @@
 .mudd-character-entry__details-link:hover { color: var(--mudd-accent); }
 .mudd-character-entry__details-link:focus-visible { outline: 2px solid var(--mudd-warm); outline-offset: 3px; border-radius: .2rem; }
 .mudd-character-entry__content { min-width: 0; padding-top: .8rem; border-top: 1px solid var(--mudd-border); }
+@media (max-width: 700px) {
+  .mudd-character-entry--compact { gap: .38rem; padding: .52rem; }
+  .mudd-character-entry--compact .mudd-character-entry__top { gap: .28rem; }
+  .mudd-character-entry--compact .mudd-character-entry__eyebrow {
+    max-width: 100%; overflow: hidden; font-size: .58rem; letter-spacing: .055em; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .mudd-character-entry--compact .mudd-character-entry__name { font-size: .98rem; }
+  .mudd-character-entry--compact .mudd-character-entry__details { font-size: .7rem; }
+  .mudd-character-entry--compact .mudd-character-entry__status { padding: .12rem .3rem; font-size: .58rem; }
+  .mudd-character-entry--compact .mudd-character-entry__actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .2rem; }
+  .mudd-character-entry--compact .mudd-character-entry__action { width: 100%; min-width: 0; padding-inline: .38rem; font-size: .76rem; }
+  .mudd-character-entry--compact .mudd-character-entry__details-link { padding-inline: .12rem; font-size: .72rem; }
+}
 @media (max-width: 420px) {
   .mudd-world-card { min-height: 13rem; }
   .mudd-world-card__content { padding: 1rem; }
