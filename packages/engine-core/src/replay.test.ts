@@ -34,6 +34,46 @@ const created = event('character.created', 1, {
 });
 
 describe('character event replay validation', () => {
+  it('rejects a class creation event with attributes that differ from its recorded class snapshot', () => {
+    const attributes = { strength: 10, intelligence: 10, constitution: 10, dexterity: 10 };
+    const characterClass = {
+      id: 'replay-scout',
+      revision: 1,
+      catalogId: 'replay-catalog',
+      catalogRevision: 1,
+      label: 'Scout',
+      description: 'A replay fixture.',
+      primaryAttribute: 'dexterity',
+      attributes,
+      coreAction: {
+        id: 'replay-action',
+        revision: 1,
+        label: 'Quick strike',
+        description: 'A test action.',
+        cost: { resource: 'stamina', amount: 1 },
+        baseDamage: 1,
+        scalingAttribute: 'dexterity',
+        weaponBonus: false,
+      },
+    };
+
+    expect(() => replayCharacter([
+      event('character.created', 1, {
+        characterId: 'character-test',
+        playerId: 'player-test',
+        name: 'Rowan',
+        startingLocationId: 'mossgate-clearing',
+        attributes: { ...attributes, strength: 11 },
+        characterClass,
+        health: { current: 6, maximum: 6 },
+        resources: {
+          stamina: { current: 100, maximum: 100 },
+          mana: { current: 100, maximum: 100 },
+        },
+      }, 3),
+    ])).toThrow('Class creation attributes must match its recorded snapshot.');
+  });
+
   it('replays legacy stamina defaults, exact recovery, posture transitions, and movement restrictions', () => {
     const start = new Date('2026-10-18T12:00:00.000Z');
     const createdV2 = event('character.created', 1, {

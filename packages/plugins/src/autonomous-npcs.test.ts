@@ -240,6 +240,35 @@ describe('autonomous NPC position projection cache', () => {
     expect(projected.get('unrelated-room')).toEqual([]);
   });
 
+  it('fails open for an unknown movement strategy so a new policy cannot hide an NPC', async () => {
+    const npcId = 'future-policy-walker';
+    const streamId = autonomousNpcStreamId(npcId);
+    const readStreams = vi.fn(async (_worldId: string, streamIds: readonly string[]) =>
+      new Map(streamIds.map((id) => [id, []])),
+    );
+    const capability = captureNpcStateCapability();
+    const context = {
+      worldInstanceId: 'npc-unknown-policy-test',
+      world: {
+        locations: [{
+          id: 'remote-home',
+          npcs: [{
+            id: npcId,
+            name: 'Future policy walker',
+            description: 'A traveler with a new movement policy.',
+            movement: { strategy: 'future-policy' },
+          }],
+        }],
+      },
+      store: { readStreams },
+    } as never;
+
+    await capability.atLocations(context, ['requested-room']);
+
+    expect(readStreams).toHaveBeenCalledOnce();
+    expect(readStreams.mock.calls[0]?.[1]).toEqual([streamId]);
+  });
+
   it('reuses unchanged positions but replays when the authoritative revision changes', async () => {
     const npcId = 'test-wandering-npc';
     const streamId = autonomousNpcStreamId(npcId);
