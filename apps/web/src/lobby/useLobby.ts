@@ -44,15 +44,33 @@ export async function enterCharacter(
   navigate(playPath(characterWorld));
 }
 
-export function useLobby() {
+export function useLobby({ skipCatalog = false }: { skipCatalog?: boolean } = {}) {
   const { isLoaded, isSignedIn } = useUser();
   const [worlds, setWorlds] = useState<WorldSummary[]>([]);
   const [roster, setRoster] = useState<CharacterRosterSnapshot | null>(null);
   const [anonymous, setAnonymous] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [catalogLoading, setCatalogLoading] = useState(!skipCatalog);
+  const [rosterLoading, setRosterLoading] = useState(true);
   const [catalogError, setCatalogError] = useState('');
   const [rosterError, setRosterError] = useState('');
+  const loadCatalog = useCallback(async () => {
+    if (skipCatalog) {
+      setCatalogLoading(false);
+      return;
+    }
+    setCatalogLoading(true);
+    try {
+      const result = await worldClient().getWorlds();
+      setWorlds(result);
+      setCatalogError('');
+    } catch (error) {
+      setCatalogError(error instanceof Error ? error.message : 'Could not load worlds.');
+    } finally {
+      setCatalogLoading(false);
+    }
+  }, [skipCatalog]);
   const refreshRoster = useCallback(async () => {
+    setRosterLoading(true);
     try {
       const result = await worldClient().getCharacters();
       setRoster(result); setAnonymous(false); setRosterError('');
@@ -63,17 +81,28 @@ export function useLobby() {
       }
       setRosterError(error instanceof Error ? error.message : 'Could not load your characters.');
       throw error;
+    } finally {
+      setRosterLoading(false);
     }
   }, []);
   const reload = useCallback(async () => {
-    setLoading(true);
-    await Promise.all([
-      worldClient().getWorlds().then((value) => { setWorlds(value); setCatalogError(''); })
-        .catch((error: Error) => setCatalogError(error.message)),
-      refreshRoster().catch(() => undefined),
-    ]);
-    setLoading(false);
-  }, [refreshRoster]);
-  useEffect(() => { if (isLoaded) void reload(); }, [isLoaded, isSignedIn, reload]);
-  return { worlds, roster, anonymous, loading, catalogError, rosterError, refreshRoster, reload, isSignedIn };
+    await Promise.all([loadCatalog(), refreshRoster().catch(() => undefined)]);
+  }, [loadCatalog, refreshRoster]);
+  useEffect(() => { void loadCatalog(); }, [loadCatalog]);
+  useEffect(() => {
+    if (isLoaded) void refreshRoster().catch(() => undefined);
+  }, [isLoaded, isSignedIn, refreshRoster]);
+  return {
+    worlds,
+    roster,
+    anonymous,
+    loading: catalogLoading || rosterLoading,
+    catalogLoading,
+    rosterLoading,
+    catalogError,
+    rosterError,
+    refreshRoster,
+    reload,
+    isSignedIn,
+  };
 }

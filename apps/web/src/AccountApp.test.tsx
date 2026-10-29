@@ -164,6 +164,24 @@ describe('world lobby and explicit character entry', () => {
     expect(within(navigation!).getByRole('link', { name: 'Sign in' })).toHaveClass('lobby-desktop-nav-item');
   });
 
+  it('renders world discovery before the character roster request finishes', async () => {
+    holdRoster = true;
+    open();
+    expect(await screen.findByRole('heading', { name: 'Explore worlds' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /The Waystone Path/ })).toHaveAttribute('href', `/worlds/${demo}`);
+    expect(screen.getByRole('status')).toHaveTextContent('Checking your characters');
+    await waitFor(() => expect(releaseRoster).toBeDefined());
+    act(() => releaseRoster?.());
+    expect(await screen.findByRole('button', { name: 'Play as Rowan' })).toBeInTheDocument();
+  });
+
+  it('loads the character list without waiting for an unused world catalog', async () => {
+    open('/characters');
+    expect(await screen.findByRole('heading', { name: 'All characters' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Play as Rowan' })).toBeInTheDocument();
+    expect(calls('GET', '/api/worlds')).toHaveLength(0);
+  });
+
   it('orders real recent history ahead of legacy nulls without auto-entering an active session', async () => {
     sessions = [{ id: sessionId, characterId: one, worldInstanceId: demo }];
     open();

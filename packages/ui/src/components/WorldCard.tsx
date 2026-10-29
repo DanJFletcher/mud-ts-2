@@ -13,7 +13,8 @@ export function WorldCard({ name, summary, href, imageSrc }: WorldCardProps) {
   return (
     <a className={`mudd-world-card${imageSrc && !imageFailed ? ' has-art' : ' is-text-cover'}`} href={href}>
       {imageSrc && !imageFailed ? (
-        <img className="mudd-world-card__image" src={imageSrc} alt="" aria-hidden="true" onError={() => setImageFailed(true)} />
+        <img className="mudd-world-card__image" src={imageSrc} alt="" aria-hidden="true"
+          loading="lazy" decoding="async" onError={() => setImageFailed(true)} />
       ) : null}
       <span className="mudd-world-card__veil" aria-hidden="true" />
       <span className="mudd-world-card__content">

@@ -7,7 +7,7 @@ import { appHref, rememberEntryIntent, worldPath } from './navigation.js';
 import { recentCharacters, sortCharactersByActivity, useLobby, worldClient, enterCharacter, type LobbyCharacter } from './useLobby.js';
 
 export function LobbyPage({ worldId, showAllCharacters = false }: { worldId?: string; showAllCharacters?: boolean }) {
-  const state = useLobby();
+  const state = useLobby({ skipCatalog: showAllCharacters });
   const [, navigate] = useLocation();
   const search = useSearch();
   const [showArchived, setShowArchived] = useState(false);
@@ -93,7 +93,8 @@ export function LobbyPage({ worldId, showAllCharacters = false }: { worldId?: st
   const createSection = world && <section className="lobby-create" aria-labelledby="create-heading">
     <h2 id="create-heading">A new story in {world.name}</h2>
     <p>Each character belongs to one world. Your other travelers and their progress stay where they are.</p>
-    {!creating ? <Button disabled={pending || Boolean(state.rosterError)} onClick={() => navigate(`${worldPath(world.worldInstanceId)}?create=1`)}>Create new character</Button>
+    {!creating ? <Button disabled={pending || state.rosterLoading || Boolean(state.rosterError)} onClick={() => navigate(`${worldPath(world.worldInstanceId)}?create=1`)}>Create new character</Button>
+      : state.rosterLoading ? <p role="status">Checking your characters…</p>
       : !state.roster ? state.anonymous ? <div className="lobby-guest-choice">
         <p>Play as a guest, or sign in to keep your characters with an account. Guest characters are saved in this browser.</p>
         <div className="lobby-buttons">
@@ -118,7 +119,7 @@ export function LobbyPage({ worldId, showAllCharacters = false }: { worldId?: st
       </form>}
   </section>;
 
-  if (state.loading) return <AccountShell><p role="status">Loading worlds and characters…</p></AccountShell>;
+  if (state.catalogLoading) return <AccountShell><p role="status">Loading worlds…</p></AccountShell>;
   if (state.catalogError) return <AccountShell><h1>Worlds unavailable</h1><p role="alert">{state.catalogError}</p><Button onClick={() => void state.reload()}>Retry worlds</Button></AccountShell>;
   if (worldId && !world) return <AccountShell><h1>World not found</h1><p>This world is not available in the current catalog.</p><a href={appHref('/')}>Back to worlds</a></AccountShell>;
 
@@ -133,8 +134,8 @@ export function LobbyPage({ worldId, showAllCharacters = false }: { worldId?: st
     {state.roster && !state.isSignedIn && <p className="lobby-small">Guest characters · saved in this browser</p>}
     <section className="lobby-all-characters" aria-labelledby="all-characters-heading">
       <h2 id="all-characters-heading">Characters</h2>
-      {characterList}
-      {!characters.length && !state.rosterError && <div className="lobby-empty">
+      {state.rosterLoading ? <p role="status">Loading characters…</p> : characterList}
+      {!state.rosterLoading && !characters.length && !state.rosterError && <div className="lobby-empty">
         <h3>{state.roster ? 'No characters yet' : 'Characters are not available'}</h3>
         <p>{state.roster ? 'Explore a world to create your first character.' : 'Sign in or start a guest session from a world to see your characters here.'}</p>
         <div className="lobby-buttons">
@@ -154,8 +155,8 @@ export function LobbyPage({ worldId, showAllCharacters = false }: { worldId?: st
         <div className="lobby-section-heading"><h2 id="world-characters-heading">Your characters</h2>
           {state.roster && <Button variant="quiet" onClick={() => setShowArchived(!showArchived)}>{showArchived ? 'Show current characters' : 'Show archived'}</Button>}
         </div>
-        {characterList}
-        {!characters.length && !state.rosterError && <p className="lobby-empty">{showArchived ? 'No archived characters in this world.' : 'Your first story in this world starts here. Create a character below.'}</p>}
+         {state.rosterLoading ? <p role="status">Loading characters…</p> : characterList}
+         {!state.rosterLoading && !characters.length && !state.rosterError && <p className="lobby-empty">{showArchived ? 'No archived characters in this world.' : 'Your first story in this world starts here. Create a character below.'}</p>}
       </section>
       {createSection}
     </> : <>
@@ -173,8 +174,8 @@ export function LobbyPage({ worldId, showAllCharacters = false }: { worldId?: st
             <a className="lobby-all-characters-link" href={appHref('/characters')}>All characters</a>
           </div>
           {state.roster && !state.isSignedIn && <p className="lobby-small">Guest characters · saved in this browser</p>}
-          {characterList}
-          {!characters.length && !state.rosterError && <div className="lobby-empty"><h3>Your next traveler awaits</h3>
+           {state.rosterLoading ? <p role="status">Checking your characters…</p> : characterList}
+           {!state.rosterLoading && !characters.length && !state.rosterError && <div className="lobby-empty"><h3>Your next traveler awaits</h3>
             <p>Choose a world to create a character. You can play as a guest or sign in.</p>
             {state.anonymous && <a href={appHref('/sign-in')} onClick={() => rememberEntryIntent('/')}>Sign in for your saved characters</a>}
           </div>}

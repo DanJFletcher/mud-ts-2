@@ -68,6 +68,8 @@ describe('@mudd/ui components', () => {
     render(<WorldCard name="Orraveth" summary="A salt-road world." href="/worlds/orraveth" imageSrc="/missing.png" />);
     const link = screen.getByRole('link', { name: /Orraveth.*A salt-road world/i });
     expect(link).toHaveAttribute('href', '/worlds/orraveth');
+    expect(link.querySelector('img')).toHaveAttribute('loading', 'lazy');
+    expect(link.querySelector('img')).toHaveAttribute('decoding', 'async');
     fireEvent.error(link.querySelector('img')!);
     expect(link).toHaveClass('is-text-cover');
     expect(link.querySelector('img')).toBeNull();
