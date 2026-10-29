@@ -7,6 +7,8 @@ import {
   SYSTEM_ACTOR_ID,
   type EnginePlugin,
 } from './index.js';
+import { RuleViolationError } from './domain-error.js';
+import type { StoredEventEffect } from './types.js';
 import {
   autonomousNpcsPlugin,
   autonomousNpcStreamId,
@@ -138,6 +140,247 @@ async function moveAlongDemoRoad(
 }
 
 describe('MUDD engine host', () => {
+  it('stops initialized plugins in reverse order when startup fails', async () => {
+    const lifecycle: string[] = [];
+    const plugin = (
+      id: string,
+      start: EnginePlugin['start'],
+      stop: EnginePlugin['stop'],
+    ): EnginePlugin => ({
+      manifest: {
+        id,
+        version: '1.0.0',
+        apiVersion: '1.0',
+        category: 'core',
+      },
+      register() {},
+      async initialize() { lifecycle.push(`${id}:initialize`); },
+      start,
+      stop,
+    });
+    const first = plugin(
+      'test.lifecycle-first',
+      async () => { lifecycle.push('first:start'); },
+      async () => { lifecycle.push('first:stop'); },
+    );
+    const second = plugin(
+      'test.lifecycle-second',
+      async () => {
+        lifecycle.push('second:start');
+        throw new Error('startup failed');
+      },
+      async () => { lifecycle.push('second:stop'); },
+    );
+    const engine = new EngineHost(
+      [first, second],
+      new InMemoryEventStore(),
+      authorization,
+      demoWorld,
+    );
+
+    await expect(engine.start()).rejects.toThrow('startup failed');
+    expect(lifecycle).toEqual([
+      'test.lifecycle-first:initialize',
+      'first:start',
+      'test.lifecycle-second:initialize',
+      'second:start',
+      'second:stop',
+      'first:stop',
+    ]);
+    expect(await engine.processPendingEffects()).toBe(0);
+  });
+
+  it('enforces world and character authorization before command and query handlers', async () => {
+    const canAccessInstance = vi.fn(async () => false);
+    const ownsCharacter = vi.fn(async () => false);
+    const commandHandler = vi.fn(async () => ({
+      streamId: 'authorized-character',
+      expectedVersion: 0,
+      events: [],
+    }));
+    const queryHandler = vi.fn(async () => ({ secret: true }));
+    const plugin: EnginePlugin = {
+      manifest: {
+        id: 'test.authorization',
+        version: '1.0.0',
+        apiVersion: '1.0',
+        category: 'core',
+      },
+      register(context) {
+        context.registerCommand('test.authorized-command', z.object({
+          type: z.literal('test.authorized-command'),
+          version: z.literal(1),
+          commandId: z.string(),
+          worldInstanceId: z.string(),
+          characterId: z.string(),
+          expectedVersion: z.number(),
+        }), commandHandler);
+        context.registerQuery('test.authorized-query', z.object({
+          type: z.literal('test.authorized-query'),
+          worldInstanceId: z.string(),
+          characterId: z.string(),
+        }), queryHandler);
+      },
+    };
+    const engine = new EngineHost(
+      [plugin],
+      new InMemoryEventStore(),
+      { canAccessInstance, ownsCharacter },
+      demoWorld,
+    );
+    await engine.start();
+    const command = {
+      type: 'test.authorized-command',
+      version: 1,
+      commandId: 'denied-command',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: 'character-one',
+      expectedVersion: 0,
+    };
+    const query = {
+      type: 'test.authorized-query',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: 'character-one',
+    };
+
+    expect((await engine.dispatch(command, session)).receipt).toMatchObject({
+      ok: false, code: 'FORBIDDEN',
+    });
+    expect(await engine.query(query, session)).toMatchObject({ ok: false, code: 'FORBIDDEN' });
+    expect(commandHandler).not.toHaveBeenCalled();
+    expect(queryHandler).not.toHaveBeenCalled();
+
+    canAccessInstance.mockResolvedValue(true);
+    expect((await engine.dispatch({ ...command, commandId: 'unowned-command' }, session)).receipt)
+      .toMatchObject({ ok: false, code: 'FORBIDDEN' });
+    expect(await engine.query(query, session)).toMatchObject({ ok: false, code: 'FORBIDDEN' });
+    expect(ownsCharacter).toHaveBeenCalledTimes(2);
+    expect(commandHandler).not.toHaveBeenCalled();
+    expect(queryHandler).not.toHaveBeenCalled();
+    await engine.stop();
+  });
+
+  it('keeps system commands out of player dispatch and deduplicates trusted retries', async () => {
+    const handler = vi.fn(async (_command, context) => ({
+      streamId: 'world-system-stream',
+      expectedVersion: 0,
+      events: [{
+        type: 'test.system-event',
+        version: 1,
+        payload: { actorId: context.session.actorId, permissions: context.session.grantedPermissions },
+      }],
+    }));
+    const plugin: EnginePlugin = {
+      manifest: {
+        id: 'test.system-command',
+        version: '1.0.0',
+        apiVersion: '1.0',
+        category: 'core',
+      },
+      register({ registerSystemCommand }) {
+        registerSystemCommand('test.system-command', z.object({
+          type: z.literal('test.system-command'),
+          version: z.literal(1),
+          commandId: z.string(),
+          worldInstanceId: z.string(),
+        }), handler);
+      },
+    };
+    const engine = new EngineHost(
+      [plugin],
+      new InMemoryEventStore(),
+      authorization,
+      demoWorld,
+    );
+    await engine.start();
+    const command = {
+      type: 'test.system-command',
+      version: 1,
+      commandId: 'system-command-one',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+    };
+
+    expect((await engine.dispatch(command, session)).receipt).toMatchObject({
+      ok: false, code: 'UNKNOWN_COMMAND',
+    });
+    expect((await engine.dispatchSystem({ ...command, version: 'bad' }, 'trusted-actor')).receipt)
+      .toMatchObject({ ok: false, code: 'INVALID_COMMAND' });
+    const unknown = await engine.dispatchSystem(
+      { ...command, type: 'missing.system-command' },
+      'trusted-actor',
+    );
+    expect(unknown.receipt).toMatchObject({ ok: false, code: 'UNKNOWN_COMMAND' });
+
+    const first = await engine.dispatchSystem(command, 'trusted-actor');
+    const retry = await engine.dispatchSystem(command, 'trusted-actor');
+    expect(first.receipt.ok).toBe(true);
+    expect(first.events[0]?.payload).toEqual({
+      actorId: 'trusted-actor',
+      permissions: ['system'],
+    });
+    expect(retry.commitOutcome).toBe('duplicate');
+    expect(handler).toHaveBeenCalledTimes(1);
+    await engine.stop();
+  });
+
+  it('returns safe query rule violations and correlatable generic failures', async () => {
+    const plugin: EnginePlugin = {
+      manifest: {
+        id: 'test.query-failures',
+        version: '1.0.0',
+        apiVersion: '1.0',
+        category: 'core',
+      },
+      register({ registerQuery }) {
+        const schema = z.object({
+          type: z.string(),
+          worldInstanceId: z.string(),
+        });
+        registerQuery('test.query-rule', schema, async () => {
+          throw new RuleViolationError('That view is not available yet.');
+        });
+        registerQuery('test.query-error', schema, async () => {
+          throw new Error('private storage detail');
+        });
+      },
+    };
+    const engine = new EngineHost(
+      [plugin],
+      new InMemoryEventStore(),
+      authorization,
+      demoWorld,
+    );
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await engine.start();
+
+    expect(await engine.query({
+      type: 'test.query-rule',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+    }, session)).toMatchObject({
+      ok: false,
+      code: 'RULE_VIOLATION',
+      message: 'That view is not available yet.',
+    });
+    const result = await engine.query({
+      type: 'test.query-error',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+    }, session);
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'INTERNAL_ERROR',
+      message: 'The server could not complete that request.',
+    });
+    expect(result).not.toHaveProperty('message', 'private storage detail');
+    expect(result.correlationId).toMatch(/^[\da-f-]{36}$/i);
+    expect(errorLog).toHaveBeenCalledWith(
+      expect.stringMatching(/Engine query failed/),
+      expect.any(Error),
+    );
+
+    errorLog.mockRestore();
+    await engine.stop();
+  });
+
   it('returns generic internal failures with a request-correlatable ID', async () => {
     const { engine, store } = makeEngine();
     await engine.start();
@@ -376,6 +619,176 @@ describe('MUDD engine host', () => {
     vi.useRealTimers();
   });
 
+  it('dead-letters persisted effects whose payload no longer matches their contract', async () => {
+    const effect: StoredEventEffect = {
+      id: 'malformed-effect',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      sourceStreamId: null,
+      causationCommandId: 'malformed-effect-command',
+      type: 'test.validated-effect',
+      version: 1,
+      payload: { unexpected: true },
+      attempts: 1,
+      leaseToken: 'malformed-effect-lease',
+    };
+    const handler = vi.fn(async () => undefined);
+    const plugin: EnginePlugin = {
+      manifest: {
+        id: 'test.malformed-effect',
+        version: '1.0.0',
+        apiVersion: '1.0',
+        category: 'core',
+      },
+      register({ registerEffect }) {
+        registerEffect(
+          'test.validated-effect',
+          1,
+          z.object({ value: z.string() }),
+          handler,
+        );
+      },
+    };
+    const store = new InMemoryEventStore();
+    const claim = vi.spyOn(store, 'claimNextEffect')
+      .mockResolvedValueOnce(effect)
+      .mockResolvedValue(undefined);
+    const deadLetter = vi.spyOn(store, 'deadLetterEffect').mockResolvedValue(true);
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const engine = new EngineHost([plugin], store, authorization, demoWorld);
+    await engine.start();
+
+    expect(await engine.processPendingEffects()).toBe(1);
+    expect(deadLetter).toHaveBeenCalledWith(
+      'malformed-effect',
+      'malformed-effect-lease',
+      'Persisted payload did not match effect contract test.validated-effect@1.',
+    );
+    expect(handler).not.toHaveBeenCalled();
+    expect(claim).toHaveBeenCalledTimes(2);
+
+    errorLog.mockRestore();
+    await engine.stop();
+  });
+
+  it('dead-letters a durable effect after the final failed delivery attempt', async () => {
+    const effect: StoredEventEffect = {
+      id: 'exhausted-effect',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      sourceStreamId: 'source-stream',
+      causationCommandId: 'exhausted-effect-command',
+      type: 'test.exhausted-effect',
+      version: 1,
+      payload: { value: 'persisted' },
+      attempts: 10,
+      leaseToken: 'exhausted-effect-lease',
+    };
+    const plugin: EnginePlugin = {
+      manifest: {
+        id: 'test.exhausted-effect',
+        version: '1.0.0',
+        apiVersion: '1.0',
+        category: 'core',
+      },
+      register({ registerEffect }) {
+        registerEffect(
+          'test.exhausted-effect',
+          1,
+          z.object({ value: z.string() }),
+          async () => { throw new Error('unavailable'); },
+        );
+      },
+    };
+    const store = new InMemoryEventStore();
+    vi.spyOn(store, 'claimNextEffect')
+      .mockResolvedValueOnce(effect)
+      .mockResolvedValue(undefined);
+    const deadLetter = vi.spyOn(store, 'deadLetterEffect').mockResolvedValue(true);
+    const retry = vi.spyOn(store, 'retryEffect');
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const engine = new EngineHost([plugin], store, authorization, demoWorld);
+    await engine.start();
+
+    expect(await engine.processPendingEffects()).toBe(1);
+    expect(deadLetter).toHaveBeenCalledWith(
+      'exhausted-effect',
+      'exhausted-effect-lease',
+      'Effect handler failed (Error).',
+    );
+    expect(retry).not.toHaveBeenCalled();
+    expect(errorLog).toHaveBeenCalledWith(
+      '[effect:exhausted-effect] Dead-lettered after 10 attempts (Error).',
+    );
+
+    errorLog.mockRestore();
+    await engine.stop();
+  });
+
+  it('returns safe system-command failures and logs only unexpected errors', async () => {
+    const plugin: EnginePlugin = {
+      manifest: {
+        id: 'test.system-command-errors',
+        version: '1.0.0',
+        apiVersion: '1.0',
+        category: 'core',
+      },
+      register({ registerSystemCommand }) {
+        const schema = z.object({
+          type: z.string(),
+          version: z.literal(1),
+          commandId: z.string(),
+          worldInstanceId: z.string(),
+        });
+        registerSystemCommand('test.system-rule', schema, async () => {
+          throw new RuleViolationError('System action is not allowed.');
+        });
+        registerSystemCommand('test.system-error', schema, async () => {
+          throw new Error('private system detail');
+        });
+      },
+    };
+    const engine = new EngineHost(
+      [plugin],
+      new InMemoryEventStore(),
+      authorization,
+      demoWorld,
+    );
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await engine.start();
+    const base = {
+      version: 1,
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+    };
+    const rule = await engine.dispatchSystem({
+      ...base,
+      type: 'test.system-rule',
+      commandId: 'system-rule-command',
+    }, 'trusted-actor');
+    expect(rule.receipt).toMatchObject({
+      ok: false,
+      code: 'RULE_VIOLATION',
+      message: 'System action is not allowed.',
+    });
+    const failure = await engine.dispatchSystem({
+      ...base,
+      type: 'test.system-error',
+      commandId: 'system-error-command',
+    }, 'trusted-actor', 'system-error-correlation');
+    expect(failure.receipt).toMatchObject({
+      ok: false,
+      code: 'INTERNAL_ERROR',
+      message: 'The server could not complete that system command.',
+    });
+    expect(failure.receipt.message).not.toContain('private system detail');
+    expect(failure.correlationId).toBe('system-error-correlation');
+    expect(errorLog).toHaveBeenCalledWith(
+      '[system-error-correlation] Engine system command failed',
+      expect.any(Error),
+    );
+
+    errorLog.mockRestore();
+    await engine.stop();
+  });
+
   it('dispatches committed domain events to subscribers through the durable outbox', async () => {
     const subscriber = vi.fn(async (_payload: { value: string }, _context: { actorId: string }) => undefined);
     const plugin: EnginePlugin = {
@@ -425,6 +838,60 @@ describe('MUDD engine host', () => {
       }),
     );
     expect(await engine.processPendingEffects()).toBe(0);
+    await engine.stop();
+  });
+
+  it('does not deliver committed events that violate a subscriber contract', async () => {
+    const subscriber = vi.fn(async () => undefined);
+    const plugin: EnginePlugin = {
+      manifest: {
+        id: 'test.invalid-event-subscriber',
+        version: '1.0.0',
+        apiVersion: '1.0',
+        category: 'core',
+      },
+      register(context) {
+        context.registerCommand('test.publish-invalid-event', z.object({
+          type: z.literal('test.publish-invalid-event'),
+          version: z.literal(1),
+          commandId: z.string(),
+          worldInstanceId: z.string(),
+        }), async () => ({
+          streamId: 'invalid-published-events',
+          expectedVersion: 0,
+          events: [{ type: 'test.invalid-published', version: 1, payload: { value: 123 } }],
+        }));
+        context.registerEventHandler(
+          'test.invalid-published',
+          1,
+          z.object({ value: z.string() }),
+          subscriber,
+        );
+      },
+    };
+    const store = new InMemoryEventStore();
+    const retry = vi.spyOn(store, 'retryEffect');
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const engine = new EngineHost([plugin], store, authorization, demoWorld);
+    await engine.start();
+    const result = await engine.dispatch({
+      type: 'test.publish-invalid-event',
+      version: 1,
+      commandId: 'publish-invalid-event-command',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+    }, session);
+
+    expect(result.receipt.ok).toBe(true);
+    expect(await engine.processPendingEffects()).toBe(1);
+    expect(subscriber).not.toHaveBeenCalled();
+    expect(retry).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      1_000,
+      'Effect handler failed (Error).',
+    );
+
+    errorLog.mockRestore();
     await engine.stop();
   });
 
