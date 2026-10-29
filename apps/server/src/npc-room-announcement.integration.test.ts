@@ -846,6 +846,7 @@ vi.mock('./persistence/postgres-event-store.js', () => ({
       if (state.readStreamError) throw state.readStreamError;
       if (state.readStreamGate) await state.readStreamGate;
       if (state.readStreamSequence.length > 0) return state.readStreamSequence.shift();
+      if (characterId === 'woodcutting-trees') return [];
       if (characterId.startsWith('world-interactions:')) {
         return characterId === `world-interactions:${state.interactionRequestWorldId}`
           ? state.interactionMaintenanceRequests
