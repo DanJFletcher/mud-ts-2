@@ -60,55 +60,24 @@ connected or present in the object's room.
 
 The generic plugin emits `world.object_expiring` after the scheduled time.
 Plugins register an event handler for object types they own, inspect
-`payload.objectType` and `payload.objectId`, and apply that type's rules. For
-example, a campfire plugin can remove its campfire from its own projection and
-append `world.object_expired` to the lifecycle stream. That final append should
-be idempotent and use the lifecycle stream's current expected version. If the
-handler fails, the durable event-effect system retries it.
+`payload.objectType` and `payload.objectId`, and apply that type's rules. The
+temporary campfire plugin is the first complete non-corpse example:
 
-For a campfire, the handler follows this pattern:
+- `campfire.light` appends a `world.campfire_lit` event and its lifecycle
+  schedule as one atomic write.
+- The plugin handles `world.object_expiring` only for `objectType: "campfire"`.
+- It appends `world.campfire_extinguished` and `world.object_expired` together,
+  removing the campfire and completing its lifecycle in one transaction.
+- The expiry event and room announcement use the existing durable effect path.
+  Failed writes are retried; stale expiration events are ignored.
+- Room queries merge live campfires into the standard object list. They read
+  the current lifecycle projection, so a reschedule moves the visible deadline,
+  an expired/due campfire is hidden before the worker poll, and a cancelled
+  schedule leaves the fire visible as a non-expiring object.
 
-```ts
-registerEventHandler(
-  "world.object_expiring",
-  1,
-  ObjectExpiringEventSchema.shape.payload,
-  async (payload, context) => {
-    if (payload.objectType !== "campfire") return;
-
-    const lifecycleStream = objectLifecycleStreamId(payload.objectId);
-    const history = await context.store.readStream(context.worldInstanceId, lifecycleStream);
-    const lifecycle = projectObjectLifecycle(history);
-    if (!lifecycle || lifecycle.state !== "expiring") return;
-
-    const expired = objectLifecycleExpiredEvent({
-      objectId: lifecycle.objectId,
-      objectType: lifecycle.objectType,
-      locationId: lifecycle.locationId,
-      expiredAt: context.now().toISOString(),
-    });
-    const result = await context.store.append({
-      worldInstanceId: context.worldInstanceId,
-      streamId: lifecycleStream,
-      actorId: SYSTEM_ACTOR_ID,
-      commandId: `campfire-expire:${context.effectId}`,
-      payloadHash: `${payload.objectId}:${payload.expiresAt}`,
-      expectedVersion: lifecycle.revision,
-      events: [expired],
-      companions: [{
-        streamId: campfireStreamId(payload.objectId),
-        expectedVersion: campfireRevision,
-        events: [campfireExtinguishedEvent(payload.objectId)],
-      }],
-    });
-    if (!result.receipt.ok) throw new Error("Could not expire the campfire.");
-  },
-);
-```
-
-The companion write removes the campfire and marks its lifecycle complete in
-one transaction; it is illustrative API usage, so the campfire event names and
-revision lookup belong to the campfire plugin.
+The generic lifecycle event stream remains authoritative for the deadline.
+Feature-owned campfire events describe only whether the fire was lit or
+extinguished; no corpse state or corpse-specific query logic is involved.
 
 Do not schedule an object type until a plugin defines how it is finalized.
 The generic lifecycle plugin deliberately does not delete arbitrary objects or
@@ -155,13 +124,15 @@ remain with that character.
 ## Client visibility and notifications
 
 Room and object queries filter corpses whose expiration timestamp has elapsed,
-even if the next worker poll has not run yet. The plugin emits room announcements
-through the existing durable room-message path. No corpse-specific client
-protocol is needed.
+even if the next worker poll has not run yet. Temporary campfires follow the
+same user-facing contract through the generic object projection: they are
+hidden once their scheduled deadline has elapsed, and the owning plugin's
+durable room announcement reports when they burn out. No corpse-specific
+client protocol or filtering is needed for campfires.
 
 ## Adding another expiring object type
 
-For a temporary object such as a campfire:
+For another temporary object:
 
 1. Append its creation event and a `world.object_lifecycle_scheduled` companion
    event atomically.
@@ -172,6 +143,6 @@ For a temporary object such as a campfire:
    expected revision.
 4. Make any transfer of contained objects part of the same atomic append.
 5. Add tests for normal expiry, handler retry, rescheduling/cancellation, and
-   concurrent interactions with the campfire.
+   concurrent interactions with that object.
 
 The object lifecycle and scheduler do not import or depend on corpse code.

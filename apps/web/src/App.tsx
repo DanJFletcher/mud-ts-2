@@ -448,6 +448,9 @@ export function WorldClient({
   const optimisticNpcDepartureFallbacksRef = useRef<OptimisticNpcDepartureFallback[]>([]);
   const recentNpcDepartureAnnouncementsRef = useRef<RecentNpcDepartureAnnouncement[]>([]);
   const recentNpcTerminalEventIdsRef = useRef<Set<string>>(new Set());
+  const terminalRoomRefreshTimerRef = useRef<number | undefined>(undefined);
+  const activeCharacterIdRef = useRef<string | undefined>(snapshot?.character?.characterId);
+  activeCharacterIdRef.current = snapshot?.character?.characterId;
   const activeLocationIdRef = useRef<string | undefined>(snapshot?.location?.locationId);
   activeLocationIdRef.current = snapshot?.location?.locationId;
   const [classCatalog, setClassCatalog] = useState<ClassCatalogSummary | undefined>();
@@ -659,6 +662,27 @@ export function WorldClient({
       }
       recentNpcTerminalEventIdsRef.current.add(eventKey);
     }
+    if (message.roomId === activeLocationIdRef.current && activeCharacterIdRef.current) {
+      window.clearTimeout(terminalRoomRefreshTimerRef.current);
+      terminalRoomRefreshTimerRef.current = window.setTimeout(() => {
+        const characterId = activeCharacterIdRef.current;
+        if (!characterId || activeLocationIdRef.current !== message.roomId) return;
+        void client.look(characterId, undefined, { includeNpcDescriptions: true }).then((location) => {
+          setSnapshot((current) => {
+            if (
+              !current ||
+              current.character?.characterId !== characterId ||
+              current.location?.locationId !== message.roomId ||
+              location.locationId !== message.roomId
+            ) return current;
+            return {
+              ...current,
+              location: { ...location, occupants: current.location.occupants },
+            };
+          });
+        }).catch(() => undefined);
+      }, 100);
+    }
     const isDeparture = /\b(?:leave|leaves|leaving|depart|departs|departed|departing)\b/i.test(message.text);
     const now = Date.now();
     if (isDeparture) {
@@ -692,6 +716,7 @@ export function WorldClient({
     }
     addEntry("narration", `${message.speakerName}: ${message.text}`, true, message.roomId);
   }, [addEntry, worldInstanceId]);
+  useEffect(() => () => window.clearTimeout(terminalRoomRefreshTimerRef.current), []);
   useEffect(() => {
     optimisticNpcDepartureFallbacksRef.current = [];
     recentNpcDepartureAnnouncementsRef.current = [];

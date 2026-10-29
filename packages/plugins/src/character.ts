@@ -82,6 +82,10 @@ import {
 import { classCombatPolicyCapability, type ClassCombatPolicy } from './classes.js';
 import { maximumHealthForLevel } from './character-stats.js';
 import { interactionStreamId } from './interactions.js';
+import {
+  temporaryCampfiresCapability,
+  type TemporaryCampfiresCapability,
+} from './temporary-campfires.js';
 
 export interface CharacterStateCapability {
   load(context: EngineCommandContext | QueryContext, characterId: string): Promise<CharacterProjection | undefined>;
@@ -337,6 +341,7 @@ export const characterPlugin: EnginePlugin = {
   }) {
     const worldItems = requireCapability<WorldItemsStateCapability>(worldItemsStateCapability);
     const autonomousNpcs = optionalCapability<AutonomousNpcStateCapability>(autonomousNpcStateCapability);
+    const temporaryCampfires = optionalCapability<TemporaryCampfiresCapability>(temporaryCampfiresCapability);
     const state: CharacterStateCapability = {
       async load(context, characterId) {
         if ('characterProjection' in context && context.characterProjection?.characterId === characterId) {
@@ -978,7 +983,7 @@ export const characterPlugin: EnginePlugin = {
         location.id,
         ...availableExits.map((exit) => exit.toLocationId),
       ];
-      const [roomNpcsByLocation, sharedState] = await Promise.all([
+      const [roomNpcsByLocation, sharedState, campfiresByLocation] = await Promise.all([
         measureQuery('npcPositions', async () => {
           if (autonomousNpcs) return autonomousNpcs.atLocations(context, projectedLocationIds);
           return new Map(projectedLocationIds.map((locationId) => [
@@ -987,6 +992,16 @@ export const characterPlugin: EnginePlugin = {
           ]));
         }),
         measureQuery('sharedItems', () => worldItems.load(context)),
+        temporaryCampfires
+          ? measureQuery('temporaryObjects', () =>
+              temporaryCampfires.atLocations(context, projectedLocationIds))
+          : Promise.resolve(new Map<string, readonly {
+              id: string;
+              label: string;
+              description: string;
+              readable: boolean;
+              takeable: boolean;
+            }[]>()),
       ]);
       const roomNpcsFor = (room: WorldPackDraft['locations'][number]): readonly NpcDefinition[] =>
         roomNpcsByLocation.get(room.id) ?? room.npcs ?? [];
@@ -1032,6 +1047,7 @@ export const characterPlugin: EnginePlugin = {
         includeObjects = true,
       ) => {
         const itemsInRoom = sharedItemsByLocation.get(room.id) ?? [];
+        const campfiresInRoom = campfiresByLocation.get(room.id) ?? [];
         const now = context.now();
         const corpsesInRoom = (corpsesByLocation.get(room.id) ?? [])
           .filter((corpse) => !corpse.expiresAt || Date.parse(corpse.expiresAt) > now.getTime())
@@ -1131,6 +1147,7 @@ export const characterPlugin: EnginePlugin = {
           ...roomTakeables.map(({ id, label, description }) => ({
             id, label, description, readable: false, takeable: true,
           })),
+          ...campfiresInRoom,
           ...visibleContainers.flatMap((container) => [
             {
               id: container.id,
@@ -1197,6 +1214,7 @@ export const characterPlugin: EnginePlugin = {
             ...corpseDescriptions,
             ...interactableRoomDescriptions,
             ...npcDescriptions,
+            ...campfiresInRoom.map(({ description }) => description),
           ].join('\n\n'),
           objects,
           npcs: npcProjections,

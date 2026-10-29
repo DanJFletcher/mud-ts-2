@@ -68,6 +68,14 @@ export {
 export type { ObjectLifecycleStateCapability } from './object-lifecycle.js';
 export { corpseLifecyclePlugin } from './corpse-lifecycle.js';
 export {
+  CAMPFIRE_LIFETIME_MS,
+  TEMPORARY_CAMPFIRES_STREAM_ID,
+  projectTemporaryCampfires,
+  temporaryCampfiresCapability,
+  temporaryCampfiresPlugin,
+} from './temporary-campfires.js';
+export type { TemporaryCampfiresCapability } from './temporary-campfires.js';
+export {
   ROOM_ANNOUNCEMENT_EFFECT,
   ROOM_ANNOUNCEMENT_SOURCE_PREFIX,
   RoomAnnouncementEffectSchema,

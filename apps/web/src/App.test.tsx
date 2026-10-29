@@ -107,7 +107,9 @@ type TestRoomChatMessage = {
   createdAt: string;
 };
 let roomChatMessages: TestRoomChatMessage[];
+let terminalRoomEvents: TestRoomChatMessage[];
 let nextRoomChatMessageId: number;
+let campfireVisible: boolean;
 let roomOccupants: Array<{ id: string; displayName: string }>;
 let heartbeatOccupants: Array<{ id: string; displayName: string }>;
 let walletBalance: number;
@@ -226,6 +228,13 @@ function currentLocation(includeNpcDescriptions = false) {
         description: 'A smooth, palm-sized stone with a pale stripe running through it.',
         readable: false,
         takeable: true,
+      }] : []),
+      ...(campfireVisible ? [{
+        id: 'test-campfire',
+        label: 'Campfire',
+        description: 'A small campfire crackles nearby.',
+        readable: false,
+        takeable: false,
       }] : []),
       ...(dailyFeatureEnabled && bulletinReadableObject ? [{
         id: 'reedbank-bulletin-object',
@@ -500,7 +509,9 @@ beforeEach(() => {
   secondItemTaken = false;
   questJournal = [];
   roomChatMessages = [];
+  terminalRoomEvents = [];
   nextRoomChatMessageId = 1;
+  campfireVisible = false;
   roomOccupants = [];
   heartbeatOccupants = [];
   walletBalance = 12;
@@ -571,7 +582,16 @@ beforeEach(() => {
       const messages = afterId === null
         ? roomChatMessages.filter((message) => message.roomId === roomId).slice(-50)
         : roomChatMessages.filter((message) => message.roomId === roomId && message.id > Number(afterId));
-      return json({ roomId, messages });
+      const terminalEvents = afterId === null
+        ? []
+        : terminalRoomEvents.filter((message) =>
+          message.roomId === roomId && message.id > Number(afterId));
+      const cursor = Math.max(
+        0,
+        ...messages.map((message) => message.id),
+        ...terminalEvents.map((message) => message.id),
+      );
+      return json({ roomId, messages, terminalEvents, cursor });
     }
     if (path === '/api/game') {
       return json({
@@ -3775,6 +3795,29 @@ describe('single-character world session client', () => {
       )).toBe(true);
     });
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Woodcutting in progress' })).not.toBeInTheDocument());
+  });
+
+  it('refreshes the current room projection after a temporary-object lifecycle announcement', async () => {
+    campfireVisible = true;
+    terminalRoomEvents.push({
+      id: 1,
+      roomId: 'mossgate-clearing',
+      speakerType: 'npc',
+      speakerId: 'room:mossgate-clearing',
+      speakerName: 'The room',
+      text: 'The campfire burns down to embers and goes dark.',
+      createdAt: new Date().toISOString(),
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    campfireVisible = false;
+
+    await waitFor(() => {
+      expect(apiFetch.mock.calls.some(([path, init]) =>
+        path === '/api/queries' &&
+        JSON.parse(String(init?.body)).type === 'location.describe',
+      )).toBe(true);
+    }, { timeout: 6_000 });
   });
 
   it('prints Chop! every two seconds while woodcutting remains active', async () => {
