@@ -59,6 +59,9 @@ describe('@mudd/ui components', () => {
     expect(card).toHaveClass('mudd-character-entry--compact');
     expect(container.querySelector('.mudd-character-entry__skeleton-world')).toBeNull();
     expect(container.querySelector('.mudd-character-entry__skeleton-name')).toBeInTheDocument();
+    expect(container.querySelector('.mudd-character-entry__name .mudd-skeleton')).toBeInTheDocument();
+    expect(container.querySelector('.mudd-character-entry__details .mudd-skeleton')).toBeInTheDocument();
+    expect(container.querySelector('.mudd-character-entry__skeleton-action')).toHaveClass('mudd-character-entry__action');
   });
 
   it('renders the world discovery placeholder as decorative content', () => {

@@ -36,9 +36,9 @@ export function CharacterDetailPage({ characterId }: { characterId: string }) {
 
   if (state.loading) return <AccountShell><div className="character-detail-state character-detail-state--loading" role="status" aria-busy="true">
     <div className="character-detail__skeleton" aria-hidden="true">
-      <Skeleton variant="text" className="character-detail__skeleton-title" />
-      <Skeleton variant="text" className="character-detail__skeleton-line" />
-      <Skeleton variant="text" className="character-detail__skeleton-line character-detail__skeleton-line--short" />
+      <Skeleton variant="text" width="78%" height="1.2rem" className="character-detail__skeleton-title" />
+      <Skeleton variant="text" width="86%" height=".8rem" className="character-detail__skeleton-line" />
+      <Skeleton variant="text" width="54%" height=".8rem" className="character-detail__skeleton-line character-detail__skeleton-line--short" />
     </div>
     <p>Loading character record…</p>
   </div></AccountShell>;

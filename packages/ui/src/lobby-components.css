@@ -41,12 +41,6 @@
 .mudd-world-card__link-cue span { color: var(--mudd-warm); font-size: 1.1rem; transition: transform 180ms ease; }
 .mudd-world-card:hover .mudd-world-card__link-cue span { transform: translate(2px, -2px); }
 .mudd-world-card--skeleton { pointer-events: none; }
-.mudd-world-card__skeleton-kicker { width: 8rem; height: .55rem; }
-.mudd-world-card__skeleton-title { width: 72%; height: 1.9rem; }
-.mudd-world-card__skeleton-summary { width: 92%; height: .78rem; }
-.mudd-world-card__skeleton-summary--short { width: 70%; }
-.mudd-world-card__skeleton-link { width: 6.5rem; height: .62rem; }
-.mudd-world-card__skeleton-arrow { width: 1rem; height: 1rem; }
 .mudd-world-hero { min-height: 19rem; display: flex; align-items: flex-end; border: 1px solid color-mix(in srgb, var(--mudd-warm) 30%, var(--mudd-border)); border-radius: 1.2rem; }
 .mudd-world-hero__veil { background: linear-gradient(90deg, rgb(17 25 22 / 92%) 0%, rgb(17 25 22 / 72%) 57%, rgb(17 25 22 / 12%) 100%), linear-gradient(0deg, rgb(17 25 22 / 56%), transparent 75%); }
 .mudd-world-hero__content { width: min(100%, 66rem); padding: clamp(1.4rem, 5vw, 3.25rem); }
@@ -74,13 +68,15 @@
 .mudd-character-entry__name-link:focus-visible { outline: 2px solid var(--mudd-warm); outline-offset: 3px; border-radius: .2rem; }
 .mudd-character-entry__content { min-width: 0; padding-top: .8rem; border-top: 1px solid var(--mudd-border); }
 .mudd-character-entry--skeleton { pointer-events: none; }
-.mudd-character-entry__skeleton-world { width: 58%; height: .48rem; }
-.mudd-character-entry__skeleton-name { width: 48%; height: 1rem; margin-top: .22rem; }
-.mudd-character-entry__skeleton-details { width: 72%; height: .62rem; margin-top: .18rem; }
-.mudd-character-entry__skeleton-manage { width: 1.3rem; height: 1.3rem; border-radius: .35rem; }
-.mudd-character-entry__skeleton-action { width: 8.2rem; height: 2.4rem; border-radius: 999px; }
+.mudd-character-entry__skeleton-manage {
+  display: flex; width: 4rem; height: 2.2rem; align-items: center; justify-content: center;
+}
+.mudd-character-entry__skeleton-manage-mark { width: 2.5rem; height: .55rem; }
+.mudd-character-entry__skeleton-action {
+  box-sizing: border-box; width: 11rem; padding: 0; border-radius: 999px;
+}
 @media (max-width: 700px) {
-  .mudd-character-entry--compact { gap: .38rem; padding: .52rem; }
+  .mudd-character-entry--compact { min-height: 9rem; gap: .38rem; padding: .52rem; }
   .mudd-character-entry--compact .mudd-character-entry__top { gap: .28rem; }
   .mudd-character-entry--compact .mudd-character-entry__eyebrow {
     max-width: 100%; overflow: hidden; font-size: .58rem; letter-spacing: .055em; text-overflow: ellipsis; white-space: nowrap;
@@ -88,11 +84,19 @@
   .mudd-character-entry--compact .mudd-character-entry__name { font-size: .98rem; }
   .mudd-character-entry--compact .mudd-character-entry__details { font-size: .7rem; }
   .mudd-character-entry--compact .mudd-character-entry__status { padding: .12rem .3rem; font-size: .58rem; }
+  .mudd-character-entry--compact .mudd-character-entry__name,
+  .mudd-character-entry--compact .mudd-character-entry__details,
+  .mudd-character-entry--compact .mudd-character-entry__action {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   .mudd-character-entry--compact .mudd-character-entry__actions { display: flex; }
   .mudd-character-entry--compact .mudd-character-entry__action {
     width: fit-content; max-width: 100%; min-width: 0; min-height: 2.25rem;
     padding: .25rem .55rem; font-size: .68rem; line-height: 1.2;
   }
+  .mudd-character-entry--compact .mudd-character-entry__skeleton-manage { width: 44px; height: 44px; }
+  .mudd-character-entry--compact .mudd-character-entry__skeleton-manage-mark { width: .9rem; height: .28rem; }
+  .mudd-character-entry--compact .mudd-character-entry__skeleton-action { width: 7rem; min-height: 2.25rem; padding: 0; }
 }
 @media (max-width: 420px) {
   .mudd-world-card { min-height: 13rem; }

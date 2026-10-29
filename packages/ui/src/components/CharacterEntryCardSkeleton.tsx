@@ -17,14 +17,24 @@ export function CharacterEntryCardSkeleton({
     >
       <div className="mudd-character-entry__top">
         <div className="mudd-character-entry__identity">
-          {showWorldName && <Skeleton variant="text" className="mudd-character-entry__skeleton-world" />}
-          <Skeleton variant="text" className="mudd-character-entry__skeleton-name" />
-          <Skeleton variant="text" className="mudd-character-entry__skeleton-details" />
+          {showWorldName && <p className="mudd-character-entry__eyebrow">
+            <Skeleton variant="text" width="72%" height="1.4em" className="mudd-character-entry__skeleton-world" />
+          </p>}
+          <h3 className="mudd-character-entry__name">
+            <Skeleton variant="text" width="58%" height="1.15em" className="mudd-character-entry__skeleton-name" />
+          </h3>
+          <p className="mudd-character-entry__details">
+            <Skeleton variant="text" width="76%" height="1.35em" className="mudd-character-entry__skeleton-details" />
+          </p>
         </div>
-        <Skeleton variant="block" className="mudd-character-entry__skeleton-manage" />
+        <div className="mudd-character-entry__secondary">
+          <span className="mudd-character-entry__skeleton-manage">
+            <Skeleton variant="block" className="mudd-character-entry__skeleton-manage-mark" />
+          </span>
+        </div>
       </div>
       <div className="mudd-character-entry__actions">
-        <Skeleton variant="block" className="mudd-character-entry__skeleton-action" />
+        <Skeleton variant="block" className="mudd-character-entry__action mudd-character-entry__skeleton-action" />
       </div>
     </article>
   );
