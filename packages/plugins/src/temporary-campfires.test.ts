@@ -283,6 +283,87 @@ describe('temporary campfires', () => {
     await engine.stop();
   });
 
+  it('keeps another campfire and its scheduled lifecycle when one is extinguished', async () => {
+    const { engine, store } = createEngine();
+    await engine.start();
+    const character = await createCharacter(engine);
+
+    const firstLit = await engine.dispatch({
+      type: 'campfire.light',
+      version: 1,
+      commandId: 'light-first-of-two-campfires',
+      worldInstanceId,
+      characterId: character.characterId,
+      expectedVersion: character.revision,
+      payload: {},
+    }, session);
+    const secondLit = await engine.dispatch({
+      type: 'campfire.light',
+      version: 1,
+      commandId: 'light-second-of-two-campfires',
+      worldInstanceId,
+      characterId: character.characterId,
+      expectedVersion: character.revision,
+      payload: {},
+    }, session);
+    expect(firstLit.receipt.ok).toBe(true);
+    expect(secondLit.receipt.ok).toBe(true);
+
+    const firstCampfireId = String(firstLit.events[0]!.payload.campfireId);
+    const secondCampfireId = String(secondLit.events[0]!.payload.campfireId);
+    const secondLifecycleStream = objectLifecycleStreamId(secondCampfireId);
+    const secondLifecycleBefore = projectObjectLifecycle(
+      await store.readStream(worldInstanceId, secondLifecycleStream),
+    );
+    expect(secondLifecycleBefore).toMatchObject({
+      objectId: secondCampfireId,
+      objectType: 'campfire',
+      state: 'scheduled',
+    });
+    expect((await roomProjection(engine, character.characterId)).objects)
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: firstCampfireId, label: 'Campfire' }),
+        expect.objectContaining({ id: secondCampfireId, label: 'Campfire' }),
+      ]));
+
+    const extinguished = await engine.dispatch({
+      type: 'campfire.extinguish',
+      version: 1,
+      commandId: 'extinguish-first-of-two-campfires',
+      worldInstanceId,
+      characterId: character.characterId,
+      expectedVersion: character.revision,
+      payload: { campfireId: firstCampfireId },
+    }, session);
+    expect(extinguished.receipt.ok).toBe(true);
+
+    const campfires = projectTemporaryCampfires(
+      await store.readStream(worldInstanceId, TEMPORARY_CAMPFIRES_STREAM_ID),
+    );
+    expect(campfires).toContainEqual(expect.objectContaining({
+      campfireId: firstCampfireId,
+      extinguished: true,
+    }));
+    expect(campfires).toContainEqual(expect.objectContaining({
+      campfireId: secondCampfireId,
+      extinguished: false,
+    }));
+    expect(projectObjectLifecycle(
+      await store.readStream(worldInstanceId, objectLifecycleStreamId(firstCampfireId)),
+    )).toMatchObject({ state: 'cancelled' });
+    expect(projectObjectLifecycle(
+      await store.readStream(worldInstanceId, secondLifecycleStream),
+    )).toEqual(secondLifecycleBefore);
+
+    const roomAfter = await roomProjection(engine, character.characterId);
+    expect(roomAfter.objects).not.toContainEqual(expect.objectContaining({ id: firstCampfireId }));
+    expect(roomAfter.objects).toContainEqual(expect.objectContaining({
+      id: secondCampfireId,
+      label: 'Campfire',
+    }));
+    await engine.stop();
+  });
+
   it('keeps a campfire visible after its schedule is extended or cancelled', async () => {
     const { engine, store, setNow } = createEngine();
     await engine.start();
