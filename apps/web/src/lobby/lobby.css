@@ -63,10 +63,10 @@
 .character-detail-state { display: grid; justify-items: start; gap: .6rem; max-width: 600px; margin: 2rem auto; padding: 1.2rem; border: 1px solid var(--mudd-border); border-radius: 1rem; background: var(--mudd-surface); }
 .character-detail-state h1, .character-detail-state p { margin-block: .2rem; }
 .character-detail__skeleton { display: grid; width: min(100%, 28rem); gap: .65rem; }
-.character-detail__skeleton span { height: .8rem; border-radius: 99px; background: color-mix(in srgb, var(--mudd-muted) 18%, var(--mudd-surface)); animation: character-detail-pulse 1.4s ease-in-out infinite alternate; }
-.character-detail__skeleton span:first-child { width: 78%; height: 1.2rem; }
-.character-detail__skeleton span:last-child { width: 54%; }
-@keyframes character-detail-pulse { to { opacity: .45; } }
+.character-detail__skeleton-title { width: 78%; height: 1.2rem; }
+.character-detail__skeleton-line { width: 86%; }
+.character-detail__skeleton-line--short { width: 54%; }
+.lobby-world-hero-skeleton { display: grid; gap: .8rem; width: min(100%, 58rem); }
 .character-detail-state a, .character-detail__actions a { min-height: 2.75rem; display: inline-flex; align-items: center; }
 .lobby-leave-error { position: fixed; inset: 1rem 1rem auto; z-index: 100; background: var(--mudd-surface); color: var(--mudd-error); padding: 1rem; border: 1px solid currentColor; }
 @media (max-width: 700px) {
@@ -163,7 +163,4 @@
   .lobby-mobile-primary-nav { gap: 0; }
   .lobby-mobile-primary-nav > a,
   .lobby-mobile-primary-nav > button { padding-inline: .1rem; font-size: .64rem; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .character-detail__skeleton span { animation: none; }
 }

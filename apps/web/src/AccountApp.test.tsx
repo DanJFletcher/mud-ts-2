@@ -33,6 +33,8 @@ const sessionId = '44444444-4444-4444-8444-444444444444';
 const playerId = '55555555-5555-4555-8555-555555555555';
 let holdRoster: boolean;
 let releaseRoster: (() => void) | undefined;
+let holdCatalog: boolean;
+let releaseCatalog: (() => void) | undefined;
 const worlds: WorldSummary[] = [
   { worldInstanceId: demo, packId: 'demo', name: 'The Waystone Path', summary: 'An old bell tower.' },
   { worldInstanceId: orra, packId: 'orraveth', name: 'Orraveth: Bellwold', summary: 'A frontier village.',
@@ -88,12 +90,16 @@ beforeEach(() => {
   characters[0].wallet = { currencyId: 'silver', balance: 27 };
   characters[0].advancement = { level: 4, experience: 83 };
   characters[0].inventory = [{ id: 'healing-herb', label: 'Dried yarrow', description: 'A bundle of dried yarrow.', stackable: true, quantity: 3 }];
-  sessions = []; guest = false; entryFailure = false; rosterFailure = false; holdRoster = false; releaseRoster = undefined; commands.length = 0;
+  sessions = []; guest = false; entryFailure = false; rosterFailure = false; holdRoster = false; releaseRoster = undefined;
+  holdCatalog = false; releaseCatalog = undefined; commands.length = 0;
   localStorage.clear(); sessionStorage.clear(); window.location.hash = '';
   mocks.fetch.mockImplementation(async (url: string, init: RequestInit = {}) => {
     const method = init.method ?? 'GET';
     const world = (init.headers as Record<string, string>)?.['x-mudd-world-instance'] ?? demo;
-    if (url === '/api/worlds') return json(worlds);
+    if (url === '/api/worlds') {
+      if (holdCatalog) await new Promise<void>((resolve) => { releaseCatalog = resolve; });
+      return json(worlds);
+    }
     if (url === '/api/characters') {
       if (holdRoster) await new Promise<void>((resolve) => { releaseRoster = resolve; });
       if (rosterFailure) return json({ message: 'Roster unavailable' }, 503);
@@ -166,20 +172,66 @@ describe('world lobby and explicit character entry', () => {
 
   it('renders world discovery before the character roster request finishes', async () => {
     holdRoster = true;
-    open();
+    const { container } = open();
     expect(await screen.findByRole('heading', { name: 'Explore worlds' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /The Waystone Path/ })).toHaveAttribute('href', `/worlds/${demo}`);
-    expect(screen.getByRole('status')).toHaveTextContent('Checking your characters');
+    expect(container.querySelectorAll('.mudd-character-entry--skeleton')).toHaveLength(2);
     await waitFor(() => expect(releaseRoster).toBeDefined());
     act(() => releaseRoster?.());
     expect(await screen.findByRole('button', { name: 'Play as Rowan' })).toBeInTheDocument();
+    expect(container.querySelectorAll('.mudd-character-entry--skeleton')).toHaveLength(0);
+  });
+
+  it('renders world and character card placeholders while lobby data is pending', async () => {
+    holdCatalog = true;
+    holdRoster = true;
+    const { container } = open();
+    expect(screen.getByRole('heading', { name: 'Where will you go next?' })).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Loading worlds' })).toBeInTheDocument();
+    expect(container.querySelectorAll('.mudd-world-card--skeleton')).toHaveLength(2);
+    expect(container.querySelectorAll('.mudd-character-entry--skeleton')).toHaveLength(2);
+    await waitFor(() => {
+      expect(releaseCatalog).toBeDefined();
+      expect(releaseRoster).toBeDefined();
+    });
+    act(() => { releaseCatalog?.(); releaseRoster?.(); });
+    expect(await screen.findByRole('link', { name: /The Waystone Path/ })).toHaveAttribute('href', `/worlds/${demo}`);
+    expect(await screen.findByRole('button', { name: 'Play as Rowan' })).toBeInTheDocument();
+    expect(container.querySelectorAll('.mudd-world-card--skeleton, .mudd-character-entry--skeleton')).toHaveLength(0);
+  });
+
+  it('shows world-detail placeholders while the catalog is pending', async () => {
+    holdCatalog = true;
+    const { container } = open(`/worlds/${demo}`);
+    expect(screen.getByRole('status', { name: 'Loading world details' })).toBeInTheDocument();
+    expect(container.querySelector('.mudd-world-hero')).toHaveClass('mudd-world-hero');
+    await waitFor(() => expect(releaseCatalog).toBeDefined());
+    act(() => releaseCatalog?.());
+    expect(await screen.findByRole('heading', { level: 1, name: 'The Waystone Path' })).toBeInTheDocument();
   });
 
   it('loads the character list without waiting for an unused world catalog', async () => {
-    open('/characters');
+    holdRoster = true;
+    const { container } = open('/characters');
     expect(await screen.findByRole('heading', { name: 'All characters' })).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: 'Play as Rowan' })).toBeInTheDocument();
+    expect(container.querySelectorAll('.mudd-character-entry--skeleton')).toHaveLength(4);
     expect(calls('GET', '/api/worlds')).toHaveLength(0);
+    await waitFor(() => expect(releaseRoster).toBeDefined());
+    act(() => releaseRoster?.());
+    expect(await screen.findByRole('button', { name: 'Play as Rowan' })).toBeInTheDocument();
+    expect(container.querySelectorAll('.mudd-character-entry--skeleton')).toHaveLength(0);
+  });
+
+  it('shows the world hero and compact character placeholders before its roster arrives', async () => {
+    holdRoster = true;
+    const { container } = open(`/worlds/${demo}`);
+    expect(await screen.findByRole('heading', { level: 1, name: 'The Waystone Path' })).toBeInTheDocument();
+    const placeholders = container.querySelectorAll('.mudd-character-entry--skeleton');
+    expect(placeholders).toHaveLength(2);
+    expect(placeholders[0].querySelector('.mudd-character-entry__skeleton-world')).toBeNull();
+    await waitFor(() => expect(releaseRoster).toBeDefined());
+    act(() => releaseRoster?.());
+    expect(await screen.findByRole('button', { name: 'Play as Rowan' })).toBeInTheDocument();
   });
 
   it('orders real recent history ahead of legacy nulls without auto-entering an active session', async () => {

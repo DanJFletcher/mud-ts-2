@@ -41,6 +41,7 @@ import {
   NpcDialogueDialog,
   Panel,
   PendingActionStatus,
+  Skeleton,
   Text,
   TextInput,
   type ActivityEntry,
@@ -4106,10 +4107,10 @@ export function WorldClient({
           <div className="focused-screen focused-screen--play" aria-label="Play">
             {loading && !snapshot ? (
               <Panel className="focused-room focused-loading" aria-label="Loading location">
-                <div className="skeleton-line skeleton-short" />
-                <div className="skeleton-line skeleton-title" />
-                <div className="skeleton-line skeleton-body" />
-                <div className="skeleton-line skeleton-body skeleton-narrow" />
+                <Skeleton variant="text" width="27%" />
+                <Skeleton variant="block" width="67%" height="32px" />
+                <Skeleton variant="text" width="90%" />
+                <Skeleton variant="text" width="61%" />
               </Panel>
             ) : connectionError && !snapshot ? (
               <Panel className="focused-room focused-connection" eyebrow="Connection" title="World unavailable">

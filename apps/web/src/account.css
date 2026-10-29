@@ -157,8 +157,6 @@
 .account-rename-form .mudd-input { width: min(100%, 220px); }
 .account-archive-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; color: var(--mudd-muted); font-size: .75rem; }
 .account-empty-state { margin: 0; padding: 18px; border: 1px dashed var(--mudd-border); border-radius: 10px; color: var(--mudd-muted); text-align: center; }
-.account-character-skeleton { height: 90px; border: 1px solid var(--mudd-border); border-radius: 11px; background: var(--mudd-surface); animation: breathe 1.5s ease-in-out infinite alternate; }
-
 .account-create { display: grid; gap: 14px; padding: 18px; border: 1px solid var(--mudd-border); border-radius: 11px; background: var(--mudd-surface); }
 .account-create h2 { margin: 6px 0 0; color: var(--mudd-text); font-family: var(--font-display); font-size: 1.2rem; }
 .account-create__form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; }

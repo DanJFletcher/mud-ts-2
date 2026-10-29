@@ -21,13 +21,6 @@ body { min-width: 320px; min-height: 100dvh; margin: 0; font-family: var(--font-
 button, input { font: inherit; }
 button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid var(--mudd-warm); outline-offset: 3px; }
 
-.skeleton-line { height: 13px; border-radius: 99px; animation: breathe 1.5s ease-in-out infinite alternate; }
-.skeleton-short { width: 27%; height: 9px; }
-.skeleton-title { width: 57%; height: 35px; margin: 2px 0; }
-.skeleton-body { width: 86%; }
-.skeleton-narrow { width: 64%; }
-@keyframes breathe { from { opacity: .55; } to { opacity: 1; } }
-
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }

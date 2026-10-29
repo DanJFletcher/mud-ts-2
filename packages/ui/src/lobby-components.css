@@ -40,6 +40,13 @@
 .mudd-world-card__link-cue { display: flex; justify-content: space-between; align-items: center; margin-top: .3rem; padding-top: .75rem; border-top: 1px solid rgb(246 242 231 / 22%); color: var(--lobby-ink); font: 500 .72rem/1.4 "DM Mono", monospace; letter-spacing: .07em; text-transform: uppercase; }
 .mudd-world-card__link-cue span { color: var(--mudd-warm); font-size: 1.1rem; transition: transform 180ms ease; }
 .mudd-world-card:hover .mudd-world-card__link-cue span { transform: translate(2px, -2px); }
+.mudd-world-card--skeleton { pointer-events: none; }
+.mudd-world-card__skeleton-kicker { width: 8rem; height: .55rem; }
+.mudd-world-card__skeleton-title { width: 72%; height: 1.9rem; }
+.mudd-world-card__skeleton-summary { width: 92%; height: .78rem; }
+.mudd-world-card__skeleton-summary--short { width: 70%; }
+.mudd-world-card__skeleton-link { width: 6.5rem; height: .62rem; }
+.mudd-world-card__skeleton-arrow { width: 1rem; height: 1rem; }
 .mudd-world-hero { min-height: 19rem; display: flex; align-items: flex-end; border: 1px solid color-mix(in srgb, var(--mudd-warm) 30%, var(--mudd-border)); border-radius: 1.2rem; }
 .mudd-world-hero__veil { background: linear-gradient(90deg, rgb(17 25 22 / 92%) 0%, rgb(17 25 22 / 72%) 57%, rgb(17 25 22 / 12%) 100%), linear-gradient(0deg, rgb(17 25 22 / 56%), transparent 75%); }
 .mudd-world-hero__content { width: min(100%, 66rem); padding: clamp(1.4rem, 5vw, 3.25rem); }
@@ -66,6 +73,12 @@
 .mudd-character-entry__name-link:hover { text-decoration: underline; }
 .mudd-character-entry__name-link:focus-visible { outline: 2px solid var(--mudd-warm); outline-offset: 3px; border-radius: .2rem; }
 .mudd-character-entry__content { min-width: 0; padding-top: .8rem; border-top: 1px solid var(--mudd-border); }
+.mudd-character-entry--skeleton { pointer-events: none; }
+.mudd-character-entry__skeleton-world { width: 58%; height: .48rem; }
+.mudd-character-entry__skeleton-name { width: 48%; height: 1rem; margin-top: .22rem; }
+.mudd-character-entry__skeleton-details { width: 72%; height: .62rem; margin-top: .18rem; }
+.mudd-character-entry__skeleton-manage { width: 1.3rem; height: 1.3rem; border-radius: .35rem; }
+.mudd-character-entry__skeleton-action { width: 8.2rem; height: 2.4rem; border-radius: 999px; }
 @media (max-width: 700px) {
   .mudd-character-entry--compact { gap: .38rem; padding: .52rem; }
   .mudd-character-entry--compact .mudd-character-entry__top { gap: .28rem; }

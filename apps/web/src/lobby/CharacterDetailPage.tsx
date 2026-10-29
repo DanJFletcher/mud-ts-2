@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { useLocation } from 'wouter';
-import { Button } from '@mudd/ui';
+import { Button, Skeleton } from '@mudd/ui';
 import { AccountShell } from './AccountShell.js';
 import { appHref, worldPath } from './navigation.js';
 import { enterCharacter, entryDisabled, useLobby, worldClient, type LobbyCharacter } from './useLobby.js';
@@ -35,7 +35,11 @@ export function CharacterDetailPage({ characterId }: { characterId: string }) {
   }
 
   if (state.loading) return <AccountShell><div className="character-detail-state character-detail-state--loading" role="status" aria-busy="true">
-    <div className="character-detail__skeleton" aria-hidden="true"><span /><span /><span /></div>
+    <div className="character-detail__skeleton" aria-hidden="true">
+      <Skeleton variant="text" className="character-detail__skeleton-title" />
+      <Skeleton variant="text" className="character-detail__skeleton-line" />
+      <Skeleton variant="text" className="character-detail__skeleton-line character-detail__skeleton-line--short" />
+    </div>
     <p>Loading character record…</p>
   </div></AccountShell>;
   if (state.rosterError) return <AccountShell><section className="character-detail-state">

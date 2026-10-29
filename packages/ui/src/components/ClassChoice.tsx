@@ -1,4 +1,5 @@
 import type { CharacterClassDefinition } from './classTypes.js';
+import { Skeleton } from './Skeleton.js';
 
 export interface ClassChoiceProps {
   classes: readonly CharacterClassDefinition[];
@@ -25,8 +26,8 @@ export function ClassChoice({
   if (loading) {
     return (
       <div className="mudd-class-choice__loading" role="status" aria-busy="true">
-        <span className="mudd-class-choice__skeleton" />
-        <span className="mudd-class-choice__skeleton" />
+        <Skeleton variant="block" className="mudd-class-choice__skeleton" />
+        <Skeleton variant="block" className="mudd-class-choice__skeleton" />
         <span className="mudd-visually-hidden">Loading class choices</span>
       </div>
     );

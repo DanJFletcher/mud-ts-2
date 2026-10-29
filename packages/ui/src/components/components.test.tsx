@@ -19,6 +19,9 @@ import { WorldHero } from './WorldHero.js';
 import { CharacterEntryCard } from './CharacterEntryCard.js';
 import { StaminaStatus } from './StaminaStatus.js';
 import { DailyBoard } from './DailyBoard.js';
+import { Skeleton } from './Skeleton.js';
+import { CharacterEntryCardSkeleton } from './CharacterEntryCardSkeleton.js';
+import { WorldCardSkeleton } from './WorldCardSkeleton.js';
 
 afterEach(() => cleanup());
 
@@ -34,6 +37,36 @@ const abilityFixture: AvailableClassAction = {
 };
 
 describe('@mudd/ui components', () => {
+  it('renders reusable decorative skeleton shapes without exposing them to assistive technology', () => {
+    const { container } = render(
+      <div>
+        <Skeleton variant="text" width="12rem" />
+        <Skeleton variant="block" width="4rem" height="3rem" />
+        <Skeleton variant="circle" width="2rem" height="2rem" />
+      </div>,
+    );
+    const shapes = container.querySelectorAll('.mudd-skeleton');
+    expect(shapes).toHaveLength(3);
+    shapes.forEach((shape) => expect(shape).toHaveAttribute('aria-hidden', 'true'));
+    expect(shapes[0]).toHaveStyle({ width: '12rem' });
+    expect(shapes[2]).toHaveClass('mudd-skeleton--circle');
+  });
+
+  it('matches compact character cards with a decorative loading placeholder', () => {
+    const { container } = render(<CharacterEntryCardSkeleton compact showWorldName={false} />);
+    const card = container.querySelector('.mudd-character-entry--skeleton');
+    expect(card).toHaveAttribute('aria-hidden', 'true');
+    expect(card).toHaveClass('mudd-character-entry--compact');
+    expect(container.querySelector('.mudd-character-entry__skeleton-world')).toBeNull();
+    expect(container.querySelector('.mudd-character-entry__skeleton-name')).toBeInTheDocument();
+  });
+
+  it('renders the world discovery placeholder as decorative content', () => {
+    const { container } = render(<WorldCardSkeleton />);
+    expect(container.querySelector('.mudd-world-card--skeleton')).toHaveAttribute('aria-hidden', 'true');
+    expect(container.querySelectorAll('.mudd-world-card--skeleton .mudd-skeleton')).toHaveLength(6);
+  });
+
   it('announces vital recovery and offers free rest anywhere', () => {
     const onRest = vi.fn();
     render(

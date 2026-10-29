@@ -2134,10 +2134,6 @@
 }
 
 .focused-loading { min-height: 300px; display: grid; align-content: center; gap: 13px; padding: 20px; }
-.focused-loading .skeleton-line { background: color-mix(in srgb, var(--mudd-border) 78%, transparent); }
-.focused-loading .skeleton-title { width: 67%; height: 32px; }
-.focused-loading .skeleton-body { width: 90%; }
-.focused-loading .skeleton-narrow { width: 61%; }
 .focused-arrival { display: grid; gap: 16px; }
 .focused-arrival-copy { margin: 0; color: var(--mudd-muted); line-height: 1.55; }
 .focused-arrival-form { display: grid; gap: 12px; }

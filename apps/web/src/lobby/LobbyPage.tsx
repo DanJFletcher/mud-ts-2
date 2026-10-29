@@ -1,6 +1,6 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { useLocation, useSearch } from 'wouter';
-import { Button, ClassChoice, TextInput, WorldCard, WorldHero } from '@mudd/ui';
+import { Button, CharacterEntryCardSkeleton, ClassChoice, Skeleton, TextInput, WorldCard, WorldCardSkeleton, WorldHero } from '@mudd/ui';
 import { AccountShell } from './AccountShell.js';
 import { CharacterCard } from './CharacterCard.js';
 import { appHref, rememberEntryIntent, worldPath } from './navigation.js';
@@ -65,10 +65,17 @@ export function LobbyPage({ worldId, showAllCharacters = false }: { worldId?: st
     : showAllCharacters
       ? sortCharactersByActivity(state.roster?.characters ?? [])
       : recentCharacters(state.roster?.characters ?? []).slice(0, 4);
-  const characterList = <div className={`lobby-character-list${worldId ? '' : showAllCharacters ? ' lobby-character-list--all' : ' lobby-character-list--recent'}`}>{characters.map((character) =>
+  const characterListClassName = `lobby-character-list${worldId ? '' : showAllCharacters ? ' lobby-character-list--all' : ' lobby-character-list--recent'}`;
+  const characterList = <div className={characterListClassName}>{characters.map((character) =>
     <CharacterCard key={character.characterId} character={character} active={activeId(character.worldInstanceId) === character.characterId}
       pending={pending} compact showWorldName={!worldId} onPlay={() => play(character)} onManage={manage} />,
   )}</div>;
+  const characterLoading = <div className={characterListClassName} role="status" aria-label="Loading characters">
+    <span className="mudd-visually-hidden">Loading characters…</span>
+    {Array.from({ length: showAllCharacters ? 4 : 2 }, (_, index) =>
+      <CharacterEntryCardSkeleton key={index} compact showWorldName={!worldId} />,
+    )}
+  </div>;
   const errors = <>
     {error && <div className="lobby-error" role="alert">{error}</div>}
     {state.rosterError && <div className="lobby-error" role="alert"><p>{state.rosterError}</p><Button onClick={() => void state.reload()}>Retry characters</Button></div>}
@@ -119,7 +126,22 @@ export function LobbyPage({ worldId, showAllCharacters = false }: { worldId?: st
       </form>}
   </section>;
 
-  if (state.catalogLoading) return <AccountShell><p role="status">Loading worlds…</p></AccountShell>;
+  if (state.catalogLoading && worldId) return <AccountShell>
+    <a className="lobby-back" href={appHref('/')}>Back to worlds</a>
+    <div className="mudd-world-hero" role="status" aria-label="Loading world details" aria-busy="true">
+      <div className="mudd-world-hero__content lobby-world-hero-skeleton">
+        <Skeleton variant="text" width="8rem" height=".6rem" />
+        <Skeleton variant="block" width="72%" height="3rem" />
+        <Skeleton variant="text" width="84%" height="1rem" />
+        <Skeleton variant="text" width="68%" height="1rem" />
+      </div>
+    </div>
+    {errors}
+    <section className="lobby-world-characters" aria-labelledby="world-characters-heading">
+      <div className="lobby-section-heading"><h2 id="world-characters-heading">Your characters</h2></div>
+      {state.rosterLoading ? characterLoading : characterList}
+    </section>
+  </AccountShell>;
   if (state.catalogError) return <AccountShell><h1>Worlds unavailable</h1><p role="alert">{state.catalogError}</p><Button onClick={() => void state.reload()}>Retry worlds</Button></AccountShell>;
   if (worldId && !world) return <AccountShell><h1>World not found</h1><p>This world is not available in the current catalog.</p><a href={appHref('/')}>Back to worlds</a></AccountShell>;
 
@@ -134,7 +156,7 @@ export function LobbyPage({ worldId, showAllCharacters = false }: { worldId?: st
     {state.roster && !state.isSignedIn && <p className="lobby-small">Guest characters · saved in this browser</p>}
     <section className="lobby-all-characters" aria-labelledby="all-characters-heading">
       <h2 id="all-characters-heading">Characters</h2>
-      {state.rosterLoading ? <p role="status">Loading characters…</p> : characterList}
+      {state.rosterLoading ? characterLoading : characterList}
       {!state.rosterLoading && !characters.length && !state.rosterError && <div className="lobby-empty">
         <h3>{state.roster ? 'No characters yet' : 'Characters are not available'}</h3>
         <p>{state.roster ? 'Explore a world to create your first character.' : 'Sign in or start a guest session from a world to see your characters here.'}</p>
@@ -155,7 +177,7 @@ export function LobbyPage({ worldId, showAllCharacters = false }: { worldId?: st
         <div className="lobby-section-heading"><h2 id="world-characters-heading">Your characters</h2>
           {state.roster && <Button variant="quiet" onClick={() => setShowArchived(!showArchived)}>{showArchived ? 'Show current characters' : 'Show archived'}</Button>}
         </div>
-         {state.rosterLoading ? <p role="status">Loading characters…</p> : characterList}
+         {state.rosterLoading ? characterLoading : characterList}
          {!state.rosterLoading && !characters.length && !state.rosterError && <p className="lobby-empty">{showArchived ? 'No archived characters in this world.' : 'Your first story in this world starts here. Create a character below.'}</p>}
       </section>
       {createSection}
@@ -164,9 +186,15 @@ export function LobbyPage({ worldId, showAllCharacters = false }: { worldId?: st
       {errors}{switchPrompt}
       <div className="lobby-grid">
         <section className="lobby-worlds" aria-labelledby="worlds-heading"><h2 id="worlds-heading">Explore worlds</h2>
-          <div className="lobby-world-list">{state.worlds.map((item) => <WorldCard key={item.worldInstanceId} name={item.name} summary={item.summary}
-            href={appHref(worldPath(item.worldInstanceId))} imageSrc={item.coverImage ? appHref(item.coverImage) : undefined} />)}</div>
-          {!state.worlds.length && <p>No worlds are available yet.</p>}
+          {state.catalogLoading
+            ? <div className="lobby-world-list" role="status" aria-label="Loading worlds">
+              <span className="mudd-visually-hidden">Loading worlds…</span>
+              <WorldCardSkeleton />
+              <WorldCardSkeleton />
+            </div>
+            : <div className="lobby-world-list">{state.worlds.map((item) => <WorldCard key={item.worldInstanceId} name={item.name} summary={item.summary}
+              href={appHref(worldPath(item.worldInstanceId))} imageSrc={item.coverImage ? appHref(item.coverImage) : undefined} />)}</div>}
+          {!state.catalogLoading && !state.worlds.length && <p>No worlds are available yet.</p>}
         </section>
         <section className="lobby-recent" aria-labelledby="recent-heading">
           <div className="lobby-section-heading">
@@ -174,7 +202,7 @@ export function LobbyPage({ worldId, showAllCharacters = false }: { worldId?: st
             <a className="lobby-all-characters-link" href={appHref('/characters')}>All characters</a>
           </div>
           {state.roster && !state.isSignedIn && <p className="lobby-small">Guest characters · saved in this browser</p>}
-           {state.rosterLoading ? <p role="status">Checking your characters…</p> : characterList}
+           {state.rosterLoading ? characterLoading : characterList}
            {!state.rosterLoading && !characters.length && !state.rosterError && <div className="lobby-empty"><h3>Your next traveler awaits</h3>
             <p>Choose a world to create a character. You can play as a guest or sign in.</p>
             {state.anonymous && <a href={appHref('/sign-in')} onClick={() => rememberEntryIntent('/')}>Sign in for your saved characters</a>}
