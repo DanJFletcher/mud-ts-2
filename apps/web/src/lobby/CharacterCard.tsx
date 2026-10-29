@@ -14,19 +14,21 @@ export function CharacterCard({ character, active, pending, compact = false, sho
   const [name, setName] = useState(character.name);
   const dead = character.combat?.status === 'defeat' || character.health?.current === 0;
   const statusLabel = character.archived ? 'Archived' : dead ? 'Deceased' : active ? 'In world' : 'Ready to play';
+  const detailsHref = appHref(characterPath(character.characterId));
   return <CharacterEntryCard name={character.name} worldName={showWorldName ? character.worldName : undefined}
     classLabel={character.characterClass?.label}
     level={character.advancement?.level}
     statusLabel={compact && !dead && !character.archived ? undefined : statusLabel}
     actionLabel={active ? `Continue as ${character.name}` : `Play as ${character.name}`}
     compact={compact}
-    detailsHref={appHref(characterPath(character.characterId))}
     onPlay={onPlay} disabled={pending || entryDisabled(character)} busy={false}
     secondaryActions={<details className="character-options"><summary aria-label={`Manage ${character.name}`}>
       <span className="character-options__label">Manage</span>
       <span className="character-options__compact-label" aria-hidden="true">⋯</span>
     </summary>
-      <div>{character.archived ? <Button variant="quiet" disabled={pending} onClick={() => void onManage('restore', character)}>Restore</Button>
+      <div>
+        <a className="mudd-button mudd-button--quiet character-options__details" href={detailsHref}>Details</a>
+        {character.archived ? <Button variant="quiet" disabled={pending} onClick={() => void onManage('restore', character)}>Restore</Button>
         : <><Button variant="quiet" disabled={pending} onClick={() => setMode('rename')}>Rename</Button>
           <Button variant="quiet" disabled={pending || active} onClick={() => setMode('archive')}>Archive</Button></>}</div>
     </details>}>

@@ -10,7 +10,6 @@ export interface CharacterEntryCardProps {
   statusLabel?: string;
   actionLabel: string;
   compact?: boolean;
-  detailsHref?: string;
   onPlay: () => void;
   disabled?: boolean;
   busy?: boolean;
@@ -19,18 +18,18 @@ export interface CharacterEntryCardProps {
 }
 
 export function CharacterEntryCard({
-  name, worldName, classLabel, level, statusLabel, actionLabel, compact = false, detailsHref, onPlay,
+  name, worldName, classLabel, level, statusLabel, actionLabel, compact = false, onPlay,
   disabled = false, busy = false, secondaryActions, children,
 }: CharacterEntryCardProps) {
   const details = [classLabel, typeof level === 'number' ? `Level ${level}` : undefined].filter(Boolean);
   const content = Children.toArray(children);
   return (
-    <article className={`mudd-character-entry${compact ? ' mudd-character-entry--compact' : ''}${detailsHref ? ' mudd-character-entry--linked' : ''}`}>
+    <article className={`mudd-character-entry${compact ? ' mudd-character-entry--compact' : ''}`}>
       <div className="mudd-character-entry__top">
         <div className="mudd-character-entry__identity">
           {worldName ? <p className="mudd-character-entry__eyebrow">{worldName}</p> : null}
           <h3 className="mudd-character-entry__name">
-            {detailsHref ? <a className="mudd-character-entry__name-link" href={detailsHref}>{name}</a> : name}
+            {name}
           </h3>
           {details.length > 0 ? <p className="mudd-character-entry__details">{details.join(' · ')}</p> : null}
           {statusLabel ? <p className="mudd-character-entry__status">{statusLabel}</p> : null}

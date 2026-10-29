@@ -11,7 +11,6 @@ const meta = {
     level: 7,
     statusLabel: 'Ready to continue',
     actionLabel: 'Continue as Mira',
-    detailsHref: '/character/mira',
     onPlay: () => undefined,
   },
 } satisfies Meta<typeof CharacterEntryCard>;

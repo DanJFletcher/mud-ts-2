@@ -313,18 +313,16 @@ describe('@mudd/ui components', () => {
     expect(hero).toHaveClass('is-text-cover');
   });
 
-  it('exposes character details and calls its explicit entry action', () => {
+  it('renders a character summary and calls its explicit entry action', () => {
     const onPlay = vi.fn();
     render(<CharacterEntryCard
       name="Mira" worldName="Orraveth" classLabel="Scout" level={4}
       statusLabel="Ready" actionLabel="Continue as Mira" onPlay={onPlay}
-      detailsHref="/character/mira"
       secondaryActions={<button type="button">Manage</button>}
     />);
     expect(screen.getByRole('heading', { level: 3, name: 'Mira' })).toBeInTheDocument();
-    expect(screen.getByRole('article')).toHaveClass('mudd-character-entry--linked');
     expect(screen.getByText('Ready')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Mira' })).toHaveAttribute('href', '/character/mira');
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Continue as Mira' }));
     expect(onPlay).toHaveBeenCalledOnce();
     expect(screen.getByRole('button', { name: 'Manage' })).toBeInTheDocument();
@@ -336,7 +334,6 @@ describe('@mudd/ui components', () => {
       actionLabel="Play as Mira" compact onPlay={() => undefined}
     />);
     expect(screen.getByRole('article')).toHaveClass('mudd-character-entry--compact');
-    expect(screen.getByRole('article')).not.toHaveClass('mudd-character-entry--linked');
     expect(screen.getByRole('button', { name: 'Play as Mira' })).toBeInTheDocument();
   });
 

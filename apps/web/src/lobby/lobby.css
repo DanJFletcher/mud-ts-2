@@ -47,6 +47,7 @@
 .character-options summary { cursor: pointer; padding: .5rem; color: var(--mudd-muted); }
 .character-options__compact-label { display: none; }
 .character-options[open] > div { position: absolute; z-index: 2; right: 0; background: var(--mudd-surface-raised); border: 1px solid var(--mudd-border); border-radius: .6rem; padding: .4rem; box-shadow: var(--mudd-shadow); display: grid; }
+.character-options__details { display: flex; align-items: center; white-space: nowrap; text-decoration: none; }
 .character-detail-link { justify-self: start; min-height: 2.5rem; display: inline-flex; align-items: center; color: var(--mudd-muted); font-size: .82rem; }
 .character-detail-link:hover { color: var(--mudd-accent); }
 .character-detail { max-width: 760px; margin-inline: auto; }
