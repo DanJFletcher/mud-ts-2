@@ -1534,6 +1534,7 @@ export function WorldClient({
         setSnapshot(current);
         return;
       }
+      const treeLabel = character.activeWoodcutting.treeLabel;
       const result = await client.advanceWoodcutting(character.characterId, actionId, character.revision);
       const event = result.events?.find((candidate) => candidate.type === "character.woodcutting_action_advanced");
       const payload = event?.payload;
@@ -1557,12 +1558,12 @@ export function WorldClient({
           addEntry("system", `Woodcutting +${outcome.skillExperienceAwarded} XP · Level ${outcome.level} · ${outcome.totalExperience} XP total.`);
         }
         if (outcome.treeDepleted === true) {
-          addEntry("narration", "The pine has been chopped down. It will regrow in about a minute.");
+          addEntry("narration", `You cut down the ${treeLabel}; only a stump remains.`);
         }
       } else if (outcome.status === "no-log") {
         addEntry("narration", "You swing for ten seconds, but no logs come free.");
       } else if (outcome.status === "tree-depleted") {
-        addEntry("narration", "The tree has already been chopped down.");
+        addEntry("narration", "Only a stump remains where the tree stood.");
       } else if (outcome.status === "interrupted") {
         addEntry("narration", "You stop chopping.");
       }

@@ -159,6 +159,8 @@ const draft = {
     id: 'bellwold-southbound-pine',
     locationId: 'bellwold-southbound-track',
     label: 'pine',
+    roomDescription: 'A pine tree stands beside the packed road, its resin scent sharp in the air.',
+    stumpDescription: 'The stump of a pine stands beside the packed road.',
     logTypeId: 'pine-logs',
     logLabel: 'Pine Logs',
     logDescription: 'A bundled set of fresh pine logs, still carrying a sharp resin scent.',
@@ -1383,7 +1385,7 @@ const draft = {
     {
       id: 'bellwold-southbound-track',
       name: 'Southbound Track',
-      description: 'A pine tree stands beside the packed road, its resin scent sharp in the air. Wind stirs the grass as Bellwold’s roofs recede north; deer prints mark the softer earth.\n\nThe South Gate is north; the reedbed approach lies south.',
+      description: 'Wind stirs the grass as Bellwold’s roofs recede north; deer prints mark the softer earth.\n\nThe South Gate is north; the reedbed approach lies south.',
       mapPosition: { x: 0, y: -5, terrain: 'pasture' },
       exits: [
         { id: 'southbound-track-to-gate', fromLocationId: 'bellwold-southbound-track', toLocationId: 'bellwold-south-gate', label: 'north', direction: 'north', roadId: 'bellwold-south-road' },

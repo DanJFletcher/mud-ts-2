@@ -12,6 +12,8 @@ export const WoodcuttingTreeDefinitionSchema = z.object({
   id: IdSchema,
   locationId: IdSchema,
   label: z.string().min(1).max(120),
+  roomDescription: z.string().min(1).max(1000),
+  stumpDescription: z.string().min(1).max(1000),
   logTypeId: IdSchema,
   logLabel: z.string().min(1).max(120),
   logDescription: z.string().min(1).max(1000),

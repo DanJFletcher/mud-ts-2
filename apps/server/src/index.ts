@@ -43,6 +43,8 @@ import {
   projectInteractionEvents,
   projectCharacterInteractions,
   updateInteractionRequestStatus,
+  WOODCUTTING_TREES_STREAM_ID,
+  projectWoodcuttingTreePresence,
 } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID } from '@mudd/world-demo';
 import { db, pool } from './db/client.js';
@@ -56,6 +58,7 @@ import { createObjectLifecycleScheduler } from './object-lifecycle-scheduler.js'
 import { enterWorld } from './world-entry.js';
 import { shouldInitializeCharacterWallet } from './world-wallet-policy.js';
 import { projectWorldMap } from './world-map-projection.js';
+import { projectWoodcuttingRoom } from './woodcutting-room-projection.js';
 import {
   createGuestIdentity,
   expiredGuestCookie,
@@ -509,7 +512,13 @@ async function buildGameProjection(
     characterId: session.characterId,
     payload: {},
   });
-  const [result, statsResult, locationGroupCatalog] = await Promise.all([
+  const localWoodcuttingTrees = runtime.world.woodcuttingTrees
+    .filter((tree) => tree.locationId === character.locationId);
+  const treeEventsPromise = localWoodcuttingTrees.length > 0
+    ? measureStage('woodcuttingTreeProjection', () =>
+      store.readStream(session.worldInstanceId, WOODCUTTING_TREES_STREAM_ID))
+    : Promise.resolve([]);
+  const [result, statsResult, locationGroupCatalog, treeEvents] = await Promise.all([
     measureStage('locationProjection', () => runtime.engine.query(query, worldContext(identity, session), {
       characterProjection: character,
       correlationId: requestId,
@@ -520,6 +529,7 @@ async function buildGameProjection(
       correlationId: requestId,
     })),
     measureStage('locationGroupCatalog', () => runtime.locationGroupsFeature.catalog.read()),
+    treeEventsPromise,
   ]);
   if (!result.ok) {
     const status = result.code === 'INTERNAL_ERROR' ? 500 : result.code === 'NOT_FOUND' ? 404 : 403;
@@ -530,12 +540,19 @@ async function buildGameProjection(
     return { ok: false, status, code: statsResult.code, message: statsResult.message };
   }
 
-  const location = await locationWithRoomPresence(
+  const baseLocation = await locationWithRoomPresence(
     result.value,
     session.worldInstanceId,
     session.characterId,
     locationGroupCatalog.groups,
   );
+  const treePresence = projectWoodcuttingTreePresence(
+    localWoodcuttingTrees,
+    treeEvents,
+    new Date(),
+  );
+  const woodcuttingRoom = projectWoodcuttingRoom(baseLocation, treePresence);
+  const location = woodcuttingRoom.location;
   const currentWorldLocation = runtime.world.locations.find((entry) => entry.id === character.locationId);
   const currentStateId = character.locationStateId ?? currentWorldLocation?.defaultStateId;
   return {
@@ -550,9 +567,7 @@ async function buildGameProjection(
         .filter((spot) => spot.locationId === character.locationId &&
           (!spot.stateId || spot.stateId === currentStateId))
         .map(({ id, label }) => ({ id, label })),
-      availableWoodcuttingTrees: runtime.world.woodcuttingTrees
-        .filter((tree) => tree.locationId === character.locationId)
-        .map(({ id, label }) => ({ id, label })),
+       availableWoodcuttingTrees: woodcuttingRoom.availableTrees,
       dailyActivities: {
         cycle: new Date().toISOString().slice(0, 10),
         boards: runtime.world.dailyBoards.filter((board) => board.locationId === character.locationId)

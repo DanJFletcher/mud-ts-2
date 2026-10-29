@@ -1,12 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CharacterProjectionSchema, type WoodcuttingTreeDefinition } from '@mudd/contracts';
-import { woodcuttingPlugin, validateWoodcuttingTrees, WOODCUTTING_TREES_STREAM_ID } from './woodcutting.js';
+import {
+  woodcuttingPlugin,
+  validateWoodcuttingTrees,
+  WOODCUTTING_TREES_STREAM_ID,
+  projectWoodcuttingTreePresence,
+} from './woodcutting.js';
 
 const NOW = new Date('2026-10-27T12:00:00.000Z');
 const TREE: WoodcuttingTreeDefinition = {
   id: 'pine-tree',
   locationId: 'grove',
   label: 'pine',
+  roomDescription: 'A pine tree stands beside the path.',
+  stumpDescription: 'The stump of a pine stands beside the path.',
   logTypeId: 'pine-logs',
   logLabel: 'Pine Logs',
   logDescription: 'A bundle of pine logs.',
@@ -236,7 +243,7 @@ describe('woodcutting.start', () => {
     await expect(chopped.handlers.get('woodcutting.start')!(
       commandPayload(player.characterId, player.revision, { treeId: TREE.id, axeItemId: AXE.id }),
       chopped.context,
-    )).rejects.toThrow('That tree has been chopped down. It will regrow in 90 seconds.');
+    )).rejects.toThrow('Only a stump remains where that tree stood.');
   });
 });
 

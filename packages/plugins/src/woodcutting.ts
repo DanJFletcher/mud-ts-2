@@ -53,6 +53,33 @@ function currentTreeState(
   return state;
 }
 
+export type WoodcuttingTreePresence = {
+  id: string;
+  locationId: string;
+  label: string;
+  available: boolean;
+  description: string;
+};
+
+export function projectWoodcuttingTreePresence(
+  trees: readonly WoodcuttingTreeDefinition[],
+  events: readonly { type: string; payload: unknown }[],
+  now: Date,
+): WoodcuttingTreePresence[] {
+  const states = projectTrees(events);
+  return trees.map((tree) => {
+    const state = currentTreeState(tree, states.get(tree.id), now);
+    const available = state.remainingLogs > 0;
+    return {
+      id: tree.id,
+      locationId: tree.locationId,
+      label: tree.label,
+      available,
+      description: available ? tree.roomDescription : tree.stumpDescription,
+    };
+  });
+}
+
 function axeChance(baseChance: number, level: number, power: number): number {
   return Math.min(90, baseChance + Math.floor((level - 1) / 5) + (power - 1) * 3);
 }
@@ -111,8 +138,7 @@ export const woodcuttingPlugin: EnginePlugin = {
       const treeEvents = await context.store.readStream(context.worldInstanceId, WOODCUTTING_TREES_STREAM_ID);
       const stock = currentTreeState(tree, projectTrees(treeEvents).get(tree.id), context.now());
       if (stock.remainingLogs <= 0) {
-        const seconds = Math.max(1, Math.ceil((Date.parse(stock.respawnsAt ?? '') - context.now().getTime()) / 1000));
-        throw new RuleViolationError(`That tree has been chopped down. It will regrow in ${seconds} seconds.`);
+        throw new RuleViolationError('Only a stump remains where that tree stood.');
       }
 
       const action = WoodcuttingActionStateSchema.parse({

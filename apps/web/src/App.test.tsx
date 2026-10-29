@@ -117,6 +117,7 @@ let healingDraughtCarried: boolean;
 let fishingRodCarried: boolean;
 let woodcuttingAxeCarried: boolean;
 let availableWoodcuttingTrees: Array<{ id: string; label: string }>;
+let woodcuttingDepletesTree: boolean;
 let activeWoodcuttingState: {
   actionId: string;
   treeId: string;
@@ -509,6 +510,7 @@ beforeEach(() => {
   fishingRodCarried = false;
   woodcuttingAxeCarried = false;
   availableWoodcuttingTrees = [];
+  woodcuttingDepletesTree = false;
   activeWoodcuttingState = null;
   characterHealth = null;
   characterStamina = { current: 100, maximum: 100 };
@@ -1137,7 +1139,11 @@ beforeEach(() => {
         });
       }
       if (command.type === 'woodcutting.advance') {
-        if (activeWoodcuttingState) {
+        const treeDepleted = woodcuttingDepletesTree;
+        woodcuttingDepletesTree = false;
+        if (treeDepleted) {
+          activeWoodcuttingState = null;
+        } else if (activeWoodcuttingState) {
           activeWoodcuttingState = {
             ...activeWoodcuttingState,
             ticksCompleted: Math.min(9, activeWoodcuttingState.ticksCompleted + 1),
@@ -1150,7 +1156,17 @@ beforeEach(() => {
           streamId: characterId,
           events: [{
             type: 'character.woodcutting_action_advanced',
-            payload: { status: 'waiting', ticksCompleted: activeWoodcuttingState?.ticksCompleted ?? 0 },
+            payload: treeDepleted
+              ? {
+                status: 'logged',
+                ticksCompleted: 10,
+                logLabel: 'pine logs',
+                skillExperienceAwarded: 25,
+                totalExperience: 25,
+                level: 1,
+                treeDepleted: true,
+              }
+              : { status: 'waiting', ticksCompleted: activeWoodcuttingState?.ticksCompleted ?? 0 },
           }],
         });
       }
@@ -3695,6 +3711,25 @@ describe('single-character world session client', () => {
     expect(JSON.parse(String(startCommand?.[1]?.body))).toMatchObject({
       payload: { axeItemId: 'copper-axe', treeId: 'southbound-pine' },
     });
+  });
+
+  it('says only a stump remains when a woodcutting action cuts down a tree', async () => {
+    woodcuttingDepletesTree = true;
+    activeWoodcuttingState = {
+      actionId: 'depleting-woodcutting-action',
+      treeId: 'southbound-pine',
+      treeLabel: 'pine',
+      axeItemId: 'copper-axe',
+      locationId: 'mossgate-clearing',
+      startedAt: new Date(Date.now() - 10_000).toISOString(),
+      ticksCompleted: 9,
+      ticksRequired: 10,
+    };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    const stumpMessage = await screen.findByText('You cut down the pine; only a stump remains.');
+    expect(stumpMessage).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Terminal transcript' })).not.toHaveTextContent(/regrow/i);
   });
 
   it('keeps woodcutting recoverable when an NPC room announcement arrives', async () => {

@@ -1,6 +1,12 @@
 export { dailyJobsPlugin } from './daily-jobs.js';
 export { fishingPlugin } from './fishing.js';
-export { woodcuttingPlugin, WOODCUTTING_TREES_STREAM_ID, validateWoodcuttingTrees } from './woodcutting.js';
+export {
+  woodcuttingPlugin,
+  WOODCUTTING_TREES_STREAM_ID,
+  validateWoodcuttingTrees,
+  projectWoodcuttingTreePresence,
+} from './woodcutting.js';
+export type { WoodcuttingTreePresence } from './woodcutting.js';
 export { craftingPlugin, validateCraftingWorld } from './crafting.js';
 export { projectGroupActivity } from './groups.js';
 export * from './classes.js';
