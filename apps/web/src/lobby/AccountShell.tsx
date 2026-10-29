@@ -31,9 +31,9 @@ export function AccountShell({ children }: { children: ReactNode }) {
   }
   return <div className="mudd-client lobby-shell" data-theme={theme}>
     <header className="lobby-header">
-      <Link className="lobby-brand" href="/" aria-label="MUDD worlds"><img src={appHref('/logo.svg')} alt="" />MUDD</Link>
+      <Link className="lobby-brand" href="/" aria-label="MUDD home"><img src={appHref('/logo.svg')} alt="" />MUDD</Link>
       <div className="lobby-mobile-primary-nav" role="navigation" aria-label="Primary navigation">
-        <Link href="/" onClickCapture={closeMobileMenu}>Worlds</Link>
+        <Link href="/worlds" onClickCapture={closeMobileMenu}>Worlds</Link>
         <Link href="/characters" onClickCapture={closeMobileMenu}>Characters</Link>
         {isSignedIn
           ? <Button className="lobby-mobile-auth" variant="quiet" onClick={() => { closeMobileMenu(); void signOut({ redirectUrl: appHref('/') }); }}>Sign out</Button>
@@ -50,7 +50,7 @@ export function AccountShell({ children }: { children: ReactNode }) {
         {mobileMenuOpen ? <X size={20} aria-hidden="true" /> : <Menu size={20} aria-hidden="true" />}
       </button>
       <nav id="account-navigation" className={mobileMenuOpen ? 'is-open' : undefined} aria-label="Account navigation">
-        <Link className="lobby-desktop-nav-item" href="/" onClickCapture={closeMobileMenu}>Worlds</Link>
+        <Link className="lobby-desktop-nav-item" href="/worlds" onClickCapture={closeMobileMenu}>Worlds</Link>
         <Link className="lobby-desktop-nav-item" href="/characters" onClickCapture={closeMobileMenu}>Characters</Link>
         <Link href="/codex" onClickCapture={closeMobileMenu}>Codex</Link>
         <PwaInstallAction className="pwa-install-action__nav-button" />

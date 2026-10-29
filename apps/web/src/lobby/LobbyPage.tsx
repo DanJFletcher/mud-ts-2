@@ -133,8 +133,8 @@ export function LobbyPage({ worldId, showAllCharacters = false, showWorldCharact
 
   if (state.catalogLoading && worldId) return <AccountShell>
     <LobbyBreadcrumbs items={showWorldCharacters
-      ? [{ label: 'Worlds', href: '/' }, { label: 'World', href: worldPath(worldId) }, { label: 'Characters' }]
-      : [{ label: 'Worlds', href: '/' }, { label: 'World' }]} />
+      ? [{ label: 'Worlds', href: '/worlds' }, { label: 'World', href: worldPath(worldId) }, { label: 'Characters' }]
+      : [{ label: 'Worlds', href: '/worlds' }, { label: 'World' }]} />
     <div className="mudd-world-hero" role="status" aria-label="Loading world details" aria-busy="true">
       <div className="mudd-world-hero__content lobby-world-hero-skeleton">
         <Skeleton variant="text" width="8rem" height=".6rem" />
@@ -151,12 +151,12 @@ export function LobbyPage({ worldId, showAllCharacters = false, showWorldCharact
   </AccountShell>;
   if (state.catalogError) return <AccountShell><h1>Worlds unavailable</h1><p role="alert">{state.catalogError}</p><Button onClick={() => void state.reload()}>Retry worlds</Button></AccountShell>;
   if (worldId && !world) return <AccountShell>
-    <LobbyBreadcrumbs items={[{ label: 'Worlds', href: '/' }, { label: 'World not found' }]} />
+    <LobbyBreadcrumbs items={[{ label: 'Worlds', href: '/worlds' }, { label: 'World not found' }]} />
     <h1>World not found</h1><p>This world is not available in the current catalog.</p>
   </AccountShell>;
 
   if (showAllCharacters) return <AccountShell>
-    <LobbyBreadcrumbs items={[{ label: 'Worlds', href: '/' }, { label: 'Characters' }]} />
+    <LobbyBreadcrumbs items={[{ label: 'Worlds', href: '/worlds' }, { label: 'Characters' }]} />
     <div className="lobby-intro lobby-all-characters__intro">
       <p className="lobby-eyebrow">MUDD · Your roster</p>
       <h1>All characters</h1>
@@ -171,8 +171,8 @@ export function LobbyPage({ worldId, showAllCharacters = false, showWorldCharact
         <h3>{state.roster ? 'No characters yet' : 'Characters are not available'}</h3>
         <p>{state.roster ? 'Explore a world to create your first character.' : 'Sign in or start a guest session from a world to see your characters here.'}</p>
         <div className="lobby-buttons">
-          <Link href="/">Browse worlds</Link>
-          {state.anonymous && <Link href="/sign-in" onClickCapture={() => rememberEntryIntent('/')}>Sign in</Link>}
+          <Link href="/worlds">Browse worlds</Link>
+          {state.anonymous && <Link href="/sign-in" onClickCapture={() => rememberEntryIntent('/worlds')}>Sign in</Link>}
         </div>
       </div>}
     </section>
@@ -182,11 +182,11 @@ export function LobbyPage({ worldId, showAllCharacters = false, showWorldCharact
     {world ? <>
       <LobbyBreadcrumbs items={showWorldCharacters
         ? [
-          { label: 'Worlds', href: '/' },
+          { label: 'Worlds', href: '/worlds' },
           { label: world.name, href: worldPath(world.worldInstanceId) },
           { label: 'Characters' },
         ]
-        : [{ label: 'Worlds', href: '/' }, { label: world.name }]} />
+        : [{ label: 'Worlds', href: '/worlds' }, { label: world.name }]} />
       <WorldHero name={world.name} summary={world.summary} introduction={world.introduction} imageSrc={world.coverImage ? appHref(world.coverImage) : undefined} />
       {errors}{switchPrompt}
       <section className="lobby-world-characters" aria-labelledby="world-characters-heading">
@@ -222,7 +222,7 @@ export function LobbyPage({ worldId, showAllCharacters = false, showWorldCharact
            {state.rosterLoading ? characterLoading : characterList}
            {!state.rosterLoading && !characters.length && !state.rosterError && <div className="lobby-empty"><h3>Your next traveler awaits</h3>
             <p>Choose a world to create a character. You can play as a guest or sign in.</p>
-            {state.anonymous && <Link href="/sign-in" onClickCapture={() => rememberEntryIntent('/')}>Sign in for your saved characters</Link>}
+            {state.anonymous && <Link href="/sign-in" onClickCapture={() => rememberEntryIntent('/worlds')}>Sign in for your saved characters</Link>}
           </div>}
         </section>
       </div>

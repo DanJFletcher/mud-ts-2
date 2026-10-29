@@ -9,7 +9,7 @@ const intentKey = 'mudd-entry-intent';
 
 /** Only browsing/creation destinations, never external URLs or auto-play. */
 export function safeEntryIntent(value: string | null): string {
-  return value && /^\/worlds\/[a-zA-Z0-9_-]+(?:\?create=1)?$/.test(value) ? value : '/';
+  return value && (/^\/worlds$/.test(value) || /^\/worlds\/[a-zA-Z0-9_-]+(?:\?create=1)?$/.test(value)) ? value : '/';
 }
 export function rememberEntryIntent(path: string) {
   sessionStorage.setItem(intentKey, safeEntryIntent(path));

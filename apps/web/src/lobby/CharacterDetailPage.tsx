@@ -13,12 +13,12 @@ function DetailRow({ label, children }: { label: string; children: ReactNode }) 
 function CharacterTrail({ worldId, worldName, current }: { worldId?: string; worldName?: string; current: string }) {
   return <LobbyBreadcrumbs items={worldId
     ? [
-      { label: 'Worlds', href: '/' },
+      { label: 'Worlds', href: '/worlds' },
       { label: worldName || 'World', href: worldPath(worldId) },
       { label: 'Characters', href: worldCharactersPath(worldId) },
       { label: current },
     ]
-    : [{ label: 'Worlds', href: '/' }, { label: current }]} />;
+    : [{ label: 'Worlds', href: '/worlds' }, { label: current }]} />;
 }
 
 export function CharacterDetailPage({ characterId, worldId }: { characterId: string; worldId?: string }) {

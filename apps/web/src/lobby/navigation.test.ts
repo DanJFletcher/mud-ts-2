@@ -9,6 +9,8 @@ describe('entry routes under a mounted application', () => {
     expect(appHref(playPath('world'))).toBe('/mudd/worlds/world/play');
     expect(appHref(worldCharactersPath('world'))).toBe('/mudd/worlds/world/characters');
     expect(appHref(characterPath('world/id', 'character/id'))).toBe('/mudd/worlds/world%2Fid/characters/character%2Fid');
+    rememberEntryIntent('/worlds');
+    expect(appHref(entryIntent())).toBe('/mudd/worlds');
     rememberEntryIntent('/worlds/world?create=1');
     expect(appHref(entryIntent())).toBe('/mudd/worlds/world?create=1');
     for (const invalid of ['https://evil.test', '//evil.test', '/worlds/world/play', '/worlds/../sign-out', '/worlds/world?redirect=https://evil.test']) {

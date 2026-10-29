@@ -147,7 +147,7 @@ describe('world lobby and explicit character entry', () => {
     expect(navigation).toHaveClass('is-open');
     const primary = container.querySelector<HTMLElement>('[aria-label="Primary navigation"]');
     expect(primary).not.toBeNull();
-    expect(within(primary!).getByRole('link', { name: 'Worlds' })).toHaveAttribute('href', '/');
+    expect(within(primary!).getByRole('link', { name: 'Worlds' })).toHaveAttribute('href', '/worlds');
     expect(within(primary!).getByRole('link', { name: 'Characters' })).toHaveAttribute('href', '/characters');
     expect(within(primary!).getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
     expect(within(navigation!).getByRole('link', { name: 'Worlds' })).toHaveClass('lobby-desktop-nav-item');
@@ -162,6 +162,7 @@ describe('world lobby and explicit character entry', () => {
   it('keeps sign-in outside the mobile menu when signed out', async () => {
     mocks.signedIn = false;
     const { container } = open();
+    expect(screen.getByRole('link', { name: 'Continue your journey' })).toHaveAttribute('href', '/sign-in');
     const primary = container.querySelector<HTMLElement>('[aria-label="Primary navigation"]');
     const navigation = container.querySelector<HTMLElement>('#account-navigation');
     expect(primary).not.toBeNull();
@@ -172,7 +173,7 @@ describe('world lobby and explicit character entry', () => {
 
   it('renders world discovery before the character roster request finishes', async () => {
     holdRoster = true;
-    const { container } = open();
+    const { container } = open('/worlds');
     expect(await screen.findByRole('heading', { name: 'Explore worlds' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /The Waystone Path/ })).toHaveAttribute('href', `/worlds/${demo}`);
     expect(container.querySelectorAll('.mudd-character-entry--skeleton')).toHaveLength(2);
@@ -185,7 +186,7 @@ describe('world lobby and explicit character entry', () => {
   it('renders world and character card placeholders while lobby data is pending', async () => {
     holdCatalog = true;
     holdRoster = true;
-    const { container } = open();
+    const { container } = open('/worlds');
     expect(screen.getByRole('heading', { name: 'Where will you go next?' })).toBeInTheDocument();
     expect(screen.getByRole('status', { name: 'Loading worlds' })).toBeInTheDocument();
     expect(container.querySelectorAll('.mudd-world-card--skeleton')).toHaveLength(2);
@@ -200,15 +201,25 @@ describe('world lobby and explicit character entry', () => {
     expect(container.querySelectorAll('.mudd-world-card--skeleton, .mudd-character-entry--skeleton')).toHaveLength(0);
   });
 
-  it('navigates to a world through the lobby without a document reload', async () => {
+  it('shows the public home and enters the Worlds lobby through its main action', async () => {
     open('/');
+    expect(await screen.findByRole('heading', { level: 1, name: /The road begins.*where the map ends/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Continue your journey' })).toHaveAttribute('href', '/worlds');
+    fireEvent.click(screen.getByRole('link', { name: /Find your world/ }));
+    await screen.findByRole('heading', { name: 'Explore worlds' });
+    expect(window.location.pathname).toBe('/worlds');
+    expect(calls('POST', '/api/world-session')).toHaveLength(0);
+  });
+
+  it('navigates to a world through the lobby without a document reload', async () => {
+    open('/worlds');
     fireEvent.click(await screen.findByRole('link', { name: /The Waystone Path/ }));
     expect(await screen.findByRole('heading', { name: 'The Waystone Path' })).toBeInTheDocument();
     expect(window.location.pathname).toBe(`/worlds/${demo}`);
   });
 
   it('navigates to all characters through the lobby without a document reload', async () => {
-    open('/');
+    open('/worlds');
     fireEvent.click(await screen.findByRole('link', { name: 'All characters' }));
     expect(await screen.findByRole('heading', { name: 'All characters' })).toBeInTheDocument();
     expect(window.location.pathname).toBe('/characters');
@@ -250,7 +261,7 @@ describe('world lobby and explicit character entry', () => {
 
   it('orders real recent history ahead of legacy nulls without auto-entering an active session', async () => {
     sessions = [{ id: sessionId, characterId: one, worldInstanceId: demo }];
-    open();
+    open('/worlds');
     await screen.findByRole('heading', { name: 'Recent characters' });
     const recent = screen.getByRole('region', { name: 'Recent characters' });
     expect(within(recent).getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual(['Moss', 'Rowan']);
@@ -259,14 +270,14 @@ describe('world lobby and explicit character entry', () => {
     expect(screen.getByRole('link', { name: /Orraveth: Bellwold/ })).toHaveAttribute('href', `/worlds/${orra}`);
     expect(within(recent).getByRole('link', { name: 'All characters' })).toHaveAttribute('href', '/characters');
   });
-  it('limits the home recent-character section to the four most recently played characters', async () => {
+  it('limits the Worlds lobby recent-character section to four characters', async () => {
     characters = Array.from({ length: 6 }, (_, index) => ({
       ...fixture,
       characterId: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
       name: `Traveler ${index + 1}`,
       lastPlayedAt: `2026-10-${String(index + 1).padStart(2, '0')}T10:00:00.000Z`,
     }));
-    open();
+    open('/worlds');
     await screen.findByRole('heading', { name: 'Recent characters' });
     const recent = screen.getByRole('region', { name: 'Recent characters' });
     expect(within(recent).getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual([
@@ -291,7 +302,7 @@ describe('world lobby and explicit character entry', () => {
     ]);
     expect(within(section).getByText('Archived')).toBeInTheDocument();
     const breadcrumb = screen.getByRole('navigation', { name: 'Breadcrumb' });
-    expect(within(breadcrumb).getByRole('link', { name: 'Worlds' })).toHaveAttribute('href', '/');
+    expect(within(breadcrumb).getByRole('link', { name: 'Worlds' })).toHaveAttribute('href', '/worlds');
   });
   it('browses anonymously without creating a guest and resolves direct world detail URLs', async () => {
     mocks.signedIn = false;
@@ -373,9 +384,9 @@ describe('world lobby and explicit character entry', () => {
     visit(`/worlds/${orra}`);
     await screen.findByRole('heading', { level: 1, name: 'Orraveth: Bellwold' });
     visit('/');
-    await screen.findByRole('heading', { name: 'Recent characters' });
+    await screen.findByRole('heading', { level: 1, name: /The road begins.*where the map ends/i });
     visit('/guest-world');
-    await screen.findByRole('heading', { name: 'Recent characters' });
+    await screen.findByRole('heading', { level: 1, name: /The road begins.*where the map ends/i });
     expect(calls('POST', '/api/world-session')).toHaveLength(0);
   });
   it('shows a useful unknown world or missing-session screen, not gameplay', async () => {
@@ -429,7 +440,7 @@ describe('world lobby and explicit character entry', () => {
     expect(screen.getByText('3 items')).toBeInTheDocument();
     expect(screen.getByText('Dried yarrow × 3')).toBeInTheDocument();
     const trail = screen.getByRole('navigation', { name: 'Breadcrumb' });
-    expect(within(trail).getByRole('link', { name: 'Worlds' })).toHaveAttribute('href', '/');
+    expect(within(trail).getByRole('link', { name: 'Worlds' })).toHaveAttribute('href', '/worlds');
     expect(within(trail).getByRole('link', { name: 'The Waystone Path' })).toHaveAttribute('href', `/worlds/${demo}`);
     expect(within(trail).getByRole('link', { name: 'Characters' })).toHaveAttribute('href', `/worlds/${demo}/characters`);
     expect(within(trail).getByText('Rowan')).toHaveAttribute('aria-current', 'page');

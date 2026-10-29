@@ -18,7 +18,7 @@ export function WorldPlayPage({ worldId }: { worldId: string }) {
   const session = state.roster?.activeWorldSessions?.find((item) => item.worldInstanceId === worldId);
   if (!world || !session) return <AccountShell><h1>{world ? 'Choose a character to enter' : 'World not found'}</h1>
     {world ? <Link href={worldPath(worldId)}>Visit {world.name}</Link>
-      : <LobbyBreadcrumbs items={[{ label: 'Worlds', href: '/' }, { label: 'World not found' }]} />}</AccountShell>;
+      : <LobbyBreadcrumbs items={[{ label: 'Worlds', href: '/worlds' }, { label: 'World not found' }]} />}</AccountShell>;
   return <>{error && <div role="alert" className="lobby-leave-error">{error}<Button disabled={leaving} onClick={() => setError('')}>Dismiss</Button></div>}
     <WorldClient worldInstanceId={worldId} onLeaveWorld={async () => {
       if (leaving) return;

@@ -4,6 +4,7 @@ import { shadcn } from '@clerk/themes';
 import { lazy, Suspense } from 'react';
 import { Redirect, Route, Router as WouterRouter, Switch, useLocation } from 'wouter';
 import { AccountShell } from './lobby/AccountShell.js';
+import { HomePage } from './lobby/HomePage.js';
 import { LobbyPage } from './lobby/LobbyPage.js';
 import { LobbyBreadcrumbs } from './lobby/LobbyBreadcrumbs.js';
 import { appHref, basePath, playPath } from './lobby/navigation.js';
@@ -47,7 +48,8 @@ function ClerkAppRoutes() {
     signInUrl={appHref('/sign-in')} signUpUrl={appHref('/sign-up')}
     routerPush={(to) => setLocation(stripBase(to))} routerReplace={(to) => setLocation(stripBase(to), { replace: true })}>
     <Switch>
-      <Route path="/"><LobbyPage /></Route>
+      <Route path="/"><AccountShell><HomePage /></AccountShell></Route>
+      <Route path="/worlds"><LobbyPage /></Route>
       <Route path="/lobby"><LobbyPage /></Route>
       <Route path="/worlds/:worldId/play">{(params) => <Suspense fallback={<RouteLoading label="Loading world…" />}>
         <WorldPlayPage key={params.worldId} worldId={params.worldId} />
@@ -73,7 +75,7 @@ function ClerkAppRoutes() {
       <Route path="/codex"><Suspense fallback={<RouteLoading label="Loading the Codex…" />}>
         <AccountShell><CodexScreen /></AccountShell>
       </Suspense></Route>
-      <Route><AccountShell><LobbyBreadcrumbs items={[{ label: 'Worlds', href: '/' }, { label: 'Page not found' }]} /><h1>Page not found</h1></AccountShell></Route>
+      <Route><AccountShell><LobbyBreadcrumbs items={[{ label: 'Worlds', href: '/worlds' }, { label: 'Page not found' }]} /><h1>Page not found</h1></AccountShell></Route>
     </Switch>
   </ClerkProvider>;
 }
