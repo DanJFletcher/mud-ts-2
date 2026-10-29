@@ -15,6 +15,7 @@ import { ClassChoice } from './ClassChoice.js';
 import { ClassAbilityList } from './ClassAbilityList.js';
 import type { CharacterClassDefinition, AvailableClassAction } from './classTypes.js';
 import { WorldCard } from './WorldCard.js';
+import { Breadcrumbs } from './Breadcrumbs.js';
 import { WorldHero } from './WorldHero.js';
 import { CharacterEntryCard } from './CharacterEntryCard.js';
 import { StaminaStatus } from './StaminaStatus.js';
@@ -119,6 +120,27 @@ describe('@mudd/ui components', () => {
     const link = screen.getByRole('link', { name: /Orraveth.*A salt-road world/i });
     expect(link).toHaveAttribute('href', '/worlds/orraveth');
     expect(link).toHaveAttribute('data-router-link', 'true');
+  });
+
+  it('renders a semantic breadcrumb with the current page distinguished', () => {
+    render(<Breadcrumbs items={[
+      { label: 'Worlds', href: '/' },
+      { label: 'Orraveth', href: '/worlds/orraveth' },
+      { label: 'Characters', href: '/worlds/orraveth/characters' },
+      { label: 'Isaac' },
+    ]} />);
+    expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Worlds' })).toHaveAttribute('href', '/');
+    expect(screen.getByRole('link', { name: 'Characters' })).toHaveAttribute('href', '/worlds/orraveth/characters');
+    expect(screen.getByText('Isaac')).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('supports injected client-side link rendering', () => {
+    render(<Breadcrumbs
+      items={[{ label: 'Worlds', href: '/' }, { label: 'Isaac' }]}
+      renderLink={({ href, className, children }) => <a href={href} className={className} data-router-link="true">{children}</a>}
+    />);
+    expect(screen.getByRole('link', { name: 'Worlds' })).toHaveAttribute('data-router-link', 'true');
   });
 
   it('links only known interactables from the current room in terminal prose', () => {

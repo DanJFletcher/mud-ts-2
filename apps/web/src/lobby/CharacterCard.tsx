@@ -15,7 +15,7 @@ export function CharacterCard({ character, active, pending, compact = false, sho
   const [name, setName] = useState(character.name);
   const dead = character.combat?.status === 'defeat' || character.health?.current === 0;
   const statusLabel = character.archived ? 'Archived' : dead ? 'Deceased' : active ? 'In world' : 'Ready to play';
-  const detailsPath = characterPath(character.characterId);
+  const detailsPath = characterPath(character.worldInstanceId, character.characterId);
   return <CharacterEntryCard name={character.name} worldName={showWorldName ? character.worldName : undefined}
     classLabel={character.characterClass?.label}
     level={character.advancement?.level}

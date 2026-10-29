@@ -30,6 +30,8 @@ export type { ClassAbilityListProps } from './components/ClassAbilityList.js';
 export type { AvailableClassAction, CharacterClassDefinition, ClassResource } from './components/classTypes.js';
 export { WorldCard } from './components/WorldCard.js';
 export type { WorldCardProps } from './components/WorldCard.js';
+export { Breadcrumbs } from './components/Breadcrumbs.js';
+export type { BreadcrumbItem, BreadcrumbLinkProps, BreadcrumbsProps } from './components/Breadcrumbs.js';
 export { WorldCardSkeleton } from './components/WorldCardSkeleton.js';
 export { WorldHero } from './components/WorldHero.js';
 export type { WorldHeroProps } from './components/WorldHero.js';

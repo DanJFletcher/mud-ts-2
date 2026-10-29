@@ -2,9 +2,10 @@ import { ClerkProvider } from '@clerk/react';
 import { publishableKeyFromHost } from '@clerk/react/internal';
 import { shadcn } from '@clerk/themes';
 import { lazy, Suspense } from 'react';
-import { Link, Redirect, Route, Router as WouterRouter, Switch, useLocation } from 'wouter';
+import { Redirect, Route, Router as WouterRouter, Switch, useLocation } from 'wouter';
 import { AccountShell } from './lobby/AccountShell.js';
 import { LobbyPage } from './lobby/LobbyPage.js';
+import { LobbyBreadcrumbs } from './lobby/LobbyBreadcrumbs.js';
 import { appHref, basePath, playPath } from './lobby/navigation.js';
 import './account.css';
 
@@ -51,6 +52,11 @@ function ClerkAppRoutes() {
       <Route path="/worlds/:worldId/play">{(params) => <Suspense fallback={<RouteLoading label="Loading world…" />}>
         <WorldPlayPage key={params.worldId} worldId={params.worldId} />
       </Suspense>}</Route>
+      <Route path="/worlds/:worldId/characters/:characterId">{(params) => <Suspense fallback={<RouteLoading label="Loading character…" />}>
+        <CharacterDetailPage key={`${params.worldId}:${params.characterId}`} worldId={params.worldId} characterId={params.characterId} />
+      </Suspense>}</Route>
+      <Route path="/worlds/:worldId/characters">{(params) =>
+        <LobbyPage key={`${params.worldId}:characters`} worldId={params.worldId} showWorldCharacters />}</Route>
       <Route path="/worlds/:worldId">{(params) => <LobbyPage key={params.worldId} worldId={params.worldId} />}</Route>
       <Route path="/character/:characterId">{(params) => <Suspense fallback={<RouteLoading label="Loading character…" />}>
         <CharacterDetailPage key={params.characterId} characterId={params.characterId} />
@@ -67,7 +73,7 @@ function ClerkAppRoutes() {
       <Route path="/codex"><Suspense fallback={<RouteLoading label="Loading the Codex…" />}>
         <AccountShell><CodexScreen /></AccountShell>
       </Suspense></Route>
-      <Route><AccountShell><h1>Page not found</h1><Link href="/">Back to worlds</Link></AccountShell></Route>
+      <Route><AccountShell><LobbyBreadcrumbs items={[{ label: 'Worlds', href: '/' }, { label: 'Page not found' }]} /><h1>Page not found</h1></AccountShell></Route>
     </Switch>
   </ClerkProvider>;
 }

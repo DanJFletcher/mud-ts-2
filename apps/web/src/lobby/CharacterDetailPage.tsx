@@ -2,20 +2,34 @@ import { useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'wouter';
 import { Button, Skeleton } from '@mudd/ui';
 import { AccountShell } from './AccountShell.js';
-import { worldPath } from './navigation.js';
+import { LobbyBreadcrumbs } from './LobbyBreadcrumbs.js';
+import { worldCharactersPath, worldPath } from './navigation.js';
 import { enterCharacter, entryDisabled, useLobby, worldClient, type LobbyCharacter } from './useLobby.js';
 
 function DetailRow({ label, children }: { label: string; children: ReactNode }) {
   return <div className="character-detail__row"><dt>{label}</dt><dd>{children}</dd></div>;
 }
 
-export function CharacterDetailPage({ characterId }: { characterId: string }) {
+function CharacterTrail({ worldId, worldName, current }: { worldId?: string; worldName?: string; current: string }) {
+  return <LobbyBreadcrumbs items={worldId
+    ? [
+      { label: 'Worlds', href: '/' },
+      { label: worldName || 'World', href: worldPath(worldId) },
+      { label: 'Characters', href: worldCharactersPath(worldId) },
+      { label: current },
+    ]
+    : [{ label: 'Worlds', href: '/' }, { label: current }]} />;
+}
+
+export function CharacterDetailPage({ characterId, worldId }: { characterId: string; worldId?: string }) {
   const state = useLobby();
   const [, navigate] = useLocation();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [switchTarget, setSwitchTarget] = useState<LobbyCharacter | null>(null);
-  const character = state.roster?.characters.find((item) => item.characterId === characterId);
+  const routeWorldName = worldId ? state.worlds.find((world) => world.worldInstanceId === worldId)?.name : undefined;
+  const rosterCharacter = state.roster?.characters.find((item) => item.characterId === characterId);
+  const character = rosterCharacter && (!worldId || rosterCharacter.worldInstanceId === worldId) ? rosterCharacter : undefined;
   const activeId = character && state.roster?.activeWorldSessions?.find(
     (session) => session.worldInstanceId === character.worldInstanceId,
   )?.characterId;
@@ -34,7 +48,8 @@ export function CharacterDetailPage({ characterId }: { characterId: string }) {
     void run(() => enterCharacter(character.characterId, character.worldInstanceId, state.refreshRoster, setSwitchTarget, navigate));
   }
 
-  if (state.loading) return <AccountShell><div className="character-detail-state character-detail-state--loading" role="status" aria-busy="true">
+  if (state.loading) return <AccountShell><CharacterTrail worldId={worldId} worldName={routeWorldName} current="Character" />
+    <div className="character-detail-state character-detail-state--loading" role="status" aria-busy="true">
     <div className="character-detail__skeleton" aria-hidden="true">
       <Skeleton variant="text" width="78%" height="1.2rem" className="character-detail__skeleton-title" />
       <Skeleton variant="text" width="86%" height=".8rem" className="character-detail__skeleton-line" />
@@ -42,25 +57,26 @@ export function CharacterDetailPage({ characterId }: { characterId: string }) {
     </div>
     <p>Loading character record…</p>
   </div></AccountShell>;
-  if (state.rosterError) return <AccountShell><section className="character-detail-state">
+  if (state.rosterError) return <AccountShell><CharacterTrail worldId={worldId} worldName={routeWorldName} current="Character record" />
+    <section className="character-detail-state">
     <h1>Character record unavailable</h1><p role="alert">{state.rosterError}</p>
     <Button onClick={() => void state.reload()}>Retry characters</Button>
-    <Link href="/">Back to worlds</Link>
   </section></AccountShell>;
-  if (!state.roster) return <AccountShell><section className="character-detail-state">
+  if (!state.roster) return <AccountShell><CharacterTrail worldId={worldId} worldName={routeWorldName} current="Character record" />
+    <section className="character-detail-state">
     <p className="lobby-eyebrow">MUDD · Character record</p><h1>Your roster is not available</h1>
     <p>Sign in or open the lobby to start an explicit guest session. No character or guest account was created.</p>
-    <div className="lobby-buttons"><Link href="/sign-in">Sign in</Link><Link href="/">Back to worlds</Link></div>
+    <div className="lobby-buttons"><Link href="/sign-in">Sign in</Link></div>
   </section></AccountShell>;
-  if (state.roster.characters.length === 0) return <AccountShell><section className="character-detail-state">
+  if (state.roster.characters.length === 0) return <AccountShell><CharacterTrail worldId={worldId} worldName={routeWorldName} current="Characters" />
+    <section className="character-detail-state">
     <p className="lobby-eyebrow">MUDD · Character record</p><h1>No characters in this roster</h1>
     <p>This roster has no travelers yet. Choose a world from the lobby to create one when you are ready.</p>
-    <Link href="/">Browse worlds</Link>
   </section></AccountShell>;
-  if (!character) return <AccountShell><section className="character-detail-state">
+  if (!character) return <AccountShell><CharacterTrail worldId={worldId} worldName={routeWorldName} current="Character not found" />
+    <section className="character-detail-state">
     <p className="lobby-eyebrow">MUDD · Character record</p><h1>Character not found</h1>
     <p>This character is not in your current roster. It may have been removed or belong to another account.</p>
-    <Link href="/">Return to characters</Link>
   </section></AccountShell>;
 
   const dead = character.combat?.status === 'defeat' || character.health?.current === 0;
@@ -68,8 +84,7 @@ export function CharacterDetailPage({ characterId }: { characterId: string }) {
   const boundWorld = character.worldName || state.worlds.find((world) => world.worldInstanceId === character.worldInstanceId)?.name;
   const inventory = character.inventory;
   const lastPlayed = character.lastPlayedAt;
-  const backPath = state.worlds.some((world) => world.worldInstanceId === character.worldInstanceId)
-    ? worldPath(character.worldInstanceId) : '/';
+  const characterWorldName = character.worldName || routeWorldName;
   const itemCounts = inventory.reduce<Map<string, number>>((counts, item) => {
     counts.set(item.label, (counts.get(item.label) ?? 0) + (item.quantity ?? 1));
     return counts;
@@ -78,7 +93,7 @@ export function CharacterDetailPage({ characterId }: { characterId: string }) {
 
   return <AccountShell>
     <div className="character-detail">
-      <Link className="lobby-back" href={backPath}>← Return to {state.worlds.some((world) => world.worldInstanceId === character.worldInstanceId) ? 'world' : 'characters'}</Link>
+      <CharacterTrail worldId={character.worldInstanceId} worldName={characterWorldName} current={character.name} />
       <header className="character-detail__header">
         <p className="lobby-eyebrow">{boundWorld || 'Traveler record'}</p>
         <h1>{character.name}</h1>
@@ -123,7 +138,6 @@ export function CharacterDetailPage({ characterId }: { characterId: string }) {
           {pending ? 'Opening story…' : isActive ? `Continue as ${character.name}` : `Play as ${character.name}`}
         </Button>
         {entryDisabled(character) && <p className="lobby-small">{character.archived ? 'Restore this character from the world roster before playing.' : 'This character cannot currently enter a session.'}</p>}
-        <Link href={backPath}>Return to {state.worlds.some((world) => world.worldInstanceId === character.worldInstanceId) ? 'world' : 'characters'}</Link>
       </div>
     </div>
   </AccountShell>;

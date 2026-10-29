@@ -3,10 +3,15 @@ import { Link, useLocation, useSearch } from 'wouter';
 import { Button, CharacterEntryCardSkeleton, ClassChoice, Skeleton, TextInput, WorldCard, WorldCardSkeleton, WorldHero } from '@mudd/ui';
 import { AccountShell } from './AccountShell.js';
 import { CharacterCard } from './CharacterCard.js';
+import { LobbyBreadcrumbs } from './LobbyBreadcrumbs.js';
 import { appHref, rememberEntryIntent, worldPath } from './navigation.js';
 import { recentCharacters, sortCharactersByActivity, useLobby, worldClient, enterCharacter, type LobbyCharacter } from './useLobby.js';
 
-export function LobbyPage({ worldId, showAllCharacters = false }: { worldId?: string; showAllCharacters?: boolean }) {
+export function LobbyPage({ worldId, showAllCharacters = false, showWorldCharacters = false }: {
+  worldId?: string;
+  showAllCharacters?: boolean;
+  showWorldCharacters?: boolean;
+}) {
   const state = useLobby({ skipCatalog: showAllCharacters });
   const [, navigate] = useLocation();
   const search = useSearch();
@@ -127,7 +132,9 @@ export function LobbyPage({ worldId, showAllCharacters = false }: { worldId?: st
   </section>;
 
   if (state.catalogLoading && worldId) return <AccountShell>
-    <Link className="lobby-back" href="/">Back to worlds</Link>
+    <LobbyBreadcrumbs items={showWorldCharacters
+      ? [{ label: 'Worlds', href: '/' }, { label: 'World', href: worldPath(worldId) }, { label: 'Characters' }]
+      : [{ label: 'Worlds', href: '/' }, { label: 'World' }]} />
     <div className="mudd-world-hero" role="status" aria-label="Loading world details" aria-busy="true">
       <div className="mudd-world-hero__content lobby-world-hero-skeleton">
         <Skeleton variant="text" width="8rem" height=".6rem" />
@@ -143,10 +150,13 @@ export function LobbyPage({ worldId, showAllCharacters = false }: { worldId?: st
     </section>
   </AccountShell>;
   if (state.catalogError) return <AccountShell><h1>Worlds unavailable</h1><p role="alert">{state.catalogError}</p><Button onClick={() => void state.reload()}>Retry worlds</Button></AccountShell>;
-  if (worldId && !world) return <AccountShell><h1>World not found</h1><p>This world is not available in the current catalog.</p><Link href="/">Back to worlds</Link></AccountShell>;
+  if (worldId && !world) return <AccountShell>
+    <LobbyBreadcrumbs items={[{ label: 'Worlds', href: '/' }, { label: 'World not found' }]} />
+    <h1>World not found</h1><p>This world is not available in the current catalog.</p>
+  </AccountShell>;
 
   if (showAllCharacters) return <AccountShell>
-    <Link className="lobby-back" href="/">Back to worlds</Link>
+    <LobbyBreadcrumbs items={[{ label: 'Worlds', href: '/' }, { label: 'Characters' }]} />
     <div className="lobby-intro lobby-all-characters__intro">
       <p className="lobby-eyebrow">MUDD · Your roster</p>
       <h1>All characters</h1>
@@ -170,7 +180,13 @@ export function LobbyPage({ worldId, showAllCharacters = false }: { worldId?: st
 
   return <AccountShell>
     {world ? <>
-      <Link className="lobby-back" href="/">Back to worlds</Link>
+      <LobbyBreadcrumbs items={showWorldCharacters
+        ? [
+          { label: 'Worlds', href: '/' },
+          { label: world.name, href: worldPath(world.worldInstanceId) },
+          { label: 'Characters' },
+        ]
+        : [{ label: 'Worlds', href: '/' }, { label: world.name }]} />
       <WorldHero name={world.name} summary={world.summary} introduction={world.introduction} imageSrc={world.coverImage ? appHref(world.coverImage) : undefined} />
       {errors}{switchPrompt}
       <section className="lobby-world-characters" aria-labelledby="world-characters-heading">

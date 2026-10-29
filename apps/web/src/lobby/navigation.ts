@@ -2,7 +2,9 @@ export const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 export const appHref = (path: string) => `${basePath}${path}`;
 export const worldPath = (id: string) => `/worlds/${encodeURIComponent(id)}`;
 export const playPath = (id: string) => `${worldPath(id)}/play`;
-export const characterPath = (id: string) => `/character/${encodeURIComponent(id)}`;
+export const worldCharactersPath = (worldId: string) => `${worldPath(worldId)}/characters`;
+export const characterPath = (worldId: string, characterId: string) =>
+  `${worldCharactersPath(worldId)}/${encodeURIComponent(characterId)}`;
 const intentKey = 'mudd-entry-intent';
 
 /** Only browsing/creation destinations, never external URLs or auto-play. */
