@@ -38,6 +38,7 @@ export function CharacterEntryCard({
       </div>
       <div className="mudd-character-entry__actions">
         <Button
+          variant="secondary"
           className="mudd-character-entry__action"
           onClick={onPlay}
           disabled={disabled || busy}
