@@ -16,6 +16,7 @@ export interface ActivityLogTarget {
   id: string;
   label: string;
   actions?: readonly ActivityLogAction[];
+  actionDialogTitle?: string;
 }
 
 export interface ActivityLogProps {
@@ -106,12 +107,14 @@ export function ActivityLog({
                       key={`${entry.id}:${start}:${target.id}`}
                       type="button"
                       className="mudd-log__interactive-target"
-                      aria-label={
-                        (target.actions?.length ?? 1) > 1
+                      aria-label={target.actionDialogTitle
+                        ? `${target.actionDialogTitle} in terminal`
+                        : (target.actions?.length ?? 1) > 1
                           ? `Choose an action for ${target.label} in terminal`
-                          : `Look at ${target.label} in terminal`
-                      }
-                      aria-haspopup={(target.actions?.length ?? 1) > 1 ? 'dialog' : undefined}
+                          : target.actions?.[0]?.id === 'look' || !target.actions?.length
+                            ? `Look at ${target.label} in terminal`
+                            : `${target.actions[0]!.label} ${target.label} in terminal`}
+                      aria-haspopup={target.actionDialogTitle || (target.actions?.length ?? 1) > 1 ? 'dialog' : undefined}
                       disabled={actionsDisabled}
                       onClick={() => onLookTarget?.(target)}
                     >

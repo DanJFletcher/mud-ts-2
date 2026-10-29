@@ -4,6 +4,7 @@ import type { ActivityLogAction } from './ActivityLog.js';
 
 export interface InteractionOptionsDialogProps {
   targetLabel: string;
+  title?: string;
   options: readonly ActivityLogAction[];
   busy?: boolean;
   onSelect: (optionId: string) => void;
@@ -13,6 +14,7 @@ export interface InteractionOptionsDialogProps {
 /** Accessible action picker for a clickable entity with multiple supported actions. */
 export function InteractionOptionsDialog({
   targetLabel,
+  title,
   options,
   busy = false,
   onSelect,
@@ -50,7 +52,7 @@ export function InteractionOptionsDialog({
       <section className="mudd-interaction-options">
         <header className="mudd-interaction-options__header">
           <div>
-            <h2 id="mudd-interaction-options-title">Choose an action for {targetLabel}</h2>
+            <h2 id="mudd-interaction-options-title">{title ?? `Choose an action for ${targetLabel}`}</h2>
           </div>
           <Button type="button" variant="quiet" onClick={onClose} disabled={busy}>
             Close

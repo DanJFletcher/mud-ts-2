@@ -195,6 +195,7 @@ function currentLocation(includeNpcDescriptions = false) {
         includeNpcDescriptions
           ? 'Mara is here. A path keeper stands beside the weathered marker, watching the northern trail.\n\nPractice Sentinel is here. A knee-high wooden sentinel waits beside the trail. Its padded arms lift as you approach.'
           : 'Mara is here, watching the northern trail.\n\nPractice Sentinel is here, lifting its padded arms in a steady rhythm.',
+        ...availableWoodcuttingTrees.map((tree) => `A ${tree.label.replace(/\s+tree$/i, '')} tree stands beside the path.`),
       ].join('\n\n')
       : room === 'market'
         ? 'Canvas awnings line the riverbank.'
@@ -3661,6 +3662,36 @@ describe('single-character world session client', () => {
       JSON.parse(String(init?.body)).type === 'woodcutting.start',
     );
     expect(startCommand).toBeDefined();
+    expect(JSON.parse(String(startCommand?.[1]?.body))).toMatchObject({
+      payload: { axeItemId: 'copper-axe', treeId: 'southbound-pine' },
+    });
+  });
+
+  it('opens an item picker when clicking a tree and starts chopping only after selection', async () => {
+    woodcuttingAxeCarried = true;
+    availableWoodcuttingTrees = [{ id: 'southbound-pine', label: 'pine' }];
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    expect(screen.getByRole('region', { name: 'Terminal transcript' })).toHaveTextContent('A pine tree stands beside the path.');
+    const pineTree = await screen.findByRole('button', {
+      name: 'Choose an item to use on A pine tree in terminal',
+    });
+    fireEvent.click(pineTree);
+
+    const dialog = await screen.findByRole('dialog', { name: 'Choose an item to use on A pine tree' });
+    expect(within(dialog).getByRole('button', { name: 'Copper Axe' })).toBeInTheDocument();
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body)).type === 'woodcutting.start',
+    )).toBe(false);
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Copper Axe' }));
+    await screen.findByText('You begin swinging your axe at the tree...');
+    const startCommand = apiFetch.mock.calls.find(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body)).type === 'woodcutting.start',
+    );
     expect(JSON.parse(String(startCommand?.[1]?.body))).toMatchObject({
       payload: { axeItemId: 'copper-axe', treeId: 'southbound-pine' },
     });

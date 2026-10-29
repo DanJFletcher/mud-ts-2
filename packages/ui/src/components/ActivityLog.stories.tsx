@@ -26,3 +26,21 @@ export const WithInteractiveEntities: Story = {
     onLookTarget: (target) => console.info('Look at:', target.label),
   },
 };
+export const WithUsableTree: Story = {
+  args: {
+    entries: [{
+      id: 'tree-description',
+      kind: 'narration',
+      locationId: 'southbound-track',
+      text: 'A pine tree stands beside the packed road, its resin scent sharp in the air.',
+    }],
+    currentLocationId: 'southbound-track',
+    lookTargets: [{
+      id: 'woodcutting-tree:southbound-pine',
+      label: 'A pine tree',
+      actionDialogTitle: 'Choose an item to use on A pine tree',
+      actions: [{ id: 'use-tree:copper-axe', label: 'Copper Axe' }],
+    }],
+    onLookTarget: (target) => console.info('Choose an item for:', target.label),
+  },
+};

@@ -3750,6 +3750,10 @@ export function WorldClient({
     const inventory = snapshot?.character?.inventory ?? [];
     const equipment = snapshot?.character?.equipment;
     const usableItemIds = new Set(quickUseItems.map((item) => item.id));
+    const woodcuttingLevel = snapshot?.character?.woodcutting?.level ?? 1;
+    const usableAxes = quickUseItems.filter((item) =>
+      item.woodcuttingAxe && woodcuttingLevel >= item.woodcuttingAxe.requiredLevel,
+    );
 
     return [
       ...location.objects.map((object) => ({
@@ -3761,6 +3765,22 @@ export function WorldClient({
           ...(object.takeable ? [{ id: "take", label: "Take" }] : []),
         ],
       })),
+      ...(snapshot?.availableWoodcuttingTrees ?? []).flatMap((tree) => {
+        const treeName = tree.label.trim()
+          .replace(/^(?:a|an|the)\s+/i, "")
+          .replace(/\s+tree$/i, "");
+        if (!treeName || !usableAxes.length) return [];
+        const treeLabel = `A ${treeName} tree`;
+        return [{
+          id: `woodcutting-tree:${tree.id}`,
+          label: treeLabel,
+          actionDialogTitle: `Choose an item to use on ${treeLabel}`,
+          actions: usableAxes.map((axe) => ({
+            id: `use-tree:${axe.id}`,
+            label: axe.label,
+          })),
+        }];
+      }),
       ...(location.npcs ?? []).map((npc) => ({
         id: npc.id,
         label: npc.name,
@@ -3787,6 +3807,15 @@ export function WorldClient({
   const performTerminalTargetAction = (target: ActivityLogTarget, actionId: string) => {
     setActiveInteractionTarget(null);
     const label = target.label;
+    if (target.id.startsWith("woodcutting-tree:") && actionId.startsWith("use-tree:")) {
+      const treeId = target.id.slice("woodcutting-tree:".length);
+      const axeId = actionId.slice("use-tree:".length);
+      const tree = snapshot?.availableWoodcuttingTrees?.find((candidate) => candidate.id === treeId);
+      const axe = snapshot?.character?.inventory.find((candidate) => candidate.id === axeId);
+      if (!tree || !axe?.woodcuttingAxe) return;
+      submitQuickCommand(`use ${axe.label} on ${tree.label}`);
+      return;
+    }
     if (actionId === "use" && target.id.startsWith("inventory:")) {
       const itemId = target.id.slice("inventory:".length);
       const item = snapshot?.character?.inventory.find((candidate) => candidate.id === itemId);
@@ -3810,7 +3839,7 @@ export function WorldClient({
     if (command) submitQuickCommand(command);
   };
   const handleTerminalLookTarget = (target: ActivityLogTarget) => {
-    if ((target.actions?.length ?? 1) > 1) {
+    if (target.actionDialogTitle || (target.actions?.length ?? 1) > 1) {
       setActiveInteractionTarget(target);
       return;
     }
@@ -4987,6 +5016,7 @@ export function WorldClient({
                   {activeInteractionTarget && (
                     <InteractionOptionsDialog
                       targetLabel={activeInteractionTarget.label}
+                      title={activeInteractionTarget.actionDialogTitle}
                       options={activeInteractionTarget.actions ?? [{ id: "look", label: "Look" }]}
                       busy={pending !== null}
                       onSelect={(actionId) => performTerminalTargetAction(activeInteractionTarget, actionId)}

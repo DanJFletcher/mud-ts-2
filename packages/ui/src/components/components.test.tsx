@@ -191,6 +191,35 @@ describe('@mudd/ui components', () => {
     expect(onLookTarget).toHaveBeenCalledWith({ id: 'marker', label: 'Weathered marker' });
   });
 
+  it('marks usable targets as a dialog even when there is only one item choice', () => {
+    const onLookTarget = vi.fn();
+    render(
+      <ActivityLog
+        entries={[{
+          id: 'tree',
+          kind: 'narration',
+          locationId: 'track',
+          text: 'A pine tree stands beside the road.',
+        }]}
+        currentLocationId="track"
+        lookTargets={[{
+          id: 'woodcutting-tree:pine',
+          label: 'A pine tree',
+          actionDialogTitle: 'Choose an item to use on A pine tree',
+          actions: [{ id: 'use-tree:copper-axe', label: 'Copper Axe' }],
+        }]}
+        onLookTarget={onLookTarget}
+      />,
+    );
+
+    const tree = screen.getByRole('button', {
+      name: 'Choose an item to use on A pine tree in terminal',
+    });
+    expect(tree).toHaveAttribute('aria-haspopup', 'dialog');
+    fireEvent.click(tree);
+    expect(onLookTarget).toHaveBeenCalledWith(expect.objectContaining({ id: 'woodcutting-tree:pine' }));
+  });
+
   it('shows supported actions in a closeable target dialog', () => {
     const onSelect = vi.fn();
     const onClose = vi.fn();
