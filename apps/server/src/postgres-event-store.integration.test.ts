@@ -13,6 +13,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
   const presenceWorldInstanceId = `audit-presence-test-${randomUUID()}`;
   const cacheWorldInstanceId = `audit-cache-test-${randomUUID()}`;
   const appendBatchWorldInstanceId = `audit-append-batch-${randomUUID()}`;
+  const lifecycleWorldInstanceId = `audit-lifecycle-${randomUUID()}`;
   const characterId = randomUUID();
   const cacheCharacterId = randomUUID();
   const chatCharacterId = randomUUID();
@@ -49,13 +50,27 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
   afterAll(async () => {
     if (!db || !pool) return;
     const { inArray } = await import('drizzle-orm');
-    const { characters, commandReceipts, durableEffects, gameEvents, players, worldSessions } = await import('./db/schema.js');
+    const {
+      characters,
+      commandReceipts,
+      durableEffects,
+      gameEvents,
+      players,
+      worldObjectLifecycles,
+      worldSessions,
+    } = await import('./db/schema.js');
     try {
       const testWorlds = [
-        worldInstanceId, chatWorldInstanceId, presenceWorldInstanceId, cacheWorldInstanceId, appendBatchWorldInstanceId,
+        worldInstanceId,
+        chatWorldInstanceId,
+        presenceWorldInstanceId,
+        cacheWorldInstanceId,
+        appendBatchWorldInstanceId,
+        lifecycleWorldInstanceId,
       ];
       const testPlayers = [playerId, ...presencePlayerIds, ...(guestPlayerId ? [guestPlayerId] : [])];
       await db.delete(durableEffects).where(inArray(durableEffects.worldInstanceId, testWorlds));
+      await db.delete(worldObjectLifecycles).where(inArray(worldObjectLifecycles.worldInstanceId, testWorlds));
       await db.delete(commandReceipts).where(inArray(commandReceipts.worldInstanceId, testWorlds));
       await db.delete(gameEvents).where(inArray(gameEvents.worldInstanceId, testWorlds));
       await db.delete(worldSessions).where(inArray(worldSessions.playerId, testPlayers));
@@ -490,6 +505,67 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     expect(persistedEffects[0]).toMatchObject({ status: 'completed', attempts: 2 });
   });
 
+  it('recovers due lifecycle work after a store restart and an expired worker lease', async () => {
+    const { SYSTEM_ACTOR_ID } = await import('@mudd/engine-core');
+    const { PostgresEventStore } = await import('./persistence/postgres-event-store.js');
+    const objectId = `temporary-campfire:${randomUUID()}`;
+    const lifecycleStreamId = `world-object-lifecycle:${objectId}`;
+    const createdAt = new Date('2026-10-27T10:00:00.000Z');
+    const expiresAt = new Date(createdAt.getTime() + 1_000);
+    const scheduled = await store.append({
+      worldInstanceId: lifecycleWorldInstanceId,
+      streamId: lifecycleStreamId,
+      actorId: SYSTEM_ACTOR_ID,
+      commandId: `schedule-${randomUUID()}`,
+      payloadHash: randomUUID(),
+      expectedVersion: 0,
+      events: [{
+        type: 'world.object_lifecycle_scheduled',
+        version: 1,
+        payload: {
+          objectId,
+          objectType: 'campfire',
+          locationId: 'mossgate-clearing',
+          createdAt: createdAt.toISOString(),
+          expiresAt: expiresAt.toISOString(),
+        },
+      }],
+    });
+    expect(scheduled.kind).toBe('committed');
+
+    const firstPollAt = new Date(expiresAt.getTime() + 1);
+    const firstWorker = new PostgresEventStore();
+    const firstClaim = await firstWorker.claimDueObjectLifecycles(
+      lifecycleWorldInstanceId,
+      firstPollAt,
+      1,
+      5_000,
+    );
+    expect(firstClaim).toHaveLength(1);
+    expect(firstClaim[0]).toMatchObject({ objectId, revision: 1 });
+
+    // A new store instance observes the persistent lease and cannot double-process the object.
+    const restartedWorker = new PostgresEventStore();
+    await expect(restartedWorker.claimDueObjectLifecycles(
+      lifecycleWorldInstanceId,
+      firstPollAt,
+      1,
+      5_000,
+    )).resolves.toEqual([]);
+
+    // Once the lease deadline passes, another worker can safely reclaim the same due revision.
+    const afterLeaseExpiry = new Date(firstPollAt.getTime() + 5_001);
+    const recoveredClaim = await restartedWorker.claimDueObjectLifecycles(
+      lifecycleWorldInstanceId,
+      afterLeaseExpiry,
+      1,
+      5_000,
+    );
+    expect(recoveredClaim).toHaveLength(1);
+    expect(recoveredClaim[0]).toMatchObject({ objectId, revision: 1 });
+    expect(recoveredClaim[0]?.leaseToken).not.toBe(firstClaim[0]?.leaseToken);
+  });
+
   it('persists shared corpse events under the stable UUID system actor', async () => {
     const { SYSTEM_ACTOR_ID } = await import('@mudd/engine-core');
     const commandId = `world-corpse-create:${randomUUID()}`;
@@ -896,7 +972,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
       roomId: 'glasswater-bridge',
     });
     expect(chatHistory?.messages.some((message) => message.id === movementNotice.id)).toBe(false);
-    expect(chatHistory?.cursor).toBe(movementNotice.id);
+    expect(chatHistory?.cursor).toBe(lifecycleNotice.id);
     const liveMessages = await listRoomChatMessages({
       worldInstanceId: chatWorldInstanceId,
       playerId,

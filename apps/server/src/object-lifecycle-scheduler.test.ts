@@ -79,6 +79,44 @@ describe('object lifecycle scheduler', () => {
     scheduler.stop();
   });
 
+  it('continues the batch when one object fails to expire', async () => {
+    const secondObject = {
+      objectId: 'second-campfire',
+      revision: 2,
+      leaseToken: 'second-lease',
+    };
+    const dispatchSystem = vi.fn()
+      .mockRejectedValueOnce(new Error('First object failed.'))
+      .mockResolvedValueOnce({ receipt: { ok: true } });
+    const releaseObjectLifecycleClaim = vi.fn(async () => undefined);
+    const onError = vi.fn();
+    const scheduler = createScheduler(
+      vi.fn(async () => [dueObject, secondObject]),
+      releaseObjectLifecycleClaim,
+      dispatchSystem,
+      onError,
+    );
+
+    await scheduler.run();
+
+    expect(dispatchSystem).toHaveBeenCalledTimes(2);
+    expect(dispatchSystem).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      type: 'world.object.expire',
+      payload: { objectId: secondObject.objectId },
+    }), expect.any(String));
+    expect(releaseObjectLifecycleClaim).toHaveBeenCalledWith(
+      'test-world',
+      dueObject.objectId,
+      dueObject.leaseToken,
+    );
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'First object failed.' }),
+      'test-world',
+      dueObject.objectId,
+    );
+    scheduler.stop();
+  });
+
   it('reports claim failures against the all-worlds scope and stops cleanly', async () => {
     const error = new Error('Could not claim due objects.');
     const claimDueObjectLifecycles = vi.fn(async () => {

@@ -33,8 +33,8 @@
 2. Implement generic lifecycle and separate corpse policy plugins. **Done**
 3. Add the indexed persistence projection, leased scheduler, and migration. **Done**
 4. Wire corpse creation/expiration announcements into existing room chat and terminal-event delivery. **Done**
-5. Cover replay, corpse contents, currency drop, concurrency, and room visibility; run checks. **In progress**
-6. Update architecture docs and ADR. **Done**
+5. Cover replay, corpse contents, currency drop, concurrency, room visibility, PostgreSQL restart, and lease recovery; run checks. **Done**
+6. Update architecture docs, API guidance, and ADR. **Done**
 
 ## Acceptance criteria
 
@@ -43,7 +43,7 @@
 - [x] Empty corpses receive the shorter expiry when their last loot is taken.
 - [x] Destroy, drop, and recovery-storage policies preserve the expected item/currency outcome.
 - [x] Due work is persisted in the indexed database projection and claimed through leases.
-- [ ] PostgreSQL-backed worker restart and expired-lease recovery are verified by integration tests.
+- [x] PostgreSQL-backed worker restart and expired-lease recovery are verified against the development test database.
 - [x] Expired corpses cannot be inspected or looted; visible corpses show decay stages.
 - [x] Corpse creation and expiry are announced through existing room and terminal delivery.
 - [x] Build, tests, type checks, and development migration are reported.

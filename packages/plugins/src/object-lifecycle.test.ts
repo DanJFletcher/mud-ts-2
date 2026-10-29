@@ -13,7 +13,6 @@ import {
 } from './object-lifecycle.js';
 
 const worldInstanceId = 'lifecycle-test-world';
-const streamId = 'world-object-lifecycle:corpse-1';
 const baseTime = '2026-10-27T10:00:00.000Z';
 const expiresAt = '2026-10-27T10:05:00.000Z';
 
@@ -21,12 +20,14 @@ function storedEvent(
   type: string,
   payload: Record<string, unknown>,
   aggregateVersion: number,
+  objectId = 'corpse-1',
 ): StoredGameEvent {
+  const lifecycleStreamId = objectLifecycleStreamId(objectId);
   return {
     eventId: `event-${aggregateVersion}`,
     worldInstanceId,
-    aggregateId: streamId,
-    streamId,
+    aggregateId: lifecycleStreamId,
+    streamId: lifecycleStreamId,
     aggregateVersion,
     type,
     version: 1,
@@ -54,15 +55,19 @@ function captureLifecyclePlugin() {
   return { state, expire };
 }
 
-function scheduledHistory() {
+function scheduledHistory(
+  objectId = 'corpse-1',
+  objectType = 'corpse',
+  locationId = 'market-square',
+) {
   const scheduled = objectLifecycleScheduledEvent({
-    objectId: 'corpse-1',
-    objectType: 'corpse',
-    locationId: 'market-square',
+    objectId,
+    objectType,
+    locationId,
     createdAt: baseTime,
     expiresAt,
   });
-  return [storedEvent(scheduled.type, scheduled.payload, 1)];
+  return [storedEvent(scheduled.type, scheduled.payload, 1, objectId)];
 }
 
 describe('generic object lifecycle projection', () => {
@@ -203,6 +208,39 @@ describe('object lifecycle plugin', () => {
     });
     expect(store.readStream).toHaveBeenCalledWith(worldInstanceId, objectLifecycleStreamId('corpse-1'));
     expect(objectLifecycleStateCapability.id).toBe('mudd.object-lifecycle.state.v1');
+  });
+
+  it('emits generic expiration events for plugin-owned non-corpse objects', async () => {
+    const plugin = captureLifecyclePlugin();
+    const campfireHistory = scheduledHistory(
+      'campfire-1',
+      'campfire',
+      'mossgate-clearing',
+    );
+    const store = { readStream: vi.fn(async () => campfireHistory) };
+
+    const result = await plugin.expire({
+      payload: { objectId: 'campfire-1' },
+      expectedVersion: 1,
+    }, {
+      worldInstanceId,
+      store,
+      now: () => new Date('2026-10-27T10:06:00.000Z'),
+    });
+
+    expect(result.events).toEqual([expect.objectContaining({
+      type: 'world.object_expiring',
+      payload: {
+        objectId: 'campfire-1',
+        objectType: 'campfire',
+        locationId: 'mossgate-clearing',
+        expiresAt,
+      },
+    })]);
+    expect(store.readStream).toHaveBeenCalledWith(
+      worldInstanceId,
+      objectLifecycleStreamId('campfire-1'),
+    );
   });
 
   it('rejects expiration when no lifecycle exists, it is not due, or it is already terminal', async () => {
