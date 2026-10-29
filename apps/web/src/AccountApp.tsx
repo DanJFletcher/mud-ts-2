@@ -1,7 +1,7 @@
 import { ClerkProvider } from '@clerk/react';
 import { publishableKeyFromHost } from '@clerk/react/internal';
 import { shadcn } from '@clerk/themes';
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { Redirect, Route, Router as WouterRouter, Switch, useLocation } from 'wouter';
 import { AccountShell } from './lobby/AccountShell.js';
 import { HomePage } from './lobby/HomePage.js';
@@ -40,6 +40,14 @@ function LegacyWorldPage() {
 }
 function RouteLoading({ label }: { label: string }) {
   return <AccountShell><p role="status">{label}</p></AccountShell>;
+}
+function ScrollToTopOnNavigation() {
+  const [location] = useLocation();
+  useEffect(() => {
+    window.scrollTo(0, 0);
+    document.querySelector<HTMLElement>('.account-client')?.scrollTo(0, 0);
+  }, [location]);
+  return null;
 }
 function ClerkAppRoutes() {
   const [, setLocation] = useLocation();
@@ -80,5 +88,5 @@ function ClerkAppRoutes() {
   </ClerkProvider>;
 }
 export default function AccountApp() {
-  return <WouterRouter base={basePath}><ClerkAppRoutes /></WouterRouter>;
+  return <WouterRouter base={basePath}><ScrollToTopOnNavigation /><ClerkAppRoutes /></WouterRouter>;
 }

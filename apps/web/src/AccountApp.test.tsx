@@ -225,6 +225,19 @@ describe('world lobby and explicit character entry', () => {
     expect(window.location.pathname).toBe('/characters');
   });
 
+  it('scrolls the page to the top after client-side navigation', async () => {
+    const scrollTo = vi.spyOn(window, 'scrollTo');
+    open('/codex');
+    expect(await screen.findByRole('heading', { name: 'Orraveth Codex' })).toBeInTheDocument();
+    scrollTo.mockClear();
+
+    visit('/worlds');
+
+    expect(await screen.findByRole('heading', { name: 'Explore worlds' })).toBeInTheDocument();
+    expect(scrollTo).toHaveBeenCalledWith(0, 0);
+    scrollTo.mockRestore();
+  });
+
   it('shows world-detail placeholders while the catalog is pending', async () => {
     holdCatalog = true;
     const { container } = open(`/worlds/${demo}`);
