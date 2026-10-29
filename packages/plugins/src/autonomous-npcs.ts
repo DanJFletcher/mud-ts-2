@@ -61,6 +61,27 @@ export function mobileNpcDefinitions(world: WorldPackDraft): Array<{
   );
 }
 
+function canVisitAnyLocation(
+  npc: NpcDefinition,
+  initialLocationId: string,
+  requestedLocationIds: ReadonlySet<string>,
+): boolean {
+  if (requestedLocationIds.has(initialLocationId)) return true;
+  const movement = npc.movement;
+  if (!movement) return false;
+
+  if (movement.strategy === 'route') {
+    return movement.routeLocationIds.some((locationId) => requestedLocationIds.has(locationId));
+  }
+  if (movement.strategy === 'wander') {
+    return movement.allowedLocationIds.some((locationId) => requestedLocationIds.has(locationId));
+  }
+
+  // Unknown future movement strategies must remain visible rather than risk
+  // hiding an NPC because this optimization does not understand its route.
+  return true;
+}
+
 export function projectAutonomousNpcPosition(
   events: readonly StoredGameEvent[],
   npcId: string,
@@ -163,7 +184,12 @@ export const autonomousNpcsPlugin: EnginePlugin = {
       const definitions = context.world.locations.flatMap((location) =>
         (location.npcs ?? []).map((npc) => ({ npc, initialLocationId: location.id })),
       );
-      const movingDefinitions = definitions.filter(({ npc }) => npc.movement);
+      // Only read histories for mobile NPCs that could occupy a requested room.
+      // Route and wander constraints are authoritative content; excluding
+      // impossible locations preserves correctness while avoiding world-wide
+      // NPC stream reads for every room description.
+      const movingDefinitions = definitions.filter(({ npc, initialLocationId }) =>
+        npc.movement && canVisitAnyLocation(npc, initialLocationId, requested));
       let positions: AutonomousNpcPosition[];
       if (!movingDefinitions.length) {
         positions = [];

@@ -128,6 +128,118 @@ describe('autonomous NPC position projection cache', () => {
     expect(projected.get('room-b')?.map(({ id }) => id)).toEqual(['resident']);
   });
 
+  it('reads histories only for mobile NPCs that can reach the requested rooms', async () => {
+    const routeNpcId = 'route-walker';
+    const wanderNpcId = 'allowed-wanderer';
+    const distantNpcId = 'distant-walker';
+    const wanderStreamId = autonomousNpcStreamId(wanderNpcId);
+    const movedWanderer: StoredGameEvent = {
+      ...event('world.npc.moved', {
+        npcId: wanderNpcId,
+        fromLocationId: 'remote-home',
+        toLocationId: 'room-b',
+        exitId: 'remote-to-room-b',
+        attemptedAt,
+      }),
+      worldInstanceId: 'npc-route-filter-test',
+      streamId: wanderStreamId,
+      aggregateId: wanderStreamId,
+    };
+    const readStreams = vi.fn(async (_worldId: string, streamIds: readonly string[]) =>
+      new Map(streamIds.map((streamId) => [
+        streamId,
+        streamId === wanderStreamId ? [movedWanderer] : [],
+      ])),
+    );
+    const capability = captureNpcStateCapability();
+    const context = {
+      worldInstanceId: 'npc-route-filter-test',
+      world: {
+        locations: [
+          {
+            id: 'room-a',
+            npcs: [{
+              id: routeNpcId,
+              name: 'Route walker',
+              description: 'A traveler.',
+              movement: {
+                strategy: 'route',
+                intervalMs: 60_000,
+                routeLocationIds: ['room-a', 'room-b'],
+              },
+            }],
+          },
+          {
+            id: 'remote-home',
+            npcs: [{
+              id: wanderNpcId,
+              name: 'Allowed wanderer',
+              description: 'A local traveler.',
+              movement: {
+                strategy: 'wander',
+                intervalMs: 60_000,
+                stayChancePercent: 20,
+                allowedLocationIds: ['room-b'],
+              },
+            }],
+          },
+          {
+            id: 'remote-a',
+            npcs: [{
+              id: distantNpcId,
+              name: 'Distant walker',
+              description: 'A far-off traveler.',
+              movement: {
+                strategy: 'route',
+                intervalMs: 60_000,
+                routeLocationIds: ['remote-a', 'remote-b'],
+              },
+            }],
+          },
+        ],
+      },
+      store: { readStreams },
+    } as never;
+
+    const projected = await capability.atLocations(context, ['room-a', 'room-b']);
+
+    expect(readStreams).toHaveBeenCalledOnce();
+    expect(readStreams.mock.calls[0]?.[1]).toEqual([
+      autonomousNpcStreamId(routeNpcId),
+      wanderStreamId,
+    ]);
+    expect(projected.get('room-b')?.map(({ id }) => id)).toEqual([wanderNpcId]);
+  });
+
+  it('skips movement-history reads when no mobile NPC can reach the requested room', async () => {
+    const readStreams = vi.fn(async () => new Map());
+    const capability = captureNpcStateCapability();
+    const context = {
+      worldInstanceId: 'npc-no-route-match-test',
+      world: {
+        locations: [{
+          id: 'remote-a',
+          npcs: [{
+            id: 'remote-walker',
+            name: 'Remote walker',
+            description: 'A distant traveler.',
+            movement: {
+              strategy: 'route',
+              intervalMs: 60_000,
+              routeLocationIds: ['remote-a', 'remote-b'],
+            },
+          }],
+        }],
+      },
+      store: { readStreams },
+    } as never;
+
+    const projected = await capability.atLocations(context, ['unrelated-room']);
+
+    expect(readStreams).not.toHaveBeenCalled();
+    expect(projected.get('unrelated-room')).toEqual([]);
+  });
+
   it('reuses unchanged positions but replays when the authoritative revision changes', async () => {
     const npcId = 'test-wandering-npc';
     const streamId = autonomousNpcStreamId(npcId);
