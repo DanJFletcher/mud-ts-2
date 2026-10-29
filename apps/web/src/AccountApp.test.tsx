@@ -298,6 +298,12 @@ describe('world lobby and explicit character entry', () => {
     ]);
     expect(within(recent).getAllByRole('heading', { level: 3 })).toHaveLength(4);
   });
+  it('hides the recent-character section on Worlds when the roster is empty', async () => {
+    characters = [];
+    open('/worlds');
+    expect(await screen.findByRole('heading', { name: 'Explore worlds' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Recent characters' })).not.toBeInTheDocument());
+  });
   it('shows every character, including archived ones, on the single-column roster page', async () => {
     characters = Array.from({ length: 6 }, (_, index) => ({
       ...fixture,

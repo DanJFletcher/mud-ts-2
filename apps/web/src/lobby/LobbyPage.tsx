@@ -213,18 +213,14 @@ export function LobbyPage({ worldId, showAllCharacters = false, showWorldCharact
               renderLink={({ href, className, children }) => <Link href={href} className={className}>{children}</Link>} />)}</div>}
           {!state.catalogLoading && !state.worlds.length && <p>No worlds are available yet.</p>}
         </section>
-        <section className="lobby-recent" aria-labelledby="recent-heading">
+        {(state.rosterLoading || state.rosterError || characters.length > 0) && <section className="lobby-recent" aria-labelledby="recent-heading">
           <div className="lobby-section-heading">
             <h2 id="recent-heading">Recent characters</h2>
             <Link className="lobby-all-characters-link" href="/characters">All characters</Link>
           </div>
           {state.roster && !state.isSignedIn && <p className="lobby-small">Guest characters · saved in this browser</p>}
-           {state.rosterLoading ? characterLoading : characterList}
-           {!state.rosterLoading && !characters.length && !state.rosterError && <div className="lobby-empty"><h3>Your next traveler awaits</h3>
-            <p>Choose a world to create a character. You can play as a guest or sign in.</p>
-            {state.anonymous && <Link href="/sign-in" onClickCapture={() => rememberEntryIntent('/worlds')}>Sign in for your saved characters</Link>}
-          </div>}
-        </section>
+          {state.rosterLoading ? characterLoading : characterList}
+        </section>}
       </div>
     </>}
   </AccountShell>;
