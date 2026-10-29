@@ -3742,6 +3742,28 @@ describe('single-character world session client', () => {
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Woodcutting in progress' })).not.toBeInTheDocument());
   });
 
+  it('prints Chop! every two seconds while woodcutting remains active', async () => {
+    activeWoodcuttingState = {
+      actionId: 'persisted-woodcutting-action',
+      treeId: 'southbound-pine',
+      treeLabel: 'pine',
+      axeItemId: 'copper-axe',
+      locationId: 'mossgate-clearing',
+      startedAt: new Date().toISOString(),
+      ticksCompleted: 0,
+      ticksRequired: 10,
+    };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    const terminal = await screen.findByRole('region', { name: 'Terminal transcript' });
+    await waitFor(() => {
+      expect(within(terminal).getAllByText('Chop!')).toHaveLength(1);
+    }, { timeout: 3_000 });
+    await waitFor(() => {
+      expect(within(terminal).getAllByText('Chop!')).toHaveLength(2);
+    }, { timeout: 3_000 });
+  });
+
   it('accepts the explicit use axe on tree command form', async () => {
     woodcuttingAxeCarried = true;
     availableWoodcuttingTrees = [{ id: 'southbound-pine', label: 'pine' }];

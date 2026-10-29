@@ -1671,6 +1671,14 @@ export function WorldClient({
   const woodcuttingActionId = activeWoodcutting?.actionId;
   const woodcuttingStartedAt = activeWoodcutting?.startedAt;
   const woodcuttingTicksCompleted = activeWoodcutting?.ticksCompleted;
+  useEffect(() => {
+    if (!woodcuttingActionId) return;
+    const chopMessageTimer = window.setInterval(() => {
+      addEntry("narration", "Chop!");
+    }, 2_000);
+    return () => window.clearInterval(chopMessageTimer);
+  }, [addEntry, woodcuttingActionId]);
+
   const continueWoodcutting = useCallback((actionId: string) => {
     if (!activeWoodcutting || activeWoodcutting.actionId !== actionId) return;
     const nextTickAt = Date.parse(activeWoodcutting.startedAt) +
