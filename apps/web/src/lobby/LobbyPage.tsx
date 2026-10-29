@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent } from 'react';
-import { useLocation, useSearch } from 'wouter';
+import { Link, useLocation, useSearch } from 'wouter';
 import { Button, CharacterEntryCardSkeleton, ClassChoice, Skeleton, TextInput, WorldCard, WorldCardSkeleton, WorldHero } from '@mudd/ui';
 import { AccountShell } from './AccountShell.js';
 import { CharacterCard } from './CharacterCard.js';
@@ -108,12 +108,12 @@ export function LobbyPage({ worldId, showAllCharacters = false }: { worldId?: st
           <Button disabled={pending} onClick={() => void run(async () => {
             await worldClient().createGuestSession(); await state.refreshRoster();
           })}>Play as guest</Button>
-          <a href={appHref('/sign-in')} onClick={authLink}>Sign in</a>
-          <a href={appHref('/sign-up')} onClick={authLink}>Create account</a>
+          <Link href="/sign-in" onClickCapture={authLink}>Sign in</Link>
+          <Link href="/sign-up" onClickCapture={authLink}>Create account</Link>
         </div>
       </div> : <p>Load your characters before creating a new one.</p>
       : <form className="lobby-form" onSubmit={(event) => void create(event)}>
-        {!state.isSignedIn && <p className="lobby-small">Guest traveler · saved in this browser. <a href={appHref('/sign-up')} onClick={authLink}>Create an account</a> to keep your journeys.</p>}
+        {!state.isSignedIn && <p className="lobby-small">Guest traveler · saved in this browser. <Link href="/sign-up" onClickCapture={authLink}>Create an account</Link> to keep your journeys.</p>}
         {createdId ? <p role="status">Your character was created. You can retry entry below or use their character card. No new character will be created.</p> : <>
           <TextInput label="Character name" id="new-character-name" value={name} onChange={(event) => setName(event.target.value)} autoFocus required minLength={2} maxLength={32} disabled={pending} autoComplete="off" />
           {world.classCatalog && <ClassChoice classes={world.classCatalog.classes} value={classId} onChange={setClassId} disabled={pending} name={`class-${world.worldInstanceId}`} />}
@@ -127,7 +127,7 @@ export function LobbyPage({ worldId, showAllCharacters = false }: { worldId?: st
   </section>;
 
   if (state.catalogLoading && worldId) return <AccountShell>
-    <a className="lobby-back" href={appHref('/')}>Back to worlds</a>
+    <Link className="lobby-back" href="/">Back to worlds</Link>
     <div className="mudd-world-hero" role="status" aria-label="Loading world details" aria-busy="true">
       <div className="mudd-world-hero__content lobby-world-hero-skeleton">
         <Skeleton variant="text" width="8rem" height=".6rem" />
@@ -143,10 +143,10 @@ export function LobbyPage({ worldId, showAllCharacters = false }: { worldId?: st
     </section>
   </AccountShell>;
   if (state.catalogError) return <AccountShell><h1>Worlds unavailable</h1><p role="alert">{state.catalogError}</p><Button onClick={() => void state.reload()}>Retry worlds</Button></AccountShell>;
-  if (worldId && !world) return <AccountShell><h1>World not found</h1><p>This world is not available in the current catalog.</p><a href={appHref('/')}>Back to worlds</a></AccountShell>;
+  if (worldId && !world) return <AccountShell><h1>World not found</h1><p>This world is not available in the current catalog.</p><Link href="/">Back to worlds</Link></AccountShell>;
 
   if (showAllCharacters) return <AccountShell>
-    <a className="lobby-back" href={appHref('/')}>Back to worlds</a>
+    <Link className="lobby-back" href="/">Back to worlds</Link>
     <div className="lobby-intro lobby-all-characters__intro">
       <p className="lobby-eyebrow">MUDD · Your roster</p>
       <h1>All characters</h1>
@@ -161,8 +161,8 @@ export function LobbyPage({ worldId, showAllCharacters = false }: { worldId?: st
         <h3>{state.roster ? 'No characters yet' : 'Characters are not available'}</h3>
         <p>{state.roster ? 'Explore a world to create your first character.' : 'Sign in or start a guest session from a world to see your characters here.'}</p>
         <div className="lobby-buttons">
-          <a href={appHref('/')}>Browse worlds</a>
-          {state.anonymous && <a href={appHref('/sign-in')} onClick={() => rememberEntryIntent('/')}>Sign in</a>}
+          <Link href="/">Browse worlds</Link>
+          {state.anonymous && <Link href="/sign-in" onClickCapture={() => rememberEntryIntent('/')}>Sign in</Link>}
         </div>
       </div>}
     </section>
@@ -170,7 +170,7 @@ export function LobbyPage({ worldId, showAllCharacters = false }: { worldId?: st
 
   return <AccountShell>
     {world ? <>
-      <a className="lobby-back" href={appHref('/')}>Back to worlds</a>
+      <Link className="lobby-back" href="/">Back to worlds</Link>
       <WorldHero name={world.name} summary={world.summary} introduction={world.introduction} imageSrc={world.coverImage ? appHref(world.coverImage) : undefined} />
       {errors}{switchPrompt}
       <section className="lobby-world-characters" aria-labelledby="world-characters-heading">
@@ -193,19 +193,20 @@ export function LobbyPage({ worldId, showAllCharacters = false }: { worldId?: st
               <WorldCardSkeleton />
             </div>
             : <div className="lobby-world-list">{state.worlds.map((item) => <WorldCard key={item.worldInstanceId} name={item.name} summary={item.summary}
-              href={appHref(worldPath(item.worldInstanceId))} imageSrc={item.coverImage ? appHref(item.coverImage) : undefined} />)}</div>}
+              href={worldPath(item.worldInstanceId)} imageSrc={item.coverImage ? appHref(item.coverImage) : undefined}
+              renderLink={({ href, className, children }) => <Link href={href} className={className}>{children}</Link>} />)}</div>}
           {!state.catalogLoading && !state.worlds.length && <p>No worlds are available yet.</p>}
         </section>
         <section className="lobby-recent" aria-labelledby="recent-heading">
           <div className="lobby-section-heading">
             <h2 id="recent-heading">Recent characters</h2>
-            <a className="lobby-all-characters-link" href={appHref('/characters')}>All characters</a>
+            <Link className="lobby-all-characters-link" href="/characters">All characters</Link>
           </div>
           {state.roster && !state.isSignedIn && <p className="lobby-small">Guest characters · saved in this browser</p>}
            {state.rosterLoading ? characterLoading : characterList}
            {!state.rosterLoading && !characters.length && !state.rosterError && <div className="lobby-empty"><h3>Your next traveler awaits</h3>
             <p>Choose a world to create a character. You can play as a guest or sign in.</p>
-            {state.anonymous && <a href={appHref('/sign-in')} onClick={() => rememberEntryIntent('/')}>Sign in for your saved characters</a>}
+            {state.anonymous && <Link href="/sign-in" onClickCapture={() => rememberEntryIntent('/')}>Sign in for your saved characters</Link>}
           </div>}
         </section>
       </div>

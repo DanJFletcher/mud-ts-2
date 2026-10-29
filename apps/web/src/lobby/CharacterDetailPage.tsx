@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from 'react';
-import { useLocation } from 'wouter';
+import { Link, useLocation } from 'wouter';
 import { Button, Skeleton } from '@mudd/ui';
 import { AccountShell } from './AccountShell.js';
-import { appHref, worldPath } from './navigation.js';
+import { worldPath } from './navigation.js';
 import { enterCharacter, entryDisabled, useLobby, worldClient, type LobbyCharacter } from './useLobby.js';
 
 function DetailRow({ label, children }: { label: string; children: ReactNode }) {
@@ -45,22 +45,22 @@ export function CharacterDetailPage({ characterId }: { characterId: string }) {
   if (state.rosterError) return <AccountShell><section className="character-detail-state">
     <h1>Character record unavailable</h1><p role="alert">{state.rosterError}</p>
     <Button onClick={() => void state.reload()}>Retry characters</Button>
-    <a href={appHref('/')}>Back to worlds</a>
+    <Link href="/">Back to worlds</Link>
   </section></AccountShell>;
   if (!state.roster) return <AccountShell><section className="character-detail-state">
     <p className="lobby-eyebrow">MUDD · Character record</p><h1>Your roster is not available</h1>
     <p>Sign in or open the lobby to start an explicit guest session. No character or guest account was created.</p>
-    <div className="lobby-buttons"><a href={appHref('/sign-in')}>Sign in</a><a href={appHref('/')}>Back to worlds</a></div>
+    <div className="lobby-buttons"><Link href="/sign-in">Sign in</Link><Link href="/">Back to worlds</Link></div>
   </section></AccountShell>;
   if (state.roster.characters.length === 0) return <AccountShell><section className="character-detail-state">
     <p className="lobby-eyebrow">MUDD · Character record</p><h1>No characters in this roster</h1>
     <p>This roster has no travelers yet. Choose a world from the lobby to create one when you are ready.</p>
-    <a href={appHref('/')}>Browse worlds</a>
+    <Link href="/">Browse worlds</Link>
   </section></AccountShell>;
   if (!character) return <AccountShell><section className="character-detail-state">
     <p className="lobby-eyebrow">MUDD · Character record</p><h1>Character not found</h1>
     <p>This character is not in your current roster. It may have been removed or belong to another account.</p>
-    <a href={appHref('/')}>Return to characters</a>
+    <Link href="/">Return to characters</Link>
   </section></AccountShell>;
 
   const dead = character.combat?.status === 'defeat' || character.health?.current === 0;
@@ -68,8 +68,8 @@ export function CharacterDetailPage({ characterId }: { characterId: string }) {
   const boundWorld = character.worldName || state.worlds.find((world) => world.worldInstanceId === character.worldInstanceId)?.name;
   const inventory = character.inventory;
   const lastPlayed = character.lastPlayedAt;
-  const backHref = appHref(state.worlds.some((world) => world.worldInstanceId === character.worldInstanceId)
-    ? worldPath(character.worldInstanceId) : '/');
+  const backPath = state.worlds.some((world) => world.worldInstanceId === character.worldInstanceId)
+    ? worldPath(character.worldInstanceId) : '/';
   const itemCounts = inventory.reduce<Map<string, number>>((counts, item) => {
     counts.set(item.label, (counts.get(item.label) ?? 0) + (item.quantity ?? 1));
     return counts;
@@ -78,7 +78,7 @@ export function CharacterDetailPage({ characterId }: { characterId: string }) {
 
   return <AccountShell>
     <div className="character-detail">
-      <a className="lobby-back" href={backHref}>← Return to {state.worlds.some((world) => world.worldInstanceId === character.worldInstanceId) ? 'world' : 'characters'}</a>
+      <Link className="lobby-back" href={backPath}>← Return to {state.worlds.some((world) => world.worldInstanceId === character.worldInstanceId) ? 'world' : 'characters'}</Link>
       <header className="character-detail__header">
         <p className="lobby-eyebrow">{boundWorld || 'Traveler record'}</p>
         <h1>{character.name}</h1>
@@ -123,7 +123,7 @@ export function CharacterDetailPage({ characterId }: { characterId: string }) {
           {pending ? 'Opening story…' : isActive ? `Continue as ${character.name}` : `Play as ${character.name}`}
         </Button>
         {entryDisabled(character) && <p className="lobby-small">{character.archived ? 'Restore this character from the world roster before playing.' : 'This character cannot currently enter a session.'}</p>}
-        <a href={backHref}>Return to {state.worlds.some((world) => world.worldInstanceId === character.worldInstanceId) ? 'world' : 'characters'}</a>
+        <Link href={backPath}>Return to {state.worlds.some((world) => world.worldInstanceId === character.worldInstanceId) ? 'world' : 'characters'}</Link>
       </div>
     </div>
   </AccountShell>;

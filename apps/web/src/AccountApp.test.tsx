@@ -200,6 +200,20 @@ describe('world lobby and explicit character entry', () => {
     expect(container.querySelectorAll('.mudd-world-card--skeleton, .mudd-character-entry--skeleton')).toHaveLength(0);
   });
 
+  it('navigates to a world through the lobby without a document reload', async () => {
+    open('/');
+    fireEvent.click(await screen.findByRole('link', { name: /The Waystone Path/ }));
+    expect(await screen.findByRole('heading', { name: 'The Waystone Path' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe(`/worlds/${demo}`);
+  });
+
+  it('navigates to all characters through the lobby without a document reload', async () => {
+    open('/');
+    fireEvent.click(await screen.findByRole('link', { name: 'All characters' }));
+    expect(await screen.findByRole('heading', { name: 'All characters' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/characters');
+  });
+
   it('shows world-detail placeholders while the catalog is pending', async () => {
     holdCatalog = true;
     const { container } = open(`/worlds/${demo}`);

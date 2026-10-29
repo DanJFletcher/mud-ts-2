@@ -1,17 +1,24 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 
-/** A native-link tile for choosing a world. Image art is decorative; title and summary remain the link's accessible name. */
+/** A world-selection tile with an optional client-side link renderer. Image art is decorative; title and summary name the link. */
+export interface WorldCardLinkProps {
+  href: string;
+  className: string;
+  children: ReactNode;
+}
+
 export interface WorldCardProps {
   name: string;
   summary: string;
   href: string;
   imageSrc?: string;
+  renderLink?: (props: WorldCardLinkProps) => ReactNode;
 }
 
-export function WorldCard({ name, summary, href, imageSrc }: WorldCardProps) {
+export function WorldCard({ name, summary, href, imageSrc, renderLink }: WorldCardProps) {
   const [imageFailed, setImageFailed] = useState(false);
-  return (
-    <a className={`mudd-world-card${imageSrc && !imageFailed ? ' has-art' : ' is-text-cover'}`} href={href}>
+  const className = `mudd-world-card${imageSrc && !imageFailed ? ' has-art' : ' is-text-cover'}`;
+  const children = <>
       {imageSrc && !imageFailed ? (
         <img className="mudd-world-card__image" src={imageSrc} alt="" aria-hidden="true"
           loading="lazy" decoding="async" onError={() => setImageFailed(true)} />
@@ -23,6 +30,8 @@ export function WorldCard({ name, summary, href, imageSrc }: WorldCardProps) {
         <span className="mudd-world-card__summary">{summary}</span>
         <span className="mudd-world-card__link-cue" aria-hidden="true">Explore world <span>↗</span></span>
       </span>
-    </a>
-  );
+  </>;
+  return renderLink
+    ? renderLink({ href, className, children })
+    : <a className={className} href={href}>{children}</a>;
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { Link } from 'wouter';
 import { Button, CharacterEntryCard, TextInput } from '@mudd/ui';
-import { appHref, characterPath } from './navigation.js';
+import { characterPath } from './navigation.js';
 import { type LobbyCharacter, entryDisabled } from './useLobby.js';
 
 export function CharacterCard({ character, active, pending, compact = false, showWorldName = true, onPlay, onManage }: {
@@ -14,7 +15,7 @@ export function CharacterCard({ character, active, pending, compact = false, sho
   const [name, setName] = useState(character.name);
   const dead = character.combat?.status === 'defeat' || character.health?.current === 0;
   const statusLabel = character.archived ? 'Archived' : dead ? 'Deceased' : active ? 'In world' : 'Ready to play';
-  const detailsHref = appHref(characterPath(character.characterId));
+  const detailsPath = characterPath(character.characterId);
   return <CharacterEntryCard name={character.name} worldName={showWorldName ? character.worldName : undefined}
     classLabel={character.characterClass?.label}
     level={character.advancement?.level}
@@ -27,7 +28,7 @@ export function CharacterCard({ character, active, pending, compact = false, sho
       <span className="character-options__compact-label" aria-hidden="true">⋯</span>
     </summary>
       <div>
-        <a className="mudd-button mudd-button--quiet character-options__details" href={detailsHref}>Details</a>
+        <Link className="mudd-button mudd-button--quiet character-options__details" href={detailsPath}>Details</Link>
         {character.archived ? <Button variant="quiet" disabled={pending} onClick={() => void onManage('restore', character)}>Restore</Button>
         : <><Button variant="quiet" disabled={pending} onClick={() => setMode('rename')}>Rename</Button>
           <Button variant="quiet" disabled={pending || active} onClick={() => setMode('archive')}>Archive</Button></>}</div>

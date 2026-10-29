@@ -2,7 +2,7 @@ import { ClerkProvider } from '@clerk/react';
 import { publishableKeyFromHost } from '@clerk/react/internal';
 import { shadcn } from '@clerk/themes';
 import { lazy, Suspense } from 'react';
-import { Redirect, Route, Router as WouterRouter, Switch, useLocation } from 'wouter';
+import { Link, Redirect, Route, Router as WouterRouter, Switch, useLocation } from 'wouter';
 import { AccountShell } from './lobby/AccountShell.js';
 import { LobbyPage } from './lobby/LobbyPage.js';
 import { appHref, basePath, playPath } from './lobby/navigation.js';
@@ -67,7 +67,7 @@ function ClerkAppRoutes() {
       <Route path="/codex"><Suspense fallback={<RouteLoading label="Loading the Codex…" />}>
         <AccountShell><CodexScreen /></AccountShell>
       </Suspense></Route>
-      <Route><AccountShell><h1>Page not found</h1><a href={appHref('/')}>Back to worlds</a></AccountShell></Route>
+      <Route><AccountShell><h1>Page not found</h1><Link href="/">Back to worlds</Link></AccountShell></Route>
     </Switch>
   </ClerkProvider>;
 }

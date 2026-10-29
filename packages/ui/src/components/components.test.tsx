@@ -111,6 +111,16 @@ describe('@mudd/ui components', () => {
     expect(link.querySelector('img')).toBeNull();
   });
 
+  it('allows the app to provide client-side world navigation', () => {
+    render(<WorldCard
+      name="Orraveth" summary="A salt-road world." href="/worlds/orraveth"
+      renderLink={({ href, className, children }) => <a href={href} className={className} data-router-link="true">{children}</a>}
+    />);
+    const link = screen.getByRole('link', { name: /Orraveth.*A salt-road world/i });
+    expect(link).toHaveAttribute('href', '/worlds/orraveth');
+    expect(link).toHaveAttribute('data-router-link', 'true');
+  });
+
   it('links only known interactables from the current room in terminal prose', () => {
     const onLookTarget = vi.fn();
     render(

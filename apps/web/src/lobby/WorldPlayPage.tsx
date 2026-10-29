@@ -1,9 +1,9 @@
-import { useLocation } from 'wouter';
+import { Link, useLocation } from 'wouter';
 import { useState } from 'react';
 import { Button } from '@mudd/ui';
 import { WorldClient } from '../App.js';
 import { AccountShell } from './AccountShell.js';
-import { appHref, worldPath } from './navigation.js';
+import { worldPath } from './navigation.js';
 import { useLobby, worldClient } from './useLobby.js';
 
 export function WorldPlayPage({ worldId }: { worldId: string }) {
@@ -16,7 +16,7 @@ export function WorldPlayPage({ worldId }: { worldId: string }) {
   const world = state.worlds.find((item) => item.worldInstanceId === worldId);
   const session = state.roster?.activeWorldSessions?.find((item) => item.worldInstanceId === worldId);
   if (!world || !session) return <AccountShell><h1>{world ? 'Choose a character to enter' : 'World not found'}</h1>
-    <a href={appHref(world ? worldPath(worldId) : '/')}>{world ? `Visit ${world.name}` : 'Back to worlds'}</a></AccountShell>;
+    <Link href={world ? worldPath(worldId) : '/'}>{world ? `Visit ${world.name}` : 'Back to worlds'}</Link></AccountShell>;
   return <>{error && <div role="alert" className="lobby-leave-error">{error}<Button disabled={leaving} onClick={() => setError('')}>Dismiss</Button></div>}
     <WorldClient worldInstanceId={worldId} onLeaveWorld={async () => {
       if (leaving) return;
