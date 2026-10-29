@@ -322,6 +322,7 @@ describe('@mudd/ui components', () => {
       secondaryActions={<button type="button">Manage</button>}
     />);
     expect(screen.getByRole('heading', { level: 3, name: 'Mira' })).toBeInTheDocument();
+    expect(screen.getByRole('article')).toHaveClass('mudd-character-entry--linked');
     expect(screen.getByText('Ready')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Mira' })).toHaveAttribute('href', '/character/mira');
     fireEvent.click(screen.getByRole('button', { name: 'Continue as Mira' }));
@@ -335,6 +336,7 @@ describe('@mudd/ui components', () => {
       actionLabel="Play as Mira" compact onPlay={() => undefined}
     />);
     expect(screen.getByRole('article')).toHaveClass('mudd-character-entry--compact');
+    expect(screen.getByRole('article')).not.toHaveClass('mudd-character-entry--linked');
     expect(screen.getByRole('button', { name: 'Play as Mira' })).toBeInTheDocument();
   });
 

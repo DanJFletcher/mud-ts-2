@@ -25,7 +25,7 @@ export function CharacterEntryCard({
   const details = [classLabel, typeof level === 'number' ? `Level ${level}` : undefined].filter(Boolean);
   const content = Children.toArray(children);
   return (
-    <article className={`mudd-character-entry${compact ? ' mudd-character-entry--compact' : ''}`}>
+    <article className={`mudd-character-entry${compact ? ' mudd-character-entry--compact' : ''}${detailsHref ? ' mudd-character-entry--linked' : ''}`}>
       <div className="mudd-character-entry__top">
         <div className="mudd-character-entry__identity">
           {worldName ? <p className="mudd-character-entry__eyebrow">{worldName}</p> : null}
