@@ -141,7 +141,6 @@
   .lobby-intro { margin-bottom: 1.6rem; }
   .lobby-grid { display: flex; flex-direction: column; gap: 2rem; }
   .lobby-worlds, .lobby-recent { width: 100%; min-width: 0; }
-  .lobby-recent { order: -1; }
   .lobby-recent .lobby-character-list--recent,
   .lobby-world-characters .lobby-character-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55rem; }
   .lobby-recent .lobby-character-list--recent > :only-child { grid-column: 1 / -1; }
