@@ -124,7 +124,309 @@ function storedEvent(
   } as unknown as StoredGameEvent;
 }
 
+function captureCampfirePlugin(
+  loadLifecycle: (context: unknown, objectId: string) => Promise<unknown> = async () => undefined,
+) {
+  const commands = new Map<string, (command: unknown, context: unknown) => Promise<unknown>>();
+  let capability: { atLocations: (context: never, locationIds: readonly string[]) => Promise<ReadonlyMap<string, readonly unknown[]>> } | undefined;
+  let expirationHandler: ((payload: unknown, context: unknown) => Promise<void>) | undefined;
+  temporaryCampfiresPlugin.register({
+    registerCommand: (type: string, _schema: unknown, handler: unknown) => {
+      commands.set(type, handler as (command: unknown, context: unknown) => Promise<unknown>);
+    },
+    registerEventHandler: (_type: string, _version: number, _schema: unknown, handler: unknown) => {
+      expirationHandler = handler as (payload: unknown, context: unknown) => Promise<void>;
+    },
+    provideCapability: (_token: unknown, provided: unknown) => {
+      capability = provided as typeof capability;
+    },
+    requireCapability: () => ({ load: loadLifecycle }),
+  } as never);
+  return { commands, get capability() { return capability!; }, get expirationHandler() { return expirationHandler!; } };
+}
+
 describe('temporary campfires', () => {
+  it('rejects duplicate campfire lighting and invalid extinction histories', () => {
+    const lit = storedEvent(TEMPORARY_CAMPFIRES_STREAM_ID, 'world.campfire_lit', {
+      campfireId: 'campfire-projector',
+      locationId: 'mossgate-clearing',
+      createdAt: '2026-10-27T12:00:00.000Z',
+      expiresAt: '2026-10-27T12:10:00.000Z',
+    }, 1);
+    const extinguished = (campfireId: string, locationId: string, aggregateVersion: number) =>
+      storedEvent(TEMPORARY_CAMPFIRES_STREAM_ID, 'world.campfire_extinguished', {
+        campfireId,
+        locationId,
+        extinguishedAt: '2026-10-27T12:02:00.000Z',
+      }, aggregateVersion);
+
+    expect(() => projectTemporaryCampfires([lit, { ...lit, aggregateVersion: 2 }]))
+      .toThrow('Campfire campfire-projector was lit more than once.');
+    expect(() => projectTemporaryCampfires([extinguished('missing', 'mossgate-clearing', 1)]))
+      .toThrow('Invalid campfire extinction at revision 1.');
+    expect(() => projectTemporaryCampfires([lit, extinguished('campfire-projector', 'wrong-room', 2)]))
+      .toThrow('Invalid campfire extinction at revision 2.');
+    expect(() => projectTemporaryCampfires([
+      lit,
+      extinguished('campfire-projector', 'mossgate-clearing', 2),
+      extinguished('campfire-projector', 'mossgate-clearing', 3),
+    ])).toThrow('Invalid campfire extinction at revision 3.');
+  });
+
+  it('projects only requested campfires whose lifecycle remains visible', async () => {
+    const ids = ['missing-life', 'expired-life', 'expiring-life', 'past-life', 'visible-life', 'second-visible'];
+    const lifecycleStates = new Map<string, unknown>([
+      ['expired-life', { state: 'expired' }],
+      ['expiring-life', { state: 'expiring' }],
+      ['past-life', { state: 'scheduled', expiresAt: '2026-10-27T11:59:59.000Z' }],
+      ['visible-life', { state: 'scheduled', expiresAt: '2026-10-27T12:10:00.000Z' }],
+      ['second-visible', { state: 'cancelled' }],
+    ]);
+    const history = ids.map((campfireId, index) => storedEvent(
+      TEMPORARY_CAMPFIRES_STREAM_ID,
+      'world.campfire_lit',
+      {
+        campfireId,
+        locationId: campfireId === 'second-visible' ? 'other-clearing' : 'mossgate-clearing',
+        createdAt: '2026-10-27T11:50:00.000Z',
+        expiresAt: '2026-10-27T12:10:00.000Z',
+      },
+      index + 1,
+    ));
+    const readStream = vi.fn(async () => history);
+    const { capability } = captureCampfirePlugin(async (_context, objectId) => lifecycleStates.get(objectId));
+    const context = {
+      worldInstanceId,
+      store: { readStream },
+      now: () => new Date('2026-10-27T12:00:00.000Z'),
+    };
+
+    expect(await capability.atLocations(context as never, [])).toEqual(new Map());
+    expect(readStream).not.toHaveBeenCalled();
+
+    const rooms = await capability.atLocations(context as never, [
+      'mossgate-clearing',
+      'other-clearing',
+    ]);
+    expect([...rooms.keys()]).toEqual(['mossgate-clearing', 'other-clearing']);
+    expect(rooms.get('mossgate-clearing')).toEqual([
+      expect.objectContaining({ id: 'visible-life', label: 'Campfire' }),
+    ]);
+    expect(rooms.get('other-clearing')).toEqual([
+      expect.objectContaining({ id: 'second-visible', label: 'Campfire' }),
+    ]);
+  });
+
+  it('ignores unrelated and stale expiry events, then finalizes missing campfires', async () => {
+    const lifecycleStream = objectLifecycleStreamId('campfire-missing');
+    const schedule = objectLifecycleScheduledEvent({
+      objectId: 'campfire-missing',
+      objectType: 'campfire',
+      locationId: 'mossgate-clearing',
+      createdAt: '2026-10-27T12:00:00.000Z',
+      expiresAt: '2026-10-27T12:10:00.000Z',
+    });
+    const lifecycleHistory = [
+      storedEvent(lifecycleStream, schedule.type, schedule.payload, 1),
+      storedEvent(lifecycleStream, 'world.object_expiring', {
+        objectId: 'campfire-missing',
+        objectType: 'campfire',
+        locationId: 'mossgate-clearing',
+        expiresAt: '2026-10-27T12:10:00.000Z',
+      }, 2),
+    ];
+    let failReceipt = true;
+    const store = {
+      readStream: vi.fn(async (_worldId: string, streamId: string) =>
+        streamId === lifecycleStream ? lifecycleHistory : []),
+      append: vi.fn(async () => ({
+        receipt: { ok: !failReceipt },
+        kind: 'committed',
+      })),
+    };
+    const { expirationHandler } = captureCampfirePlugin();
+    const context = {
+      effectId: 'effect-campfire-missing',
+      worldInstanceId,
+      store,
+      now: () => new Date('2026-10-27T12:10:01.000Z'),
+    };
+    const payload = {
+      objectId: 'campfire-missing',
+      objectType: 'campfire',
+      locationId: 'mossgate-clearing',
+      expiresAt: '2026-10-27T12:10:00.000Z',
+    };
+
+    await expirationHandler({ ...payload, objectType: 'deer' }, context);
+    expect(store.readStream).not.toHaveBeenCalled();
+    await expirationHandler({ ...payload, expiresAt: '2026-10-27T12:11:00.000Z' }, context);
+    expect(store.append).not.toHaveBeenCalled();
+
+    await expect(expirationHandler(payload, context))
+      .rejects.toThrow('Could not finalize the missing campfire lifecycle.');
+    failReceipt = false;
+    await expect(expirationHandler(payload, context)).resolves.toBeUndefined();
+    expect(store.append).toHaveBeenLastCalledWith(expect.objectContaining({
+      streamId: lifecycleStream,
+      commandId: 'campfire-expire-missing:effect-campfire-missing',
+      expectedVersion: 2,
+      events: [expect.objectContaining({ type: 'world.object_expired' })],
+    }));
+  });
+
+  it('fails explicitly when an expiry append is not committed', async () => {
+    const lifecycleStream = objectLifecycleStreamId('campfire-rejected');
+    const schedule = objectLifecycleScheduledEvent({
+      objectId: 'campfire-rejected',
+      objectType: 'campfire',
+      locationId: 'mossgate-clearing',
+      createdAt: '2026-10-27T12:00:00.000Z',
+      expiresAt: '2026-10-27T12:10:00.000Z',
+    });
+    const lifecycleHistory = [
+      storedEvent(lifecycleStream, schedule.type, schedule.payload, 1),
+      storedEvent(lifecycleStream, 'world.object_expiring', {
+        objectId: 'campfire-rejected',
+        objectType: 'campfire',
+        locationId: 'mossgate-clearing',
+        expiresAt: '2026-10-27T12:10:00.000Z',
+      }, 2),
+    ];
+    const campfireHistory = [storedEvent(TEMPORARY_CAMPFIRES_STREAM_ID, 'world.campfire_lit', {
+      campfireId: 'campfire-rejected',
+      locationId: 'mossgate-clearing',
+      createdAt: '2026-10-27T12:00:00.000Z',
+      expiresAt: '2026-10-27T12:10:00.000Z',
+    }, 1)];
+    const store = {
+      readStream: vi.fn(async (_worldId: string, streamId: string) =>
+        streamId === lifecycleStream ? lifecycleHistory : campfireHistory),
+      append: vi.fn(async () => ({ receipt: { ok: false }, kind: 'rejected' })),
+    };
+    const { expirationHandler } = captureCampfirePlugin();
+
+    await expect(expirationHandler({
+      objectId: 'campfire-rejected',
+      objectType: 'campfire',
+      locationId: 'mossgate-clearing',
+      expiresAt: '2026-10-27T12:10:00.000Z',
+    }, {
+      effectId: 'effect-campfire-rejected',
+      worldInstanceId,
+      store,
+      now: () => new Date('2026-10-27T12:10:01.000Z'),
+    })).rejects.toThrow('Could not atomically extinguish the campfire.');
+  });
+
+  it('rejects campfire commands for archived characters and invalid rooms', async () => {
+    const { engine, store } = createEngine();
+    await engine.start();
+    const archivedCharacter = await createCharacter(engine, 'archived-campfire-character');
+    const archived = await engine.dispatch({
+      type: 'character.archive',
+      version: 1,
+      commandId: 'archive-campfire-character',
+      worldInstanceId,
+      characterId: archivedCharacter.characterId,
+      expectedVersion: archivedCharacter.revision,
+      payload: {},
+    }, session);
+    expect(archived.receipt.ok).toBe(true);
+
+    const { commands } = captureCampfirePlugin();
+    const light = commands.get('campfire.light')!;
+    const extinguish = commands.get('campfire.extinguish')!;
+    const context = {
+      worldInstanceId,
+      store,
+      world: demoWorld,
+      makeId: () => 'unused-campfire-id',
+      now: () => new Date('2026-10-27T12:00:00.000Z'),
+    };
+    await expect(light({ characterId: archivedCharacter.characterId, payload: {} }, context))
+      .rejects.toThrow('That character is no longer available.');
+    await expect(extinguish({
+      characterId: archivedCharacter.characterId,
+      payload: { campfireId: 'unused-campfire-id' },
+    }, context)).rejects.toThrow('That character is no longer available.');
+
+    const misplacedCharacter = await createCharacter(engine, 'misplaced-campfire-character');
+    const moved = await store.append({
+      worldInstanceId,
+      streamId: misplacedCharacter.characterId,
+      actorId: SYSTEM_ACTOR_ID,
+      commandId: 'move-campfire-character-outside-world',
+      payloadHash: 'move-campfire-character-outside-world',
+      expectedVersion: misplacedCharacter.revision,
+      events: [{
+        type: 'character.moved',
+        version: 1,
+        payload: {
+          characterId: misplacedCharacter.characterId,
+          fromLocationId: 'mossgate-clearing',
+          toLocationId: 'missing-location',
+          exitId: 'missing-exit',
+        },
+      }],
+    });
+    expect(moved.receipt.ok).toBe(true);
+    await expect(light({ characterId: misplacedCharacter.characterId, payload: {} }, context))
+      .rejects.toThrow('The character location is not present in this world version.');
+    await engine.stop();
+  });
+
+  it('does not extinguish a campfire whose lifecycle is no longer active', async () => {
+    const { engine, store } = createEngine();
+    await engine.start();
+    const character = await createCharacter(engine, 'cancelled-lifecycle-character');
+    const lit = await engine.dispatch({
+      type: 'campfire.light',
+      version: 1,
+      commandId: 'light-before-lifecycle-cancel',
+      worldInstanceId,
+      characterId: character.characterId,
+      expectedVersion: character.revision,
+      payload: {},
+    }, session);
+    expect(lit.receipt.ok).toBe(true);
+    const campfireId = String(lit.events[0]!.payload.campfireId);
+    const lifecycle = projectObjectLifecycle(
+      await store.readStream(worldInstanceId, objectLifecycleStreamId(campfireId)),
+    )!;
+    const cancelled = await store.append({
+      worldInstanceId,
+      streamId: objectLifecycleStreamId(campfireId),
+      actorId: SYSTEM_ACTOR_ID,
+      commandId: 'cancel-before-campfire-extinguish',
+      payloadHash: 'cancel-before-campfire-extinguish',
+      expectedVersion: lifecycle.revision,
+      events: [{
+        type: 'world.object_lifecycle_cancelled',
+        version: 1,
+        payload: {
+          objectId: campfireId,
+          objectType: 'campfire',
+          locationId: lifecycle.locationId,
+        },
+      }],
+    });
+    expect(cancelled.receipt.ok).toBe(true);
+
+    const { commands } = captureCampfirePlugin(async () => projectObjectLifecycle(
+      await store.readStream(worldInstanceId, objectLifecycleStreamId(campfireId)),
+    ));
+    await expect(commands.get('campfire.extinguish')!({
+      characterId: character.characterId,
+      payload: { campfireId },
+    }, {
+      worldInstanceId,
+      store,
+      now: () => new Date('2026-10-27T12:01:00.000Z'),
+    })).rejects.toThrow('That campfire is no longer burning.');
+    await engine.stop();
+  });
+
   it('creates the campfire and schedule atomically, then removes it through generic expiry', async () => {
     const { engine, store, setNow } = createEngine();
     await engine.start();

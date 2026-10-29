@@ -68,6 +68,7 @@ let sessions: NonNullable<CharacterRosterSnapshot['activeWorldSessions']>;
 let guest: boolean;
 let entryFailure: boolean;
 let rosterFailure: boolean;
+let catalogFailure: boolean;
 const commands: Array<Record<string, unknown>> = [];
 function json(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status }); }
 function roster() { return { player: { id: playerId, displayName: 'Rowan' }, characters, activeWorldSession: null, activeWorldSessions: sessions }; }
@@ -90,7 +91,8 @@ beforeEach(() => {
   characters[0].wallet = { currencyId: 'silver', balance: 27 };
   characters[0].advancement = { level: 4, experience: 83 };
   characters[0].inventory = [{ id: 'healing-herb', label: 'Dried yarrow', description: 'A bundle of dried yarrow.', stackable: true, quantity: 3 }];
-  sessions = []; guest = false; entryFailure = false; rosterFailure = false; holdRoster = false; releaseRoster = undefined;
+  sessions = []; guest = false; entryFailure = false; rosterFailure = false; catalogFailure = false;
+  holdRoster = false; releaseRoster = undefined;
   holdCatalog = false; releaseCatalog = undefined; commands.length = 0;
   localStorage.clear(); sessionStorage.clear(); window.location.hash = '';
   mocks.fetch.mockImplementation(async (url: string, init: RequestInit = {}) => {
@@ -98,6 +100,7 @@ beforeEach(() => {
     const world = (init.headers as Record<string, string>)?.['x-mudd-world-instance'] ?? demo;
     if (url === '/api/worlds') {
       if (holdCatalog) await new Promise<void>((resolve) => { releaseCatalog = resolve; });
+      if (catalogFailure) return json({ message: 'World catalog unavailable' }, 503);
       return json(worlds);
     }
     if (url === '/api/characters') {
@@ -171,6 +174,43 @@ describe('world lobby and explicit character entry', () => {
     expect(within(navigation!).getByRole('link', { name: 'Sign in' })).toHaveClass('lobby-desktop-nav-item');
   });
 
+  it('remembers the current destination when signing in from the header', async () => {
+    mocks.signedIn = false;
+    const { container } = open(`/worlds/${demo}`);
+    const navigation = container.querySelector<HTMLElement>('#account-navigation')!;
+
+    fireEvent.click(within(navigation).getByRole('link', { name: 'Sign in' }));
+
+    expect(sessionStorage.getItem('mudd-entry-intent')).toBe(`/worlds/${demo}`);
+    expect(await screen.findByText(`Sign in return: /worlds/${demo}`)).toBeInTheDocument();
+  });
+
+  it('signs out from both the mobile and desktop navigation actions', () => {
+    const { container } = open();
+    const primary = container.querySelector<HTMLElement>('[aria-label="Primary navigation"]')!;
+    const navigation = container.querySelector<HTMLElement>('#account-navigation')!;
+
+    fireEvent.click(within(primary).getByRole('button', { name: 'Sign out' }));
+    fireEvent.click(within(navigation).getByRole('button', { name: 'Sign out' }));
+
+    expect(mocks.signOut).toHaveBeenNthCalledWith(1, { redirectUrl: '/' });
+    expect(mocks.signOut).toHaveBeenNthCalledWith(2, { redirectUrl: '/' });
+  });
+
+  it('toggles and persists the theme from the navigation', () => {
+    const { container } = open();
+    const toggle = container.querySelector<HTMLButtonElement>('.lobby-mobile-menu-toggle')!;
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole('button', { name: 'Switch to dark theme' }));
+    expect(container.querySelector('.lobby-shell')).toHaveAttribute('data-theme', 'dark');
+    expect(localStorage.getItem('mudd-theme')).toBe('dark');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Switch to light theme' }));
+    expect(container.querySelector('.lobby-shell')).toHaveAttribute('data-theme', 'light');
+    expect(localStorage.getItem('mudd-theme')).toBe('light');
+  });
+
   it('renders world discovery before the character roster request finishes', async () => {
     holdRoster = true;
     const { container } = open('/worlds');
@@ -211,6 +251,24 @@ describe('world lobby and explicit character entry', () => {
     expect(calls('POST', '/api/world-session')).toHaveLength(0);
   });
 
+  it('shows a catalog failure and recovers when worlds are retried', async () => {
+    catalogFailure = true;
+    open('/worlds');
+    expect(await screen.findByRole('heading', { name: 'Worlds unavailable' })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('World catalog unavailable');
+
+    catalogFailure = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Retry worlds' }));
+    expect(await screen.findByRole('heading', { name: 'Explore worlds' })).toBeInTheDocument();
+  });
+
+  it('shows a not-found state for a world missing from the catalog', async () => {
+    open('/worlds/missing-world');
+
+    expect(await screen.findByRole('heading', { name: 'World not found' })).toBeInTheDocument();
+    expect(screen.getByText('This world is not available in the current catalog.')).toBeInTheDocument();
+  });
+
   it('navigates to a world through the lobby without a document reload', async () => {
     open('/worlds');
     fireEvent.click(await screen.findByRole('link', { name: /The Waystone Path/ }));
@@ -223,6 +281,20 @@ describe('world lobby and explicit character entry', () => {
     fireEvent.click(await screen.findByRole('link', { name: 'All characters' }));
     expect(await screen.findByRole('heading', { name: 'All characters' })).toBeInTheDocument();
     expect(window.location.pathname).toBe('/characters');
+  });
+
+  it('offers sign-in from the unavailable anonymous character directory', async () => {
+    mocks.signedIn = false;
+    open('/characters');
+    expect(await screen.findByRole('heading', { name: 'Characters are not available' })).toBeInTheDocument();
+    const emptyState = screen.getByText(
+      'Sign in or start a guest session from a world to see your characters here.',
+    ).closest('.lobby-empty')!;
+
+    fireEvent.click(within(emptyState).getByRole('link', { name: 'Sign in' }));
+
+    expect(sessionStorage.getItem('mudd-entry-intent')).toBe('/worlds');
+    expect(await screen.findByText('Sign in return: /worlds')).toBeInTheDocument();
   });
 
   it('scrolls the page to the top after client-side navigation', async () => {
@@ -390,6 +462,18 @@ describe('world lobby and explicit character entry', () => {
     await screen.findByText(`World play: ${demo}`);
     expect(calls('DELETE', '/api/world-session')).toHaveLength(0);
   });
+  it('can cancel a lobby character-switch prompt without leaving the active session', async () => {
+    characters.push({ ...fixture, characterId: three, name: 'Aster' });
+    sessions = [{ id: sessionId, characterId: one, worldInstanceId: demo }];
+    open(`/worlds/${demo}`);
+    fireEvent.click(await screen.findByRole('button', { name: 'Play as Aster' }));
+    expect(await screen.findByRole('region', { name: 'Switch characters' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByRole('region', { name: 'Switch characters' })).not.toBeInTheDocument();
+    expect(calls('DELETE', '/api/world-session')).toHaveLength(0);
+  });
   it('leaves gameplay back to that world detail and handles refresh of direct play URLs', async () => {
     sessions = [{ id: sessionId, characterId: two, worldInstanceId: orra }];
     open(`/worlds/${orra}/play`);
@@ -422,6 +506,17 @@ describe('world lobby and explicit character entry', () => {
     visit('/sign-up');
     await screen.findByText(`Sign up return: /worlds/${orra}?create=1`);
   });
+  it('closes the create-character form without creating or entering a character', async () => {
+    open(`/worlds/${demo}?create=1`);
+    expect(await screen.findByLabelText('Character name')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(await screen.findByRole('button', { name: 'Create new character' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe(`/worlds/${demo}`);
+    expect(calls('POST', '/api/commands')).toHaveLength(0);
+    expect(calls('POST', '/api/world-session')).toHaveLength(0);
+  });
   it('does not disguise a roster server failure as an anonymous guest session', async () => {
     rosterFailure = true; open(`/worlds/${demo}`);
     await screen.findByText('Roster unavailable');
@@ -450,6 +545,25 @@ describe('world lobby and explicit character entry', () => {
     await screen.findByRole('button', { name: 'Play as Rowan II' });
   });
 
+  it('cancels rename and archive prompts without issuing commands', async () => {
+    open(`/worlds/${demo}`);
+    await screen.findByRole('button', { name: 'Play as Rowan' });
+    fireEvent.click(screen.getByText('Manage'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+    fireEvent.change(screen.getByLabelText('Character name'), { target: { value: 'R' } });
+    expect(screen.getByRole('button', { name: 'Save name' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByLabelText('Character name')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    expect(screen.getByText(/Archive Rowan\\?/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByText(/Archive Rowan\\?/)).not.toBeInTheDocument();
+    expect(commands.some((body) => ['character.rename', 'character.archive'].includes(String(body.type))))
+      .toBe(false);
+  });
+
   it('loads a character detail route from the roster and shows only projected facts', async () => {
     open(`/worlds/${demo}/characters/${one}`);
     expect(await screen.findByRole('heading', { level: 1, name: 'Rowan' })).toBeInTheDocument();
@@ -469,6 +583,18 @@ describe('world lobby and explicit character entry', () => {
     expect(calls('POST', '/api/world-session')).toHaveLength(1);
   });
 
+  it('retries character entry after a detail-page request fails', async () => {
+    entryFailure = true;
+    open(`/character/${one}`);
+    fireEvent.click(await screen.findByRole('button', { name: 'Play as Rowan' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Entry temporarily unavailable');
+
+    entryFailure = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Play as Rowan' }));
+
+    expect(await screen.findByText(`World play: ${demo}`)).toBeInTheDocument();
+  });
+
   it('uses the Characters breadcrumb to return to this world roster', async () => {
     open(`/worlds/${demo}/characters/${one}`);
     await screen.findByRole('heading', { name: 'Rowan' });
@@ -479,6 +605,45 @@ describe('world lobby and explicit character entry', () => {
     expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('Worlds');
   });
 
+  it('can cancel a character switch from the detail page without leaving the active session', async () => {
+    characters.push({ ...fixture, characterId: three, name: 'Aster' });
+    sessions = [{ id: sessionId, characterId: one, worldInstanceId: demo }];
+    open(`/worlds/${demo}/characters/${three}`);
+    fireEvent.click(await screen.findByRole('button', { name: 'Play as Aster' }));
+    expect(await screen.findByRole('region', { name: 'Switch characters' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByRole('region', { name: 'Switch characters' })).not.toBeInTheDocument();
+    expect(calls('DELETE', '/api/world-session')).toHaveLength(0);
+  });
+
+  it('returns to the active character from a character detail switch prompt', async () => {
+    characters.push({ ...fixture, characterId: three, name: 'Aster' });
+    sessions = [{ id: sessionId, characterId: one, worldInstanceId: demo }];
+    open(`/worlds/${demo}/characters/${three}`);
+    fireEvent.click(await screen.findByRole('button', { name: 'Play as Aster' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Return to active character' }));
+
+    expect(await screen.findByText(`World play: ${demo}`)).toBeInTheDocument();
+    expect(calls('DELETE', '/api/world-session')).toHaveLength(0);
+    expect(sessions.find((item) => item.worldInstanceId === demo)?.characterId).toBe(one);
+  });
+
+  it('leaves the active session before switching from a character detail page', async () => {
+    characters.push({ ...fixture, characterId: three, name: 'Aster' });
+    sessions = [{ id: sessionId, characterId: one, worldInstanceId: demo }];
+    open(`/worlds/${demo}/characters/${three}`);
+    fireEvent.click(await screen.findByRole('button', { name: 'Play as Aster' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Leave and continue as Aster' }));
+
+    expect(await screen.findByText(`World play: ${demo}`)).toBeInTheDocument();
+    expect(calls('DELETE', '/api/world-session')).toHaveLength(1);
+    expect(sessions.find((item) => item.worldInstanceId === demo)?.characterId).toBe(three);
+  });
+
   it('shows a composed loading state while the roster is pending', async () => {
     holdRoster = true;
     open(`/character/${one}`);
@@ -486,6 +651,18 @@ describe('world lobby and explicit character entry', () => {
     await waitFor(() => expect(releaseRoster).toBeDefined());
     releaseRoster?.();
     await screen.findByRole('heading', { name: 'Rowan' });
+  });
+
+  it('retries loading a character detail roster after a server error', async () => {
+    rosterFailure = true;
+    open(`/character/${one}`);
+    expect(await screen.findByRole('heading', { name: 'Character record unavailable' })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Roster unavailable');
+
+    rosterFailure = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Retry characters' }));
+
+    expect(await screen.findByRole('heading', { name: 'Rowan' })).toBeInTheDocument();
   });
 
   it('handles missing characters and anonymous no-roster state without creating guest sessions', async () => {

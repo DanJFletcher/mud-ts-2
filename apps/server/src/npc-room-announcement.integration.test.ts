@@ -852,7 +852,7 @@ vi.mock('./persistence/postgres-event-store.js', () => ({
           ? state.interactionMaintenanceRequests
           : [];
       }
-      if (state.streamlessCharacterIds.has(characterId)) return null;
+      if (state.streamlessCharacterIds.has(characterId)) return [];
       return state.characters[characterId as keyof typeof state.characters] ?? null;
     }
   },

@@ -4,6 +4,7 @@ import {
   WorldCorpseRecordSchema,
   WorldCurrencyDropRecordSchema,
   WorldItemRecordSchema,
+  TakeableObjectDefinitionSchema,
 } from '../dist/src/index.js';
 
 const item = (overrides = {}) => ({
@@ -12,6 +13,13 @@ const item = (overrides = {}) => ({
   typeId: 'healing-herb',
   label: 'Healing herb',
   description: 'A fragrant green leaf.',
+  ...overrides,
+});
+
+const takeable = (overrides = {}) => ({
+  id: 'room-item-1',
+  label: 'Leather gloves',
+  description: 'A pair of soft leather gloves.',
   ...overrides,
 });
 
@@ -50,6 +58,33 @@ test('a shared world item has one owner and keeps its stable item ID', () => {
   })).success, false);
   assert.equal(WorldItemRecordSchema.safeParse(worldItem({
     holderCharacterId: 'character-1',
+  })).success, false);
+});
+
+test('room takeables enforce stack, charge, and item-role constraints', () => {
+  assert.equal(TakeableObjectDefinitionSchema.safeParse(takeable()).success, true);
+  assert.equal(TakeableObjectDefinitionSchema.safeParse(takeable({
+    stackable: true,
+    quantity: 3,
+  })).success, true);
+  assert.equal(TakeableObjectDefinitionSchema.safeParse(takeable({
+    quantity: 3,
+  })).success, false);
+  assert.equal(TakeableObjectDefinitionSchema.safeParse(takeable({
+    stackable: true,
+  })).success, false);
+  assert.equal(TakeableObjectDefinitionSchema.safeParse(takeable({
+    stackable: true,
+    quantity: 3,
+    usesRemaining: 2,
+  })).success, false);
+  assert.equal(TakeableObjectDefinitionSchema.safeParse(takeable({
+    consumable: { effect: 'heal', amount: 2 },
+    equipment: { slot: 'gloves' },
+  })).success, false);
+  assert.equal(TakeableObjectDefinitionSchema.safeParse(takeable({
+    woodcuttingAxe: { requiredLevel: 1, power: 1 },
+    equipment: { slot: 'weapon', attackBonus: 1 },
   })).success, false);
 });
 

@@ -759,6 +759,388 @@ describe('character event replay validation', () => {
     });
   });
 
+  it('replays crafting outputs, quantity materials, and charge-based tool materials', () => {
+    const needle = {
+      id: 'needle-one',
+      typeId: 'crafting-needle',
+      label: 'Crafting needle',
+      description: 'A fine needle for leatherwork.',
+    };
+    const spareNeedle = { ...needle, id: 'needle-spare' };
+    const leatherStrip = {
+      id: 'leather-strip-one',
+      typeId: 'leather-strip',
+      label: 'Leather strip',
+      description: 'A narrow strip of leather.',
+    };
+    const hides = {
+      id: 'tanned-hide-stack',
+      typeId: 'tanned-hide',
+      label: 'Tanned hide',
+      description: 'A supple, prepared hide.',
+      stackable: true,
+      quantity: 2,
+    };
+    const thread = {
+      id: 'thread-spool',
+      typeId: 'spool-of-thread',
+      label: 'Spool of Thread',
+      description: 'A spool with five uses remaining.',
+      usesRemaining: 5,
+    };
+    const recipe = {
+      id: 'leather-gloves',
+      outputTypeId: 'leather-gloves',
+      outputLabel: 'Leather gloves',
+      outputDescription: 'A pair of soft leather gloves.',
+      requiredLevel: 1,
+      experience: 13.8,
+      toolTypeIds: ['crafting-needle'],
+      ingredients: [
+        { typeId: 'tanned-hide', label: 'Tanned hide', quantityPerCraft: 1 },
+        { typeId: 'spool-of-thread', label: 'Spool of Thread', quantityPerCraft: 1, consumeUses: true },
+      ],
+    };
+    const output = {
+      id: 'crafted-gloves',
+      typeId: 'leather-gloves',
+      label: 'Leather gloves',
+      description: 'A pair of soft leather gloves.',
+    };
+    const base = [
+      created,
+      event('character.item_granted', 2, { characterId: 'character-test', sourceId: 'workshop', item: needle }),
+      event('character.item_granted', 3, { characterId: 'character-test', sourceId: 'workshop', item: hides }),
+      event('character.item_granted', 4, { characterId: 'character-test', sourceId: 'workshop', item: thread }),
+      event('character.item_granted', 5, { characterId: 'character-test', sourceId: 'workshop', item: spareNeedle }),
+      event('character.item_granted', 6, { characterId: 'character-test', sourceId: 'workshop', item: leatherStrip }),
+    ];
+    const craftingEvent = (overrides: Record<string, unknown> = {}) => event('character.crafting_completed', 7, {
+      characterId: 'character-test',
+      locationId: 'mossgate-clearing',
+      recipe,
+      quantity: 1,
+      outputItems: [output],
+      materialConsumptions: [
+        { itemId: 'tanned-hide-stack', typeId: 'tanned-hide', kind: 'quantity', amount: 1 },
+        { itemId: 'thread-spool', typeId: 'spool-of-thread', kind: 'uses', amount: 1 },
+      ],
+      experienceAwardedHundredths: 1380,
+      totalExperienceHundredths: 1380,
+      level: 1,
+      ...overrides,
+    });
+
+    const projection = replayCharacter([...base, craftingEvent()]);
+
+    expect(projection).toMatchObject({
+      crafting: { experienceHundredths: 1380, level: 1 },
+      inventory: [
+        needle,
+        { ...hides, quantity: 1 },
+        { ...thread, usesRemaining: 4 },
+        spareNeedle,
+        leatherStrip,
+        output,
+      ],
+    });
+    expect(projection?.itemLocations.map((entry) => entry.item.id)).toContain('crafted-gloves');
+    expect(() => replayCharacter([...base, craftingEvent({
+      materialConsumptions: [{
+        itemId: 'missing-hide',
+        typeId: 'tanned-hide',
+        kind: 'quantity',
+        amount: 1,
+      }],
+    })])).toThrow('Invalid crafting material at revision 7.');
+    expect(() => replayCharacter([...base, craftingEvent({
+      materialConsumptions: [
+        { itemId: 'tanned-hide-stack', typeId: 'tanned-hide', kind: 'quantity', amount: 3 },
+        { itemId: 'thread-spool', typeId: 'spool-of-thread', kind: 'uses', amount: 1 },
+      ],
+    })])).toThrow('Insufficient material quantity at revision 7.');
+    expect(() => replayCharacter([...base, craftingEvent({
+      materialConsumptions: [
+        { itemId: 'tanned-hide-stack', typeId: 'tanned-hide', kind: 'quantity', amount: 1 },
+        { itemId: 'thread-spool', typeId: 'spool-of-thread', kind: 'uses', amount: 6 },
+      ],
+    })])).toThrow('Insufficient item uses at revision 7.');
+    const stripIngredient = {
+      typeId: 'leather-strip',
+      label: 'Leather strip',
+      quantityPerCraft: 1,
+    };
+    const unstackableRecipe = {
+      ...recipe,
+      ingredients: [stripIngredient],
+    };
+    expect(replayCharacter([...base, craftingEvent({
+      recipe: unstackableRecipe,
+      materialConsumptions: [{
+        itemId: 'leather-strip-one',
+        typeId: 'leather-strip',
+        kind: 'quantity',
+        amount: 1,
+      }],
+    })])?.inventory).not.toContainEqual(leatherStrip);
+    expect(() => replayCharacter([...base, craftingEvent({
+      recipe: { ...unstackableRecipe, ingredients: [{ ...stripIngredient, quantityPerCraft: 2 }] },
+      materialConsumptions: [{
+        itemId: 'leather-strip-one',
+        typeId: 'leather-strip',
+        kind: 'quantity',
+        amount: 2,
+      }],
+    })])).toThrow('Invalid unstackable material quantity at revision 7.');
+    expect(() => replayCharacter([...base, craftingEvent({
+      experienceAwardedHundredths: 1381,
+    })])).toThrow('Invalid crafting completion at revision 7.');
+  });
+
+  it('replays out-of-combat healing item use and removes the item location', () => {
+    const attributes = { strength: 10, intelligence: 10, constitution: 10, dexterity: 10 };
+    const characterClass = {
+      id: 'replay-scout',
+      revision: 1,
+      catalogId: 'replay-catalog',
+      catalogRevision: 1,
+      label: 'Scout',
+      description: 'A replay fixture.',
+      primaryAttribute: 'dexterity',
+      attributes,
+      coreAction: {
+        id: 'replay-action',
+        revision: 1,
+        label: 'Quick strike',
+        description: 'A test action.',
+        cost: { resource: 'stamina', amount: 1 },
+        baseDamage: 1,
+        scalingAttribute: 'dexterity',
+        weaponBonus: false,
+      },
+    };
+    const potion = {
+      id: 'healing-draught',
+      typeId: 'healing-draught',
+      label: 'Healing draught',
+      description: 'A restorative drink.',
+      consumable: { effect: 'heal', amount: 2 },
+    };
+    const projection = replayCharacter([
+      event('character.created', 1, {
+        characterId: 'character-test',
+        playerId: 'player-test',
+        name: 'Rowan',
+        startingLocationId: 'mossgate-clearing',
+        attributes,
+        characterClass,
+        health: { current: 3, maximum: 6 },
+        resources: {
+          stamina: { current: 100, maximum: 100 },
+          mana: { current: 100, maximum: 100 },
+        },
+      }, 3),
+      event('character.item_granted', 2, {
+        characterId: 'character-test',
+        sourceId: 'herbalist',
+        item: potion,
+      }),
+      event('character.combat_item_used', 3, {
+        characterId: 'character-test',
+        itemId: 'healing-draught',
+        healingDone: 2,
+        health: { current: 5, maximum: 6 },
+      }),
+    ]);
+
+    expect(projection).toMatchObject({
+      health: { current: 5, maximum: 6 },
+      inventory: [],
+      itemLocations: [],
+    });
+  });
+
+  it('replays a PvP respawn and drops the selected non-quest item into shared world state', () => {
+    const riverStone = {
+      id: 'river-stone',
+      typeId: 'river-stone',
+      label: 'River stone',
+      description: 'A smooth gray stone.',
+    };
+    const projection = replayCharacter([
+      created,
+      event('character.item_granted', 2, {
+        characterId: 'character-test',
+        sourceId: 'mossgate-clearing',
+        item: riverStone,
+      }),
+      event('character.pvp_outcome_applied', 3, {
+        characterId: 'character-test',
+        encounterId: 'duel-one',
+        health: { current: 0, maximum: 6 },
+        consumedItemIds: [],
+      }),
+      event('character.respawned', 4, {
+        characterId: 'character-test',
+        cause: 'pvp',
+        encounterId: 'duel-one',
+        deathLocationId: 'mossgate-clearing',
+        respawnLocationId: 'bellwold-south-gate',
+        health: { current: 6, maximum: 6 },
+        droppedItem: {
+          sourceItemId: 'river-stone',
+          item: { ...riverStone, sharedItemId: 'river-stone' },
+        },
+      }),
+    ]);
+
+    expect(projection).toMatchObject({
+      locationId: 'bellwold-south-gate',
+      health: { current: 6, maximum: 6 },
+      visitedLocationIds: ['mossgate-clearing', 'bellwold-south-gate'],
+      staminaRecovery: { posture: 'standing', lastSettledAt: null },
+      inventory: [],
+      itemLocations: [],
+    });
+  });
+
+  it('replays both legacy health-only and full-vitals inn rests', () => {
+    const attributes = { strength: 10, intelligence: 10, constitution: 10, dexterity: 10 };
+    const characterClass = {
+      id: 'replay-scout',
+      revision: 1,
+      catalogId: 'replay-catalog',
+      catalogRevision: 1,
+      label: 'Scout',
+      description: 'A replay fixture.',
+      primaryAttribute: 'dexterity',
+      attributes,
+      coreAction: {
+        id: 'replay-action',
+        revision: 1,
+        label: 'Quick strike',
+        description: 'A test action.',
+        cost: { resource: 'stamina', amount: 1 },
+        baseDamage: 1,
+        scalingAttribute: 'dexterity',
+        weaponBonus: false,
+      },
+    };
+    const createWithVitals = (stamina: number, mana: number) => event('character.created', 1, {
+      characterId: 'character-test',
+      playerId: 'player-test',
+      name: 'Rowan',
+      startingLocationId: 'mossgate-clearing',
+      attributes,
+      characterClass,
+      health: { current: 4, maximum: 6 },
+      resources: {
+        stamina: { current: stamina, maximum: 100 },
+        mana: { current: mana, maximum: 100 },
+      },
+    }, 3);
+    const wallet = event('character.wallet_initialized', 2, {
+      characterId: 'character-test',
+      wallet: { currencyId: 'gold', balance: 10 },
+    });
+    const legacyRest = event('character.inn_rest_completed', 3, {
+      characterId: 'character-test',
+      locationId: 'mossgate-clearing',
+      innId: 'mossgate-inn',
+      currencyId: 'gold',
+      price: 2,
+      healthRestored: 2,
+      health: { current: 6, maximum: 6 },
+    });
+    const legacy = replayCharacter([createWithVitals(100, 100), wallet, legacyRest]);
+    expect(legacy).toMatchObject({
+      health: { current: 6, maximum: 6 },
+      resources: {
+        stamina: { current: 100, maximum: 100 },
+        mana: { current: 100, maximum: 100 },
+      },
+      wallet: { currencyId: 'gold', balance: 8 },
+    });
+    expect(() => replayCharacter([createWithVitals(100, 100), wallet, event(
+      'character.inn_rest_completed',
+      3,
+      { ...legacyRest.payload, healthRestored: 1 },
+    )])).toThrow('Invalid inn rest event at revision 3.');
+
+    const fullVitals = replayCharacter([
+      createWithVitals(40, 20),
+      wallet,
+      event('character.inn_rest_completed', 3, {
+        characterId: 'character-test',
+        locationId: 'mossgate-clearing',
+        innId: 'mossgate-inn',
+        currencyId: 'gold',
+        price: 2,
+        healthRestored: 2,
+        staminaRestored: 60,
+        manaRestored: 80,
+        health: { current: 6, maximum: 6 },
+        resources: {
+          stamina: { current: 100, maximum: 100 },
+          mana: { current: 100, maximum: 100 },
+        },
+      }, 2),
+    ]);
+    expect(fullVitals).toMatchObject({
+      health: { current: 6, maximum: 6 },
+      resources: {
+        stamina: { current: 100, maximum: 100 },
+        mana: { current: 100, maximum: 100 },
+      },
+      wallet: { currencyId: 'gold', balance: 8 },
+    });
+  });
+
+  it('replays equipping and unequipping an inventory item in its matching slot', () => {
+    const knife = {
+      id: 'iron-knife',
+      typeId: 'iron-knife',
+      label: 'Iron knife',
+      description: 'A well-balanced knife.',
+      equipment: { slot: 'weapon', attackBonus: 1, defenseBonus: 0 },
+    };
+    const equipped = event('character.equipment_changed', 3, {
+      characterId: 'character-test',
+      slot: 'weapon',
+      itemId: 'iron-knife',
+    });
+    const projection = replayCharacter([
+      created,
+      event('character.item_granted', 2, {
+        characterId: 'character-test',
+        sourceId: 'smith',
+        item: knife,
+      }),
+      equipped,
+      event('character.equipment_changed', 4, {
+        characterId: 'character-test',
+        slot: 'weapon',
+        itemId: null,
+      }),
+    ]);
+    expect(projection?.equipment.weaponItemId).toBeNull();
+    expect(projection?.inventory).toEqual([knife]);
+    expect(() => replayCharacter([
+      created,
+      event('character.item_granted', 2, {
+        characterId: 'character-test',
+        sourceId: 'smith',
+        item: knife,
+      }),
+      equipped,
+      event('character.equipment_changed', 4, {
+        characterId: 'character-test',
+        slot: 'weapon',
+        itemId: 'iron-knife',
+      }),
+    ])).toThrow('Invalid equipment event at revision 4.');
+  });
+
   it('replays character renaming, archiving, and restoration in order', () => {
     const projection = replayCharacter([
       created,
