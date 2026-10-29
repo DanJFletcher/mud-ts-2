@@ -133,7 +133,7 @@
   }
   .mudd-character-entry--compact .mudd-character-entry__actions { display: flex; }
   .mudd-character-entry--compact .mudd-character-entry__action {
-    width: 100%; max-width: 100%; min-width: 0; min-height: 2rem;
+    box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; min-height: 2rem;
     padding: .2rem .45rem; font-size: .68rem; line-height: 1.2;
   }
   .mudd-character-entry--compact .mudd-character-entry__skeleton-manage { width: 44px; height: 44px; }
