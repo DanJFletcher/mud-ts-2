@@ -375,6 +375,127 @@ describe('character event replay validation', () => {
     expect(() => replayCharacter([created, taken, dropped])).toThrow(/invalid item dropped event/i);
   });
 
+  it('replays movement costs and records each visited location only once', () => {
+    const moved = event('character.moved', 2, {
+      characterId: 'character-test',
+      fromLocationId: 'mossgate-clearing',
+      toLocationId: 'glasswater-bridge',
+      exitId: 'clearing-to-bridge',
+      movementCost: 5,
+    });
+    const returned = event('character.moved', 3, {
+      characterId: 'character-test',
+      fromLocationId: 'glasswater-bridge',
+      toLocationId: 'mossgate-clearing',
+      exitId: 'bridge-to-clearing',
+    });
+
+    expect(replayCharacter([created, moved, returned])).toMatchObject({
+      locationId: 'mossgate-clearing',
+      visitedLocationIds: ['mossgate-clearing', 'glasswater-bridge'],
+      resources: {
+        stamina: { current: 95, maximum: 100 },
+      },
+      revision: 3,
+    });
+  });
+
+  it('deduplicates read observations and resets NPC dialogue progress selectively', () => {
+    const readBoard = (revision: number, objectId: string) => event('character.object_read', revision, {
+      characterId: 'character-test',
+      locationId: 'mossgate-clearing',
+      objectId,
+      label: 'Town notice',
+      text: 'A notice pinned to the board.',
+    });
+    const choose = (revision: number, npcId: string, choiceId: string, progressFlagId: string) =>
+      event('character.npc_dialogue_choice_made', revision, {
+        characterId: 'character-test',
+        npcId,
+        choiceId,
+        progressFlagId,
+      });
+
+    const projection = replayCharacter([
+      created,
+      readBoard(2, 'bulletin'),
+      readBoard(3, 'bulletin'),
+      readBoard(4, 'marker'),
+      choose(5, 'taren-voss', 'ask-about-town', 'heard-about-town'),
+      choose(6, 'taren-voss', 'ask-about-road', 'heard-about-road'),
+      choose(7, 'orin-vale', 'ask-about-fishing', 'heard-about-fishing'),
+      event('character.npc_dialogue_restarted', 8, {
+        characterId: 'character-test',
+        npcId: 'taren-voss',
+        preservedProgressFlagIds: ['heard-about-town'],
+      }),
+      event('character.npc_dialogue_restarted', 9, {
+        characterId: 'character-test',
+        npcId: 'orin-vale',
+        preservedProgressFlagIds: [],
+      }),
+    ]);
+
+    expect(projection?.readableObservations).toEqual([
+      { objectId: 'bulletin', locationId: 'mossgate-clearing' },
+      { objectId: 'marker', locationId: 'mossgate-clearing' },
+    ]);
+    expect(projection?.npcProgress).toEqual([
+      { npcId: 'taren-voss', progressFlagIds: ['heard-about-town'] },
+    ]);
+  });
+
+  it('rejects NPC dialogue resets that preserve progress the character has not earned', () => {
+    expect(() => replayCharacter([
+      created,
+      event('character.npc_dialogue_restarted', 2, {
+        characterId: 'character-test',
+        npcId: 'taren-voss',
+        preservedProgressFlagIds: ['unknown-flag'],
+      }),
+    ])).toThrow(/invalid preserved npc dialogue progress/i);
+  });
+
+  it('replays taking, storing, retrieving, and dropping an item without losing its location', () => {
+    const item = {
+      id: 'travel-mug',
+      typeId: 'travel-mug',
+      label: 'Travel mug',
+      description: 'A sturdy tin mug.',
+    };
+    const projection = replayCharacter([
+      created,
+      event('character.item_taken', 2, {
+        characterId: 'character-test',
+        locationId: 'mossgate-clearing',
+        item,
+      }),
+      event('character.item_stored', 3, {
+        characterId: 'character-test',
+        locationId: 'mossgate-clearing',
+        containerId: 'supply-chest',
+        item,
+      }),
+      event('character.item_taken', 4, {
+        characterId: 'character-test',
+        locationId: 'mossgate-clearing',
+        containerId: 'supply-chest',
+        item,
+      }),
+      event('character.item_dropped', 5, {
+        characterId: 'character-test',
+        locationId: 'mossgate-clearing',
+        item,
+      }),
+    ]);
+
+    expect(projection?.inventory).toEqual([]);
+    expect(projection?.claimedContainerItemIds).toContain('travel-mug');
+    expect(projection?.itemLocations).toEqual([
+      { item, locationId: 'mossgate-clearing' },
+    ]);
+  });
+
   it('rejects gaps in aggregate revisions', () => {
     expect(() => replayCharacter([
       created,
