@@ -16,6 +16,7 @@ import {
 import {
   objectLifecycleStateCapability,
   type ObjectLifecycleStateCapability,
+  objectLifecycleCancelledEvent,
   objectLifecycleExpiredEvent,
   objectLifecycleScheduledEvent,
   objectLifecycleStreamId,
@@ -48,6 +49,16 @@ const LightCampfireCommandSchema = z.object({
   characterId: z.string().min(1).max(128),
   expectedVersion: z.number().int().nonnegative(),
   payload: z.object({}).strict(),
+}).strict();
+
+const ExtinguishCampfireCommandSchema = z.object({
+  type: z.literal('campfire.extinguish'),
+  version: z.literal(1),
+  commandId: z.string().min(1).max(128),
+  worldInstanceId: z.string().min(1).max(128),
+  characterId: z.string().min(1).max(128),
+  expectedVersion: z.number().int().nonnegative(),
+  payload: z.object({ campfireId: z.string().min(1).max(128) }).strict(),
 }).strict();
 
 const CampfireLitPayloadSchema = z.object({
@@ -276,6 +287,65 @@ export const temporaryCampfiresPlugin: EnginePlugin = {
         effects: [roomAnnouncementEffect(
           character.locationId,
           'A small campfire catches and begins to crackle.',
+        )],
+      };
+    });
+
+    registerCommand('campfire.extinguish', ExtinguishCampfireCommandSchema, async (command, context) => {
+      const character = replayCharacter(
+        await context.store.readStream(context.worldInstanceId, command.characterId),
+      );
+      if (!character || character.archived) {
+        throw new RuleViolationError('That character is no longer available.');
+      }
+
+      const campfireHistory = await context.store.readStream(
+        context.worldInstanceId,
+        TEMPORARY_CAMPFIRES_STREAM_ID,
+      );
+      const campfire = projectTemporaryCampfires(campfireHistory)
+        .find((item) => item.campfireId === command.payload.campfireId);
+      if (!campfire || campfire.extinguished || campfire.locationId !== character.locationId) {
+        throw new RuleViolationError('There is no burning campfire in this room.');
+      }
+
+      const lifecycleStream = objectLifecycleStreamId(campfire.campfireId);
+      const lifecycle = await lifecycles.load(context, campfire.campfireId);
+      if (
+        !lifecycle ||
+        lifecycle.objectType !== 'campfire' ||
+        lifecycle.locationId !== character.locationId ||
+        (lifecycle.state !== 'scheduled' && lifecycle.state !== 'expiring')
+      ) {
+        throw new RuleViolationError('That campfire is no longer burning.');
+      }
+
+      const extinguishedAt = context.now().toISOString();
+      return {
+        streamId: TEMPORARY_CAMPFIRES_STREAM_ID,
+        expectedVersion: campfireHistory.at(-1)?.aggregateVersion ?? 0,
+        guards: [{ streamId: character.characterId, expectedVersion: command.expectedVersion }],
+        events: [{
+          type: 'world.campfire_extinguished',
+          version: 1,
+          payload: CampfireExtinguishedPayloadSchema.parse({
+            campfireId: campfire.campfireId,
+            locationId: campfire.locationId,
+            extinguishedAt,
+          }),
+        }],
+        companions: [{
+          streamId: lifecycleStream,
+          expectedVersion: lifecycle.revision,
+          events: [objectLifecycleCancelledEvent({
+            objectId: campfire.campfireId,
+            objectType: 'campfire',
+            locationId: campfire.locationId,
+          })],
+        }],
+        effects: [roomAnnouncementEffect(
+          campfire.locationId,
+          'The campfire is extinguished, leaving a bed of dark ash.',
         )],
       };
     });

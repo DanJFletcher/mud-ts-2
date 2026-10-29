@@ -888,8 +888,35 @@ beforeEach(() => {
           cycle?: string;
           jobId?: string;
           sourceId?: string;
+          campfireId?: string;
         };
       };
+      if (command.type === 'campfire.extinguish') {
+        if (room !== 'clearing' || !campfireVisible || command.payload?.campfireId !== 'test-campfire') {
+          return json({
+            receipt: {
+              ok: false,
+              commandId: command.commandId ?? 'mock-command',
+              code: 'RULE_VIOLATION',
+              message: 'There is no burning campfire in this room.',
+            },
+          });
+        }
+        campfireVisible = false;
+        return json({
+          receipt: {
+            ok: true,
+            commandId: command.commandId ?? 'mock-command',
+            eventIds: ['campfire-extinguished'],
+            newAggregateVersion: 1,
+          },
+          streamId: 'world-temporary-campfires',
+          events: [{
+            type: 'world.campfire_extinguished',
+            payload: { campfireId: 'test-campfire', locationId: 'mossgate-clearing' },
+          }],
+        });
+      }
       if (command.type === 'daily.job') {
         const payload = command.payload ?? {};
         dailyCommandPayloads.push({ type: 'daily.job', payload: payload as Record<string, unknown> });
@@ -3818,6 +3845,27 @@ describe('single-character world session client', () => {
         JSON.parse(String(init?.body)).type === 'location.describe',
       )).toBe(true);
     }, { timeout: 6_000 });
+  });
+
+  it('lets a traveler extinguish a campfire through the room command', async () => {
+    campfireVisible = true;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('extinguish campfire');
+
+    await waitFor(() => {
+      const call = apiFetch.mock.calls.find(([path, init]) =>
+        path === '/api/commands' &&
+        JSON.parse(String(init?.body)).type === 'campfire.extinguish',
+      );
+      expect(call).toBeDefined();
+      expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({
+        characterId,
+        payload: { campfireId: 'test-campfire' },
+      });
+    });
+    await waitFor(() => expect(campfireVisible).toBe(false));
+    expect(await screen.findByText('You extinguish the campfire.')).toBeInTheDocument();
   });
 
   it('prints Chop! every two seconds while woodcutting remains active', async () => {

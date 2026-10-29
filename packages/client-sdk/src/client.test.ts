@@ -150,6 +150,46 @@ describe('demo world navigation', () => {
   });
 });
 
+describe('campfire commands', () => {
+  it('sends a validated room-scoped extinguish command without retrying lifecycle conflicts', async () => {
+    let sentCommand: Record<string, unknown> | undefined;
+    const client = new MuddHttpClient({
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      fetcher: async (_input, init = {}) => {
+        sentCommand = JSON.parse(String(init.body)) as Record<string, unknown>;
+        return Response.json({
+          receipt: {
+            ok: true,
+            commandId: 'extinguish-command',
+            eventIds: ['campfire-extinguished'],
+            newAggregateVersion: 2,
+          },
+          streamId: 'world-temporary-campfires',
+          events: [{ type: 'world.campfire_extinguished', payload: { campfireId: 'campfire-1' } }],
+        });
+      },
+    });
+
+    const response = await client.extinguishCampfire(
+      'character-1',
+      'campfire-1',
+      4,
+      'extinguish-command',
+    );
+
+    expect(response.receipt.ok).toBe(true);
+    expect(sentCommand).toMatchObject({
+      type: 'campfire.extinguish',
+      version: 1,
+      commandId: 'extinguish-command',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: 'character-1',
+      expectedVersion: 4,
+      payload: { campfireId: 'campfire-1' },
+    });
+  });
+});
+
 const testCombatPresencePlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.room-combat-presence',

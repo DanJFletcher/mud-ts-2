@@ -134,6 +134,16 @@ export function objectLifecycleRescheduledEvent(
   };
 }
 
+export function objectLifecycleCancelledEvent(
+  payload: z.infer<typeof ObjectLifecycleCancelledEventSchema>['payload'],
+) {
+  return {
+    type: 'world.object_lifecycle_cancelled',
+    version: 1,
+    payload: ObjectLifecycleCancelledEventSchema.shape.payload.parse(payload),
+  };
+}
+
 export function objectLifecycleExpiredEvent(
   payload: z.infer<typeof ObjectExpiredEventSchema>['payload'],
 ) {

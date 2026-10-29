@@ -16,6 +16,7 @@ import {
   projectTemporaryCampfires,
   RoomAnnouncementEffectSchema,
   ROOM_ANNOUNCEMENT_EFFECT,
+  roomAnnouncementEffect,
   TEMPORARY_CAMPFIRES_STREAM_ID,
   temporaryCampfiresPlugin,
   worldItemsPlugin,
@@ -71,11 +72,11 @@ function createEngine() {
   };
 }
 
-async function createCharacter(engine: EngineHost) {
+async function createCharacter(engine: EngineHost, commandId = 'campfire-character-create') {
   const result = await engine.dispatch({
     type: 'character.create',
     version: 1,
-    commandId: 'campfire-character-create',
+    commandId,
     worldInstanceId,
     payload: { name: 'Ember' },
   }, session);
@@ -183,6 +184,102 @@ describe('temporary campfires', () => {
       .toMatchObject({ state: 'expired' });
     expect((await roomProjection(engine, character.characterId)).objects)
       .not.toContainEqual(expect.objectContaining({ id: campfireId }));
+    await engine.stop();
+  });
+
+  it('extinguishes a campfire and cancels its lifecycle with a room announcement atomically', async () => {
+    const { engine, store } = createEngine();
+    const append = vi.spyOn(store, 'append');
+    await engine.start();
+    const character = await createCharacter(engine);
+    const lit = await engine.dispatch({
+      type: 'campfire.light',
+      version: 1,
+      commandId: 'light-for-manual-extinguish',
+      worldInstanceId,
+      characterId: character.characterId,
+      expectedVersion: character.revision,
+      payload: {},
+    }, session);
+    expect(lit.receipt.ok).toBe(true);
+    const campfireId = String(lit.events[0]!.payload.campfireId);
+    const lifecycleStream = objectLifecycleStreamId(campfireId);
+    const awayCharacter = await createCharacter(engine, 'campfire-away-character-create');
+    const moved = await store.append({
+      worldInstanceId,
+      streamId: awayCharacter.characterId,
+      actorId: SYSTEM_ACTOR_ID,
+      commandId: 'move-campfire-away-character',
+      payloadHash: 'move-campfire-away-character',
+      expectedVersion: awayCharacter.revision,
+      events: [{
+        type: 'character.moved',
+        version: 1,
+        payload: {
+          characterId: awayCharacter.characterId,
+          fromLocationId: 'mossgate-clearing',
+          toLocationId: 'glasswater-bridge',
+          exitId: 'clearing-to-bridge',
+        },
+      }],
+    });
+    expect(moved.receipt.ok).toBe(true);
+
+    const outsideRoom = await engine.dispatch({
+      type: 'campfire.extinguish',
+      version: 1,
+      commandId: 'extinguish-campfire-from-another-room',
+      worldInstanceId,
+      characterId: awayCharacter.characterId,
+      expectedVersion: awayCharacter.revision + 1,
+      payload: { campfireId },
+    }, session);
+    expect(outsideRoom.receipt).toMatchObject({
+      ok: false,
+      code: 'RULE_VIOLATION',
+      message: 'There is no burning campfire in this room.',
+    });
+
+    const extinguished = await engine.dispatch({
+      type: 'campfire.extinguish',
+      version: 1,
+      commandId: 'extinguish-campfire',
+      worldInstanceId,
+      characterId: character.characterId,
+      expectedVersion: character.revision,
+      payload: { campfireId },
+    }, session);
+
+    expect(extinguished.receipt.ok).toBe(true);
+    expect(extinguished.events).toContainEqual(expect.objectContaining({
+      type: 'world.campfire_extinguished',
+      payload: expect.objectContaining({ campfireId, locationId: 'mossgate-clearing' }),
+    }));
+    expect(projectTemporaryCampfires(
+      await store.readStream(worldInstanceId, TEMPORARY_CAMPFIRES_STREAM_ID),
+    )).toContainEqual(expect.objectContaining({ campfireId, extinguished: true }));
+    expect(projectObjectLifecycle(await store.readStream(worldInstanceId, lifecycleStream)))
+      .toMatchObject({ state: 'cancelled' });
+    expect((await roomProjection(engine, character.characterId)).objects)
+      .not.toContainEqual(expect.objectContaining({ id: campfireId }));
+
+    const commit = append.mock.calls
+      .map(([request]) => request)
+      .find((request) => request.commandId === 'extinguish-campfire');
+    expect(commit).toMatchObject({
+      streamId: TEMPORARY_CAMPFIRES_STREAM_ID,
+      companions: [{
+        streamId: lifecycleStream,
+        events: [expect.objectContaining({
+          type: 'world.object_lifecycle_cancelled',
+          payload: expect.objectContaining({ objectId: campfireId, objectType: 'campfire' }),
+        })],
+      }],
+      effects: [roomAnnouncementEffect(
+        'mossgate-clearing',
+        'The campfire is extinguished, leaving a bed of dark ash.',
+      )],
+    });
     await engine.stop();
   });
 

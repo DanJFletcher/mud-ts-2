@@ -62,6 +62,7 @@ export {
   objectLifecycleStreamId,
   objectLifecycleScheduledEvent,
   objectLifecycleRescheduledEvent,
+  objectLifecycleCancelledEvent,
   objectLifecycleExpiredEvent,
   projectObjectLifecycle,
 } from './object-lifecycle.js';

@@ -297,6 +297,10 @@ const COMMAND_HELP: Record<string, readonly string[]> = {
     "Usage: read <object> | read bulletin",
     "Read written text in this room or open its daily bulletin.",
   ],
+  extinguish: [
+    "Usage: extinguish <campfire>",
+    "Put out a burning campfire in the current room.",
+  ],
   take: [
     "Usage: take <item> | take <item> <container> | take all",
     "Pick up an item in the current room or one of its containers; get is an alias.",
@@ -373,6 +377,7 @@ const GENERAL_HELP = [
   "look [at] <object> — Describe the room or inspect an object here or in your inventory.",
   "go <direction> — Travel through an available exit.",
   "read <object> | read bulletin — Read room text or open the local daily bulletin.",
+  "extinguish <campfire> — Put out a burning campfire in the current room.",
   "get <item> | get <item> <container> — Take an item from the room or a container; alias of take.",
   "take <item> | take <item> <container> | take all — Pick up items from the room or a container.",
   "loot <corpse> — Take all remaining items and currency from a corpse here.",
@@ -1954,6 +1959,23 @@ export function WorldClient({
     }
   }, [addEntry, pending, refreshAfterMutation, snapshot]);
 
+  const extinguishCampfire = useCallback(async (campfireId: string) => {
+    if (!snapshot?.character || !snapshot.location || pending) return;
+    setPending("use");
+    try {
+      await client.extinguishCampfire(
+        snapshot.character.characterId,
+        campfireId,
+        snapshot.character.revision,
+      );
+      await refreshAfterMutation("You extinguish the campfire.");
+    } catch (error) {
+      addEntry("error", error instanceof Error ? error.message : "You cannot extinguish that campfire.");
+    } finally {
+      setPending(null);
+    }
+  }, [addEntry, pending, refreshAfterMutation, snapshot]);
+
   const takeAllObjects = useCallback(async () => {
     if (!snapshot?.character || pending) return;
     setPending("take");
@@ -3313,6 +3335,26 @@ export function WorldClient({
       await inspect(lookTarget || undefined);
       return;
     }
+    if (verb.toLowerCase() === "extinguish") {
+      addEntry("system", `> ${value}`);
+      const fireTarget = target.replace(/^(?:the|a|an)\s+/i, "").trim();
+      const campfires = (snapshot?.location?.objects ?? []).filter((object) =>
+        object.label.toLocaleLowerCase() === "campfire",
+      );
+      const matches = fireTarget
+        ? findObjectMatches(fireTarget, campfires)
+        : campfires;
+      if (matches.length === 0) {
+        addEntry("error", `There is no burning campfire called “${fireTarget || "campfire"}” here.`);
+        return;
+      }
+      if (matches.length > 1) {
+        addEntry("error", `Which campfire do you mean: ${matches.map((object) => object.label).join(", ")}?`);
+        return;
+      }
+      await extinguishCampfire(matches[0]!.id);
+      return;
+    }
     if (verb.toLowerCase() === "read") {
       addEntry("system", `> ${value}`);
       if (!target) {
@@ -3595,7 +3637,7 @@ export function WorldClient({
     }
     addEntry("system", `> ${value}`);
     addEntry("error", 'Unknown command. Try "help" for the command list.');
-  }, [activeDialogue, addEntry, browseMerchant, changeEquipment, chooseDialogueReply, craftingCommand, dropObject, lootCorpse, putObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, performFishingCast, performWoodcuttingStart, activeMerchantCatalog, performCombatAction, performInnRest, performStaminaPostureChange, interactionInbox, respondToPlayerChallenge, challengePlayer, partyInfo, refreshPartyState, teamCombatInfo, openDailyBoard, fetchDailyBoard, performDailyJob, performSupplyGather, displayedDailyBoard]);
+  }, [activeDialogue, addEntry, browseMerchant, changeEquipment, chooseDialogueReply, craftingCommand, dropObject, extinguishCampfire, lootCorpse, putObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, performFishingCast, performWoodcuttingStart, activeMerchantCatalog, performCombatAction, performInnRest, performStaminaPostureChange, interactionInbox, respondToPlayerChallenge, challengePlayer, partyInfo, refreshPartyState, teamCombatInfo, openDailyBoard, fetchDailyBoard, performDailyJob, performSupplyGather, displayedDailyBoard]);
 
   const submitQuickCommand = useCallback((rawCommand: string) => {
     setQuickCommandMode("quick");
@@ -3795,6 +3837,9 @@ export function WorldClient({
         label: object.label,
         actions: [
           look,
+          ...(object.label.toLocaleLowerCase() === "campfire"
+            ? [{ id: "extinguish", label: "Extinguish" }]
+            : []),
           ...(object.readable ? [{ id: "read", label: "Read" }] : []),
           ...(object.takeable ? [{ id: "take", label: "Take" }] : []),
         ],
@@ -3860,6 +3905,10 @@ export function WorldClient({
         setQuickUseItemId(item.id);
         setQuickCommandMode("use-target");
       }
+      return;
+    }
+    if (actionId === "extinguish") {
+      void extinguishCampfire(target.id);
       return;
     }
 

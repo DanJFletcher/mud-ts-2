@@ -155,6 +155,15 @@ export const CommandResponseSchema = z.object({
   movementProjection: MovementResultProjectionSchema.optional(),
 });
 export type CommandResponse = z.infer<typeof CommandResponseSchema>;
+const ExtinguishCampfireCommandSchema = z.object({
+  type: z.literal('campfire.extinguish'),
+  version: z.literal(1),
+  commandId: IdSchema,
+  worldInstanceId: IdSchema,
+  characterId: IdSchema,
+  expectedVersion: z.number().int().nonnegative(),
+  payload: z.object({ campfireId: IdSchema }).strict(),
+}).strict();
 const VersionedCharacterCommandSchema = z.object({
   characterId: IdSchema,
   expectedVersion: z.number().int().nonnegative(),
@@ -631,6 +640,24 @@ export class MuddHttpClient {
       payload: {},
     });
     return this.send(command);
+  }
+
+  async extinguishCampfire(
+    characterId: string,
+    campfireId: string,
+    expectedVersion: number,
+    commandId = crypto.randomUUID(),
+  ): Promise<CommandResponse> {
+    const command = ExtinguishCampfireCommandSchema.parse({
+      type: 'campfire.extinguish',
+      version: 1,
+      commandId,
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      expectedVersion,
+      payload: { campfireId },
+    });
+    return this.send(command, undefined, { maxVersionRetries: 0 });
   }
 
   async performCombatAction(
