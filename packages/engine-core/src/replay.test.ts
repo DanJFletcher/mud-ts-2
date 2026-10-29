@@ -229,6 +229,70 @@ describe('character event replay validation', () => {
     });
   });
 
+  it('replays class selection, resource spending, and an exhausted class action', () => {
+    const attributes = { strength: 10, intelligence: 10, constitution: 10, dexterity: 10 };
+    const characterClass = {
+      id: 'replay-scout',
+      revision: 1,
+      catalogId: 'replay-catalog',
+      catalogRevision: 1,
+      label: 'Scout',
+      description: 'A replay fixture.',
+      primaryAttribute: 'dexterity',
+      attributes,
+      coreAction: {
+        id: 'replay-action',
+        revision: 1,
+        label: 'Quick strike',
+        description: 'A test action.',
+        cost: { resource: 'stamina', amount: 2 },
+        baseDamage: 1,
+        scalingAttribute: 'dexterity',
+        weaponBonus: false,
+      },
+    };
+    const createdWithResources = event('character.created', 1, {
+      characterId: 'character-test',
+      playerId: 'player-test',
+      name: 'Rowan',
+      startingLocationId: 'mossgate-clearing',
+      attributes,
+      characterClass,
+      health: { current: 6, maximum: 6 },
+      resources: {
+        stamina: { current: 2, maximum: 100 },
+        mana: { current: 100, maximum: 100 },
+      },
+    }, 3);
+    const spent = event('character.ability_resource_spent', 2, {
+      characterId: 'character-test',
+      encounterId: 'encounter-one',
+      actionId: 'action-one',
+      abilityId: 'replay-action',
+      abilityRevision: 1,
+      cost: { resource: 'stamina', amount: 2 },
+      remaining: 0,
+    });
+    const projection = replayCharacter([createdWithResources, spent]);
+
+    expect(projection).toMatchObject({
+      resources: { stamina: { current: 0, maximum: 100 } },
+      availableClassActions: [{
+        id: 'replay-action',
+        available: false,
+        unavailableReason: 'You need 2 stamina.',
+      }],
+    });
+    expect(() => replayCharacter([
+      createdWithResources,
+      spent,
+      event('character.ability_resource_spent', 3, {
+        ...spent.payload,
+        encounterId: 'encounter-two',
+      }),
+    ])).toThrow(/invalid ability resource spending/i);
+  });
+
   it('keeps legacy character streams valid without progression and rejects duplicate victory rewards', () => {
     const legacyCharacter = replayCharacter([created]);
     expect(legacyCharacter?.advancement).toBeUndefined();
@@ -528,6 +592,425 @@ describe('character event replay validation', () => {
         wallet: { currencyId: 'gold', balance: 12 },
       }),
     ])).toThrow(/invalid wallet initialization/i);
+  });
+
+  it('replays quest acceptance, completion, rewards, and corpse currency receipts', () => {
+    const progression = replayCharacter([
+      created,
+      event('character.wallet_initialized', 2, {
+        characterId: 'character-test',
+        wallet: { currencyId: 'gold', balance: 3 },
+      }),
+      event('quest.accepted', 3, {
+        characterId: 'character-test',
+        questId: 'lost-parcel',
+        definitionVersion: '1',
+      }),
+      event('quest.completed', 4, {
+        characterId: 'character-test',
+        questId: 'lost-parcel',
+        definitionVersion: '1',
+      }),
+      event('character.quest_rewarded', 5, {
+        characterId: 'character-test',
+        questId: 'lost-parcel',
+        definitionVersion: '1',
+        currencyId: 'gold',
+        amount: 5,
+      }),
+      event('character.corpse_gold_received', 6, {
+        characterId: 'character-test',
+        corpseId: 'bandit-corpse',
+        currencyId: 'gold',
+        amount: 2,
+      }),
+    ]);
+
+    expect(progression).toMatchObject({
+      wallet: { currencyId: 'gold', balance: 10 },
+      questProgress: [{
+        questId: 'lost-parcel',
+        definitionVersion: '1',
+        status: 'completed',
+      }],
+      questRewardedIds: ['lost-parcel'],
+      claimedCorpseGoldIds: ['bandit-corpse'],
+    });
+    expect(() => replayCharacter([
+      created,
+      event('character.wallet_initialized', 2, {
+        characterId: 'character-test',
+        wallet: { currencyId: 'gold', balance: 3 },
+      }),
+      event('quest.accepted', 3, {
+        characterId: 'character-test',
+        questId: 'lost-parcel',
+        definitionVersion: '1',
+      }),
+      event('quest.accepted', 4, {
+        characterId: 'character-test',
+        questId: 'lost-parcel',
+        definitionVersion: '1',
+      }),
+    ])).toThrow(/invalid quest acceptance/i);
+  });
+
+  it('tracks supply gathering by source and UTC cycle', () => {
+    const gather = (revision: number, sourceId: string, cycle: string, id: string) =>
+      event('character.supply_gathered', revision, {
+        characterId: 'character-test',
+        sourceId,
+        cycle,
+        item: {
+          id,
+          typeId: 'pine-logs',
+          label: 'Pine Logs',
+          description: 'A bundle of pine logs.',
+        },
+      });
+    const history = [
+      created,
+      gather(2, 'pine-tree', '2026-10-18', 'logs-one'),
+      gather(3, 'pine-tree', '2026-10-18', 'logs-two'),
+      gather(4, 'willow-tree', '2026-10-18', 'logs-three'),
+      gather(5, 'pine-tree', '2026-10-19', 'logs-four'),
+    ];
+    const sameCycle = replayCharacter(history.slice(0, 4));
+    const projection = replayCharacter(history);
+
+    expect(sameCycle?.supplyCollections).toEqual([
+      { sourceId: 'pine-tree', cycle: '2026-10-18', count: 2 },
+      { sourceId: 'willow-tree', cycle: '2026-10-18', count: 1 },
+    ]);
+    expect(projection?.supplyCollections).toEqual([
+      { sourceId: 'pine-tree', cycle: '2026-10-19', count: 1 },
+    ]);
+    expect(projection?.inventory.map((item) => item.id)).toEqual([
+      'logs-one', 'logs-two', 'logs-three', 'logs-four',
+    ]);
+  });
+
+  it('accepts and completes daily jobs while consuming only the requested log quantity', () => {
+    const logs = {
+      id: 'pine-log-stack',
+      typeId: 'pine-logs',
+      label: 'Pine Logs',
+      description: 'A stack of pine logs.',
+      stackable: true,
+      quantity: 5,
+    };
+    const jobDetails = {
+      id: 'pine-delivery',
+      poster: 'Tomas',
+      title: 'Logs for the hearth',
+      supplyTypeId: 'pine-logs',
+      quantity: 3,
+      gold: 5,
+      experience: 8,
+    };
+    const job = {
+      boardId: 'south-common',
+      cycle: '2026-10-18',
+      jobId: 'pine-delivery',
+      title: 'Logs for the hearth',
+      status: 'active',
+      details: jobDetails,
+    };
+    const completedJob = { ...job, status: 'completed' as const };
+    const projection = replayCharacter([
+      created,
+      event('character.wallet_initialized', 2, {
+        characterId: 'character-test',
+        wallet: { currencyId: 'gold', balance: 10 },
+      }),
+      event('character.item_granted', 3, {
+        characterId: 'character-test',
+        sourceId: 'woodcutting',
+        item: logs,
+      }),
+      event('character.daily_job_changed', 4, {
+        characterId: 'character-test',
+        job,
+        consumedItemIds: [],
+        gold: 0,
+        experience: 0,
+        currencyId: 'gold',
+        level: 1,
+        maximumHealth: 6,
+      }),
+      event('character.daily_job_changed', 5, {
+        characterId: 'character-test',
+        job: completedJob,
+        consumedItemIds: [],
+        consumedItemQuantities: [{ itemId: 'pine-log-stack', quantity: 3 }],
+        gold: 5,
+        experience: 8,
+        currencyId: 'gold',
+        level: 1,
+        maximumHealth: 6,
+      }),
+    ]);
+
+    expect(projection).toMatchObject({
+      wallet: { currencyId: 'gold', balance: 15 },
+      advancement: { experience: 8, level: 1 },
+      dailyJobs: [completedJob],
+      inventory: [{ id: 'pine-log-stack', quantity: 2 }],
+    });
+  });
+
+  it('replays character renaming, archiving, and restoration in order', () => {
+    const projection = replayCharacter([
+      created,
+      event('character.renamed', 2, {
+        characterId: 'character-test',
+        name: 'Rill',
+      }),
+      event('character.archived', 3, { characterId: 'character-test' }),
+      event('character.restored', 4, { characterId: 'character-test' }),
+      event('character.renamed', 5, {
+        characterId: 'character-test',
+        name: 'Rowan Vale',
+      }),
+    ]);
+
+    expect(projection).toMatchObject({
+      name: 'Rowan Vale',
+      archived: false,
+      revision: 5,
+    });
+    expect(() => replayCharacter([
+      created,
+      event('character.archived', 2, { characterId: 'character-test' }),
+      event('character.archived', 3, { characterId: 'character-test' }),
+    ])).toThrow(/invalid archive event/i);
+  });
+
+  it('records item interactions once and relinquishes shared items from character inventory', () => {
+    const sharedItem = {
+      id: 'shared-river-stone',
+      sharedItemId: 'shared-river-stone',
+      label: 'River stone',
+      description: 'A smooth gray stone.',
+    };
+    const projection = replayCharacter([
+      created,
+      event('character.shared_item_received', 2, {
+        characterId: 'character-test',
+        worldItemId: 'shared-river-stone',
+        sourceLocationId: 'mossgate-clearing',
+        item: sharedItem,
+      }),
+      event('character.item_used', 3, {
+        characterId: 'character-test',
+        locationId: 'mossgate-clearing',
+        itemId: 'shared-river-stone',
+        targetId: 'old-mill',
+        interactionId: 'stone-on-mill',
+        response: 'The stone leaves a faint mark.',
+      }),
+      event('character.item_used', 4, {
+        characterId: 'character-test',
+        locationId: 'mossgate-clearing',
+        itemId: 'shared-river-stone',
+        targetId: 'different-object',
+        interactionId: 'stone-on-mill',
+        response: 'The interaction was already recorded.',
+      }),
+      event('character.shared_item_relinquished', 5, {
+        characterId: 'character-test',
+        worldItemId: 'shared-river-stone',
+        locationId: 'mossgate-clearing',
+      }),
+    ]);
+
+    expect(projection?.inventory).toEqual([]);
+    expect(projection?.itemLocations).toEqual([]);
+    expect(projection?.itemUseObservations).toEqual([{
+      interactionId: 'stone-on-mill',
+      itemId: 'shared-river-stone',
+      targetId: 'old-mill',
+      locationId: 'mossgate-clearing',
+    }]);
+  });
+
+  it('replays fishing casts, catches, and interruption of an active cast', () => {
+    const rod = {
+      id: 'old-rod',
+      typeId: 'fishing-rod',
+      label: 'Old rod',
+      description: 'A well-used fishing rod.',
+      fishingRod: { qualityId: 'old-rod', biteChancePercent: 10, waitSeconds: 10 },
+    };
+    const cast = {
+      castId: 'cast-one',
+      spotId: 'south-bridge',
+      locationId: 'mossgate-clearing',
+      rodItemId: 'old-rod',
+      rodQualityId: 'old-rod',
+      startedAt: '2026-10-18T12:00:00.000Z',
+      tickIntervalSeconds: 1,
+      ticksRequired: 2,
+      ticksCompleted: 0,
+    };
+    const fish = {
+      id: 'bass-catch',
+      typeId: 'bass',
+      label: 'Smallmouth bass',
+      description: 'A freshly caught bass.',
+      fishCatch: {
+        speciesId: 'smallmouth-bass',
+        rarity: 'common',
+        lengthCm: 30,
+        weightGrams: 500,
+      },
+    };
+    const projection = replayCharacter([
+      created,
+      event('character.item_granted', 2, {
+        characterId: 'character-test',
+        sourceId: 'orin-vale',
+        item: rod,
+      }),
+      event('character.fishing_cast_started', 3, {
+        characterId: 'character-test',
+        cast,
+      }),
+      event('character.fishing_cast_advanced', 4, {
+        characterId: 'character-test',
+        castId: 'cast-one',
+        ticksCompleted: 1,
+        status: 'waiting',
+        tickRolls: [{ tick: 1, roll: 90, caught: false }],
+      }),
+      event('character.fishing_cast_advanced', 5, {
+        characterId: 'character-test',
+        castId: 'cast-one',
+        ticksCompleted: 2,
+        status: 'caught',
+        tickRolls: [{ tick: 2, roll: 3, caught: true }],
+        item: fish,
+      }),
+      event('character.fishing_cast_started', 6, {
+        characterId: 'character-test',
+        cast: { ...cast, castId: 'cast-two' },
+      }),
+      event('character.fishing_cast_advanced', 7, {
+        characterId: 'character-test',
+        castId: 'cast-two',
+        ticksCompleted: 0,
+        status: 'interrupted',
+        tickRolls: [],
+      }),
+    ]);
+
+    expect(projection?.activeFishing).toBeUndefined();
+    expect(projection?.inventory).toEqual([rod, fish]);
+    expect(() => replayCharacter([
+      created,
+      event('character.item_granted', 2, {
+        characterId: 'character-test',
+        sourceId: 'orin-vale',
+        item: rod,
+      }),
+      event('character.fishing_cast_started', 3, {
+        characterId: 'character-test',
+        cast,
+      }),
+      event('character.fishing_cast_advanced', 4, {
+        characterId: 'character-test',
+        castId: 'cast-one',
+        ticksCompleted: 2,
+        status: 'waiting',
+        tickRolls: [
+          { tick: 1, roll: 90, caught: false },
+          { tick: 2, roll: 90, caught: false },
+        ],
+      }),
+    ])).toThrow(/invalid fishing progress/i);
+  });
+
+  it('replays successful woodcutting and increments an existing stack of logs', () => {
+    const axe = {
+      id: 'copper-axe',
+      typeId: 'copper-axe',
+      label: 'Copper axe',
+      description: 'A simple copper axe.',
+      woodcuttingAxe: { requiredLevel: 1, power: 5 },
+    };
+    const action = {
+      actionId: 'chop-one',
+      treeId: 'pine-one',
+      treeLabel: 'Pine',
+      axeItemId: 'copper-axe',
+      locationId: 'mossgate-clearing',
+      startedAt: '2026-10-18T12:00:00.000Z',
+      ticksCompleted: 0,
+      ticksRequired: 10,
+    };
+    const logItem = {
+      id: 'pine-log-stack',
+      typeId: 'pine-logs',
+      label: 'Pine Logs',
+      description: 'A bundle of pine logs.',
+      stackable: true,
+      quantity: 1,
+    };
+    const projection = replayCharacter([
+      created,
+      event('character.item_granted', 2, {
+        characterId: 'character-test',
+        sourceId: 'marr-goods',
+        item: axe,
+      }),
+      event('character.woodcutting_action_started', 3, {
+        characterId: 'character-test',
+        action,
+      }),
+      event('character.woodcutting_action_advanced', 4, {
+        characterId: 'character-test',
+        actionId: 'chop-one',
+        ticksCompleted: 2,
+        status: 'logged',
+        tickRolls: [
+          { tick: 1, roll: 0.9, success: false },
+          { tick: 2, roll: 0.01, success: true },
+        ],
+        skillExperienceAwarded: 10,
+        totalExperience: 10,
+        level: 1,
+        logLabel: 'Pine Logs',
+        logTypeId: 'pine-logs',
+        item: logItem,
+      }),
+      event('character.woodcutting_action_started', 5, {
+        characterId: 'character-test',
+        action: { ...action, actionId: 'chop-two' },
+      }),
+      event('character.woodcutting_action_advanced', 6, {
+        characterId: 'character-test',
+        actionId: 'chop-two',
+        ticksCompleted: 1,
+        status: 'logged',
+        tickRolls: [{ tick: 1, roll: 0.02, success: true }],
+        skillExperienceAwarded: 10,
+        totalExperience: 20,
+        level: 1,
+        logLabel: 'Pine Logs',
+        logTypeId: 'pine-logs',
+        stackItemId: 'pine-log-stack',
+        stackQuantity: 2,
+      }),
+    ]);
+
+    expect(projection).toMatchObject({
+      woodcutting: { experience: 20, level: 1 },
+      inventory: [
+        axe,
+        { id: 'pine-log-stack', typeId: 'pine-logs', quantity: 2, stackable: true },
+      ],
+    });
+    expect(projection?.activeWoodcutting).toBeUndefined();
   });
 
   it('replays version-1 combat events as steady-style encounters', () => {
