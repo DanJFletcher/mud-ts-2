@@ -198,7 +198,7 @@ export function LobbyPage({ worldId, showAllCharacters = false, showWorldCharact
       </section>
       {createSection}
     </> : <>
-      <div className="lobby-intro"><p className="lobby-eyebrow">MUDD · Shared worlds, individual stories</p><h1>Where will you go next?</h1><p>Return to a familiar journey or step into a different world.</p></div>
+      <div className="lobby-intro"><h1>Where will you go next?</h1><p>Return to a familiar journey or step into a different world.</p></div>
       {errors}{switchPrompt}
       <div className="lobby-grid">
         <section className="lobby-worlds" aria-labelledby="worlds-heading"><h2 id="worlds-heading">Explore worlds</h2>
