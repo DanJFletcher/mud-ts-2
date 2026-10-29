@@ -447,6 +447,7 @@ describe('world lobby and explicit character entry', () => {
     expect(screen.queryByText(/Last played/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Play as Rowan' })).toBeEnabled();
     fireEvent.click(screen.getByText('Manage'));
+    expect(screen.getByText('Manage').closest('details')).toHaveAttribute('open');
     expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Archive' })).toBeInTheDocument();
   });
