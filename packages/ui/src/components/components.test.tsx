@@ -65,6 +65,18 @@ describe('@mudd/ui components', () => {
     expect(container.querySelector('.mudd-character-entry__skeleton-action')).toHaveClass('mudd-character-entry__action');
   });
 
+  it('keeps the compact Worlds-page skeleton aligned with card content and controls', () => {
+    const { container } = render(<CharacterEntryCardSkeleton compact showWorldName />);
+    const card = container.querySelector('.mudd-character-entry--skeleton');
+
+    expect(card?.querySelector('.mudd-character-entry__skeleton-world')).toBeInTheDocument();
+    expect(card?.querySelector('.mudd-character-entry__skeleton-manage')).toBeInTheDocument();
+    expect(card?.querySelector('.mudd-character-entry__skeleton-action')).toBeInTheDocument();
+    expect(card?.querySelector('.mudd-character-entry__actions')).toContainElement(
+      card?.querySelector('.mudd-character-entry__skeleton-action') as HTMLElement,
+    );
+  });
+
   it('renders the world discovery placeholder as decorative content', () => {
     const { container } = render(<WorldCardSkeleton />);
     expect(container.querySelector('.mudd-world-card--skeleton')).toHaveAttribute('aria-hidden', 'true');

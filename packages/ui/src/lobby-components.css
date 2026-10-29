@@ -114,8 +114,9 @@
   display: flex; width: 4rem; height: 2.2rem; align-items: center; justify-content: center;
 }
 .mudd-character-entry__skeleton-manage-mark { width: 2.5rem; height: .55rem; }
-.mudd-character-entry__skeleton-action {
-  box-sizing: border-box; width: 11rem; padding: 0; border-radius: 999px;
+.mudd-character-entry__skeleton-action.mudd-skeleton {
+  box-sizing: border-box; width: 11rem; padding: 0; border: 1px solid var(--mudd-border);
+  border-radius: 999px; background-color: var(--mudd-surface-raised);
 }
 @media (max-width: 700px) {
   .mudd-character-entry--compact { gap: .28rem; padding: .4rem .45rem; }

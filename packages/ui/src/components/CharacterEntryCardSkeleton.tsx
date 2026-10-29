@@ -18,13 +18,13 @@ export function CharacterEntryCardSkeleton({
       <div className="mudd-character-entry__top">
         <div className="mudd-character-entry__identity">
           {showWorldName && <p className="mudd-character-entry__eyebrow">
-            <Skeleton variant="text" width="72%" height="1.4em" className="mudd-character-entry__skeleton-world" />
+            <Skeleton variant="text" width="92%" height="1.4em" className="mudd-character-entry__skeleton-world" />
           </p>}
           <h3 className="mudd-character-entry__name">
-            <Skeleton variant="text" width="58%" height="1.15em" className="mudd-character-entry__skeleton-name" />
+            <Skeleton variant="text" width="52%" height="1.15em" className="mudd-character-entry__skeleton-name" />
           </h3>
           <p className="mudd-character-entry__details">
-            <Skeleton variant="text" width="76%" height="1.35em" className="mudd-character-entry__skeleton-details" />
+            <Skeleton variant="text" width="90%" height="1.35em" className="mudd-character-entry__skeleton-details" />
           </p>
         </div>
         <div className="mudd-character-entry__secondary">
