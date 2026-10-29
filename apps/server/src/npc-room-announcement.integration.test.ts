@@ -391,6 +391,7 @@ vi.mock('@mudd/engine-core', async () => ({
   },
   replayCharacter: (character: unknown) => {
     if (state.characterReplayOverride !== null) return state.characterReplayOverride;
+    if (Array.isArray(character) && character.length === 0) return undefined;
     if (!character || typeof character !== 'object') return undefined;
     const value = character as { characterId: string; locationId: string };
     return {
