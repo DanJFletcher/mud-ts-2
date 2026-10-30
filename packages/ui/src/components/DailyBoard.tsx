@@ -38,7 +38,7 @@ function countdownLabel(resetsAt: string, now: number): string {
 
 /** Modal bulletin view. Posting actions stay controlled by the host application. */
 export function DailyBoard({
-  name, cycle, resetsAt, jobs, pendingJobId, busy = false, loading = false, error, onRetry, onClose, onAccept, onDeliver,
+  name, cycle, resetsAt, jobs, pendingJobId, loading = false, error, onRetry, onClose, onAccept, onDeliver,
 }: DailyBoardProps) {
   const [now, setNow] = useState(() => Date.now());
   const dialogRef = useRef<HTMLDialogElement>(null);

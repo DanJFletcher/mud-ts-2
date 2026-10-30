@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// The module requires its secret at import; use a throwaway one, as the
+// PostgreSQL suite does, so the test does not depend on the environment.
+vi.hoisted(() => {
+  process.env.SESSION_SECRET ??= globalThis.crypto.randomUUID();
+});
+
 const { mockDb } = vi.hoisted(() => ({
   mockDb: {
     select: vi.fn(),

@@ -221,7 +221,6 @@ export const partyPlugin: EnginePlugin = {
       const events = await readGroupEvents(context);
       const indexed = projectGroupActivity(events, context.session.playerId, query.payload.afterRevision ?? 0);
       const party = indexed.party;
-      const relevantGroupId = party?.groupId ?? indexed.relevantGroupId;
       const relevantGroup = party;
       const activity = indexed.activity;
       return PartyInfoProjectionSchema.parse({

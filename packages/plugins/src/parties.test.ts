@@ -5,7 +5,6 @@ import {
 } from './character.js';
 import {
   partyPlugin,
-  partyStateCapability,
 } from './parties.js';
 import { GROUPS_STREAM_ID, groupsStateCapability } from './groups.js';
 
