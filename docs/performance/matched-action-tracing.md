@@ -18,6 +18,10 @@ It does not change gameplay behavior.
 4. In the server logs, find the `mudd_traced_http_request` command record with
    that `traceId`. Match its `requestId` to `serverRequestId` in the browser
    request record. The command log now includes the `movementProjection` stage.
+   Other world commands that return a projection log a `commandProjection` stage
+   instead, and a `commandEffects` stage when they first run their own durable
+   effects ([ADR 0039](../adr/0039-command-response-projections.md)). Slow-request
+   logs include the same stages.
 5. Repeat the same kind of movement in development and production under similar
    browser/network conditions, then compare the timings.
 6. Remove `muddTrace=1` from the URL to stop collecting traces.

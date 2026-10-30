@@ -571,18 +571,21 @@ export const worldItemsPlugin: EnginePlugin = {
       },
     };
     provideCapability(worldItemsStateCapability, capability);
+    // A drop, claim or gold credit finishes the actor's own take or drop, so a
+    // host may run it before answering. A new corpse is shared scenery that its
+    // room announcement already refreshes, so it stays in the background.
     registerEffect(WORLD_ITEM_DROP_EFFECT, 1, WorldItemDropEffectSchema, async (payload, context) => {
       await appendWorldDrop(context.store, context.worldInstanceId, context.effectId, payload);
-    });
+    }, { completesCommand: true });
     registerEffect(WORLD_ITEM_CLAIM_EFFECT, 1, WorldItemClaimEffectSchema, async (payload, context) => {
       await appendCharacterReceipt(context.store, context.worldInstanceId, context.effectId, payload);
-    });
+    }, { completesCommand: true });
     registerEffect(WORLD_CORPSE_CREATE_EFFECT, 1, WorldCorpseCreateEffectSchema, async (payload, context) => {
       await appendWorldCorpse(context.store, context.worldInstanceId, context.effectId, payload);
     });
     registerEffect(WORLD_CORPSE_GOLD_CREDIT_EFFECT, 1, WorldCorpseGoldCreditEffectSchema, async (payload, context) => {
       await appendCorpseGoldCredit(context.store, context.worldInstanceId, context.effectId, payload);
-    });
+    }, { completesCommand: true });
   },
 };
 

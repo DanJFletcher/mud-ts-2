@@ -17,6 +17,8 @@ import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import {
   ArchiveCharacterCommandSchema,
+  COMMAND_PROJECTION_HEADER,
+  GAME_COMMAND_PROJECTION,
   InitializeCharacterWalletCommandSchema,
   CreateCharacterCommandSchema,
   CharacterStatsQuerySchema,
@@ -34,10 +36,16 @@ import {
   locationGroupMembershipsForLocation,
   resolveLocationDisplayName,
   type LocationGroupDefinition,
+  type SessionContext,
 } from '@mudd/contracts';
 import { WorldQuerySchema } from './world-query-schema.js';
 import { installProductionWebServing } from './web-serving.js';
-import { projectQuestJournal, replayCharacter as reconstructCharacter, SYSTEM_ACTOR_ID } from '@mudd/engine-core';
+import {
+  projectQuestJournal,
+  replayCharacter as reconstructCharacter,
+  SYSTEM_ACTOR_ID,
+  type DispatchResult,
+} from '@mudd/engine-core';
 import {
   interactionStreamId,
   mobileNpcDefinitions,
@@ -636,6 +644,73 @@ async function buildGameProjection(
   };
 }
 
+/**
+ * Run the effects that finish a committed command's own outcome, such as a
+ * claimed item reaching the pack, so a projection built next includes them.
+ * Failing here never fails the command; it only withholds the projection.
+ */
+async function settleCommandOutcome(
+  runtime: WorldRuntime,
+  context: SessionContext,
+  result: DispatchResult,
+  characterId: string,
+  requestId: string,
+): Promise<boolean> {
+  if (result.completingEffects === 0) return true;
+  try {
+    // Like the background worker, run effects outside the request's read cache.
+    return await measureStage('commandEffects', () => store.withoutCommandReadCache(() =>
+      runtime.engine.settleCommandEffects(context, result)));
+  } catch (error) {
+    console.warn(JSON.stringify({
+      event: 'command_effects_unsettled',
+      requestId,
+      commandId: result.receipt.commandId,
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    }));
+    return false;
+  } finally {
+    // Their appends could not invalidate that cache, so drop its snapshot of the
+    // actor's stream before the projection reads it.
+    store.invalidateCommandReadCache(runtime.worldInstanceId, characterId);
+  }
+}
+
+async function commandResponseProjection(
+  identity: AccountIdentity,
+  runtime: WorldRuntime,
+  session: typeof worldSessions.$inferSelect,
+  requestId: string,
+  command: { commandId: string; type: string | undefined; movement: boolean },
+) {
+  // Moves keep the stage and log names that existing traces use.
+  const unavailable = command.movement ? 'movement_projection_unavailable' : 'command_projection_unavailable';
+  try {
+    const projection = await measureStage(command.movement ? 'movementProjection' : 'commandProjection', () =>
+      buildGameProjection(identity, runtime, session, requestId));
+    if (projection.ok) return projection.value;
+    console.warn(JSON.stringify({
+      event: unavailable,
+      requestId,
+      commandId: command.commandId,
+      commandType: command.type,
+      code: projection.code,
+    }));
+  } catch (error) {
+    console.warn(JSON.stringify({
+      event: unavailable,
+      requestId,
+      commandId: command.commandId,
+      commandType: command.type,
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+      ...(error instanceof z.ZodError
+        ? { schemaIssues: error.issues.map((issue) => ({ path: issue.path.join('.'), code: issue.code })) }
+        : {}),
+    }));
+  }
+  return undefined;
+}
+
 app.get('/api/worlds', (_req, res) => {
   return res.json(registeredWorlds.map(toWorldSummary));
 });
@@ -1127,53 +1202,57 @@ app.post(
     }
 
     const result = await measureStage('command', () => selected.engine.dispatch(req.body, context, res.locals.requestId));
+    // The completing-effect count only steers settlement below; clients never see it.
+    const { completingEffects: _completingEffects, ...dispatched } = result;
     if (result.commitOutcome === 'duplicate' && commandSession) {
       store.invalidateCommandReadCache(selected.worldInstanceId, commandSession.characterId);
     }
-    // Effects are durably queued with the command. Their worker is already
-    // running; don't make the action wait for unrelated effects across worlds.
-    if (result.receipt.ok) void runPendingEffectBatch(selected.worldInstanceId);
     if (!result.receipt.ok && result.receipt.code === 'INTERNAL_ERROR') {
       return res.status(500).json({
-        ...result,
+        ...dispatched,
         message: result.receipt.message,
         requestId: res.locals.requestId,
       });
     }
-    let movementProjection;
-    if (
-      result.receipt.ok &&
-      (command.type === 'character.move' || command.type === 'character.road.step') &&
-      commandSession
-    ) {
-      try {
-        const projection = await measureStage('movementProjection', () =>
-          buildGameProjection(identity, selected, commandSession!, res.locals.requestId));
-        if (projection.ok) {
-          movementProjection = projection.value;
-        } else {
-          console.warn(JSON.stringify({
-            event: 'movement_projection_unavailable',
-            requestId: res.locals.requestId,
-            commandId: result.receipt.commandId,
-            code: projection.code,
-          }));
-        }
-      } catch (error) {
-        console.warn(JSON.stringify({
-          event: 'movement_projection_unavailable',
-          requestId: res.locals.requestId,
-          commandId: result.receipt.commandId,
-          errorName: error instanceof Error ? error.name : 'UnknownError',
-          ...(error instanceof z.ZodError
-            ? { schemaIssues: error.issues.map((issue) => ({ path: issue.path.join('.'), code: issue.code })) }
-            : {}),
-        }));
-      }
+    const movementCommand = command.type === 'character.move' || command.type === 'character.road.step';
+    // Opted-in clients get the projection for every world command; older ones only for moves.
+    const projectionRequested = req.get(COMMAND_PROJECTION_HEADER) === GAME_COMMAND_PROJECTION;
+    const projectionSession = result.receipt.ok && (projectionRequested || movementCommand)
+      ? commandSession
+      : undefined;
+    let effectsSettled = false;
+    if (projectionSession) {
+      // A duplicate cannot report which effects its original commit queued.
+      // Moves queue none that complete them, so only they keep a projection.
+      effectsSettled = result.commitOutcome === 'duplicate'
+        ? movementCommand
+        : await settleCommandOutcome(selected, context, result, projectionSession.characterId, res.locals.requestId);
+    }
+    // Effects are durably queued with the command. Their worker is already
+    // running; don't make the action wait for unrelated effects across worlds.
+    // It starts after settlement so it cannot claim this command's own effects.
+    if (result.receipt.ok) void runPendingEffectBatch(selected.worldInstanceId);
+    let projection;
+    if (projectionSession && effectsSettled) {
+      projection = await commandResponseProjection(identity, selected, projectionSession, res.locals.requestId, {
+        commandId: result.receipt.commandId,
+        type: command.type,
+        movement: movementCommand,
+      });
+    } else if (projectionSession) {
+      // The client falls back to a snapshot; this shows how often that happens.
+      console.info(JSON.stringify({
+        event: 'command_projection_deferred',
+        requestId: res.locals.requestId,
+        commandId: result.receipt.commandId,
+        commandType: command.type,
+        reason: result.commitOutcome === 'duplicate' ? 'duplicate' : 'effects_unsettled',
+      }));
     }
     return res.json({
-      ...result,
-      ...(movementProjection ? { movementProjection } : {}),
+      ...dispatched,
+      ...(projection && projectionRequested ? { gameProjection: projection } : {}),
+      ...(projection && !projectionRequested ? { movementProjection: projection } : {}),
     });
   } catch (error) {
     next(error);

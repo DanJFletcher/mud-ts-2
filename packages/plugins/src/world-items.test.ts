@@ -166,6 +166,22 @@ describe('world item event projection', () => {
     description: 'A bundle of pine logs.',
   };
 
+  it('marks only the effects that finish a take or drop as completing their command', () => {
+    const options = new Map<string, unknown>();
+    worldItemsPlugin.register({
+      provideCapability: () => undefined,
+      registerEffect: (type: string, _version: number, _schema: unknown, _handler: unknown, effectOptions?: unknown) => {
+        options.set(type, effectOptions);
+      },
+    } as never);
+    expect(Object.fromEntries(options)).toEqual({
+      [WORLD_ITEM_DROP_EFFECT]: { completesCommand: true },
+      [WORLD_ITEM_CLAIM_EFFECT]: { completesCommand: true },
+      [WORLD_CORPSE_CREATE_EFFECT]: undefined,
+      'world-corpse.gold-credit': { completesCommand: true },
+    });
+  });
+
   it('creates stable effects for shared item drops, claims, and corpse gold credits', () => {
     expect(worldItemDropEffect({
       worldItemId: item.id,

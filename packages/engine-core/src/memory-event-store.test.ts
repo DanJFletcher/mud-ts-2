@@ -114,4 +114,66 @@ describe('InMemoryEventStore stream revisions', () => {
       }],
     })).rejects.toThrow('Atomic writes must contain events.');
   });
+
+  it('claims only due effects of the given types that one actor’s command queued', async () => {
+    const store = new InMemoryEventStore();
+    const request = {
+      worldInstanceId: 'command-effect-world',
+      streamId: 'world-items',
+      actorId: 'player-one',
+      commandId: 'shared-command-id',
+      payloadHash: 'player-one-hash',
+      expectedVersion: 0,
+      events: [{ type: 'world.test', version: 1, payload: {} }],
+      effects: [
+        { type: 'test.background', version: 1, payload: { order: 1 } },
+        { type: 'test.completing', version: 1, payload: { order: 2 } },
+      ],
+    };
+    await store.append(request);
+    // Another player chose the same command ID; that command's effects are not ours.
+    await store.append({
+      ...request,
+      streamId: 'other-stream',
+      actorId: 'player-two',
+      payloadHash: 'player-two-hash',
+      effects: [{ type: 'test.completing', version: 1, payload: { order: 3 } }],
+    });
+    // A command ID that extends ours must not match through the key prefix.
+    await store.append({
+      ...request,
+      streamId: 'third-stream',
+      commandId: 'shared-command-id:9',
+      payloadHash: 'extended-id-hash',
+      effects: [{ type: 'test.completing', version: 1, payload: { order: 4 } }],
+    });
+    const scope = {
+      worldInstanceId: request.worldInstanceId,
+      actorId: request.actorId,
+      commandId: request.commandId,
+      types: ['test.completing'],
+    };
+
+    const claimed = await store.claimCommandEffect(60_000, scope);
+    expect(claimed).toMatchObject({
+      type: 'test.completing',
+      payload: { order: 2 },
+      causationCommandId: 'shared-command-id',
+      attempts: 1,
+    });
+    // Leased now, so neither the command claim nor the worker sees it.
+    expect(await store.claimCommandEffect(60_000, scope)).toBeUndefined();
+    expect(await store.claimCommandEffect(60_000, { ...scope, worldInstanceId: 'another-world' })).toBeUndefined();
+    expect(await store.claimCommandEffect(60_000, { ...scope, commandId: 'shared-command' })).toBeUndefined();
+
+    expect(await store.retryEffect(claimed!.id, claimed!.leaseToken, 60_000, 'later')).toBe(true);
+    expect(await store.claimCommandEffect(60_000, scope)).toBeUndefined();
+
+    const worker = [
+      await store.claimNextEffect(60_000),
+      await store.claimNextEffect(60_000),
+      await store.claimNextEffect(60_000),
+    ];
+    expect(worker.map((effect) => effect?.payload)).toEqual([{ order: 1 }, { order: 3 }, { order: 4 }]);
+  });
 });

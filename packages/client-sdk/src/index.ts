@@ -1,4 +1,10 @@
-import { CharacterClassCatalogSchema, ChooseCharacterClassCommandSchema, REALTIME_PROTOCOL_VERSION } from '@mudd/contracts';
+import {
+  CharacterClassCatalogSchema,
+  ChooseCharacterClassCommandSchema,
+  COMMAND_PROJECTION_HEADER,
+  GAME_COMMAND_PROJECTION,
+  REALTIME_PROTOCOL_VERSION,
+} from '@mudd/contracts';
 import {
   DailyBoardQuerySchema, DailyBoardProjectionSchema, DailyJobCommandSchema, GatherSupplyCommandSchema, SupplySourceDefinitionSchema,
   FishingCastCommandSchema, FishingAdvanceCommandSchema, FishingCancelCommandSchema,
@@ -153,6 +159,8 @@ export const CommandResponseSchema = z.object({
   streamId: IdSchema.optional(),
   events: z.array(z.object({ type: z.string().min(1), payload: z.unknown().optional() })).optional(),
   movementProjection: MovementResultProjectionSchema.optional(),
+  /** Present when the client set `commandProjection` and the server could vouch for it. */
+  gameProjection: MovementResultProjectionSchema.optional(),
 });
 export type CommandResponse = z.infer<typeof CommandResponseSchema>;
 const ExtinguishCampfireCommandSchema = z.object({
@@ -182,6 +190,12 @@ export interface ClientOptions {
   fetcher?: typeof fetch;
   /** Same-origin app mount path, e.g. /mudd. Defaults to the origin root. */
   basePath?: string;
+  /**
+   * Ask for the authoritative game projection with successful world commands
+   * (`CommandResponse.gameProjection`), so no snapshot is needed afterwards.
+   * Servers that predate it ignore the request.
+   */
+  commandProjection?: typeof GAME_COMMAND_PROJECTION;
 }
 
 type RequestTrace = {
@@ -1126,6 +1140,9 @@ export class MuddHttpClient {
     return this.request('/api/commands', {
       method: 'POST',
       body: JSON.stringify(command),
+      ...(this.options.commandProjection
+        ? { headers: { [COMMAND_PROJECTION_HEADER]: this.options.commandProjection } }
+        : {}),
     }, CommandResponseSchema,
     traceId ? { id: traceId, phase: 'command', commandType } : undefined);
   }

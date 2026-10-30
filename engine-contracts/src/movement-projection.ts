@@ -14,9 +14,18 @@ const LocationOptionSchema = z.object({
 }).strict();
 
 /**
+ * A client sends this header with value {@link GAME_COMMAND_PROJECTION} to have
+ * successful world commands return `gameProjection`. Servers that predate it
+ * ignore the header.
+ */
+export const COMMAND_PROJECTION_HEADER = 'x-mudd-command-projection';
+export const GAME_COMMAND_PROJECTION = 'game';
+
+/**
  * The authoritative, location-sensitive portion of the game view returned
- * with successful movement commands. Stable player/world metadata remains in
- * the client's existing snapshot and does not need to cross the wire again.
+ * with successful movement commands, and with any successful world command
+ * when the client asks for it. Stable player/world metadata remains in the
+ * client's existing snapshot and does not need to cross the wire again.
  */
 export const MovementResultProjectionSchema = z.object({
   character: CharacterProjectionSchema,

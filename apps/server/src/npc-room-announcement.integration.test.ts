@@ -135,8 +135,12 @@ const state = vi.hoisted(() => ({
     receipt: { ok: boolean; code?: string; message?: string; commandId?: string };
     commitOutcome?: string;
     commandId?: string;
+    completingEffects?: number;
   },
   dispatchError: null as Error | null,
+  settledCommands: [] as Array<{ session: { actorId?: string }; result: { completingEffects?: number } }>,
+  settleCommandEffectsResult: true,
+  settleCommandEffectsError: null as Error | null,
   enableAutonomousScheduler: false,
   autonomousSchedulers: [] as Array<{
     options: { onError: (error: unknown, npcId: string) => void };
@@ -379,11 +383,23 @@ vi.mock('@mudd/engine-core', async () => ({
             },
           });
         }
-        const result = { receipt: { ok: true }, commitOutcome: 'committed' };
+        const result = { receipt: { ok: true }, commitOutcome: 'committed', completingEffects: 0 };
         state.moveReceipts.set(command.commandId ?? '', result);
         return result;
       }
-      return { receipt: { ok: true }, commitOutcome: 'committed' };
+      return { receipt: { ok: true }, commitOutcome: 'committed', completingEffects: 0 };
+    }
+    async settleCommandEffects(
+      session: { actorId?: string },
+      result: { completingEffects?: number },
+    ) {
+      state.settledCommands.push({ session, result });
+      if (state.settleCommandEffectsError) {
+        const error = state.settleCommandEffectsError;
+        state.settleCommandEffectsError = null;
+        throw error;
+      }
+      return state.settleCommandEffectsResult;
     }
     async dispatchSystem(command: Record<string, unknown>) {
       state.systemCommands.push(command);
@@ -1002,6 +1018,9 @@ describe('NPC room announcements through the server', () => {
     state.presenceTouches.length = 0;
     state.nextCommandResult = null;
     state.dispatchError = null;
+    state.settledCommands.length = 0;
+    state.settleCommandEffectsResult = true;
+    state.settleCommandEffectsError = null;
     state.interactionMaintenanceRequests.length = 0;
     state.interactionRequestWorldId = instanceId;
     state.interactionStatusUpdates.length = 0;
@@ -1600,6 +1619,183 @@ describe('NPC room announcements through the server', () => {
     } finally {
       warning.mockRestore();
     }
+  });
+
+  async function sendWorldCommand(
+    userId: string,
+    command: Record<string, unknown>,
+    options: { projection?: boolean } = {},
+  ) {
+    return fetch(`${baseUrl}/api/commands`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-user': userId,
+        ...(options.projection ? { 'x-mudd-command-projection': 'game' } : {}),
+      },
+      body: JSON.stringify({
+        version: 1,
+        worldInstanceId: instanceId,
+        expectedVersion: 0,
+        payload: {},
+        ...command,
+      }),
+    });
+  }
+
+  it('settles and returns the game projection with world commands only for clients that ask', async () => {
+    await enterWorld('alice', 'character-alice');
+    state.nextCommandResult = {
+      receipt: { ok: true, commandId: 'take-with-projection' },
+      commitOutcome: 'committed',
+      completingEffects: 1,
+    };
+    const withProjection = await sendWorldCommand('alice', {
+      type: 'character.take',
+      commandId: 'take-with-projection',
+      characterId: 'character-alice',
+      payload: { itemId: 'shared-lantern' },
+    }, { projection: true });
+
+    expect(withProjection.status).toBe(200);
+    const body = await withProjection.json() as Record<string, unknown>;
+    expect(body).toMatchObject({
+      receipt: { ok: true, commandId: 'take-with-projection' },
+      gameProjection: {
+        character: { characterId: 'character-alice', locationId: 'npc-room' },
+        location: { locationId: 'npc-room' },
+      },
+    });
+    expect(body).not.toHaveProperty('movementProjection');
+    expect(body).not.toHaveProperty('completingEffects');
+    expect(state.settledCommands).toEqual([{
+      session: expect.objectContaining({ actorId: 'player-alice', worldInstanceId: instanceId }),
+      result: expect.objectContaining({ completingEffects: 1 }),
+    }]);
+
+    // Without the header the response is unchanged and nothing settles early,
+    // but the background worker still starts for the command's effects.
+    const effectBatchesBefore = state.processPendingEffectsStarted;
+    const withoutProjection = await sendWorldCommand('alice', {
+      type: 'character.take',
+      commandId: 'take-without-projection',
+      characterId: 'character-alice',
+      payload: { itemId: 'shared-lantern' },
+    });
+    expect(withoutProjection.status).toBe(200);
+    expect(await withoutProjection.json()).toEqual({ receipt: { ok: true }, commitOutcome: 'committed' });
+    expect(state.settledCommands).toHaveLength(1);
+    await vi.waitFor(() => expect(state.processPendingEffectsStarted).toBeGreaterThan(effectBatchesBefore));
+  });
+
+  it('withholds the projection when a command’s own effects cannot be settled', async () => {
+    await enterWorld('alice', 'character-alice');
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const drop = (commandId: string) => sendWorldCommand('alice', {
+      type: 'character.drop',
+      commandId,
+      characterId: 'character-alice',
+      payload: { itemId: 'shared-lantern' },
+    }, { projection: true });
+    try {
+      state.settleCommandEffectsResult = false;
+      state.nextCommandResult = {
+        receipt: { ok: true, commandId: 'drop-unsettled' },
+        commitOutcome: 'committed',
+        completingEffects: 1,
+      };
+      const unsettled = await drop('drop-unsettled');
+      expect(unsettled.status).toBe(200);
+      expect(await unsettled.json()).not.toHaveProperty('gameProjection');
+      expect(info).toHaveBeenCalledWith(expect.stringContaining('"event":"command_projection_deferred"'));
+      expect(info).toHaveBeenLastCalledWith(expect.stringContaining('"reason":"effects_unsettled"'));
+
+      state.settleCommandEffectsError = new Error('Effect claim failed.');
+      state.nextCommandResult = {
+        receipt: { ok: true, commandId: 'drop-claim-failure' },
+        commitOutcome: 'committed',
+        completingEffects: 1,
+      };
+      const failedClaim = await drop('drop-claim-failure');
+      expect(failedClaim.status).toBe(200);
+      expect(await failedClaim.json()).toMatchObject({ receipt: { ok: true, commandId: 'drop-claim-failure' } });
+      expect(warning).toHaveBeenCalledWith(expect.stringContaining('"event":"command_effects_unsettled"'));
+
+      // A duplicate cannot report its original's effects, so it is not projected.
+      const settledBefore = state.settledCommands.length;
+      state.nextCommandResult = { receipt: { ok: true, commandId: 'drop-retried' }, commitOutcome: 'duplicate' };
+      const duplicate = await drop('drop-retried');
+      expect(await duplicate.json()).not.toHaveProperty('gameProjection');
+      expect(state.settledCommands).toHaveLength(settledBefore);
+      expect(info).toHaveBeenLastCalledWith(expect.stringContaining('"reason":"duplicate"'));
+
+      // With nothing to settle, the engine is not asked and the projection follows.
+      state.settleCommandEffectsResult = true;
+      state.nextCommandResult = {
+        receipt: { ok: true, commandId: 'equip-without-effects' },
+        commitOutcome: 'committed',
+        completingEffects: 0,
+      };
+      const noEffects = await sendWorldCommand('alice', {
+        type: 'character.equip',
+        commandId: 'equip-without-effects',
+        characterId: 'character-alice',
+        payload: { itemId: 'practice-sword' },
+      }, { projection: true });
+      expect(await noEffects.json()).toHaveProperty('gameProjection.location.locationId', 'npc-room');
+      expect(state.settledCommands).toHaveLength(settledBefore);
+
+      state.queryOverrides.set('location.describe', {
+        ok: false,
+        code: 'NOT_FOUND',
+        message: 'The location could not be described.',
+      });
+      const unavailable = await sendWorldCommand('alice', {
+        type: 'character.stand',
+        commandId: 'stand-without-location',
+        characterId: 'character-alice',
+      }, { projection: true });
+      expect(unavailable.status).toBe(200);
+      expect(await unavailable.json()).not.toHaveProperty('gameProjection');
+      expect(warning).toHaveBeenLastCalledWith(expect.stringContaining('"event":"command_projection_unavailable"'));
+      state.queryOverrides.delete('location.describe');
+    } finally {
+      info.mockRestore();
+      warning.mockRestore();
+    }
+  });
+
+  it('returns opted-in moves the game projection field and keeps it for older clients', async () => {
+    await enterWorld('mover', 'character-mover');
+    const projected = await sendWorldCommand('mover', {
+      type: 'character.move',
+      commandId: 'projected-move',
+      characterId: 'character-mover',
+      payload: { exitId: 'to-quiet-room' },
+    }, { projection: true });
+    expect(projected.status).toBe(200);
+    const projectedBody = await projected.json() as Record<string, unknown>;
+    expect(projectedBody).toHaveProperty('gameProjection.location.locationId', 'quiet-room');
+    expect(projectedBody).not.toHaveProperty('movementProjection');
+
+    // A retried move is still projected, as before.
+    const retried = await sendWorldCommand('mover', {
+      type: 'character.move',
+      commandId: 'projected-move',
+      characterId: 'character-mover',
+      payload: { exitId: 'to-quiet-room' },
+    }, { projection: true });
+    expect(await retried.json()).toMatchObject({
+      commitOutcome: 'duplicate',
+      gameProjection: { location: { locationId: 'quiet-room' } },
+    });
+
+    const legacy = await move('mover', 'character-mover', 'back-to-entry');
+    const legacyBody = await legacy.json() as Record<string, unknown>;
+    expect(legacyBody).toHaveProperty('movementProjection.location.locationId', 'entry-room');
+    expect(legacyBody).not.toHaveProperty('gameProjection');
+    expect(state.settledCommands).toEqual([]);
   });
 
   it('requires an active world character and rejects chat requests for another room', async () => {

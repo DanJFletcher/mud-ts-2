@@ -538,6 +538,35 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
+/** Answer these command types with the fixture's resulting game view, as an opted-in server does. */
+function returnGameProjectionsWithCommands(commandTypes: readonly string[]) {
+  const original = apiFetch.getMockImplementation()!;
+  const projectionHeaders: Array<string | null> = [];
+  apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
+    const response = await original(path, init);
+    if (path !== '/api/commands' || init?.method !== 'POST') return response;
+    projectionHeaders.push(new Headers(init.headers).get('x-mudd-command-projection'));
+    const command = JSON.parse(String(init.body)) as { type?: string };
+    if (!commandTypes.includes(command.type ?? '')) return response;
+    const commandResult = await response.json() as Record<string, unknown>;
+    const game = await (await original('/api/game', {})).json() as Record<string, unknown>;
+    return json({
+      ...commandResult,
+      gameProjection: {
+        character: game.character,
+        stats: game.stats,
+        location: game.location,
+        map: game.map,
+        questJournal: game.questJournal ?? [],
+        availableFishingSpots: game.availableFishingSpots ?? [],
+        availableWoodcuttingTrees: game.availableWoodcuttingTrees ?? [],
+        dailyActivities: game.dailyActivities ?? { cycle: '2000-01-01', boards: [], sources: [] },
+      },
+    });
+  });
+  return projectionHeaders;
+}
+
 function clickQuickAction(name: string) {
   const firstPage = screen.queryByRole('button', { name: 'Show quick actions page 1' });
   if (firstPage) fireEvent.click(firstPage);
@@ -2025,6 +2054,92 @@ describe('single-character world session client', () => {
       JSON.parse(String(init?.body ?? '{}')).type === 'character.move'
     )).toBe(true));
     expect(apiFetch.mock.calls.filter(([path]) => path === '/api/game')).toHaveLength(gameRequestCountBeforeMove);
+  });
+
+  it('applies the projection returned with take, drop and equipment actions without a snapshot', async () => {
+    includeSecondTakeable = true;
+    includeEquipmentFixture = true;
+    const projectionHeaders = returnGameProjectionsWithCommands([
+      'character.take',
+      'character.drop',
+      'character.equip',
+    ]);
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+    const snapshotRequests = () => apiFetch.mock.calls.filter(([path]) => path === '/api/game').length;
+    const snapshotsBeforeActions = snapshotRequests();
+
+    submitWorldCommand('take lost feather');
+    await waitFor(() => expect(history).toHaveTextContent('You pick up the lost feather.'));
+    // The projection put the feather in the pack, so it can be dropped at once.
+    submitWorldCommand('drop lost feather');
+    await waitFor(() => expect(history).toHaveTextContent('You put down the lost feather.'));
+    submitWorldCommand('equip test shield');
+    await waitFor(() => expect(history).toHaveTextContent('You equip the test shield as your armor.'));
+
+    expect(secondItemTaken).toBe(false);
+    expect(equipmentSnapshot).toEqual({ weaponItemId: 'test-sword', armorItemId: 'test-shield' });
+    expect(projectionHeaders).toEqual(['game', 'game', 'game']);
+    expect(snapshotRequests()).toBe(snapshotsBeforeActions);
+  });
+
+  it('fetches a snapshot when the socket reports a newer character revision than the projection', async () => {
+    const sockets: FakeRealtimeSocket[] = [];
+    class FakeRealtimeSocket {
+      readyState = 0;
+      bufferedAmount = 0;
+      onopen: (() => void) | null = null;
+      onmessage: ((event: { data: string }) => void) | null = null;
+      onclose: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      constructor(readonly url: string) { sockets.push(this); }
+      send() {}
+      close() {
+        this.readyState = 3;
+        this.onclose?.();
+      }
+    }
+    const NativeWebSocket = globalThis.WebSocket;
+    globalThis.WebSocket = FakeRealtimeSocket as unknown as typeof WebSocket;
+    try {
+      returnGameProjectionsWithCommands(['character.take']);
+      render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+      await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+      const history = screen.getByRole('region', { name: 'Terminal output' });
+      const snapshotRequests = () => apiFetch.mock.calls.filter(([path]) => path === '/api/game').length;
+      await waitFor(() => expect(sockets.at(-1)?.url).toContain('protocol=2'));
+      const socket = sockets.at(-1)!;
+      const snapshotsBeforeHint = snapshotRequests();
+
+      // Another writer has advanced the character well past anything the fixture returns.
+      act(() => {
+        socket.readyState = 1;
+        socket.onopen?.();
+        socket.onmessage?.({ data: JSON.stringify({ type: 'ready', version: 1, connectionId: 'connection-1' }) });
+        socket.onmessage?.({ data: JSON.stringify({
+          type: 'invalidate',
+          version: 2,
+          connectionId: 'connection-1',
+          sequence: 1,
+          eventId: 'event-1',
+          worldInstanceId: 'mudd-demo-instance',
+          channels: ['character'],
+          revisions: { character: 999 },
+        }) });
+      });
+      // The watcher refreshes once for the hint; wait so it cannot be mistaken for the action's fetch.
+      await waitFor(() => expect(snapshotRequests()).toBe(snapshotsBeforeHint + 1));
+
+      submitWorldCommand('take loose stone');
+      await waitFor(() => expect(history).toHaveTextContent('You pick up the loose stone.'));
+
+      const takeRequest = apiFetch.mock.calls.findIndex(([path, init]) =>
+        path === '/api/commands' && JSON.parse(String(init?.body ?? '{}')).type === 'character.take');
+      expect(apiFetch.mock.calls.slice(takeRequest + 1).filter(([path]) => path === '/api/game')).toHaveLength(1);
+    } finally {
+      globalThis.WebSocket = NativeWebSocket;
+    }
   });
 
   it('rolls back optimistic travel when the authoritative projection reports another room', async () => {

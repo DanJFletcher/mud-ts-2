@@ -2,6 +2,7 @@ import type { CommandReceipt } from '@mudd/contracts';
 import type {
   AppendOutcome,
   AppendRequest,
+  CommandEffectScope,
   EventStorePort,
   StoredEventEffect,
   StoredGameEvent,
@@ -159,14 +160,31 @@ export class InMemoryEventStore implements EventStorePort {
   }
 
   async claimNextEffect(leaseMs: number, worldInstanceId?: string): Promise<StoredEventEffect | undefined> {
+    return this.claimFirstDue(leaseMs, (_key, effect) =>
+      worldInstanceId === undefined || effect.worldInstanceId === worldInstanceId);
+  }
+
+  async claimCommandEffect(leaseMs: number, scope: CommandEffectScope): Promise<StoredEventEffect | undefined> {
+    // Effect keys name the actor as well as the command; see append().
+    const commandKey = `${scope.worldInstanceId}:${scope.actorId}:${scope.commandId}:`;
+    return this.claimFirstDue(leaseMs, (key, effect) =>
+      key.startsWith(commandKey) &&
+      effect.causationCommandId === scope.commandId &&
+      scope.types.includes(effect.type));
+  }
+
+  private claimFirstDue(
+    leaseMs: number,
+    matches: (key: string, effect: StoredEventEffect) => boolean,
+  ): StoredEventEffect | undefined {
     const now = Date.now();
-    for (const record of this.effects.values()) {
+    for (const [key, record] of this.effects) {
       const isAvailable = record.status === 'pending' ||
         (record.status === 'processing' && (record.leaseExpiresAt ?? 0) <= now);
       if (
         !isAvailable ||
         record.availableAt > now ||
-        (worldInstanceId !== undefined && record.effect.worldInstanceId !== worldInstanceId)
+        !matches(key, record.effect)
       ) continue;
       const leaseToken = globalThis.crypto.randomUUID();
       const effect = {

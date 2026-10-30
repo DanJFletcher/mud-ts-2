@@ -505,6 +505,50 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     expect(persistedEffects[0]).toMatchObject({ status: 'completed', attempts: 2 });
   });
 
+  it('claims for a command only its own actor’s effects of the given types', async () => {
+    const commandId = `settled-command-${randomUUID()}`;
+    const appendRequest: AppendRequest = {
+      worldInstanceId,
+      streamId: `settled-stream-${randomUUID()}`,
+      actorId: playerId,
+      commandId,
+      payloadHash: randomUUID(),
+      expectedVersion: 0,
+      events: [{ type: 'audit.settled_source', version: 1, payload: {} }],
+      effects: [
+        { type: 'audit.background', version: 1, payload: { order: 1 } },
+        { type: 'audit.completing', version: 1, payload: { order: 2 } },
+      ],
+    };
+    expect((await store.append(appendRequest)).kind).toBe('committed');
+    // Command IDs are client-chosen, so another actor can reuse this one.
+    expect((await store.append({
+      ...appendRequest,
+      streamId: `settled-stream-${randomUUID()}`,
+      actorId: secondActorId,
+      effects: [{ type: 'audit.completing', version: 1, payload: { order: 3 } }],
+    })).kind).toBe('committed');
+    const scope = { worldInstanceId, actorId: playerId, commandId, types: ['audit.completing'] };
+
+    const claimed = await store.claimCommandEffect!(60_000, scope);
+    expect(claimed).toMatchObject({
+      causationCommandId: commandId,
+      type: 'audit.completing',
+      payload: { order: 2 },
+      attempts: 1,
+    });
+    expect(await store.claimCommandEffect!(60_000, scope)).toBeUndefined();
+    const otherActor = await store.claimCommandEffect!(60_000, { ...scope, actorId: secondActorId });
+    expect(otherActor).toMatchObject({ payload: { order: 3 } });
+    const background = await store.claimCommandEffect!(60_000, { ...scope, types: ['audit.background'] });
+    expect(background).toMatchObject({ payload: { order: 1 } });
+
+    // Leave nothing leased for later tests that claim across the whole table.
+    for (const effect of [claimed, otherActor, background]) {
+      expect(await store.completeEffect(effect!.id, effect!.leaseToken)).toBe(true);
+    }
+  });
+
   it('recovers due lifecycle work after a store restart and an expired worker lease', async () => {
     const { SYSTEM_ACTOR_ID } = await import('@mudd/engine-core');
     const { PostgresEventStore } = await import('./persistence/postgres-event-store.js');
