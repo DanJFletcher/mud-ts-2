@@ -54,3 +54,6 @@ build = ["npm", "run", "build"]
 MUDD_SINGLE_CALL_APPEND = "1"
 MUDD_IDENTITY_CACHE = "1"
 
+[userenv.production]
+MUDD_SINGLE_CALL_APPEND = "1"
+
