@@ -6787,15 +6787,22 @@ describe('single-character world session client', () => {
     expect(screen.queryByRole('group', { name: /Character currency balance/ })).not.toBeInTheDocument();
   });
 
-  it('restores and persists the selected theme', async () => {
-    window.localStorage.setItem('mudd-theme', 'dark');
+  it('defaults to dark and persists the selected theme', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     expect(screen.getByRole('main')).toHaveAttribute('data-theme', 'dark');
+    expect(window.localStorage.getItem('mudd-theme')).toBe('dark');
     fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
     fireEvent.click(screen.getByRole('button', { name: 'Switch to light theme' }));
     expect(document.documentElement).toHaveAttribute('data-theme', 'light');
     expect(window.localStorage.getItem('mudd-theme')).toBe('light');
+  });
+
+  it('restores a previously saved light theme', async () => {
+    window.localStorage.setItem('mudd-theme', 'light');
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    expect(screen.getByRole('main')).toHaveAttribute('data-theme', 'light');
   });
 
   it('responds to browser back/forward when changing gameplay screens', async () => {

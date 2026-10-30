@@ -236,18 +236,21 @@ describe('world lobby and explicit character entry', () => {
     expect(mocks.signOut).toHaveBeenNthCalledWith(2, { redirectUrl: '/' });
   });
 
-  it('toggles and persists the theme from the navigation', () => {
+  it('defaults to dark and toggles and persists the theme from the navigation', () => {
     const { container } = open();
+    expect(container.querySelector('.lobby-shell')).toHaveAttribute('data-theme', 'dark');
+    expect(localStorage.getItem('mudd-theme')).toBe('dark');
     const toggle = container.querySelector<HTMLButtonElement>('.lobby-mobile-menu-toggle')!;
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole('button', { name: 'Switch to light theme' }));
+    expect(container.querySelector('.lobby-shell')).toHaveAttribute('data-theme', 'light');
+    expect(localStorage.getItem('mudd-theme')).toBe('light');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
     fireEvent.click(toggle);
     fireEvent.click(screen.getByRole('button', { name: 'Switch to dark theme' }));
     expect(container.querySelector('.lobby-shell')).toHaveAttribute('data-theme', 'dark');
     expect(localStorage.getItem('mudd-theme')).toBe('dark');
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Switch to light theme' }));
-    expect(container.querySelector('.lobby-shell')).toHaveAttribute('data-theme', 'light');
-    expect(localStorage.getItem('mudd-theme')).toBe('light');
   });
 
   it('renders world discovery before the character roster request finishes', async () => {

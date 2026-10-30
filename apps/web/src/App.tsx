@@ -558,7 +558,7 @@ export function WorldClient({
   const [inventoryInspectError, setInventoryInspectError] = useState("");
   const [leaving, setLeaving] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(() =>
-    window.localStorage.getItem("mudd-theme") === "dark" ? "dark" : "light"
+    window.localStorage.getItem("mudd-theme") === "light" ? "light" : "dark"
   );
   const [screen, setScreen] = useState<Screen>(currentScreen);
   const [menuOpen, setMenuOpen] = useState(false);

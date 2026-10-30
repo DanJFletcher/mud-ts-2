@@ -10,7 +10,7 @@ import './lobby.css';
 export function AccountShell({ children }: { children: ReactNode }) {
   const { isSignedIn } = useUser();
   const { signOut } = useClerk();
-  const [theme, setTheme] = useState(() => localStorage.getItem('mudd-theme') === 'dark' ? 'dark' : 'light');
+  const [theme, setTheme] = useState(() => localStorage.getItem('mudd-theme') === 'light' ? 'light' : 'dark');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   useEffect(() => {
     document.documentElement.dataset.theme = theme; localStorage.setItem('mudd-theme', theme);
