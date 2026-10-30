@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { drizzle } from 'drizzle-orm/node-postgres';
 import type { AppendRequest } from '@mudd/engine-core';
 
 const { mockDb } = vi.hoisted(() => ({
@@ -19,6 +20,24 @@ function mockUpdateReturning(rows: unknown[]) {
   const set = vi.fn(() => ({ where }));
   mockDb.update.mockReturnValue({ set });
   return { set, where, returning };
+}
+
+/** Render the effect claim with Drizzle's real SQL builder and return canned rows. */
+function mockEffectClaim(rows: unknown[]) {
+  const sqlBuilder = drizzle.mock();
+  const statements: Array<{ sql: string; params: unknown[] }> = [];
+  mockDb.select.mockImplementationOnce((fields: never) => sqlBuilder.select(fields));
+  mockDb.update.mockImplementationOnce((table: never) => ({
+    set: (values: never) => ({
+      where: (condition: never) => ({
+        returning: async () => {
+          statements.push(sqlBuilder.update(table).set(values).where(condition).returning().toSQL());
+          return rows;
+        },
+      }),
+    }),
+  }));
+  return { statements };
 }
 
 function mockSelectLimit(rows: unknown[]) {
@@ -1337,8 +1356,8 @@ describe('PostgresEventStore unit behavior', () => {
     expect(tx.insert).toHaveBeenCalledTimes(3);
   });
 
-  it('claims a pending durable effect with a lease and incremented attempt count', async () => {
-    const pending = {
+  it('leases the next due durable effect in one locking statement', async () => {
+    const claimedRow = {
       id: 'effect-1',
       worldInstanceId: 'world-1',
       sourceStreamId: 'character-1',
@@ -1346,29 +1365,9 @@ describe('PostgresEventStore unit behavior', () => {
       effectType: 'world.location.entered',
       effectVersion: 1,
       payload: { toLocationId: 'room-b' },
-      attempts: 2,
+      attempts: 3,
     };
-    const tx = {
-      select: vi.fn(() => ({
-        from: () => ({
-          where: () => ({
-            orderBy: () => ({
-              limit: () => ({
-                for: async () => [pending],
-              }),
-            }),
-          }),
-        }),
-      })),
-      update: vi.fn(() => ({
-        set: () => ({
-          where: () => ({
-            returning: async () => [{ ...pending, attempts: 3 }],
-          }),
-        }),
-      })),
-    };
-    mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(tx));
+    const claim = mockEffectClaim([claimedRow]);
     const store = new PostgresEventStore();
 
     const effect = await store.claimNextEffect(30_000, 'world-1');
@@ -1380,72 +1379,27 @@ describe('PostgresEventStore unit behavior', () => {
       attempts: 3,
       leaseToken: expect.any(String),
     });
-    expect(tx.update).toHaveBeenCalledTimes(1);
+    expect(mockDb.transaction).not.toHaveBeenCalled();
+    expect(claim.statements).toHaveLength(1);
+    const [statement] = claim.statements;
+    expect(statement!.sql).toMatch(/^update "durable_effects" set /);
+    expect(statement!.sql).toContain('"attempts" = "durable_effects"."attempts" + 1');
+    expect(statement!.sql).toMatch(/where "durable_effects"\."id" = \(select .* limit \$\d+ for update skip locked\) returning /);
+    expect(statement!.params).toEqual(expect.arrayContaining(['processing', 'pending', 'world-1', effect!.leaseToken]));
   });
 
-  it('validates effect lease durations and returns no claim when the queue is empty', async () => {
+  it('validates effect lease durations and returns no claim when nothing is due', async () => {
     const store = new PostgresEventStore();
     for (const leaseMs of [0, -1, 1.5]) {
       await expect(store.claimNextEffect(leaseMs))
         .rejects.toThrow('Effect lease must be a positive integer.');
     }
+    expect(mockDb.update).not.toHaveBeenCalled();
 
-    const tx = {
-      select: vi.fn(() => ({
-        from: () => ({
-          where: () => ({
-            orderBy: () => ({
-              limit: () => ({
-                for: async () => [],
-              }),
-            }),
-          }),
-        }),
-      })),
-      update: vi.fn(),
-    };
-    mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(tx));
-
+    const claim = mockEffectClaim([]);
     await expect(store.claimNextEffect(1_000)).resolves.toBeUndefined();
-    expect(tx.update).not.toHaveBeenCalled();
-  });
-
-  it('returns no effect when a pending row loses its lease before update', async () => {
-    const pending = {
-      id: 'effect-raced',
-      worldInstanceId: 'world-1',
-      sourceStreamId: 'character-1',
-      causationCommandId: 'command-1',
-      effectType: 'world.location.entered',
-      effectVersion: 1,
-      payload: { toLocationId: 'room-b' },
-      attempts: 0,
-    };
-    const tx = {
-      select: vi.fn(() => ({
-        from: () => ({
-          where: () => ({
-            orderBy: () => ({
-              limit: () => ({
-                for: async () => [pending],
-              }),
-            }),
-          }),
-        }),
-      })),
-      update: vi.fn(() => ({
-        set: () => ({
-          where: () => ({
-            returning: async () => [],
-          }),
-        }),
-      })),
-    };
-    mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(tx));
-
-    await expect(new PostgresEventStore().claimNextEffect(5_000, 'world-1'))
-      .resolves.toBeUndefined();
-    expect(tx.update).toHaveBeenCalledOnce();
+    expect(claim.statements).toHaveLength(1);
+    expect(claim.statements[0]!.sql).not.toContain('"world_instance_id" =');
   });
 
   it('claims due object lifecycles with bounded leases and releases a claim', async () => {

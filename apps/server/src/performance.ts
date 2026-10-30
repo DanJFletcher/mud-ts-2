@@ -18,6 +18,8 @@ export type Measurements = {
   queries: number;
   poolWaitMs: number;
   queryMs: number;
+  /** New physical PostgreSQL connections opened while serving the request. */
+  connectionsOpened: number;
   traceId?: string;
   queryTimings: QueryTiming[];
   databaseOperations: Record<string, DatabaseOperationTiming>;
@@ -67,6 +69,7 @@ export function newMeasurements(traceId?: string): Measurements {
     queries: 0,
     poolWaitMs: 0,
     queryMs: 0,
+    connectionsOpened: 0,
     traceId,
     queryTimings: [],
     databaseOperations: {},
@@ -160,6 +163,10 @@ export function recordDatabaseQueryFinish(
     context.operation.queryMs += durationMs;
     context.operation.maxQueryMs = Math.max(context.operation.maxQueryMs, durationMs);
   }
+}
+
+export function recordDatabaseConnectionOpened(context: DatabaseMeasurementContext): void {
+  if (context.measurements) context.measurements.connectionsOpened++;
 }
 
 export function recordDatabasePoolWait(context: DatabaseMeasurementContext, durationMs: number): void {

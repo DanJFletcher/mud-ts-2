@@ -193,6 +193,16 @@ development database before publishing.
    access. Without it, Clerk refetches its signing keys after each idle gap of 5
    minutes or more.
 
+#### Status of the quick wins
+
+| # | Status |
+|---|---|
+| 1 | Done. The pool keeps 2 warm connections, closes idle ones after 5 minutes, uses TCP keepalive and a 10 s connect timeout, and logs idle-client errors instead of crashing. Startup opens the warm connections, and LISTEN runs on its own connection. Slow-request logs now include `connectionsOpened`, and each new connection logs `database_connection_opened`, to confirm the cold-connection hypothesis in production. |
+| 2 | Partly done. Protocol 2 invalidations carry the character revision, so clients skip the redundant snapshot ([ADR 0038](../adr/0038-realtime-revision-hints.md)). Returning the projection with every command is deferred. Take, drop and similar commands finish through durable effects, so a projection built in the command response could miss state that a later snapshot includes. |
+| 3 | Done. Production wiring reuses catalog snapshots for 30 s, and snapshots and looks load room occupants alongside the describe and stats queries. |
+| 4 | Done. Effects are claimed in one statement and run per world, woken by commit notifications. The safety poll is every 5 s instead of every second. Chat and world entry wait only on their own world's effects. |
+| 5 | Configuration only. `@clerk/express` already reads `CLERK_JWT_KEY`; set it in the deployment ([SECURITY.md](../SECURITY.md)). |
+
 ### Larger changes
 
 6. **Single-call append.** Move the append transaction into one PL/pgSQL

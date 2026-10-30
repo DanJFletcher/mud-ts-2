@@ -7,6 +7,7 @@ Configure these deployment variables before starting the production server:
 - `TRUSTED_HOSTS` — comma-separated host values accepted by the HTTP server, including a port only when that port is present in the incoming `Host` header. If a reverse proxy presents both an internal `Host` and public `X-Forwarded-Host`, include both values. Production startup fails closed when this value is empty.
 - `TRUSTED_PROXY_HOPS` — number of trusted reverse-proxy hops. The default is one in production and zero elsewhere. Set this to match the actual ingress chain; do not trust headers from a longer chain than the deployment controls.
 - `CORS_ALLOWED_ORIGINS` — optional comma-separated, exact HTTP(S) origins for cross-origin clients. Same-origin requests are checked against the incoming request origin; no wildcard origins are accepted.
+- `CLERK_JWT_KEY` — recommended in production. The PEM public key from the Clerk instance's API keys page. `@clerk/express` reads it automatically and verifies session tokens locally; without it, Clerk fetches its signing keys over the network after each idle gap of five minutes or more. It is a public key, not a secret, but keep it in deployment configuration rather than source.
 
 The JSON request limit is 16 KiB. Chat submissions are limited to 30 per minute per client IP, and commands to 120 per minute per client IP. The current limiter is in-memory and applies per server process; deployments with multiple workers or replicas need a shared limiter before treating these values as a global abuse quota.
 

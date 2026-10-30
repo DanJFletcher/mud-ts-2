@@ -144,6 +144,39 @@ describe('PostgresLocationGroupCatalogStore unit behavior', () => {
     expect(mockDb.select).toHaveBeenCalledTimes(7);
   });
 
+  it('skips the revision query inside the revalidation window and checks again after it', async () => {
+    mockDb.select
+      .mockImplementationOnce(() => queryResult([{ revision: 1 }]))
+      .mockImplementationOnce(() => queryResult([{
+        id: 'south-common',
+        name: 'South Common',
+        type: 'district',
+        description: 'The southern commons.',
+        metadata: { mapColor: 'green' },
+      }]))
+      .mockImplementationOnce(() => queryResult([{
+        groupId: 'south-common',
+        locationId: 'market-square',
+        isPrimary: true,
+      }]))
+      .mockImplementationOnce(() => queryResult([{ revision: 1 }]));
+    let now = 1_000;
+    const store = new PostgresLocationGroupCatalogStore({ revalidateAfterMs: 30_000, now: () => now });
+
+    const first = await store.read('orraveth', '1.0.0');
+    now += 29_999;
+    expect(await store.read('orraveth', '1.0.0')).toBe(first);
+    expect(mockDb.select).toHaveBeenCalledTimes(3);
+
+    now += 1;
+    expect(await store.read('orraveth', '1.0.0')).toBe(first);
+    expect(mockDb.select).toHaveBeenCalledTimes(4);
+
+    now += 29_999;
+    expect(await store.read('orraveth', '1.0.0')).toBe(first);
+    expect(mockDb.select).toHaveBeenCalledTimes(4);
+  });
+
   it('fails clearly when the requested catalog has not been initialized', async () => {
     mockDb.select.mockImplementationOnce(() => queryResult([]));
 

@@ -40,7 +40,8 @@ export function createRealtimeGateway(
       }
     },
     close() { for (const client of clients) client.close(); clients.clear(); },
-    connect(socket: WebSocket, request: Request) {
+    connect(socket: WebSocket, request: Request, options: { protocolVersion?: 1 | 2 } = {}) {
+      const protocolVersion = options.protocolVersion ?? 1;
       if (clients.size >= 500) { socket.close(1013); return; }
       const connectionId = randomUUID();
       let sequence = 0, disposed = false, running = false, dirty = false;
@@ -82,8 +83,14 @@ export function createRealtimeGateway(
             if (hashes[channel] !== hash) changed.push(channel);
             hashes[channel] = hash;
           }
-          if (changed.length) send({ type: 'invalidate', version: 1, connectionId,
-            sequence: ++sequence, eventId: randomUUID(), worldInstanceId: view.worldInstanceId, channels: changed });
+          // Protocol 2 adds the character revision so a client that already holds
+          // it, typically from its own command response, can skip the refetch.
+          const characterRevision = view.values.character;
+          const revisions = protocolVersion === 2 && changed.includes('character') &&
+            typeof characterRevision === 'number' ? { character: characterRevision } : undefined;
+          if (changed.length) send({ type: 'invalidate', version: protocolVersion, connectionId,
+            sequence: ++sequence, eventId: randomUUID(), worldInstanceId: view.worldInstanceId, channels: changed,
+            ...(revisions ? { revisions } : {}) });
         } catch { close(); }
         finally {
           running = false;

@@ -448,6 +448,11 @@ export function WorldClient({
   worldInstanceId = window.localStorage.getItem("mudd-world-instance-id") ?? "mudd-demo-instance",
 }: WorldClientProps) {
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
+  // Realtime watchers read the applied character revision without re-subscribing.
+  const appliedCharacterRevisionRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    appliedCharacterRevisionRef.current = snapshot?.character?.revision;
+  }, [snapshot?.character?.revision]);
   const [optimisticTravel, setOptimisticTravel] = useState<OptimisticTravel | null>(null);
   const optimisticTravelRef = useRef<OptimisticTravel | null>(null);
   const optimisticNpcDepartureFallbacksRef = useRef<OptimisticNpcDepartureFallback[]>([]);
@@ -1041,7 +1046,20 @@ export function WorldClient({
     const stopPresence = client.watchRealtime("presence", sendHeartbeat, 3_000, () => !refreshGate.current.busy);
     // Presence remains frequent for multiplayer; the full game snapshot also
     // includes map, journal, stats and room data, so refresh that less often.
-    const stopSnapshot = client.watchRealtime("character", refreshSnapshot, 15_000, () => !refreshGate.current.busy);
+    // The socket reports which character revision changed; skip the snapshot when
+    // the UI already shows it, usually from the action's own response.
+    const refreshSnapshotForCharacterChange = () => {
+      const hinted = client.realtimeRevisionHint("character");
+      const applied = appliedCharacterRevisionRef.current;
+      if (hinted !== undefined && applied !== undefined && hinted <= applied) return;
+      return refreshSnapshot();
+    };
+    const stopSnapshot = client.watchRealtime(
+      "character",
+      refreshSnapshotForCharacterChange,
+      15_000,
+      () => !refreshGate.current.busy,
+    );
     document.addEventListener("visibilitychange", refreshWhenVisible);
     window.addEventListener("pageshow", refreshWhenVisible);
     return () => {

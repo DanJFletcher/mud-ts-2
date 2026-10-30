@@ -1,4 +1,4 @@
-import { CharacterClassCatalogSchema, ChooseCharacterClassCommandSchema } from '@mudd/contracts';
+import { CharacterClassCatalogSchema, ChooseCharacterClassCommandSchema, REALTIME_PROTOCOL_VERSION } from '@mudd/contracts';
 import {
   DailyBoardQuerySchema, DailyBoardProjectionSchema, DailyJobCommandSchema, GatherSupplyCommandSchema, SupplySourceDefinitionSchema,
   FishingCastCommandSchema, FishingAdvanceCommandSchema, FishingCancelCommandSchema,
@@ -215,10 +215,13 @@ export class MuddHttpClient {
       const url = new URL(`${this.options.basePath?.replace(/\/$/, '') ?? ''}/api/realtime`, globalThis.location.origin);
       url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
       url.searchParams.set('world', this.options.worldInstanceId);
+      url.searchParams.set('protocol', String(REALTIME_PROTOCOL_VERSION));
       return url.toString();
     }, () => this.options.worldInstanceId);
   }
   watchRealtime(...args: Parameters<MuddRealtimeTransport['watch']>) { return this.realtime.watch(...args); }
+  /** Latest revision the open socket reported for a channel, if any. */
+  realtimeRevisionHint(...args: Parameters<MuddRealtimeTransport['revisionHint']>) { return this.realtime.revisionHint(...args); }
   get realtimeConnectionState() { return this.realtime.connectionState; }
 
   setWorldInstanceId(worldInstanceId: string): void {

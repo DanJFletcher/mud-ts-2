@@ -1,15 +1,16 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { pool } = vi.hoisted(() => ({ pool: { connect: vi.fn() } }));
+const { createListenerClient } = vi.hoisted(() => ({ createListenerClient: vi.fn() }));
 
-vi.mock('./db/client.js', () => ({ pool }));
+vi.mock('./db/client.js', () => ({ createListenerClient }));
 
 import { startRealtimeNotifications } from './realtime-notifications.js';
 
 class NotificationClient extends EventEmitter {
+  connect = vi.fn(async () => undefined);
   query = vi.fn(async () => undefined);
-  release = vi.fn();
+  end = vi.fn(async () => undefined);
 }
 
 async function flushConnection(): Promise<void> {
@@ -24,14 +25,15 @@ describe('realtime notification listener', () => {
     vi.clearAllMocks();
   });
 
-  it('listens, recovers on connect, forwards valid payloads, and ignores invalid ones', async () => {
+  it('listens on a dedicated client, recovers on connect, forwards valid payloads, and ignores invalid ones', async () => {
     const client = new NotificationClient();
-    pool.connect.mockResolvedValue(client);
+    createListenerClient.mockReturnValue(client);
     const invalidate = vi.fn();
     const recover = vi.fn();
     const stop = startRealtimeNotifications(invalidate, recover);
     await flushConnection();
 
+    expect(client.connect).toHaveBeenCalledOnce();
     expect(client.query).toHaveBeenCalledWith('LISTEN mudd_realtime');
     expect(recover).toHaveBeenCalledTimes(1);
     client.emit('notification', { payload: JSON.stringify({ worldInstanceId: 'world-1' }) });
@@ -42,61 +44,68 @@ describe('realtime notification listener', () => {
     expect(invalidate).toHaveBeenCalledTimes(1);
     expect(invalidate).toHaveBeenCalledWith({ worldInstanceId: 'world-1' });
     stop();
-    expect(client.release).toHaveBeenCalledWith(true);
+    expect(client.end).toHaveBeenCalledOnce();
   });
 
-  it('reconnects after a client error and releases both clients on their lifecycle boundaries', async () => {
+  it('reconnects once after a client error and closes each client on its lifecycle boundary', async () => {
     vi.useFakeTimers();
     const first = new NotificationClient();
     const second = new NotificationClient();
-    pool.connect.mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    createListenerClient.mockReturnValueOnce(first).mockReturnValueOnce(second);
     const recover = vi.fn();
     const stop = startRealtimeNotifications(vi.fn(), recover);
     await flushConnection();
 
     first.emit('error', new Error('connection lost'));
-    expect(first.release).toHaveBeenCalledWith(true);
+    first.emit('error', new Error('connection lost again'));
+    expect(first.end).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(1000);
     await flushConnection();
 
-    expect(pool.connect).toHaveBeenCalledTimes(2);
+    expect(createListenerClient).toHaveBeenCalledTimes(2);
     expect(second.query).toHaveBeenCalledWith('LISTEN mudd_realtime');
     expect(recover).toHaveBeenCalledTimes(2);
     stop();
-    expect(second.release).toHaveBeenCalledWith(true);
+    expect(second.end).toHaveBeenCalledOnce();
   });
 
   it('retries after connection or LISTEN failures and cancels retries when stopped', async () => {
     vi.useFakeTimers();
-    const client = new NotificationClient();
-    client.query.mockRejectedValueOnce(new Error('listen failed'));
-    pool.connect.mockRejectedValueOnce(new Error('pool unavailable')).mockResolvedValueOnce(client);
+    const unreachable = new NotificationClient();
+    unreachable.connect.mockRejectedValueOnce(new Error('database unavailable'));
+    const listenFails = new NotificationClient();
+    listenFails.query.mockRejectedValueOnce(new Error('listen failed'));
+    createListenerClient.mockReturnValueOnce(unreachable).mockReturnValueOnce(listenFails);
     const recover = vi.fn();
     const stop = startRealtimeNotifications(vi.fn(), recover);
     await flushConnection();
     await vi.advanceTimersByTimeAsync(1000);
     await flushConnection();
 
-    expect(pool.connect).toHaveBeenCalledTimes(2);
-    expect(client.release).toHaveBeenCalledWith(true);
+    expect(createListenerClient).toHaveBeenCalledTimes(2);
+    expect(unreachable.end).toHaveBeenCalledOnce();
+    expect(listenFails.end).toHaveBeenCalledOnce();
     expect(recover).not.toHaveBeenCalled();
 
     stop();
     await vi.advanceTimersByTimeAsync(2000);
-    expect(pool.connect).toHaveBeenCalledTimes(2);
+    expect(createListenerClient).toHaveBeenCalledTimes(2);
   });
 
-  it('releases a client that finishes connecting after shutdown', async () => {
-    let resolveConnection!: (client: NotificationClient) => void;
-    pool.connect.mockReturnValue(new Promise((resolve) => { resolveConnection = resolve; }));
+  it('closes a client that finishes connecting after shutdown', async () => {
+    let resolveConnection!: () => void;
     const client = new NotificationClient();
+    client.connect.mockReturnValue(new Promise<undefined>((resolve) => {
+      resolveConnection = () => resolve(undefined);
+    }));
+    createListenerClient.mockReturnValue(client);
     const stop = startRealtimeNotifications(vi.fn(), vi.fn());
 
     stop();
-    resolveConnection(client);
+    resolveConnection();
     await flushConnection();
 
-    expect(client.release).toHaveBeenCalledWith();
+    expect(client.end).toHaveBeenCalledOnce();
     expect(client.query).not.toHaveBeenCalled();
   });
 });
