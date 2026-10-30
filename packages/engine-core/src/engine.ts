@@ -51,6 +51,32 @@ const failure = (
   retryable: code === 'VERSION_CONFLICT',
 });
 
+function errorLogDetails(error: unknown): {
+  errorName: string;
+  errorClass: string;
+  sqlState?: string;
+} {
+  const labels = (value: unknown, fallback: string) =>
+    typeof value === 'string' && /^[A-Za-z0-9_.-]{1,80}$/.test(value) ? value : fallback;
+  const root = error && typeof error === 'object'
+    ? error as { name?: unknown; cause?: unknown; code?: unknown; constructor?: { name?: unknown } }
+    : undefined;
+  const details: ReturnType<typeof errorLogDetails> = {
+    errorName: labels(root?.name, 'UnknownError'),
+    errorClass: labels(root?.constructor?.name, 'UnknownError'),
+  };
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current && typeof current === 'object'; depth += 1) {
+    const candidate = current as { code?: unknown; cause?: unknown };
+    if (typeof candidate.code === 'string' && /^[0-9A-Z]{5}$/.test(candidate.code)) {
+      details.sqlState = candidate.code;
+      break;
+    }
+    current = candidate.cause;
+  }
+  return details;
+}
+
 function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
   if (value && typeof value === 'object') {
@@ -484,7 +510,7 @@ export class EngineHost {
       if (isRuleViolationError(error)) {
         return { receipt: failure(commandId, 'RULE_VIOLATION', error.message), events: [] };
       }
-      console.error(`[${correlationId}] Engine command failed`, error);
+      console.error(`[${correlationId}] Engine command failed`, errorLogDetails(error));
       return {
         receipt: failure(commandId, 'INTERNAL_ERROR', 'The server could not complete that command.'),
         events: [],
@@ -583,7 +609,7 @@ export class EngineHost {
       if (isRuleViolationError(error)) {
         return { receipt: failure(commandId, 'RULE_VIOLATION', error.message), events: [] };
       }
-      console.error(`[${correlationId}] Engine system command failed`, error);
+      console.error(`[${correlationId}] Engine system command failed`, errorLogDetails(error));
       return {
         receipt: failure(commandId, 'INTERNAL_ERROR', 'The server could not complete that system command.'),
         events: [],

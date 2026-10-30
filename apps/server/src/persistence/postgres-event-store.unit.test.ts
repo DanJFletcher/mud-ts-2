@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import type { AppendRequest } from '@mudd/engine-core';
+import type { AppendOutcome, AppendRequest } from '@mudd/engine-core';
 
 const { mockDb } = vi.hoisted(() => ({
   mockDb: {
@@ -14,7 +14,11 @@ const { mockDb } = vi.hoisted(() => ({
 
 vi.mock('../db/client.js', () => ({ db: mockDb }));
 
-import { PostgresEventStore, toStoredGameEvent } from './postgres-event-store.js';
+import {
+  PostgresEventStore,
+  resetSingleCallAppendRuntimeForTests,
+  toStoredGameEvent,
+} from './postgres-event-store.js';
 
 function mockUpdateReturning(rows: unknown[]) {
   const returning = vi.fn(async () => rows);
@@ -1589,13 +1593,19 @@ describe('PostgresEventStore single-call append', () => {
     }] });
   }
 
-  function executed(call = 0) {
+  function executed(call = 1) {
     const query = dialect.sqlToQuery(mockDb.execute.mock.calls[call]![0]);
     return { sql: query.sql, request: JSON.parse(String(query.params[0])) };
   }
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockDb.execute.mockReset();
+    resetSingleCallAppendRuntimeForTests();
+    mockDb.execute.mockResolvedValueOnce({ rows: [{
+      function_exists: true,
+      transaction_isolation: 'read committed',
+    }] });
     mockDb.transaction.mockRejectedValue(new Error('transaction path'));
   });
 
@@ -1612,7 +1622,7 @@ describe('PostgresEventStore single-call append', () => {
     const outcome = await store.append(sharedRequest);
 
     expect(mockDb.transaction).not.toHaveBeenCalled();
-    expect(mockDb.execute).toHaveBeenCalledOnce();
+    expect(mockDb.execute).toHaveBeenCalledTimes(2);
     expect(outcome).toMatchObject({ kind: 'committed', streamId: 'world-items:world-1' });
     expect(outcome.events).toEqual([expect.objectContaining({
       type: 'world.item_dropped', aggregateVersion: 5, tick: 5, actorId: 'actor-1', causationCommandId: 'command-1',
@@ -1707,7 +1717,89 @@ describe('PostgresEventStore single-call append', () => {
     ] satisfies AppendRequest[]) {
       await expect(store.append(request)).rejects.toThrow('transaction path');
     }
-    expect(mockDb.execute).not.toHaveBeenCalled();
+    expect(mockDb.execute).toHaveBeenCalledOnce();
     expect(mockDb.transaction).toHaveBeenCalledTimes(5);
+  });
+
+  it.each([
+    ['missing function', { function_exists: false, transaction_isolation: 'read committed' }, 'missing_function'],
+    ['non-read-committed isolation', { function_exists: true, transaction_isolation: 'repeatable read' }, 'isolation'],
+  ] as const)('uses the transaction path when readiness reports %s', async (_label, readiness, reason) => {
+    mockDb.execute.mockReset();
+    mockDb.execute.mockResolvedValueOnce({ rows: [readiness] });
+    const store = new PostgresEventStore({ singleCallAppend: true });
+    const appendInTransaction = vi.spyOn(
+      store as unknown as { appendInTransaction(request: AppendRequest): Promise<AppendOutcome> },
+      'appendInTransaction',
+    ).mockResolvedValue({
+      kind: 'conflict',
+      streamId: sharedRequest.streamId,
+      events: [],
+      receipt: {
+        ok: false,
+        commandId: sharedRequest.commandId,
+        code: 'VERSION_CONFLICT',
+        message: 'fallback',
+        retryable: true,
+      },
+    });
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await store.append(sharedRequest);
+    await store.append(sharedRequest);
+
+    expect(appendInTransaction).toHaveBeenCalledTimes(2);
+    expect(mockDb.execute).toHaveBeenCalledOnce();
+    expect(warning).toHaveBeenCalledOnce();
+    expect(warning.mock.calls[0]?.[0]).toContain(`"reason":"${reason}"`);
+    warning.mockRestore();
+  });
+
+  it.each([
+    ['missing function', '42883'],
+    ['isolation guard', 'MU001'],
+  ] as const)('falls back and disables the fast path after a %s error', async (_label, code) => {
+    const store = new PostgresEventStore({ singleCallAppend: true });
+    const appendInTransaction = vi.spyOn(
+      store as unknown as { appendInTransaction(request: AppendRequest): Promise<AppendOutcome> },
+      'appendInTransaction',
+    ).mockResolvedValue({
+      kind: 'conflict',
+      streamId: sharedRequest.streamId,
+      events: [],
+      receipt: {
+        ok: false,
+        commandId: sharedRequest.commandId,
+        code: 'VERSION_CONFLICT',
+        message: 'fallback',
+        retryable: true,
+      },
+    });
+    mockDb.execute.mockRejectedValueOnce(Object.assign(new Error('sensitive query and parameters'), { code }));
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const first = await store.append(sharedRequest);
+    const second = await store.append(sharedRequest);
+
+    expect(first).toMatchObject({ kind: 'conflict', receipt: { message: 'fallback' } });
+    expect(second).toMatchObject({ kind: 'conflict', receipt: { message: 'fallback' } });
+    expect(appendInTransaction).toHaveBeenCalledTimes(2);
+    expect(mockDb.execute).toHaveBeenCalledTimes(2);
+    expect(warning).toHaveBeenCalledOnce();
+    expect(String(warning.mock.calls[0]?.[0])).not.toContain('sensitive');
+    warning.mockRestore();
+  });
+
+  it('rethrows unrelated fast-path errors without entering the transaction path', async () => {
+    const store = new PostgresEventStore({ singleCallAppend: true });
+    const appendInTransaction = vi.spyOn(
+      store as unknown as { appendInTransaction(request: AppendRequest): Promise<AppendOutcome> },
+      'appendInTransaction',
+    );
+    const error = Object.assign(new Error('unique violation'), { code: '23505' });
+    mockDb.execute.mockRejectedValueOnce(error);
+
+    await expect(store.append(sharedRequest)).rejects.toBe(error);
+    expect(appendInTransaction).not.toHaveBeenCalled();
   });
 });

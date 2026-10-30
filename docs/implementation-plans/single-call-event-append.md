@@ -55,6 +55,9 @@
 - **Duplicates:** a duplicate returns the original receipt and events. A reused command ID with a different payload returns the existing `INVALID_COMMAND` conflict.
 - **Cache updates:** the application updates its stream cache only after a `committed` result, as today.
 - **Deploys:** the function is additive. Old code ignores it, and new code can fall back to the transaction path.
+- **Readiness and recovery:** check the function and `READ COMMITTED` isolation once per process. If unavailable, or if the call fails with SQLSTATE `42883`/`MU001`, disable the fast path for that process and retry through the transaction append path. Other SQL errors are rethrown.
+- **Logging:** command failure logs retain only the correlation ID, error name/class and a valid SQLSTATE; query text and parameters are excluded.
+- **Production migration:** do not install PostgreSQL functions with startup-time DDL. Keep `MUDD_SINGLE_CALL_APPEND` unset in production until an approved migration flow has installed and verified the function.
 
 ## Steps
 
@@ -80,8 +83,8 @@
 
 ## Rollout and rollback
 
-1. Ship the migration and code with the flag off.
-2. Enable the flag in development and compare traces.
-3. Enable it in production.
+1. Apply the migration through the approved database migration flow and ship code with the production flag unset.
+2. Verify the function and fallback behavior in development, then enable the flag there and compare traces.
+3. Enable the production flag only after the production function has been installed and verified. Environment changes take effect on the next publish.
 
 Roll back by turning the flag off. The function can stay in place, because nothing calls it while the flag is off.

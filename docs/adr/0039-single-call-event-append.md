@@ -41,10 +41,12 @@ The receipt lookup has to run as a separate statement after the command advisory
 
 - **Positive:** eligible commands save 8–9 round trips each, about 220–240 ms at production latency.
 - **Negative:** append logic now exists in two places, and the paths must be kept in step.
-- **Compatibility/migration:** migration 0011 only adds a function. Code that doesn't use it is unaffected.
+- **Compatibility/migration:** migration 0011 adds the function; migration 0014 gives isolation mismatches the stable `MU001` SQLSTATE. The store checks function availability and isolation once per process, then permanently uses the transaction path if readiness fails or the function reports `42883`/`MU001`.
 - **Security/abuse/trust:** the function runs with `SECURITY INVOKER` and a fixed `search_path`. It performs the same checks as the transaction path.
 - **Performance/operational:** commit acknowledgment time doesn't change. Development has observed write commits of up to 265 ms. The `event_store.append.single_call` stage shows which path served a request.
 - **Rollback/reversibility:** unset `MUDD_SINGLE_CALL_APPEND`. The function can stay in place.
+
+Production startup must not execute DDL. Keep `MUDD_SINGLE_CALL_APPEND` unset until the function is installed and verified through an approved database migration flow. Missing-function and isolation failures use the existing transaction append path.
 
 ## Verification
 
@@ -64,5 +66,5 @@ The receipt lookup has to run as a separate statement after the command advisory
 
 ## Follow-up / revisit trigger
 
-- Enable the flag in development and compare `?muddTrace=1` traces, then enable it in production.
+- Enable the flag in development and compare `?muddTrace=1` traces. Keep it unset in production until the database function is installed and verified; a running deployment only receives environment changes after republishing.
 - Fold the side-table writes into a v2 function if the remaining transaction appends matter.

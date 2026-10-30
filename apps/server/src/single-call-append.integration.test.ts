@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AppendRequest } from '@mudd/engine-core';
 import { newMeasurements, requestMeasurements } from './performance.js';
@@ -12,6 +14,7 @@ integrationDescribe('single-call event append (real PostgreSQL)', () => {
   let db: typeof import('./db/client.js').db;
   let pool: typeof import('./db/client.js').pool;
   let PostgresEventStore: typeof import('./persistence/postgres-event-store.js').PostgresEventStore;
+  let resetSingleCallAppendRuntimeForTests: typeof import('./persistence/postgres-event-store.js').resetSingleCallAppendRuntimeForTests;
   let fast: InstanceType<typeof PostgresEventStore>;
   let transactional: InstanceType<typeof PostgresEventStore>;
 
@@ -29,7 +32,7 @@ integrationDescribe('single-call event append (real PostgreSQL)', () => {
     process.env.DATABASE_URL = testDatabaseUrl!;
     ({ db, pool } = await import('./db/client.js'));
     const { players } = await import('./db/schema.js');
-    ({ PostgresEventStore } = await import('./persistence/postgres-event-store.js'));
+    ({ PostgresEventStore, resetSingleCallAppendRuntimeForTests } = await import('./persistence/postgres-event-store.js'));
     await db.insert(players).values({
       id: playerId,
       clerkUserId: `single-call-${playerId}`,
@@ -178,5 +181,36 @@ integrationDescribe('single-call event append (real PostgreSQL)', () => {
     expect(await fast.readStream(worldInstanceId, companionId)).toHaveLength(1);
     const effects = await db.select().from(durableEffects).where(eq(durableEffects.causationCommandId, commandId));
     expect(effects).toHaveLength(1);
+  });
+
+  it('falls back without the append function and uses it again after a fresh runtime check', async () => {
+    const migrationSql = await readFile(
+      fileURLToPath(new URL('../drizzle/0014_single_call_append_isolation.sql', import.meta.url)),
+      'utf8',
+    );
+    const fallbackStore = new PostgresEventStore({ singleCallAppend: true });
+
+    try {
+      await pool.query('DROP FUNCTION IF EXISTS mudd_append_command_v1(jsonb)');
+      resetSingleCallAppendRuntimeForTests();
+      const fallbackMetrics = newMeasurements('single-call-missing-function-fallback');
+      const fallback = await requestMeasurements.run(fallbackMetrics, () =>
+        fallbackStore.append(sharedAppend(`missing-function-${randomUUID()}`, 0)));
+      expect(fallback.kind).toBe('committed');
+      expect(fallbackMetrics.stages['event_store.append.single_call']).toBeUndefined();
+
+      await pool.query(migrationSql);
+      resetSingleCallAppendRuntimeForTests();
+      const reloadedStore = new PostgresEventStore({ singleCallAppend: true });
+      const fastMetrics = newMeasurements('single-call-function-restored');
+      const fastResult = await requestMeasurements.run(fastMetrics, () =>
+        reloadedStore.append(sharedAppend(`restored-function-${randomUUID()}`, 0)));
+      expect(fastResult.kind).toBe('committed');
+      expect(fastMetrics.stages['event_store.append.single_call']).toBeGreaterThan(0);
+      expect(fastMetrics.databaseOperations['event_store.command_append']?.queries).toBe(1);
+    } finally {
+      await pool.query(migrationSql);
+      resetSingleCallAppendRuntimeForTests();
+    }
   });
 });

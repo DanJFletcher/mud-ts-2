@@ -99,6 +99,13 @@
       "when": 1793400000000,
       "tag": "0013_guest_account_cleanup",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1793400001000,
+      "tag": "0014_single_call_append_isolation",
+      "breakpoints": true
     }
   ]
 }

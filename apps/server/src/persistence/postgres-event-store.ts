@@ -95,6 +95,72 @@ type SingleCallAppendRow = {
   current_revision: number | null;
 };
 
+type SingleCallAppendDisabledReason =
+  | 'missing_function'
+  | 'isolation'
+  | 'readiness_check_failed';
+
+let singleCallAppendReadiness: Promise<boolean> | undefined;
+let singleCallAppendDisabledReason: SingleCallAppendDisabledReason | undefined;
+
+function disableSingleCallAppend(reason: SingleCallAppendDisabledReason): void {
+  if (singleCallAppendDisabledReason) return;
+  singleCallAppendDisabledReason = reason;
+  console.warn(JSON.stringify({
+    event: 'event_store.single_call_append.disabled',
+    reason,
+  }));
+}
+
+function postgresErrorCode(error: unknown): string | undefined {
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current && typeof current === 'object'; depth += 1) {
+    const candidate = current as { code?: unknown; cause?: unknown };
+    if (typeof candidate.code === 'string') return candidate.code;
+    current = candidate.cause;
+  }
+  return undefined;
+}
+
+async function isSingleCallAppendReady(): Promise<boolean> {
+  if (singleCallAppendDisabledReason) return false;
+  if (!singleCallAppendReadiness) {
+    singleCallAppendReadiness = (async () => {
+      try {
+        const result = await measureDatabaseOperation('event_store.single_call_append.readiness', () =>
+          db.execute(sql`
+            SELECT
+              to_regprocedure('mudd_append_command_v1(jsonb)') IS NOT NULL AS function_exists,
+              current_setting('transaction_isolation') AS transaction_isolation
+          `));
+        const row = result.rows[0] as {
+          function_exists?: boolean;
+          transaction_isolation?: string;
+        } | undefined;
+        if (!row?.function_exists) {
+          disableSingleCallAppend('missing_function');
+          return false;
+        }
+        if (row.transaction_isolation !== 'read committed') {
+          disableSingleCallAppend('isolation');
+          return false;
+        }
+        return true;
+      } catch {
+        disableSingleCallAppend('readiness_check_failed');
+        return false;
+      }
+    })();
+  }
+  return singleCallAppendReadiness;
+}
+
+/** @internal Reset process-wide append readiness between isolated unit tests. */
+export function resetSingleCallAppendRuntimeForTests(): void {
+  singleCallAppendReadiness = undefined;
+  singleCallAppendDisabledReason = undefined;
+}
+
 function roomCharacterStateRow(
   worldInstanceId: string,
   characterId: string,
@@ -509,7 +575,7 @@ export class PostgresEventStore implements EventStorePort {
    * a character stream whose room read model cannot be computed from the cache.
    */
   private async appendInOneCall(request: AppendRequest): Promise<AppendOutcome | undefined> {
-    if (!this.singleCallAppend) return undefined;
+    if (!this.singleCallAppend || !(await isSingleCallAppendReady())) return undefined;
     const writes = [
       { streamId: request.streamId, expectedVersion: request.expectedVersion, events: request.events },
       ...(request.companions ?? []),
@@ -592,9 +658,19 @@ export class PostgresEventStore implements EventStorePort {
       roomStates,
     };
 
-    const result = await measureDatabaseOperation('event_store.command_append', () =>
-      measureStage('event_store.append.single_call', () =>
-        db.execute(sql`SELECT * FROM mudd_append_command_v1(${JSON.stringify(payload)}::jsonb)`)));
+    let result;
+    try {
+      result = await measureDatabaseOperation('event_store.command_append', () =>
+        measureStage('event_store.append.single_call', () =>
+          db.execute(sql`SELECT * FROM mudd_append_command_v1(${JSON.stringify(payload)}::jsonb)`)));
+    } catch (error) {
+      const code = postgresErrorCode(error);
+      if (code === '42883' || code === 'MU001') {
+        disableSingleCallAppend(code === '42883' ? 'missing_function' : 'isolation');
+        return undefined;
+      }
+      throw error;
+    }
     const row = result.rows[0] as SingleCallAppendRow | undefined;
     switch (row?.outcome) {
       case 'prior':

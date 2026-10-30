@@ -385,7 +385,10 @@ describe('MUDD engine host', () => {
   it('returns generic internal failures with a request-correlatable ID', async () => {
     const { engine, store } = makeEngine();
     await engine.start();
-    const lookup = vi.spyOn(store, 'lookupCommand').mockRejectedValue(new Error('database password must not reach clients'));
+    const postgresError = Object.assign(new Error('password and SQL parameters must not reach logs'), { code: '42883' });
+    const queryError = new Error('SELECT * FROM events WHERE secret = $1; params: private-value', { cause: postgresError });
+    queryError.name = 'DrizzleQueryError';
+    const lookup = vi.spyOn(store, 'lookupCommand').mockRejectedValue(queryError);
     const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     const result = await engine.dispatch({
@@ -405,8 +408,11 @@ describe('MUDD engine host', () => {
     expect(result.correlationId).toBe('request-correlation-id');
     expect(log).toHaveBeenCalledWith(
       '[request-correlation-id] Engine command failed',
-      expect.any(Error),
+      { errorName: 'DrizzleQueryError', errorClass: 'Error', sqlState: '42883' },
     );
+    expect(JSON.stringify(log.mock.calls)).not.toContain('SELECT * FROM events');
+    expect(JSON.stringify(log.mock.calls)).not.toContain('private-value');
+    expect(JSON.stringify(log.mock.calls)).not.toContain('password');
 
     lookup.mockRestore();
     log.mockRestore();
@@ -555,7 +561,7 @@ describe('MUDD engine host', () => {
       expect(result.receipt).toMatchObject({ ok: false, code: 'INTERNAL_ERROR' });
       expect(errorLog).toHaveBeenCalledWith(
         '[invalid-roll-correlation] Engine command failed',
-        expect.any(RangeError),
+        { errorName: 'RangeError', errorClass: 'RangeError' },
       );
     } finally {
       errorLog.mockRestore();
@@ -888,7 +894,7 @@ describe('MUDD engine host', () => {
     expect(failure.correlationId).toBe('system-error-correlation');
     expect(errorLog).toHaveBeenCalledWith(
       '[system-error-correlation] Engine system command failed',
-      expect.any(Error),
+      { errorName: 'Error', errorClass: 'Error' },
     );
 
     errorLog.mockRestore();
