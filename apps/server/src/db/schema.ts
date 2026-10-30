@@ -227,3 +227,8 @@ export const durableEffects = pgTable('durable_effects', {
   check('durable_effects_attempts_check', sql`${table.attempts} >= 0`),
   check('durable_effects_version_check', sql`${table.effectVersion} > 0`),
 ]);
+
+export const dataMigrations = pgTable('data_migrations', {
+  id: text('id').primaryKey(),
+  appliedAt: timestamp('applied_at', { withTimezone: true }).notNull().defaultNow(),
+});

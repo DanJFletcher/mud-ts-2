@@ -3,6 +3,7 @@ import { getTableConfig } from 'drizzle-orm/pg-core';
 import {
   characters,
   commandReceipts,
+  dataMigrations,
   gameEvents,
   players,
   roomCharacterStates,
@@ -18,6 +19,7 @@ describe('PostgreSQL schema definitions', () => {
     expect(characters).toBeDefined();
     expect(gameEvents).toBeDefined();
     expect(commandReceipts).toBeDefined();
+    expect(dataMigrations.id).toBeDefined();
     expect(worldSessions).toBeDefined();
     expect(roomChatMessages).toBeDefined();
     expect(players.clerkUserId).toBeDefined();
