@@ -1857,6 +1857,17 @@ describe('single-character world session client', () => {
     expect(menuTrigger).toHaveFocus();
   });
 
+  it('closes the bottom navigation menu when the player taps outside it', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+    expect(screen.getByRole('region', { name: 'Menu' })).toBeVisible();
+
+    fireEvent.pointerDown(document.body);
+
+    expect(screen.queryByRole('region', { name: 'Menu' })).not.toBeInTheDocument();
+  });
+
   it('keeps the mobile terminal full screen above the bottom nav without header controls', async () => {
     const originalDescriptor = Object.getOwnPropertyDescriptor(window, 'matchMedia');
     const mobileMediaQuery = {
@@ -3565,6 +3576,21 @@ describe('single-character world session client', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Adopt this class' })).not.toBeInTheDocument());
     expect(commands[0]).toMatchObject({ type: 'character.class.choose', payload: { classId: 'fixture.vanguard' } });
     expect(await screen.findByRole('heading', { name: 'Class · Vanguard' })).toBeVisible();
+  });
+
+  it('shows a recovery message when class choices fail to load', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation((path, init) => {
+      if (path === '/api/worlds') return Promise.reject(new Error('Network unavailable.'));
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    await openInfoSection('Stats');
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Class choices could not be loaded. Reconnect or reload to try again.',
+    );
   });
 
   it.each(['solo', 'team'] as const)('routes %s class actions correctly after a completed PvP duel, keeping the terminal hidden', async (mode) => {
