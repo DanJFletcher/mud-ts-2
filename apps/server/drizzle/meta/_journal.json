@@ -85,6 +85,20 @@
       "when": 1793350000000,
       "tag": "0011_single_call_append",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793387509556,
+      "tag": "0012_data_migration_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793400000000,
+      "tag": "0013_guest_account_cleanup",
+      "breakpoints": true
     }
   ]
 }
