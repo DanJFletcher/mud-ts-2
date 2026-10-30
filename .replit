@@ -47,3 +47,11 @@ timeoutMs = 180000
 deploymentTarget = "vm"
 run = ["npm", "run", "start"]
 build = ["npm", "run", "build"]
+
+[userenv]
+
+[userenv.development]
+MUDD_SINGLE_CALL_APPEND = "1"
+
+[userenv.production]
+MUDD_SINGLE_CALL_APPEND = "1"
