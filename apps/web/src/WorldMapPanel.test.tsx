@@ -162,6 +162,32 @@ describe('map switching between floors', () => {
       .not.toBeNull();
   });
 
+  it('draws south, east, and west exit stubs', () => {
+    const map: WorldMapProjection = {
+      ...overworld,
+      locations: [overworld.locations[0]!],
+      currentLocationId: 'clearing',
+      connections: [],
+      exitStubs: [
+        { locationId: 'clearing', direction: 'south', oneWay: false },
+        { locationId: 'clearing', direction: 'east', oneWay: false },
+        { locationId: 'clearing', direction: 'west', oneWay: false },
+      ],
+    };
+    const { container } = render(
+      <WorldMapPanel map={map} fullscreen={false} onFullscreenChange={vi.fn()} />,
+    );
+    const paths = [...container.querySelectorAll<SVGPathElement>(
+      '.focused-world-map__svg .focused-world-map__path--stub',
+    )].map((path) => path.getAttribute('d'));
+
+    expect(paths).toEqual(expect.arrayContaining([
+      'M 27 36 V 48',
+      'M 36 27 H 48',
+      'M 18 27 H 6',
+    ]));
+  });
+
   for (const fullscreen of [false, true]) {
     it(`replaces visual and accessible locations in ${fullscreen ? 'full-screen' : 'compact'} mode`, () => {
       const onFullscreenChange = vi.fn();
@@ -223,6 +249,14 @@ describe('map switching between floors', () => {
     fireEvent.click(destination);
     expect(destination).toHaveAttribute('aria-pressed', 'true');
     expect(container.querySelector('.focused-world-map__location--selected')).toBeInTheDocument();
+    const keyboardDestination = within(svg).getByRole('button', { name: 'Focus Reedbank Market Road on map' });
+    fireEvent.keyDown(keyboardDestination, { key: 'Enter' });
+    expect(keyboardDestination).toHaveAttribute('aria-pressed', 'true');
+    const secondKeyboardDestination = within(svg).getByRole('button', {
+      name: 'Focus Glasswater Bridge Approach on map',
+    });
+    fireEvent.keyDown(secondKeyboardDestination, { key: ' ' });
+    expect(secondKeyboardDestination).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('draws ordinary exits flush to room tiles and leaves a gap only at underpass endpoints', () => {
@@ -355,6 +389,48 @@ describe('map switching between floors', () => {
     assertCurrentRoomCentered(largerMapViewBox);
   });
 
+  it('uses a safe default minimap position for invalid saved offsets', () => {
+    const key = 'mudd.mobile-map-minimap-offset.v1';
+    for (const savedOffset of ['{invalid json', '{"x":"far away","y":2}']) {
+      window.localStorage.setItem(key, savedOffset);
+      const { container, unmount } = render(
+        <WorldMapPanel map={overworld} fullscreen={false} onFullscreenChange={vi.fn()} />,
+      );
+
+      expect(container.querySelector('.focused-world-map__minimap')).toHaveStyle({
+        transform: 'translate3d(0px, 0px, 0)',
+      });
+      unmount();
+    }
+    window.localStorage.removeItem(key);
+  });
+
+  it('clamps a restored minimap position on viewport resize', () => {
+    const key = 'mudd.mobile-map-minimap-offset.v1';
+    const widthDescriptor = Object.getOwnPropertyDescriptor(window, 'innerWidth');
+    const heightDescriptor = Object.getOwnPropertyDescriptor(window, 'innerHeight');
+    window.localStorage.setItem(key, '{"x":100,"y":100}');
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 150 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 160 });
+    const { container, unmount } = render(
+      <WorldMapPanel map={overworld} fullscreen={false} onFullscreenChange={vi.fn()} />,
+    );
+    const minimap = container.querySelector<HTMLButtonElement>('.focused-world-map__minimap')!;
+    vi.spyOn(minimap, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 100, 100, 100));
+
+    try {
+      fireEvent.resize(window);
+      expect(minimap).toHaveStyle({ transform: 'translate3d(50px, 60px, 0)' });
+      expect(window.localStorage.getItem(key)).toBe('{"x":50,"y":60}');
+    } finally {
+      unmount();
+      window.localStorage.removeItem(key);
+      vi.restoreAllMocks();
+      if (widthDescriptor) Object.defineProperty(window, 'innerWidth', widthDescriptor);
+      if (heightDescriptor) Object.defineProperty(window, 'innerHeight', heightDescriptor);
+    }
+  });
+
   it('zooms the full-screen map in and out and can reset to the full map', () => {
     render(<WorldMapPanel map={denseMap} fullscreen onFullscreenChange={vi.fn()} />);
     const svg = document.querySelector<SVGSVGElement>('.focused-world-map__svg')!;
@@ -403,9 +479,12 @@ describe('map switching between floors', () => {
       clientY: 150,
     });
     fireEvent.pointerUp(svg, { pointerId: 1, pointerType: 'touch' });
+    const destination = screen.getByRole('button', { name: 'Focus West of Old Bell Tower on map' });
+    fireEvent.click(destination);
 
     expect(readViewBox()[0]).toBeGreaterThan(zoomedViewBox[0]!);
     expect(currentRoom).toHaveAttribute('aria-pressed', 'true');
+    expect(destination).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('keeps location taps working while zoomed', () => {
@@ -424,6 +503,42 @@ describe('map switching between floors', () => {
     fireEvent.click(destination);
 
     expect(destination).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('only closes the full-screen map after a horizontal swipe on empty space', () => {
+    const onFullscreenChange = vi.fn();
+    render(<WorldMapPanel map={denseMap} fullscreen onFullscreenChange={onFullscreenChange} />);
+    const dialog = screen.getByRole('dialog', { name: 'World map' });
+    const svg = document.querySelector<SVGSVGElement>('.focused-world-map__svg')!;
+    const zoomButton = screen.getByRole('button', { name: 'Zoom in' });
+    fireEvent.click(zoomButton);
+    const touch = (
+      target: Element,
+      type: 'touchstart' | 'touchend' | 'touchcancel',
+      clientX = 200,
+      clientY = 100,
+    ) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      const points = [{ identifier: 1, clientX, clientY }];
+      if (type === 'touchstart') Object.defineProperty(event, 'touches', { value: points });
+      if (type === 'touchend') Object.defineProperty(event, 'changedTouches', { value: points });
+      fireEvent(target, event);
+    };
+
+    touch(svg, 'touchstart');
+    touch(dialog, 'touchend', 300);
+    touch(zoomButton, 'touchstart');
+    touch(dialog, 'touchend', 300);
+    expect(onFullscreenChange).not.toHaveBeenCalled();
+
+    touch(dialog, 'touchstart');
+    touch(dialog, 'touchcancel');
+    touch(dialog, 'touchend', 300);
+    expect(onFullscreenChange).not.toHaveBeenCalled();
+
+    touch(dialog, 'touchstart');
+    touch(dialog, 'touchend', 300);
+    expect(onFullscreenChange).toHaveBeenCalledWith(false);
   });
 
   it('lets the minimap be dragged without opening the map and remembers its position', () => {

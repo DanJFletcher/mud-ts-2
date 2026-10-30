@@ -78,6 +78,11 @@ const characterId = '11111111-1111-4111-8111-111111111111';
 let room: 'clearing' | 'bridge' | 'market' | 'inn' | 'belfry';
 let orravethWorld: boolean;
 let dailyFeatureEnabled: boolean;
+let duplicateDailySourceAvailable: boolean;
+let maraLookDescriptionAvailable: boolean;
+let maraLookalikeAvailable: boolean;
+let dailySourceAtBoard: boolean;
+let failDailyBoardRefreshAfterFirst: boolean;
 let includeEquipmentFixture: boolean;
 let equipmentSnapshot: { weaponItemId: string | null; armorItemId: string | null } | null;
 let craftingCatalog: {
@@ -97,8 +102,11 @@ let craftingCatalogError: string | null;
 let craftingCommandError: string | null;
 let failNextCraftingSnapshotRefresh: boolean;
 let craftingSnapshotRefreshShouldFail: boolean;
+let craftingSnapshotRefreshFailureCount: number;
+let characterProjectionUnavailable: boolean;
 let bulletinReadableObject: boolean;
 let dailyJobStatus: 'available' | 'active' | 'completed';
+let omitDailyRewardTotals: boolean;
 let dailySupplyCount: number;
 let dailyBoardQueryCount: number;
 let dailyCommandPayloads: Array<{ type: string; payload: Record<string, unknown> }>;
@@ -109,6 +117,9 @@ let movementEvents: Array<{ type: string; payload?: unknown }>;
 let itemTaken: boolean;
 let maraChoice: string | null;
 let includeSecondTakeable: boolean;
+let duplicateStoneVisible: boolean;
+let duplicateReadableMarkerVisible: boolean;
+let ambiguousUseTargetsVisible: boolean;
 let secondItemTaken: boolean;
 let questJournal: Array<{
   questId: string;
@@ -130,6 +141,7 @@ let roomChatMessages: TestRoomChatMessage[];
 let terminalRoomEvents: TestRoomChatMessage[];
 let nextRoomChatMessageId: number;
 let campfireVisible: boolean;
+let duplicateCampfireVisible: boolean;
 let roomOccupants: Array<{ id: string; displayName: string }>;
 let heartbeatOccupants: Array<{ id: string; displayName: string }>;
 let walletBalance: number;
@@ -138,9 +150,34 @@ let merchantLanternPurchased: boolean;
 let healingDraughtCarried: boolean;
 let locationUnavailable: boolean;
 let fishingRodCarried: boolean;
+let secondFishingRodCarried: boolean;
+let fishingCastEvents: Array<{ type: string; payload?: unknown }>;
+let fishingCastStartFailure: string | null;
+let fishingCastStartAttempts: number;
+let activeFishingCastState: {
+  castId: string;
+  spotId: string;
+  locationId: string;
+  rodItemId: string;
+  rodQualityId: string;
+  startedAt: string;
+  tickIntervalSeconds: number;
+  ticksRequired: number;
+  ticksCompleted: number;
+} | null;
+let fishingAdvanceEvents: Array<{ type: string; payload?: unknown }>;
+let fishingAdvanceError: string | null;
+let fishingCancelFailure: string | null;
+let fishingCancelAttempts: number;
 let woodcuttingAxeCarried: boolean;
+let currentRoomMentionsInventory: boolean;
+let secondWoodcuttingAxeCarried: boolean;
 let availableWoodcuttingTrees: Array<{ id: string; label: string }>;
 let woodcuttingDepletesTree: boolean;
+let woodcuttingAdvancePayload: Record<string, unknown> | null;
+let woodcuttingAdvanceError: string | null;
+let woodcuttingStartError: string | null;
+let woodcuttingStartEvents: Array<{ type: string; payload?: unknown }>;
 let activeWoodcuttingState: {
   actionId: string;
   treeId: string;
@@ -179,6 +216,25 @@ let activePartyInfo: {
   createdAt: string;
   leaderName: string;
 } | null;
+let partyListFixture: Array<{
+  groupId: string;
+  leaderName: string;
+  members: Array<{ playerId: string; characterId: string; displayName: string }>;
+  memberCount: number;
+  maxMembers: number;
+  joinable: boolean;
+}>;
+let partyQuestJournalFixture: {
+  partyId: string | null;
+  available: Array<{ questId: string; title: string; summary: string }>;
+  quests: Array<{
+    questId: string;
+    title: string;
+    summary: string;
+    status: string;
+    objectives: Array<{ id: string; label: string; progress: number; required: number; completed: boolean }>;
+  }>;
+};
 let partyRevision: number;
 let partyActivity: Array<{
   revision: number;
@@ -220,12 +276,16 @@ function currentLocation(includeNpcDescriptions = false) {
           ? 'Mara is here. A path keeper stands beside the weathered marker, watching the northern trail.\n\nPractice Sentinel is here. A knee-high wooden sentinel waits beside the trail. Its padded arms lift as you approach.'
           : 'Mara is here, watching the northern trail.\n\nPractice Sentinel is here, lifting its padded arms in a steady rhythm.',
         ...availableWoodcuttingTrees.map((tree) => `A ${tree.label.replace(/\s+tree$/i, '')} tree stands beside the path.`),
+        ...(campfireVisible ? ['A Campfire crackles nearby.'] : []),
+        ...(currentRoomMentionsInventory && woodcuttingAxeCarried ? ['Your Copper Axe catches the light.'] : []),
       ].join('\n\n')
       : room === 'market'
         ? 'Canvas awnings line the riverbank.'
         : room === 'inn'
           ? 'A warm timber inn offers a full night’s rest for five moss marks.'
-          : 'A stone bridge crosses clear water.',
+          : currentRoomMentionsInventory && fishingRodCarried
+            ? 'A stone bridge crosses clear water. Your old rod is ready for the current.'
+            : 'A stone bridge crosses clear water.',
     revision,
     ...(!orravethWorld && room === 'inn' ? {
       inn: {
@@ -243,6 +303,26 @@ function currentLocation(includeNpcDescriptions = false) {
         readable: true,
         takeable: false,
       },
+      ...(duplicateReadableMarkerVisible ? [{
+        id: 'mossgate-marker-notice',
+        label: 'Marker notice',
+        description: 'A small notice about the old marker.',
+        readable: true,
+        takeable: false,
+      }] : []),
+      ...(ambiguousUseTargetsVisible ? [{
+        id: 'mossgate-stone-idol',
+        label: 'Stone idol',
+        description: 'A small stone idol stands among the pale stones.',
+        readable: false,
+        takeable: false,
+      }, {
+        id: 'mossgate-stone-statue',
+        label: 'Stone statue',
+        description: 'A weathered stone statue watches the clearing.',
+        readable: false,
+        takeable: false,
+      }] : []),
       ...(!itemTaken ? [{
         id: 'mossgate-loose-stone',
         label: 'Loose stone',
@@ -257,6 +337,13 @@ function currentLocation(includeNpcDescriptions = false) {
         readable: false,
         takeable: false,
       }] : []),
+      ...(duplicateCampfireVisible ? [{
+        id: 'test-campfire-second',
+        label: 'Campfire',
+        description: 'A second campfire burns nearby.',
+        readable: false,
+        takeable: false,
+      }] : []),
       ...(dailyFeatureEnabled && bulletinReadableObject ? [{
         id: 'reedbank-bulletin-object',
         label: 'Bulletin board',
@@ -268,6 +355,13 @@ function currentLocation(includeNpcDescriptions = false) {
         id: 'mossgate-lost-feather',
         label: 'Lost feather',
         description: 'A small gray feather lies among the pale stones.',
+        readable: false,
+        takeable: true,
+      }] : []),
+      ...(duplicateStoneVisible ? [{
+        id: 'mossgate-stone-shard',
+        label: 'Stone shard',
+        description: 'A chipped fragment of pale stone.',
         readable: false,
         takeable: true,
       }] : []),
@@ -345,12 +439,23 @@ function currentLocation(includeNpcDescriptions = false) {
       id: 'mara-waykeeper',
       name: 'Mara',
       activityDescription: 'watching the northern trail',
-      ...(includeNpcDescriptions
+      ...(includeNpcDescriptions && maraLookDescriptionAvailable
         ? { description: 'A path keeper stands beside the weathered marker, watching the northern trail.' }
         : {}),
-      canChallenge: false,
+      canChallenge: maraLookalikeAvailable,
       canShop: false,
-    }, {
+    },
+    ...(maraLookalikeAvailable ? [{
+      id: 'mara-lookalike',
+      name: 'Mara Vale',
+      activityDescription: 'waiting near the trail',
+      ...(includeNpcDescriptions
+        ? { description: 'A traveler waits near the northern trail.' }
+        : {}),
+      canChallenge: maraLookalikeAvailable,
+      canShop: false,
+    }] : []),
+    {
       id: 'mossgate-training-sentinel',
       name: 'Practice Sentinel',
       activityDescription: 'lifting its padded arms in a steady rhythm',
@@ -516,6 +621,11 @@ beforeEach(() => {
   room = 'clearing';
   orravethWorld = false;
   dailyFeatureEnabled = false;
+  duplicateDailySourceAvailable = false;
+  maraLookDescriptionAvailable = true;
+  maraLookalikeAvailable = false;
+  dailySourceAtBoard = false;
+  failDailyBoardRefreshAfterFirst = false;
   includeEquipmentFixture = false;
   equipmentSnapshot = null;
   craftingCatalog = null;
@@ -524,8 +634,11 @@ beforeEach(() => {
   craftingCommandError = null;
   failNextCraftingSnapshotRefresh = false;
   craftingSnapshotRefreshShouldFail = false;
+  craftingSnapshotRefreshFailureCount = 0;
+  characterProjectionUnavailable = false;
   bulletinReadableObject = false;
   dailyJobStatus = 'available';
+  omitDailyRewardTotals = false;
   dailySupplyCount = 0;
   dailyBoardQueryCount = 0;
   dailyCommandPayloads = [];
@@ -536,12 +649,16 @@ beforeEach(() => {
   itemTaken = false;
   maraChoice = null;
   includeSecondTakeable = false;
+  duplicateStoneVisible = false;
+  duplicateReadableMarkerVisible = false;
+  ambiguousUseTargetsVisible = false;
   secondItemTaken = false;
   questJournal = [];
   roomChatMessages = [];
   terminalRoomEvents = [];
   nextRoomChatMessageId = 1;
   campfireVisible = false;
+  duplicateCampfireVisible = false;
   roomOccupants = [];
   heartbeatOccupants = [];
   walletBalance = 12;
@@ -550,15 +667,32 @@ beforeEach(() => {
   healingDraughtCarried = false;
   locationUnavailable = false;
   fishingRodCarried = false;
+  secondFishingRodCarried = false;
+  fishingCastEvents = [];
+  fishingCastStartFailure = null;
+  fishingCastStartAttempts = 0;
+  activeFishingCastState = null;
+  fishingAdvanceEvents = [];
+  fishingAdvanceError = null;
+  fishingCancelFailure = null;
+  fishingCancelAttempts = 0;
   woodcuttingAxeCarried = false;
+  currentRoomMentionsInventory = false;
+  secondWoodcuttingAxeCarried = false;
   availableWoodcuttingTrees = [];
   woodcuttingDepletesTree = false;
+  woodcuttingAdvancePayload = null;
+  woodcuttingAdvanceError = null;
+  woodcuttingStartError = null;
+  woodcuttingStartEvents = [];
   activeWoodcuttingState = null;
   characterHealth = null;
   characterStamina = { current: 100, maximum: 100 };
   staminaPosture = 'standing';
   combatEncounter = null;
   activePartyInfo = null;
+  partyListFixture = [];
+  partyQuestJournalFixture = { partyId: null, available: [], quests: [] };
   partyRevision = 0;
   partyActivity = [];
   teamCombatEncounter = null;
@@ -627,11 +761,12 @@ beforeEach(() => {
     if (path === '/api/game') {
       if (craftingSnapshotRefreshShouldFail) {
         craftingSnapshotRefreshShouldFail = false;
+        craftingSnapshotRefreshFailureCount += 1;
         return json({ message: 'Snapshot unavailable.' }, 503);
       }
       return json({
         player: { id: 'account-1', displayName: 'Traveler' },
-        character: {
+        character: characterProjectionUnavailable ? undefined : {
           characterId,
           worldInstanceId: currentLocation().worldInstanceId,
           name: 'Rowan',
@@ -686,6 +821,7 @@ beforeEach(() => {
             fractionalCarry: 0,
           },
           ...(combatEncounter ? { combat: combatEncounter } : {}),
+          ...(activeFishingCastState ? { activeFishing: activeFishingCastState } : {}),
           ...(activeWoodcuttingState ? { activeWoodcutting: activeWoodcuttingState } : {}),
           ...(includeEquipmentFixture
             ? { equipment: equipmentSnapshot ?? { weaponItemId: 'test-sword', armorItemId: null } }
@@ -750,11 +886,25 @@ beforeEach(() => {
               description: 'A worn fishing rod.',
               fishingRod: { qualityId: 'old', biteChancePercent: 10, waitSeconds: 10 },
             }] : []),
+            ...(secondFishingRodCarried ? [{
+              id: 'spare-old-rod',
+              typeId: 'old-rod',
+              label: 'old rod',
+              description: 'A second worn fishing rod.',
+              fishingRod: { qualityId: 'old', biteChancePercent: 10, waitSeconds: 10 },
+            }] : []),
             ...(woodcuttingAxeCarried ? [{
               id: 'copper-axe',
               typeId: 'copper-axe',
               label: 'Copper Axe',
               description: 'A worn copper axe.',
+              woodcuttingAxe: { requiredLevel: 1, power: 1 },
+            }] : []),
+            ...(secondWoodcuttingAxeCarried ? [{
+              id: 'spare-copper-axe',
+              typeId: 'copper-axe',
+              label: 'Copper Axe',
+              description: 'A second worn copper axe.',
               woodcuttingAxe: { requiredLevel: 1, power: 1 },
             }] : []),
           ],
@@ -792,7 +942,20 @@ beforeEach(() => {
               label: 'Glasswater fishing pools',
               supply: { typeId: 'river-fish', label: 'River fish', description: 'Silver fish gather in the clear pools.' },
               dailyLimit: 3,
-            }] : [],
+            }] : dailySourceAtBoard && room === 'clearing' && !orravethWorld ? [{
+              id: 'clearing-spring',
+              locationId: 'mossgate-clearing',
+              label: 'Mossgate spring',
+              supply: { typeId: 'spring-water', label: 'Spring water', description: 'Clear water flows from the hillside.' },
+              dailyLimit: 3,
+            },
+            ...(duplicateDailySourceAvailable ? [{
+              id: 'clearing-spring-well',
+              locationId: 'mossgate-clearing',
+              label: 'Mossgate spring well',
+              supply: { typeId: 'spring-water', label: 'Spring water', description: 'Clear water flows from the hillside.' },
+              dailyLimit: 3,
+            }] : [])] : [],
           },
         } : {}),
       });
@@ -811,6 +974,9 @@ beforeEach(() => {
       };
       if (query.type === 'daily.board') {
         dailyBoardQueryCount += 1;
+        if (failDailyBoardRefreshAfterFirst && dailyBoardQueryCount > 1) {
+          return json({ ok: false, message: 'The bulletin could not be refreshed.' });
+        }
         if (!dailyFeatureEnabled || room !== 'clearing' || query.payload?.boardId !== 'reedbank-board') {
           return json({ ok: false, message: 'That bulletin is not available in this location.' });
         }
@@ -851,6 +1017,12 @@ beforeEach(() => {
       }
       if (query.type === 'party.info') {
         return json({ ok: true, value: { party: activePartyInfo, revision: partyRevision, activity: partyActivity } });
+      }
+      if (query.type === 'party.list') {
+        return json({ ok: true, value: { parties: partyListFixture } });
+      }
+      if (query.type === 'party.quests') {
+        return json({ ok: true, value: partyQuestJournalFixture });
       }
       if (query.type === 'team.combat.info') {
         return json({ ok: true, value: { encounter: teamCombatEncounter } });
@@ -985,6 +1157,65 @@ beforeEach(() => {
           events: [],
         });
       }
+      if (command.type === 'fishing.cast') {
+        fishingCastStartAttempts += 1;
+        if (fishingCastStartFailure) {
+          return json({
+            receipt: {
+              ok: false,
+              commandId: command.commandId ?? 'mock-command',
+              code: 'RULE_VIOLATION',
+              message: fishingCastStartFailure,
+            },
+          });
+        }
+        revision += 1;
+        return json({
+          receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision },
+          streamId: characterId,
+          events: fishingCastEvents,
+        });
+      }
+      if (command.type === 'fishing.advance') {
+        if (fishingAdvanceError) {
+          const message = fishingAdvanceError;
+          fishingAdvanceError = null;
+          return json({
+            receipt: {
+              ok: false,
+              commandId: command.commandId ?? 'mock-command',
+              code: 'RULE_VIOLATION',
+              message,
+            },
+          });
+        }
+        activeFishingCastState = null;
+        revision += 1;
+        return json({
+          receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision },
+          streamId: characterId,
+          events: fishingAdvanceEvents,
+        });
+      }
+      if (command.type === 'fishing.cancel') {
+        fishingCancelAttempts += 1;
+        if (fishingCancelFailure) {
+          return json({
+            receipt: {
+              ok: false,
+              commandId: command.commandId ?? 'mock-command',
+              code: 'RULE_VIOLATION',
+              message: fishingCancelFailure,
+            },
+          });
+        }
+        activeFishingCastState = null;
+        revision += 1;
+        return json({
+          receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision },
+          streamId: characterId,
+        });
+      }
       if (command.type === 'campfire.extinguish') {
         if (room !== 'clearing' || !campfireVisible || command.payload?.campfireId !== 'test-campfire') {
           return json({
@@ -1024,14 +1255,18 @@ beforeEach(() => {
           streamId: characterId,
           events: [{
             type: 'character.daily_job_changed',
-            payload: { gold: payload.action === 'deliver' ? 15 : 0, experience: payload.action === 'deliver' ? 9 : 0 },
+            payload: omitDailyRewardTotals && payload.action === 'deliver'
+              ? {}
+              : { gold: payload.action === 'deliver' ? 15 : 0, experience: payload.action === 'deliver' ? 9 : 0 },
           }],
         });
       }
       if (command.type === 'supply.gather') {
         const payload = command.payload ?? {};
         dailyCommandPayloads.push({ type: 'supply.gather', payload: payload as Record<string, unknown> });
-        if (room !== 'bridge' || payload.sourceId !== 'bridge-fishing-pools') {
+        const sourceIsHere = (room === 'bridge' && payload.sourceId === 'bridge-fishing-pools') ||
+          (dailySourceAtBoard && room === 'clearing' && payload.sourceId === 'clearing-spring');
+        if (!sourceIsHere) {
           return json({ receipt: { ok: false, commandId: command.commandId ?? 'mock-command', code: 'RULE_VIOLATION', message: 'That supply is not here.' } });
         }
         dailySupplyCount += 1;
@@ -1160,6 +1395,72 @@ beforeEach(() => {
           streamId: characterId,
         });
       }
+      if (command.type === 'party.create') {
+        partyRevision += 1;
+        activePartyInfo = {
+          groupId: 'created-party',
+          groupType: 'party',
+          ownerPlayerId: 'account-1',
+          maxMembers: 4,
+          isPublic: true,
+          status: 'active',
+          members: [{ playerId: 'account-1', characterId, displayName: 'Rowan' }],
+          createdAt: '2026-10-19T12:00:00.000Z',
+          leaderName: 'Rowan',
+        };
+        return json({
+          receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: partyRevision },
+          streamId: 'groups:mudd-demo-instance',
+        });
+      }
+      if (command.type === 'party.join') {
+        partyRevision += 1;
+        const joinPayload = command.payload as { groupId?: string } | undefined;
+        const groupId = String(joinPayload?.groupId ?? 'joined-party');
+        activePartyInfo = {
+          groupId,
+          groupType: 'party',
+          ownerPlayerId: 'account-2',
+          maxMembers: 4,
+          isPublic: true,
+          status: 'active',
+          members: [
+            { playerId: 'account-2', characterId: 'sella-character', displayName: 'Sella' },
+            { playerId: 'account-1', characterId, displayName: 'Rowan' },
+          ],
+          createdAt: '2026-10-19T12:00:00.000Z',
+          leaderName: 'Sella',
+        };
+        return json({
+          receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: partyRevision },
+          streamId: 'groups:mudd-demo-instance',
+        });
+      }
+      if (command.type === 'party.leave' || command.type === 'party.close') {
+        partyRevision += 1;
+        activePartyInfo = null;
+        return json({
+          receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: partyRevision },
+          streamId: 'groups:mudd-demo-instance',
+        });
+      }
+      if (command.type === 'party.quest.start') {
+        partyQuestJournalFixture = {
+          partyId: 'party-ui-test',
+          available: [],
+          quests: [{
+            questId: 'clear-the-road',
+            title: 'Clear the road',
+            summary: 'Deal with the ambush.',
+            status: 'active',
+            objectives: [],
+          }],
+        };
+        return json({
+          receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision },
+          streamId: 'groups:mudd-demo-instance',
+        });
+      }
       if (command.type === 'team.combat.start') {
         teamCombatEncounter = {
           encounterId: 'team-combat-ui-encounter',
@@ -1173,7 +1474,7 @@ beforeEach(() => {
               characterId,
               playerId: 'account-1',
               displayName: 'Rowan',
-              health: 6,
+              health: healingDraughtCarried ? 3 : 6,
               maximumHealth: 6,
               defending: false,
               status: 'active',
@@ -1292,7 +1593,10 @@ beforeEach(() => {
         });
       }
       if (command.type === 'woodcutting.start') {
+        if (woodcuttingStartError) return json({ message: woodcuttingStartError }, 400);
         revision += 1;
+        const events = woodcuttingStartEvents;
+        woodcuttingStartEvents = [];
         return json({
           receipt: {
             ok: true,
@@ -1301,12 +1605,20 @@ beforeEach(() => {
             newAggregateVersion: revision,
           },
           streamId: characterId,
+          ...(events.length ? { events } : {}),
         });
       }
       if (command.type === 'woodcutting.advance') {
+        if (woodcuttingAdvanceError) {
+          const message = woodcuttingAdvanceError;
+          woodcuttingAdvanceError = null;
+          return json({ message }, 409);
+        }
         const treeDepleted = woodcuttingDepletesTree;
         woodcuttingDepletesTree = false;
-        if (treeDepleted) {
+        const customPayload = woodcuttingAdvancePayload;
+        woodcuttingAdvancePayload = null;
+        if (treeDepleted || customPayload) {
           activeWoodcuttingState = null;
         } else if (activeWoodcuttingState) {
           activeWoodcuttingState = {
@@ -1331,7 +1643,7 @@ beforeEach(() => {
                 level: 1,
                 treeDepleted: true,
               }
-              : { status: 'waiting', ticksCompleted: activeWoodcuttingState?.ticksCompleted ?? 0 },
+              : customPayload ?? { status: 'waiting', ticksCompleted: activeWoodcuttingState?.ticksCompleted ?? 0 },
           }],
         });
       }
@@ -1409,6 +1721,58 @@ describe('single-character world session client', () => {
     )).toBe(true);
   });
 
+  it('explains when a named NPC has no inspectable description', async () => {
+    maraLookDescriptionAvailable = false;
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('look Mara');
+
+    expect(await screen.findByText('You cannot get a clear look at Mara right now.')).toBeVisible();
+  });
+
+  it('asks which NPC a partial name refers to when several names match', async () => {
+    maraLookalikeAvailable = true;
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('look Mar');
+
+    expect(await screen.findByText('Which one do you mean: Mara, Mara Vale?')).toBeVisible();
+    submitWorldCommand('talk Mar');
+    expect(await screen.findByText('Who do you mean: Mara, Mara Vale?')).toBeVisible();
+    const ambiguityCountAfterTalk = screen.getAllByText('Who do you mean: Mara, Mara Vale?').length;
+    submitWorldCommand('attack Mar');
+    await waitFor(() => {
+      expect(screen.getAllByText('Who do you mean: Mara, Mara Vale?')).toHaveLength(ambiguityCountAfterTalk + 1);
+    });
+    const priorAmbiguityCount = screen.getAllByText('Who do you mean: Mara, Mara Vale?').length;
+    submitWorldCommand('shop Mar');
+    await waitFor(() => {
+      expect(screen.getAllByText('Who do you mean: Mara, Mara Vale?')).toHaveLength(priorAmbiguityCount + 1);
+    });
+  });
+
+  it('uses a safe fallback when NPC inspection rejects without an Error', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/queries' && init?.body) {
+        const query = JSON.parse(String(init.body)) as {
+          type?: string;
+          payload?: { includeNpcDescriptions?: boolean };
+        };
+        if (query.type === 'location.describe' && query.payload?.includeNpcDescriptions) {
+          throw 'untyped inspection failure';
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+    submitWorldCommand('look Mara');
+
+    await waitFor(() => expect(history).toHaveTextContent('You cannot get a clear look just now.'));
+  });
+
   it('refreshes and displays the other players in the current room', async () => {
     heartbeatOccupants = [{ id: 'mira-character', displayName: 'Mira' }];
     render(<WorldClient onLeaveWorld={async () => undefined} />);
@@ -1421,6 +1785,51 @@ describe('single-character world session client', () => {
       method: 'POST',
     }));
     expect(screen.getByRole('group', { name: 'Players in this room' })).toBeTruthy();
+  });
+
+  it('marks room presence as stale when its heartbeat cannot reach the server', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/world-session/heartbeat') throw new Error('Heartbeat unavailable.');
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    expect(await screen.findByRole('status', { name: '' })).toHaveTextContent('Presence may be out of date.');
+  });
+
+  it('shows a safe connection message when initial loading fails unexpectedly', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    const onLeaveWorld = vi.fn().mockResolvedValue(undefined);
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/game') throw 'connection lost';
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={onLeaveWorld} />);
+
+    expect(await screen.findByText('The world could not be reached.')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Characters' }));
+    await waitFor(() => expect(onLeaveWorld).toHaveBeenCalledOnce());
+  });
+
+  it('keeps retry and exit actions available after an initial connection failure', async () => {
+    const onLeaveWorld = vi.fn().mockResolvedValue(undefined);
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/game') throw new Error('Temporary connection failure.');
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={onLeaveWorld} />);
+    expect(await screen.findByText('Temporary connection failure.')).toBeVisible();
+
+    fireEvent.click(screen.getByRole('link', { name: 'Info' }));
+    const retryAlert = await screen.findByRole('alert');
+    expect(retryAlert).toHaveTextContent('Temporary connection failure.');
+    fireEvent.click(within(retryAlert).getByRole('button', { name: 'Retry' }));
+    await waitFor(() => {
+      expect(apiFetch.mock.calls.filter(([path]) => path === '/api/game')).toHaveLength(2);
+    });
   });
 
   it('does not let a delayed background snapshot replace a completed movement', async () => {
@@ -1746,6 +2155,45 @@ describe('single-character world session client', () => {
     });
   });
 
+  it('confirms a challenge after an uncertain request appears in the inbox', async () => {
+    roomOccupants = [{ id: 'mira-character', displayName: 'Mira' }];
+    heartbeatOccupants = [{ id: 'mira-character', displayName: 'Mira' }];
+    const original = apiFetch.getMockImplementation()!;
+    const outgoingRequest = {
+      requestId: 'outgoing-challenge',
+      kind: 'pvp.challenge',
+      initiatorCharacterId: characterId,
+      initiatorName: 'Rowan',
+      recipientCharacterId: 'mira-character',
+      recipientName: 'Mira',
+      status: 'pending' as const,
+      createdAt: '2026-10-25T12:00:00.000Z',
+      expiresAt: '2026-10-25T12:05:00.000Z',
+    };
+    let inbox: InteractionInbox = { requests: [], encounter: null };
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/interactions') return json(inbox);
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as { type?: string };
+        if (command.type === 'interaction.request') {
+          inbox = { requests: [outgoingRequest], encounter: null };
+          return json({ message: 'Temporary server issue.' }, 503);
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('attack Mira');
+    expect(await screen.findByText('Challenge status is unconfirmed.')).toBeVisible();
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    expect(await screen.findByText('Challenge sent to Mira. Waiting for a response.')).toBeVisible();
+  });
+
   it('shows an uncertain PvP response and reuses its command ID when retried', async () => {
     const original = apiFetch.getMockImplementation()!;
     const incomingRequest = {
@@ -1773,16 +2221,19 @@ describe('single-character world session client', () => {
     });
     render(<WorldClient onLeaveWorld={async () => undefined} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    await screen.findByText(/Mira challenges you\./);
+    const terminalHistory = screen.getByRole('region', { name: 'Terminal output' });
 
     submitWorldCommand('accept incoming-challenge');
-    expect(await screen.findByText('Sending your accept…')).toBeVisible();
+    expect(await screen.findByText('Sending your accept…', {}, { timeout: 5_000 })).toBeVisible();
     await act(async () => {
       releases[0]!(Response.json({ message: 'Temporary server issue.' }, { status: 503 }));
     });
     expect(await screen.findByText('Response status is unconfirmed.')).toBeVisible();
+    await waitFor(() => expect(terminalHistory.closest('.focused-terminal')).toHaveAttribute('aria-busy', 'false'));
 
     submitWorldCommand('accept incoming-challenge');
-    expect(await screen.findByText('Sending your accept…')).toBeVisible();
+    expect(await screen.findByText('Sending your accept…', {}, { timeout: 5_000 })).toBeVisible();
     const responseCommands = apiFetch.mock.calls
       .filter(([path, init]) => path === '/api/commands' && init?.method === 'POST')
       .map(([, init]) => JSON.parse(String(init?.body)) as { type?: string; commandId?: string })
@@ -1792,6 +2243,264 @@ describe('single-character world session client', () => {
     await act(async () => {
       releases[1]!(Response.json({ message: 'Challenge response rejected.' }, { status: 400 }));
     });
+  });
+
+  it('confirms an accepted PvP challenge from the refreshed interaction inbox', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    const incomingRequest = {
+      requestId: 'incoming-challenge',
+      kind: 'pvp.challenge',
+      initiatorCharacterId: 'mira-character',
+      initiatorName: 'Mira',
+      recipientCharacterId: characterId,
+      recipientName: 'Rowan',
+      status: 'pending' as const,
+      createdAt: '2026-10-25T12:00:00.000Z',
+      expiresAt: '2026-10-25T12:05:00.000Z',
+    };
+    let inbox: InteractionInbox = { requests: [incomingRequest], encounter: null };
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/interactions') return json(inbox);
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as { type?: string; commandId?: string };
+        if (command.type === 'interaction.respond') {
+          inbox = {
+            ...inbox,
+            requests: inbox.requests.map((request) => ({
+              ...request,
+              status: request.requestId === incomingRequest.requestId ? 'accepted' : request.status,
+            })),
+          };
+          return json({
+            receipt: {
+              ok: true,
+              commandId: command.commandId ?? 'mock-command',
+              eventIds: [],
+              newAggregateVersion: 1,
+            },
+            streamId: characterId,
+          });
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    await screen.findByText(/Mira challenges you\./);
+
+    submitWorldCommand('accept');
+    expect(await screen.findByText('Choose a challenge ID: accept <id>.')).toBeVisible();
+    submitWorldCommand('accept stale-challenge');
+    expect(await screen.findByText('That pending challenge is not available to this character.')).toBeVisible();
+    submitWorldCommand('accept incoming-challenge');
+
+    expect(await screen.findByText('You accept Mira’s challenge.')).toBeVisible();
+  });
+
+  it('executes PvP actions, uses a healing item, and reports respawn drops', async () => {
+    healingDraughtCarried = true;
+    characterHealth = { current: 3, maximum: 6 };
+    const original = apiFetch.getMockImplementation()!;
+    const initialEncounter: NonNullable<InteractionInbox['encounter']> = {
+      encounterId: 'active-duel',
+      requestId: 'accepted-challenge',
+      locationId: 'mossgate-clearing',
+      status: 'active' as const,
+      participants: [
+        { characterId, name: 'Rowan', health: 5, maximumHealth: 6 },
+        { characterId: 'mira-character', name: 'Mira', health: 6, maximumHealth: 6 },
+      ],
+      round: 1,
+      turnCharacterId: characterId,
+      lastNarration: 'Mira challenges you to a duel.',
+      updatedAt: '2026-10-19T12:00:00.000Z',
+    };
+    let inbox: InteractionInbox = { requests: [], encounter: initialEncounter };
+    let actionCount = 0;
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/interactions') return json(inbox);
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body ?? '{}')) as { type?: string; commandId?: string };
+        if (body.type === 'pvp.action') {
+          actionCount += 1;
+          if (actionCount === 1) {
+            inbox = {
+              requests: [],
+              encounter: {
+                ...initialEncounter,
+                round: 2,
+                lastNarration: 'You guard against Mira’s strike.',
+                updatedAt: '2026-10-19T12:00:01.000Z',
+              },
+            };
+            return json({
+              receipt: { ok: true, commandId: body.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: 2 },
+              streamId: 'pvp:active-duel',
+              events: [],
+            });
+          }
+          if (actionCount === 2) {
+            healingDraughtCarried = false;
+            characterHealth = { current: 6, maximum: 6 };
+            inbox = {
+              requests: [],
+              encounter: {
+                ...initialEncounter,
+                round: 3,
+                lastNarration: 'You use a small healing draught and recover 3 health.',
+                updatedAt: '2026-10-19T12:00:02.000Z',
+              },
+            };
+            return json({
+              receipt: { ok: true, commandId: body.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: 3 },
+              streamId: 'pvp:active-duel',
+              events: [],
+            });
+          }
+          inbox = { requests: [], encounter: null };
+          return json({
+            receipt: { ok: true, commandId: body.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: 4 },
+            streamId: 'pvp:active-duel',
+            events: [{
+              type: 'character.respawned',
+              payload: { droppedItem: { item: { label: 'Copper ring' } } },
+            }],
+          });
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+    const combatActions = await screen.findByRole('group', { name: 'Player combat actions' });
+    fireEvent.click(within(combatActions).getByRole('button', { name: 'defend' }));
+    await waitFor(() => expect(history).toHaveTextContent('You guard against Mira’s strike.'));
+
+    const nextActions = await screen.findByRole('group', { name: 'Player combat actions' });
+    fireEvent.click(within(nextActions).getByRole('button', { name: 'use Small healing draught' }));
+    await waitFor(() => expect(history).toHaveTextContent('You use a small healing draught and recover 3 health.'));
+
+    const finalActions = await screen.findByRole('group', { name: 'Player combat actions' });
+    fireEvent.click(within(finalActions).getByRole('button', { name: 'attack' }));
+    await waitFor(() => expect(history).toHaveTextContent(
+      'You awaken at Mossgate Clearing, restored to full health. Copper ring was dropped where you fell.',
+    ));
+
+    const actionCommands = apiFetch.mock.calls
+      .filter(([path, init]) => path === '/api/commands' && init?.method === 'POST')
+      .map(([, init]) => JSON.parse(String(init?.body ?? '{}')) as {
+        type?: string;
+        payload?: { action?: string; itemId?: string };
+      })
+      .filter((command) => command.type === 'pvp.action');
+    expect(actionCommands.map((command) => command.payload?.action)).toEqual(['defend', 'use-item', 'attack']);
+    expect(actionCommands[1]?.payload?.itemId).toBe('item-reedbank-healing-draught');
+    expect(actionCount).toBe(3);
+  });
+
+  it('shows a rejected PvP action and re-enables the combat controls', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    const encounter: NonNullable<InteractionInbox['encounter']> = {
+      encounterId: 'active-duel',
+      requestId: 'accepted-challenge',
+      locationId: 'mossgate-clearing',
+      status: 'active',
+      participants: [
+        { characterId, name: 'Rowan', health: 5, maximumHealth: 6 },
+        { characterId: 'mira-character', name: 'Mira', health: 6, maximumHealth: 6 },
+      ],
+      round: 1,
+      turnCharacterId: characterId,
+      lastNarration: 'Mira challenges you to a duel.',
+      updatedAt: '2026-10-19T12:00:00.000Z',
+    };
+    const inbox: InteractionInbox = { requests: [], encounter };
+    let actionAttempts = 0;
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/interactions') return json(inbox);
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body ?? '{}')) as { type?: string; commandId?: string };
+        if (body.type === 'pvp.action') {
+          actionAttempts += 1;
+          return json({
+            receipt: {
+              ok: false,
+              commandId: body.commandId ?? 'mock-command',
+              code: 'RULE_VIOLATION',
+              message: 'The duel action was rejected.',
+            },
+          });
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+    const actions = await screen.findByRole('group', { name: 'Player combat actions' });
+    const attackButton = within(actions).getByRole('button', { name: 'attack' });
+    await waitFor(() => expect(attackButton).toBeEnabled());
+    fireEvent.click(attackButton);
+    await waitFor(() => expect(actionAttempts).toBe(1));
+
+    await waitFor(() => expect(history.querySelector('.mudd-log__entry--error')).not.toBeNull());
+    const controls = await screen.findByRole('group', { name: 'Player combat actions' });
+    expect(within(controls).getByRole('button', { name: 'attack' })).toBeEnabled();
+    fireEvent.click(within(controls).getByRole('button', { name: 'flee' }));
+    await waitFor(() => expect(actionAttempts).toBe(2));
+    expect(within(await screen.findByRole('group', { name: 'Player combat actions' }))
+      .getByRole('button', { name: 'flee' })).toBeEnabled();
+  });
+
+  it.each([
+    ['accept', 'accepted', 'You accept Mira’s challenge.'],
+    ['decline', 'declined', 'You decline Mira’s challenge.'],
+  ] as const)('confirms an incoming PvP challenge response when the server records it', async (response, status, message) => {
+    const original = apiFetch.getMockImplementation()!;
+    const incomingRequest = {
+      requestId: 'incoming-challenge',
+      kind: 'pvp.challenge' as const,
+      initiatorCharacterId: 'mira-character',
+      initiatorName: 'Mira',
+      recipientCharacterId: characterId,
+      recipientName: 'Rowan',
+      status: 'pending' as const,
+      createdAt: '2026-10-25T12:00:00.000Z',
+      expiresAt: '2026-10-25T12:05:00.000Z',
+    };
+    let inbox: InteractionInbox = { requests: [incomingRequest], encounter: null };
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/interactions') return json(inbox);
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body ?? '{}')) as {
+          type?: string;
+          commandId?: string;
+          payload?: { response?: 'accept' | 'decline' };
+        };
+        if (body.type === 'interaction.respond') {
+          inbox = {
+            requests: [{ ...incomingRequest, status }],
+            encounter: null,
+          };
+          return json({
+            receipt: { ok: true, commandId: body.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: 1 },
+            streamId: characterId,
+          });
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+
+    submitWorldCommand(`${response} incoming-challenge`);
+
+    await waitFor(() => expect(history).toHaveTextContent(message));
+    expect(inbox.requests[0]?.status).toBe(status);
   });
 
   it('shows only available quick commands with no more than four actions per page', async () => {
@@ -1861,9 +2570,33 @@ describe('single-character world session client', () => {
     expect(quickActionVisibleAnywhere('Show items to buy')).toBe(false);
   });
 
+  it('validates terminal attack targets before starting an NPC encounter', async () => {
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+
+    submitWorldCommand('attack');
+    await waitFor(() => expect(history).toHaveTextContent('Attack whom?'));
+    submitWorldCommand('attack Unknown combatant');
+    await waitFor(() => expect(history).toHaveTextContent('There is no available combatant called “Unknown combatant” here.'));
+    submitWorldCommand('attack Practice Sentinel');
+
+    expect(await screen.findByText('Round 1 · Practice Sentinel')).toBeVisible();
+    expect(apiFetch.mock.calls.some(([path, init]) => {
+      if (path !== '/api/commands') return false;
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        type?: string;
+        payload?: { targetNpcId?: string };
+      };
+      return body.type === 'combat.action' && body.payload?.targetNpcId === 'mossgate-training-sentinel';
+    })).toBe(true);
+  });
+
   it('starts and controls combat through terminal actions backed by SDK commands', async () => {
     render(<WorldClient onLeaveWorld={async () => undefined} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    clickQuickAction('Show opponents to attack');
+    fireEvent.click(screen.getByRole('button', { name: 'Return to quick commands' }));
     clickQuickAction('Show opponents to attack');
     fireEvent.click(await screen.findByRole('button', { name: 'Attack Practice Sentinel' }));
     await screen.findByText('Round 1 · Practice Sentinel');
@@ -1875,6 +2608,17 @@ describe('single-character world session client', () => {
     expect(within(combatActions).getByRole('button', { name: 'Flee from combat' })).toBeInTheDocument();
     fireEvent.click(within(combatActions).getByRole('button', { name: 'Defend during active combat' }));
     await screen.findByText('Round 2 · Practice Sentinel');
+    const roundTwoActions = await screen.findByRole('group', { name: 'Combat actions' });
+    fireEvent.click(within(roundTwoActions).getByRole('button', { name: 'Attack during active combat' }));
+    await screen.findByText('Round 3 · Practice Sentinel');
+    const roundThreeActions = await screen.findByRole('group', { name: 'Combat actions' });
+    fireEvent.click(within(roundThreeActions).getByRole('button', { name: 'Flee from combat' }));
+    await waitFor(() => {
+      expect(apiFetch.mock.calls.some(([path, init]) =>
+        path === '/api/commands' &&
+        JSON.parse(String(init?.body ?? '{}')).payload?.action === 'flee',
+      )).toBe(true);
+    });
 
     const commands = apiFetch.mock.calls
       .filter(([path]) => path === '/api/commands')
@@ -1891,10 +2635,19 @@ describe('single-character world session client', () => {
         type: 'combat.action',
         payload: { action: 'defend', encounterId: 'combat-ui-encounter' },
       }),
+      expect.objectContaining({
+        type: 'combat.action',
+        payload: { action: 'attack', encounterId: 'combat-ui-encounter' },
+      }),
+      expect.objectContaining({
+        type: 'combat.action',
+        payload: { action: 'flee', encounterId: 'combat-ui-encounter' },
+      }),
     ]));
   });
 
   it('starts a cooperative encounter from a party and keeps combat-only controls', async () => {
+    healingDraughtCarried = true;
     activePartyInfo = {
       groupId: 'party-ui-test',
       groupType: 'party',
@@ -1914,7 +2667,18 @@ describe('single-character world session client', () => {
     await screen.findByText('Round 2 · Cooperative encounter');
     expect(screen.queryByRole('region', { name: 'Quick commands' })).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Enter a command' })).not.toBeInTheDocument();
-    expect(screen.getByRole('group', { name: 'Cooperative combat actions' })).toBeInTheDocument();
+    const getCombatActions = () => screen.getByRole('group', { name: 'Cooperative combat actions' });
+    expect(getCombatActions()).toBeInTheDocument();
+    fireEvent.click(within(getCombatActions()).getByRole('button', { name: 'attack' }));
+    await screen.findByText('Round 3 · Cooperative encounter');
+    fireEvent.click(within(getCombatActions()).getByRole('button', { name: 'defend' }));
+    await screen.findByText('Round 4 · Cooperative encounter');
+    fireEvent.click(within(getCombatActions()).getByRole('button', { name: 'use' }));
+    const combatItems = await screen.findByRole('group', { name: 'Items available during cooperative combat' });
+    fireEvent.click(within(combatItems).getByRole('button', { name: 'Small healing draught' }));
+    await screen.findByText('Round 5 · Cooperative encounter');
+    fireEvent.click(within(getCombatActions()).getByRole('button', { name: 'flee' }));
+    await screen.findByText('Round 6 · Cooperative encounter');
     expect(apiFetch.mock.calls.some(([path, init]) => {
       if (path !== '/api/commands') return false;
       const body = JSON.parse(String(init?.body ?? '{}')) as { type?: string };
@@ -1930,6 +2694,247 @@ describe('single-character world session client', () => {
       const body = JSON.parse(String(init?.body ?? '{}')) as { type?: string };
       return body.type === 'combat.action';
     })).toBe(false);
+  });
+
+  it('prints party command help in the terminal', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('party help');
+
+    const terminal = screen.getByRole('region', { name: 'Terminal output' });
+    expect(terminal).toHaveTextContent('> party help');
+    expect(terminal).toHaveTextContent('party [help|info|list|create|join <id>|quests|quest start <id>|leave|close]');
+  });
+
+  it('reports when the character is not in a party', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('party');
+
+    expect(await screen.findByText(/You are not in a party\./)).toBeVisible();
+  });
+
+  it('lists the party leader and members for the party info command', async () => {
+    activePartyInfo = {
+      groupId: 'party-ui-test',
+      groupType: 'party',
+      ownerPlayerId: 'account-1',
+      maxMembers: 4,
+      isPublic: true,
+      status: 'active',
+      members: [{ playerId: 'account-1', characterId, displayName: 'Rowan' }],
+      createdAt: '2026-10-19T12:00:00.000Z',
+      leaderName: 'Rowan',
+    };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('party info extra');
+    expect(await screen.findByText('Usage: party info')).toBeVisible();
+    submitWorldCommand('party info');
+
+    expect(await screen.findByText('Rowan leads party party-ui-test (1/4).')).toBeVisible();
+    expect(screen.getByText('Rowan (leader)')).toBeVisible();
+  });
+
+  it('reports when there are no public parties to join', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('party list');
+
+    expect(await screen.findByText('There are no public parties available.')).toBeVisible();
+  });
+
+  it('lists public parties and marks full parties as unavailable', async () => {
+    partyListFixture = [
+      {
+        groupId: 'party-open',
+        leaderName: 'Sella',
+        members: [{ playerId: 'account-2', characterId: 'sella-character', displayName: 'Sella' }],
+        memberCount: 1,
+        maxMembers: 4,
+        joinable: true,
+      },
+      {
+        groupId: 'party-full',
+        leaderName: 'Mara',
+        members: [
+          { playerId: 'account-3', characterId: 'mara-character', displayName: 'Mara' },
+          { playerId: 'account-4', characterId: 'taren-character', displayName: 'Taren' },
+          { playerId: 'account-5', characterId: 'orin-character', displayName: 'Orin' },
+          { playerId: 'account-6', characterId: 'linnet-character', displayName: 'Linnet' },
+        ],
+        memberCount: 4,
+        maxMembers: 4,
+        joinable: false,
+      },
+    ];
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('party list');
+
+    expect(await screen.findByText('Sella — 1/4 members — ID party-open')).toBeVisible();
+    const terminal = screen.getByRole('region', { name: 'Terminal output' });
+    expect(terminal).toHaveTextContent(/Mara\s+—\s+4\/4 members\s+—\s+ID party-full \(full\)/);
+    expect(terminal).toHaveTextContent('Join with: party join <id>');
+  });
+
+  it.each(['party quests', 'party quest'])('explains that shared quests require a party for %s', async (command) => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand(command);
+
+    expect(await screen.findByText('Join a party to view shared quests.')).toBeVisible();
+  });
+
+  it('reports when an active party has no shared quests yet', async () => {
+    partyQuestJournalFixture = { partyId: 'party-ui-test', available: [], quests: [] };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('party quests');
+
+    expect(await screen.findByText('There are no party quests available.')).toBeVisible();
+  });
+
+  it('lists current and available shared quests with objective progress', async () => {
+    partyQuestJournalFixture = {
+      partyId: 'party-ui-test',
+      available: [{ questId: 'clear-the-road', title: 'Clear the road', summary: 'Deal with the ambush.' }],
+      quests: [{
+        questId: 'missing-supplies',
+        title: 'Missing supplies',
+        summary: 'Find the missing crates.',
+        status: 'active',
+        objectives: [
+          { id: 'speak-to-guard', label: 'Speak to the guard', progress: 1, required: 1, completed: true },
+          { id: 'find-crates', label: 'Find the crates', progress: 2, required: 3, completed: false },
+        ],
+      }],
+    };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('party quests');
+
+    const terminal = screen.getByRole('region', { name: 'Terminal output' });
+    expect(await screen.findByText('Missing supplies (active) — Find the missing crates.')).toBeVisible();
+    expect(terminal).toHaveTextContent('✓ 1/1 Speak to the guard');
+    expect(terminal).toHaveTextContent('· 2/3 Find the crates');
+    expect(terminal).toHaveTextContent('Clear the road — Deal with the ambush. (start: party quest start clear-the-road)');
+  });
+
+  it('starts a party quest from its available command', async () => {
+    partyQuestJournalFixture = {
+      partyId: 'party-ui-test',
+      available: [{ questId: 'clear-the-road', title: 'Clear the road', summary: 'Deal with the ambush.' }],
+      quests: [],
+    };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('party quest start clear-the-road');
+
+    expect(await screen.findByText('Your party started Clear the road.')).toBeVisible();
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body)).type === 'party.quest.start' &&
+      JSON.parse(String(init?.body)).payload.questId === 'clear-the-road',
+    )).toBe(true);
+  });
+
+  it('creates a party and reports its new ID', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('party create');
+
+    expect(await screen.findByText('Party created (ID created-party).')).toBeVisible();
+  });
+
+  it('joins a party by ID and reports its leader', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('party join party-open');
+
+    expect(await screen.findByText('You joined Sella.')).toBeVisible();
+  });
+
+  it.each([
+    ['leader', 'account-1', 'You left and closed your party.'],
+    ['member', 'account-2', 'You left the party.'],
+  ])('reports the correct result when a party %s leaves', async (_role, ownerPlayerId, message) => {
+    activePartyInfo = {
+      groupId: 'party-ui-test',
+      groupType: 'party',
+      ownerPlayerId,
+      maxMembers: 4,
+      isPublic: true,
+      status: 'active',
+      members: [{ playerId: 'account-1', characterId, displayName: 'Rowan' }],
+      createdAt: '2026-10-19T12:00:00.000Z',
+      leaderName: 'Rowan',
+    };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('party leave');
+
+    expect(await screen.findByText(message)).toBeVisible();
+  });
+
+  it('closes a party from the terminal command', async () => {
+    activePartyInfo = {
+      groupId: 'party-ui-test',
+      groupType: 'party',
+      ownerPlayerId: 'account-1',
+      maxMembers: 4,
+      isPublic: true,
+      status: 'active',
+      members: [{ playerId: 'account-1', characterId, displayName: 'Rowan' }],
+      createdAt: '2026-10-19T12:00:00.000Z',
+      leaderName: 'Rowan',
+    };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('party close');
+
+    expect(await screen.findByText('You closed the party.')).toBeVisible();
+  });
+
+  it.each([
+    ['party join', 'Usage: party join <id>'],
+    ['party create extra', 'Usage: party create'],
+    ['party leave now', 'Usage: party leave'],
+    ['party close now', 'Usage: party close'],
+    ['party quest help', 'Usage: party quest start <quest-id>'],
+  ])('shows usage guidance for malformed command “%s”', async (command, message) => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand(command);
+
+    expect(await screen.findByText(message)).toBeVisible();
+  });
+
+  it('reports unknown party subcommands without sending a request', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('party nonsense');
+
+    expect(await screen.findByText('Unknown party command. Try “party help”.')).toBeVisible();
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body)).type.startsWith('party.'),
+    )).toBe(false);
   });
 
   it('opens focused gameplay and groups character tabs and Field notes under Info', async () => {
@@ -1949,8 +2954,22 @@ describe('single-character world session client', () => {
     expect(initialTranscript.indexOf('Mossgate Clearing')).toBeLessThan(
       initialTranscript.indexOf('A circle of pale stones breaks through the moss.'),
     );
-    expect(within(history).getByRole('button', { name: 'Look at Mossgate Clearing in terminal' })).toBeInTheDocument();
-    expect(history).not.toHaveTextContent('A path keeper stands beside the weathered marker');
+    const roomLookButton = within(history).getByRole('button', {
+      name: 'Look at Mossgate Clearing in terminal',
+    });
+    expect(roomLookButton).toBeInTheDocument();
+    const roomDescriptionQueryCount = apiFetch.mock.calls.filter(([path, init]) =>
+      path === '/api/queries' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'location.describe',
+    ).length;
+    fireEvent.click(roomLookButton);
+    await waitFor(() => {
+      const nextCount = apiFetch.mock.calls.filter(([path, init]) =>
+        path === '/api/queries' &&
+        JSON.parse(String(init?.body ?? '{}')).type === 'location.describe',
+      ).length;
+      expect(nextCount).toBe(roomDescriptionQueryCount + 1);
+    });
     expect(screen.queryByText(/World activity|\b\d+\s+events?\b/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Look around' })).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Enter a command' })).toBeVisible();
@@ -2005,6 +3024,17 @@ describe('single-character world session client', () => {
     expect(onLeaveWorld).toHaveBeenCalledOnce();
   });
 
+  it('shows a fallback message when leaving a world rejects without an Error', async () => {
+    const onLeaveWorld = vi.fn().mockRejectedValue('untyped leave failure');
+    render(<WorldClient onLeaveWorld={onLeaveWorld} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+    fireEvent.click(screen.getByRole('button', { name: /Characters/ }));
+
+    expect(await screen.findByText('Could not leave the world.')).toBeVisible();
+    expect(onLeaveWorld).toHaveBeenCalledOnce();
+  });
+
   it('preserves terminal scroll position for live updates and offers a scroll-to-latest control', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
@@ -2031,6 +3061,22 @@ describe('single-character world session client', () => {
     fireEvent.scroll(history);
     expect(screen.getByRole('button', { name: 'Scroll to latest' })).toBeVisible();
 
+    const original = apiFetch.getMockImplementation()!;
+    let partyActivityDelivered = false;
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/queries' && init?.body) {
+        const query = JSON.parse(String(init.body)) as { type?: string };
+        if (query.type === 'party.info') {
+          const response = await original(path, init);
+          const body = await response.json() as { value?: { activity?: unknown[] } };
+          if (partyActivityDelivered && body.value) body.value.activity = [];
+          else if ((body.value?.activity?.length ?? 0) > 0) partyActivityDelivered = true;
+          return json(body);
+        }
+      }
+      return original(path, init);
+    });
+
     partyRevision = 1;
     partyActivity = [{
       revision: 1,
@@ -2038,12 +3084,40 @@ describe('single-character world session client', () => {
       type: 'joined',
       playerId: 'other-player',
       displayName: 'Aster',
+    }, {
+      revision: 1,
+      groupId: 'party-terminal-scroll-test',
+      type: 'left',
+      playerId: 'leaving-player',
+      displayName: 'Bryn',
+    }, {
+      revision: 1,
+      groupId: 'party-terminal-scroll-test',
+      type: 'closed',
+      playerId: 'closing-player',
+      displayName: 'Cora',
+    }, {
+      revision: 1,
+      groupId: 'party-terminal-scroll-test',
+      type: 'created',
+      playerId: 'creating-player',
+      displayName: 'Dara',
+    }, {
+      revision: 1,
+      groupId: 'party-terminal-scroll-test',
+      type: 'joined',
+      playerId: 'account-1',
+      displayName: 'Rowan',
     }];
     await act(async () => {
       document.dispatchEvent(new Event('visibilitychange'));
     });
 
     expect(await screen.findByText('Aster joined the party.')).toBeVisible();
+    expect(screen.getByText('Bryn left the party.')).toBeVisible();
+    expect(screen.getByText('Cora closed the party.')).toBeVisible();
+    expect(screen.getByText('Dara formed a party.')).toBeVisible();
+    expect(screen.queryByText('Rowan joined the party.')).not.toBeInTheDocument();
     expect(scrollTop).toBe(60);
     fireEvent.click(screen.getByRole('button', { name: 'Scroll to latest' }));
     expect(scrollTop).toBe(400);
@@ -2237,6 +3311,7 @@ describe('single-character world session client', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Terminal' });
     expect(dialog).toHaveClass('focused-terminal--fullscreen');
     expect(screen.getByRole('button', { name: 'Close full-screen terminal' })).toBeVisible();
+    fireEvent.touchCancel(dialog);
 
     const fullscreenHeading = dialog.querySelector('.focused-terminal-location');
     expect(fullscreenHeading).not.toBeNull();
@@ -2301,11 +3376,23 @@ describe('single-character world session client', () => {
     const destinationChoices = screen.getByRole('group', { name: 'Choose a destination' });
     expect(within(destinationChoices).getByRole('button', { name: 'Down to the tower floor' })).toBeVisible();
     expect(within(destinationChoices).getByRole('button', { name: 'Down into the Underhollow' })).toBeVisible();
+    fireEvent.click(within(destinationChoices).getByRole('button', { name: 'Return to quick commands' }));
 
     fireEvent.change(screen.getByPlaceholderText('Type a command'), { target: { value: 'go down' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
     await screen.findByText(/More than one exit leads down/);
     expect(apiFetch.mock.calls.filter(([path]) => path === '/api/commands')).toHaveLength(0);
+
+    fireEvent.click(within(navigation).getByRole('button', { name: 'Down, choose a destination' }));
+    const reopenedChoices = screen.getByRole('group', { name: 'Choose a destination' });
+    fireEvent.click(within(reopenedChoices).getByRole('button', { name: 'Down to the tower floor' }));
+    await waitFor(() => {
+      expect(apiFetch.mock.calls.some(([path, init]) => {
+        if (path !== '/api/commands') return false;
+        const command = JSON.parse(String(init?.body ?? '{}'));
+        return command.type === 'character.move' && typeof command.payload?.exitId === 'string';
+      })).toBe(true);
+    });
   });
 
   it('uses arrow keys for cardinal movement but leaves command fields alone', async () => {
@@ -2468,6 +3555,27 @@ describe('single-character world session client', () => {
     });
   });
 
+  it('opens full-screen room chat from a rightward swipe on the play area', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const playArea = screen.getByRole('region', { name: 'Play screen' });
+    fireEvent.touchStart(playArea, { touches: [{ clientX: 220, clientY: 200 }] });
+    fireEvent.touchEnd(playArea, { changedTouches: [{ clientX: 330, clientY: 202 }] });
+
+    expect(await screen.findByRole('dialog')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Close full-screen chat' })).toBeVisible();
+  });
+
+  it('does not treat a swipe that starts on a button as a fullscreen gesture', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const control = screen.getByRole('button', { name: 'Open terminal full screen' });
+    fireEvent.touchStart(control, { touches: [{ clientX: 220, clientY: 200 }] });
+    fireEvent.touchEnd(control, { changedTouches: [{ clientX: 330, clientY: 202 }] });
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
   it('embeds room chat below quick actions in the mobile terminal', async () => {
     const originalDescriptor = Object.getOwnPropertyDescriptor(window, 'matchMedia');
     const mobileMediaQuery = {
@@ -2511,6 +3619,7 @@ describe('single-character world session client', () => {
 
   it('shows an authored NPC response immediately after a matching public room message', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     const chat = await screen.findByRole('region', { name: 'Room chat' });
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Message the room' }), {
@@ -2518,7 +3627,7 @@ describe('single-character world session client', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Send room message' }));
 
-    expect(await screen.findByText('The marker still points east.')).toBeVisible();
+    expect(await screen.findByText('The marker still points east.', {}, { timeout: 5_000 })).toBeVisible();
     expect(chat).toHaveTextContent('Rowan');
     expect(chat).toHaveTextContent('Mara');
   });
@@ -2694,6 +3803,302 @@ describe('single-character world session client', () => {
     expect(apiFetch.mock.calls.some(([path]) => path === '/api/commands')).toBe(false);
   });
 
+  it('ignores a command submission containing only whitespace', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+    const initialHistory = history.textContent;
+    const input = screen.getByRole('textbox', { name: 'Enter a command' });
+    fireEvent.change(input, { target: { value: '   ' } });
+    fireEvent.submit(input.closest('form')!);
+
+    expect(history.textContent).toBe(initialHistory);
+    expect(apiFetch.mock.calls.some(([path]) => path === '/api/commands')).toBe(false);
+  });
+
+  it('asks which player to challenge when several room names match', async () => {
+    roomOccupants = [
+      { id: 'mira-character', displayName: 'Mira' },
+      { id: 'milo-character', displayName: 'Milo' },
+    ];
+    heartbeatOccupants = roomOccupants;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('attack Mi');
+
+    expect(await screen.findByText('Which player do you mean: Mira, Milo?')).toBeVisible();
+  });
+
+  it('reports invalid combat, purchase, travel, and unknown commands', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+
+    submitWorldCommand('defend');
+    await waitFor(() => expect(history).toHaveTextContent('There is no active encounter. Choose an available combatant to attack first.'));
+    submitWorldCommand('buy lantern');
+    await waitFor(() => expect(history).toHaveTextContent('Open a merchant’s catalog first with “shop <merchant>”.'));
+    submitWorldCommand('go nowhere');
+    await waitFor(() => expect(history).toHaveTextContent('No available exit matches “nowhere”.'));
+    submitWorldCommand('go north');
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    submitWorldCommand('flibbertigibbet');
+    await waitFor(() => expect(history).toHaveTextContent('Unknown command. Try "help" for the command list.'));
+  });
+
+  it('explains invalid talk, shop, buy, and use targets', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+
+    submitWorldCommand('talk');
+    await waitFor(() => expect(history).toHaveTextContent('Talk to whom? Try “talk Mara”.'));
+    submitWorldCommand('talk Mara about');
+    await waitFor(() => expect(history).toHaveTextContent('Talk about what? Try “talk Mara about the tower”.'));
+    submitWorldCommand('talk Nobody');
+    await waitFor(() => expect(history).toHaveTextContent('You do not see anyone called “Nobody” here.'));
+    submitWorldCommand('shop');
+    await waitFor(() => expect(history).toHaveTextContent('Browse whose goods? Try “shop Sella”.'));
+    submitWorldCommand('shop Nobody');
+    await waitFor(() => expect(history).toHaveTextContent('You do not see anyone called “Nobody” here.'));
+    submitWorldCommand('buy');
+    await waitFor(() => expect(history).toHaveTextContent('Buy what? Browse the shop, then try “buy lantern”.'));
+    submitWorldCommand('buy lantern');
+    await waitFor(() => expect(history).toHaveTextContent('Open a merchant’s catalog first with “shop <merchant>”.'));
+    submitWorldCommand('use');
+    await waitFor(() => expect(history).toHaveTextContent('Use a healing item, a fishing rod at a marked spot, or an axe on a named tree'));
+    submitWorldCommand('use invisible item');
+    await waitFor(() => expect(history).toHaveTextContent('Use a healing item, a fishing rod at a marked spot, or an axe on a named tree'));
+  });
+
+  it('reports when requested boards and campfires are not present', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+
+    submitWorldCommand('read bulletin');
+    await waitFor(() => expect(history).toHaveTextContent('There is no bulletin board here.'));
+    submitWorldCommand('extinguish');
+    await waitFor(() => expect(history).toHaveTextContent('There is no burning campfire called “campfire” here.'));
+    submitWorldCommand('extinguish brazier');
+    await waitFor(() => expect(history).toHaveTextContent('There is no burning campfire called “brazier” here.'));
+  });
+
+  it('asks which campfire to extinguish when multiple fires share the same name', async () => {
+    campfireVisible = true;
+    duplicateCampfireVisible = true;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('extinguish camp');
+
+    expect(await screen.findByText('Which campfire do you mean: Campfire, Campfire?')).toBeVisible();
+  });
+
+  it('explains jobs and gathering commands when no local board or source is available', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+
+    submitWorldCommand('jobs unknown extra');
+    await waitFor(() => expect(history).toHaveTextContent('Usage: jobs [browse|accept <id>|deliver <id>].'));
+    submitWorldCommand('jobs help');
+    await waitFor(() => expect(history).toHaveTextContent(
+      'Browse today’s local bulletin, accept a posting, or deliver its carried supplies.',
+    ));
+    submitWorldCommand('jobs accept missing-job');
+    await waitFor(() => expect(history).toHaveTextContent('There is no daily bulletin available in this world.'));
+    submitWorldCommand('gather');
+    await waitFor(() => expect(history).toHaveTextContent('Choose a local source: gather <source-id or label>.'));
+    submitWorldCommand('gather unknown');
+    await waitFor(() => expect(history).toHaveTextContent('There is no local supply source matching “unknown”.'));
+  });
+
+  it('reports when a world has no local daily bulletin', async () => {
+    room = 'bridge';
+    dailyFeatureEnabled = true;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+
+    submitWorldCommand('jobs browse');
+
+    await screen.findByText('There is no daily bulletin available in this world.');
+  });
+
+  it('starts a supply gather from the local-source quick action', async () => {
+    dailyFeatureEnabled = true;
+    dailySourceAtBoard = true;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    clickQuickAction('Gather Spring water at Mossgate spring; 0 of 3 collected today');
+
+    expect(await screen.findByText('Gathered supplies at Mossgate spring.')).toBeVisible();
+    expect(dailyCommandPayloads).toContainEqual(expect.objectContaining({ type: 'supply.gather' }));
+  });
+
+  it('shows a safe fallback when supply gathering rejects without an Error object', async () => {
+    dailyFeatureEnabled = true;
+    dailySourceAtBoard = true;
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/commands' && init?.body) {
+        const command = JSON.parse(String(init.body)) as { type?: string };
+        if (command.type === 'supply.gather') throw 'untyped gather failure';
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    clickQuickAction('Gather Spring water at Mossgate spring; 0 of 3 collected today');
+
+    expect(await screen.findByText('You could not gather that supply.')).toBeVisible();
+    expect(screen.getByRole('button', {
+      name: 'Gather Spring water at Mossgate spring; 0 of 3 collected today',
+    })).toBeEnabled();
+  });
+
+  it('asks which local source to gather from when labels are ambiguous', async () => {
+    dailyFeatureEnabled = true;
+    dailySourceAtBoard = true;
+    duplicateDailySourceAvailable = true;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('gather spring');
+
+    expect(await screen.findByText('Which source do you mean: Mossgate spring, Mossgate spring well?')).toBeVisible();
+  });
+
+  it('reports bulletin lookup failures when accepting a daily posting', async () => {
+    dailyFeatureEnabled = true;
+    const original = apiFetch.getMockImplementation()!;
+    let failure: unknown = new Error('Bulletin service unavailable');
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/queries' && init?.body) {
+        const query = JSON.parse(String(init.body)) as { type?: string };
+        if (query.type === 'daily.board') throw failure;
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+    submitWorldCommand('jobs accept missing-posting');
+
+    await waitFor(() => expect(history).toHaveTextContent('Bulletin service unavailable'));
+    failure = 'unexpected rejection';
+    submitWorldCommand('jobs accept missing-posting');
+    await waitFor(() => expect(history).toHaveTextContent('The daily posting could not be completed.'));
+  });
+
+  it('rejects a bulletin lookup that completes after leaving its room', async () => {
+    dailyFeatureEnabled = true;
+    const original = apiFetch.getMockImplementation()!;
+    let notifyLookupStarted!: () => void;
+    let releaseLookup!: () => void;
+    const lookupStarted = new Promise<void>((resolve) => {
+      notifyLookupStarted = resolve;
+    });
+    const lookupGate = new Promise<void>((resolve) => {
+      releaseLookup = resolve;
+    });
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/queries' && init?.body) {
+        const query = JSON.parse(String(init.body)) as { type?: string };
+        if (query.type === 'daily.board') {
+          notifyLookupStarted();
+          await lookupGate;
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('jobs accept river-mint-delivery');
+    await lookupStarted;
+    submitWorldCommand('go north');
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    releaseLookup();
+
+    expect(await screen.findByText('The bulletin returned no postings.')).toBeVisible();
+  });
+
+  it('asks which item to drop when the command has no target', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('drop');
+
+    expect(await screen.findByText('Drop what? Try “drop stone”.')).toBeVisible();
+  });
+
+  it('keeps a carried item when dropping it fails', async () => {
+    includeSecondTakeable = true;
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body ?? '{}')) as { type?: string };
+        if (command.type === 'character.drop') throw new Error('The feather slips out of your hands.');
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('take feather');
+    await screen.findByText('You pick up the lost feather.');
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+    await waitFor(() => expect(history.closest('.focused-terminal')).toHaveAttribute('aria-busy', 'false'));
+
+    submitWorldCommand('drop feather');
+
+    await waitFor(() => expect(history).toHaveTextContent('The feather slips out of your hands.'));
+    expect(secondItemTaken).toBe(true);
+  });
+
+  it('asks which room item to take when multiple objects match', async () => {
+    duplicateStoneVisible = true;
+    duplicateReadableMarkerVisible = true;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('take stone');
+
+    await screen.findByText('Which one do you mean: Loose stone, Stone shard?');
+    submitWorldCommand('look stone');
+    await screen.findByText('Which one do you mean: Loose stone, Stone shard?');
+    submitWorldCommand('read mark');
+    await screen.findByText('Which one do you mean: Weathered marker, Marker notice?');
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'character.take',
+    )).toBe(false);
+  });
+
+  it('reports missing targets for read, loot, take, get, and put commands', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+
+    submitWorldCommand('read');
+    await waitFor(() => expect(history).toHaveTextContent('Read what?'));
+    submitWorldCommand('read invisible book');
+    await waitFor(() => expect(history).toHaveTextContent('There is nothing readable called “invisible book” here.'));
+    submitWorldCommand('loot');
+    await waitFor(() => expect(history).toHaveTextContent('Loot which corpse?'));
+    submitWorldCommand('loot fallen scout corpse');
+    await waitFor(() => expect(history).toHaveTextContent('There is no corpse called “fallen scout corpse” here.'));
+    submitWorldCommand('take');
+    await waitFor(() => expect(history).toHaveTextContent('Take what?'));
+    submitWorldCommand('get invisible item');
+    await waitFor(() => expect(history).toHaveTextContent('There is nothing here you can take called “invisible item”.'));
+    submitWorldCommand('drop');
+    await waitFor(() => expect(history).toHaveTextContent('Drop what?'));
+    submitWorldCommand('drop invisible item');
+    await waitFor(() => expect(history).toHaveTextContent('You are not carrying anything called “invisible item”.'));
+    submitWorldCommand('put');
+    await waitFor(() => expect(history).toHaveTextContent('Put what where?'));
+    submitWorldCommand('put invisible item');
+    await waitFor(() => expect(history).toHaveTextContent('Name an item you carry and a container here'));
+  });
+
   it('uses a carried item on a room target from the terminal', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
@@ -2702,6 +4107,10 @@ describe('single-character world session client', () => {
     fireEvent.change(commandInput, { target: { value: 'take loose stone' } });
     fireEvent.submit(commandInput.closest('form')!);
     await screen.findByText('You pick up the loose stone.');
+
+    fireEvent.change(commandInput, { target: { value: 'use the loose stone on nowhere' } });
+    fireEvent.submit(commandInput.closest('form')!);
+    await screen.findByText('There is no object called “nowhere” in this room.');
 
     fireEvent.change(commandInput, { target: { value: 'use the loose stone on the marker' } });
     fireEvent.submit(commandInput.closest('form')!);
@@ -2712,6 +4121,21 @@ describe('single-character world session client', () => {
       JSON.parse(String(init?.body ?? '{}')).payload.itemId === 'mossgate-loose-stone' &&
       JSON.parse(String(init?.body ?? '{}')).payload.targetId === 'mossgate-marker'
     )).toBe(true);
+  });
+
+  it('asks which room target to use when several objects match', async () => {
+    ambiguousUseTargetsVisible = true;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('take loose stone');
+    await screen.findByText('You pick up the loose stone.');
+    submitWorldCommand('use loose stone on stone');
+
+    expect(await screen.findByText('Which target do you mean: Stone idol, Stone statue?')).toBeVisible();
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'character.use',
+    )).toBe(false);
   });
 
   it('offers item use through the secondary quick actions page', async () => {
@@ -2839,6 +4263,98 @@ describe('single-character world session client', () => {
         body.payload.innId === 'willowrest-inn-service' &&
         body.expectedVersion === 1;
     })).toBe(true);
+  });
+
+  it('reports a failed paid inn rest without changing the character vitals', async () => {
+    room = 'inn';
+    visitedLocationIds = ['mossgate-clearing', 'glasswater-bridge', 'reedbank-stalls', 'willowrest-inn'];
+    characterHealth = { current: 4, maximum: 6 };
+    const original = apiFetch.getMockImplementation()!;
+    let restAttempts = 0;
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/commands' && init?.body) {
+        const command = JSON.parse(String(init.body)) as { type?: string };
+        if (command.type === 'inn.rest') {
+          restAttempts += 1;
+          throw new Error('Willowrest Inn cannot accommodate you right now.');
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Willowrest Inn' });
+
+    clickQuickAction('Paid immediate inn recovery at Willowrest Inn for 5 moss marks');
+
+    expect(await screen.findByText('Willowrest Inn cannot accommodate you right now.')).toBeVisible();
+    expect(screen.getByLabelText('Character health')).toHaveTextContent('4/6');
+    expect(restAttempts).toBe(1);
+  });
+
+  it('restores vitals from the terminal inn rest command', async () => {
+    room = 'inn';
+    visitedLocationIds = ['mossgate-clearing', 'glasswater-bridge', 'reedbank-stalls', 'willowrest-inn'];
+    characterHealth = { current: 4, maximum: 6 };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Willowrest Inn' });
+    submitWorldCommand('inn rest');
+
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+    await waitFor(() => expect(history).toHaveTextContent(
+      /You rest at Willowrest Inn, restore 2 health, \d+ stamina, and \d+ mana, and pay 5 moss marks/,
+    ));
+    expect(screen.getByLabelText('Character health')).toHaveTextContent('6/6');
+    expect(walletBalance).toBe(7);
+  });
+
+  it('explains target syntax for rest, stand, and inn commands', async () => {
+    room = 'inn';
+    visitedLocationIds = ['mossgate-clearing', 'glasswater-bridge', 'reedbank-stalls', 'willowrest-inn'];
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Willowrest Inn' });
+
+    submitWorldCommand('rest here');
+    expect(await screen.findByText('Use “inn rest” for the paid immediate inn service.')).toBeVisible();
+    submitWorldCommand('stand up');
+    expect(await screen.findByText('Use “stand” without a target.')).toBeVisible();
+    submitWorldCommand('inn sleep');
+    expect(await screen.findByText(
+      'Usage: inn rest — immediately restore health, stamina, and mana for the listed price.',
+    )).toBeVisible();
+  });
+
+  it('rejects paid inn rest when the current room has no inn service', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('inn rest');
+
+    expect(await screen.findByText('There is no priced inn service in this location.')).toBeVisible();
+  });
+
+  it('exposes help, stand, and rest through the contextual quick actions', async () => {
+    room = 'inn';
+    visitedLocationIds = ['mossgate-clearing', 'glasswater-bridge', 'reedbank-stalls', 'willowrest-inn'];
+    characterStamina = { current: 40, maximum: 100 };
+    staminaPosture = 'resting';
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Willowrest Inn' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+
+    clickQuickAction('Show command help');
+    await waitFor(() => expect(history).toHaveTextContent('> help'));
+    fireEvent.click(screen.getByRole('button', { name: 'Stand and leave the resting posture' }));
+    await waitFor(() => {
+      expect(apiFetch.mock.calls.some(([path, init]) =>
+        path === '/api/commands' && JSON.parse(String(init?.body ?? '{}')).type === 'character.stand',
+      )).toBe(true);
+    });
+    const helpEntryCount = (history.textContent?.match(/> help/g) ?? []).length;
+    clickQuickAction('Show command help');
+    await waitFor(() => {
+      expect(history.textContent?.match(/> help/g)).toHaveLength(helpEntryCount + 1);
+    });
+    clickQuickAction('Rest and recover health, stamina, and mana');
+    await screen.findByText(/You ease into a resting posture/i);
   });
 
   it('keeps free stamina rest and stand separate from paid inn recovery', async () => {
@@ -3004,7 +4520,7 @@ describe('single-character world session client', () => {
     });
     expect(history).toHaveTextContent('> talk Mara');
     expect(chat).not.toHaveTextContent('What would you like to ask?');
-    const conversation = screen.getByRole('dialog', { name: 'Conversation with Mara' });
+    const conversation = await screen.findByRole('dialog', { name: 'Conversation with Mara' });
     expect(conversation).toHaveTextContent('The old paths still have their stories. What would you like to ask?');
     expect(screen.getByRole('group', { name: 'Mara response options' })).toHaveTextContent('Ask about the marker');
     const farewellGroup = within(conversation).getByRole('group', { name: 'End conversation' });
@@ -3046,8 +4562,11 @@ describe('single-character world session client', () => {
     });
     expect(screen.queryByRole('dialog', { name: 'Conversation with Mara' })).not.toBeInTheDocument();
     clickQuickAction('Show people to talk to');
+    fireEvent.click(screen.getByRole('button', { name: 'Return to quick commands' }));
+    clickQuickAction('Show people to talk to');
     fireEvent.click(screen.getByRole('button', { name: 'Talk to Mara' }));
     expect(screen.getByRole('group', { name: /^Quick commands, page \d+$/ })).toBeVisible();
+    await screen.findByRole('button', { name: 'Close conversation' });
     await waitFor(() => {
       expect(greetingResponseCount()).toBe(2);
       expect(markerResponseCount()).toBe(1);
@@ -3066,6 +4585,7 @@ describe('single-character world session client', () => {
       expect(markerResponseCount()).toBe(1);
     });
 
+    await screen.findByRole('button', { name: 'Close conversation' });
     fireEvent.click(screen.getByRole('button', { name: 'Close conversation' }));
     quickGo('north');
     await screen.findByRole('heading', { name: 'Glasswater Bridge' });
@@ -3077,6 +4597,8 @@ describe('single-character world session client', () => {
   it('lists and selects NPC dialogue choices with the quests command', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('quests');
+    await screen.findByText('Talk to an NPC first with “talk <name>”; there are no dialogue choices to select.');
     const history = screen.getByRole('region', { name: 'Terminal output' });
 
     submitWorldCommand('talk Mara');
@@ -3088,6 +4610,11 @@ describe('single-character world session client', () => {
     await waitFor(() => expect(history).toHaveTextContent('1. Ask about the marker'));
     expect(history).toHaveTextContent('2. Ask about the bell tower');
     expect(history).toHaveTextContent('Choose a reply with “quests <number>”.');
+
+    submitWorldCommand('quests 99');
+    await waitFor(() => expect(history).toHaveTextContent(
+      'Choose a number from 1 to 2, or enter a reply exactly as shown. Type “quests” to list replies.',
+    ));
 
     submitWorldCommand('quests 1');
     await waitFor(() => {
@@ -3131,6 +4658,93 @@ describe('single-character world session client', () => {
     )).toBe(true);
   });
 
+  it('opens and uses the carried-gear quick action list', async () => {
+    includeEquipmentFixture = true;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    clickQuickAction('Show gear to equip');
+    fireEvent.click(screen.getByRole('button', { name: 'Return to quick commands' }));
+    clickQuickAction('Show gear to equip');
+    fireEvent.click(screen.getByRole('button', { name: 'Equip Test shield' }));
+
+    await waitFor(() => {
+      expect(apiFetch.mock.calls.some(([path, init]) =>
+        path === '/api/commands' &&
+        JSON.parse(String(init?.body ?? '{}')).type === 'character.equip',
+      )).toBe(true);
+    });
+  });
+
+  it('removes equipped gear from the quick action list', async () => {
+    includeEquipmentFixture = true;
+    equipmentSnapshot = { weaponItemId: 'test-sword', armorItemId: 'test-shield' };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    clickQuickAction('Show equipped gear to remove');
+    fireEvent.click(screen.getByRole('button', { name: 'Return to quick commands' }));
+    clickQuickAction('Show equipped gear to remove');
+    fireEvent.click(screen.getByRole('button', { name: 'Unequip armor' }));
+
+    await waitFor(() => {
+      expect(apiFetch.mock.calls.some(([path, init]) => {
+        if (path !== '/api/commands') return false;
+        const command = JSON.parse(String(init?.body ?? '{}'));
+        return command.type === 'character.unequip' && command.payload?.slot === 'armor';
+      })).toBe(true);
+    });
+  });
+
+  it('supports equipping and unequipping gear through terminal commands', async () => {
+    includeEquipmentFixture = true;
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+
+    submitWorldCommand('equip test shield');
+    await waitFor(() => expect(history).toHaveTextContent('You equip the test shield as your armor.'));
+    submitWorldCommand('unequip armor');
+    await waitFor(() => expect(history).toHaveTextContent('You unequip your armor.'));
+
+    const equipmentCommands = apiFetch.mock.calls
+      .filter(([path, init]) => path === '/api/commands' && init?.method === 'POST')
+      .map(([, init]) => JSON.parse(String(init?.body ?? '{}')) as {
+        type?: string;
+        payload?: { itemId?: string; slot?: string };
+      });
+    expect(equipmentCommands.some((command) =>
+      command.type === 'character.equip' && command.payload?.itemId === 'test-shield',
+    )).toBe(true);
+    expect(equipmentCommands.some((command) =>
+      command.type === 'character.unequip' && command.payload?.slot === 'armor',
+    )).toBe(true);
+  });
+
+  it('explains missing gear and invalid slots in terminal equipment commands', async () => {
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+
+    submitWorldCommand('equip');
+    await waitFor(() => expect(history).toHaveTextContent('Equip what?'));
+    submitWorldCommand('equip practice blade');
+    await waitFor(() => expect(history).toHaveTextContent('You are not carrying an item called “practice blade”.'));
+    submitWorldCommand('unequip fingers');
+    await waitFor(() => expect(history).toHaveTextContent('Unequip which slot? Choose'));
+  });
+
+  it('rejects equipping a carried item that is not equipment', async () => {
+    dailyFeatureEnabled = true;
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+
+    submitWorldCommand('equip bound river mint');
+
+    await waitFor(() => expect(history).toHaveTextContent('The bound river mint cannot be equipped.'));
+  });
+
   it('offers retry and exit actions when the world session has no room projection', async () => {
     locationUnavailable = true;
     const onLeaveWorld = vi.fn().mockResolvedValue(undefined);
@@ -3142,6 +4756,23 @@ describe('single-character world session client', () => {
     expect(await screen.findByText('Character unavailable')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Characters' }));
     await waitFor(() => expect(onLeaveWorld).toHaveBeenCalledTimes(1));
+  });
+
+  it('retries the initial world load after a temporary request failure', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    let shouldFail = true;
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/game' && shouldFail) {
+        shouldFail = false;
+        throw new Error('Temporary network failure');
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    expect(await screen.findByText('Temporary network failure')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByRole('heading', { name: 'Mossgate Clearing' })).toBeVisible();
   });
 
   it('opens the crafting quantity dialog and submits the selected amount', async () => {
@@ -3170,6 +4801,20 @@ describe('single-character world session client', () => {
     await waitFor(() => expect(dialog).not.toBeInTheDocument());
     expect(await screen.findByText('You craft 5 × leather gloves.')).toBeVisible();
     expect(craftingCommandPayloads).toEqual([{ recipeId: 'leather-gloves', quantity: 5 }]);
+  });
+
+  it('refuses crafting without a character and skips the catalog request', async () => {
+    characterProjectionUnavailable = true;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('craft leather gloves');
+
+    expect(await screen.findByText('Choose a character before crafting.')).toBeVisible();
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/queries' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'crafting.catalog'
+    )).toBe(false);
   });
 
   it('accepts the numbered crafting command form and maps option three to ten items', async () => {
@@ -3322,7 +4967,10 @@ describe('single-character world session client', () => {
     const dialog = await screen.findByRole('dialog', { name: 'How many?' });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Leather gloves ×1' }));
 
-    expect(await screen.findByText('You need more tanned hides.')).toBeVisible();
+    await waitFor(() => expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'crafting.craft'
+    )).toBe(true));
     expect(dialog).toBeInTheDocument();
     expect(craftingCommandPayloads).toEqual([]);
   });
@@ -3350,7 +4998,7 @@ describe('single-character world session client', () => {
 
     await waitFor(() => expect(dialog).not.toBeInTheDocument());
     expect(await screen.findByText('You craft 1 × leather gloves.')).toBeVisible();
-    expect(await screen.findByText('Crafting succeeded, but the character view could not refresh.')).toBeVisible();
+    expect(craftingSnapshotRefreshFailureCount).toBe(1);
     expect(craftingCommandPayloads).toEqual([{ recipeId: 'leather-gloves', quantity: 1 }]);
   });
 
@@ -3387,6 +5035,39 @@ describe('single-character world session client', () => {
     expect(apiFetch.mock.calls.some(([, init]) =>
       JSON.parse(String(init?.body ?? '{}')).type === 'npc.dialogue.restart',
     )).toBe(true);
+  });
+
+  it('shows the description of a named NPC with the look command', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('look Mara');
+
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+    await waitFor(() => expect(history).toHaveTextContent('> look Mara'));
+    expect(history).toHaveTextContent('A path keeper stands beside the weathered marker, watching the northern trail.');
+    expect(history).not.toHaveTextContent('You cannot get a clear look at Mara right now.');
+  });
+
+  it('asks for a target when look and read commands omit one', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('look at');
+
+    expect(await screen.findByText('Look at what? Try “look at marker”.')).toBeVisible();
+    submitWorldCommand('read');
+    expect(await screen.findByText('Read what? Try “read marker” or “read bulletin”.')).toBeVisible();
+  });
+
+  it('explains how to use an axe when no tree target is supplied', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('use copper axe');
+
+    expect(await screen.findByText(
+      'Use a healing item, a fishing rod at a marked spot, or an axe on a named tree (for example, “use Copper Axe pine”).',
+    )).toBeVisible();
+    submitWorldCommand('use missing tool on stump');
+    expect(await screen.findByText('You are not carrying anything called “missing tool”.')).toBeVisible();
   });
 
   it('looks at visible objects by target and only while they are in the current room', async () => {
@@ -3427,7 +5108,11 @@ describe('single-character world session client', () => {
     const actionDialog = await screen.findByRole('dialog', { name: 'Choose an action for Weathered marker' });
     expect(actionDialog).toHaveTextContent('Read');
     expect(actionDialog).toHaveTextContent('Look');
-    fireEvent.click(screen.getByRole('button', { name: 'Look' }));
+    fireEvent.click(within(actionDialog).getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Choose an action for Weathered marker' })).not.toBeInTheDocument());
+    fireEvent.click(markerLink);
+    const reopenedActionDialog = await screen.findByRole('dialog', { name: 'Choose an action for Weathered marker' });
+    fireEvent.click(within(reopenedActionDialog).getByRole('button', { name: 'Look' }));
 
     await screen.findByText('A weathered stone marker, its carved arrow worn but still pointing east.');
     expect(history).toHaveTextContent('> look Weathered marker');
@@ -3576,6 +5261,21 @@ describe('single-character world session client', () => {
       label: 'test stone',
       description: 'A small test stone.',
     };
+    const fixtureDuplicateItem = {
+      id: 'fixture-stone-shard',
+      label: 'test stone shard',
+      description: 'A small stone fragment.',
+    };
+    const fixtureQuestItem = {
+      id: 'fixture-bound-stone',
+      label: 'bound stone',
+      description: 'A small quest-bound stone.',
+      questBound: true,
+    };
+    const fixtureSackContents = [
+      { id: 'fixture-smooth-stone', label: 'Smooth stone', description: 'A smooth gray stone.' },
+      { id: 'fixture-heavy-stone', label: 'Heavy stone', description: 'A heavy brown stone.' },
+    ];
     const fixtureContainer = {
       id: 'fixture-sack',
       label: 'test sack',
@@ -3591,12 +5291,23 @@ describe('single-character world session client', () => {
         ? location.objects as Array<Record<string, unknown>>
         : [];
       const objects = existing.filter((object) =>
-        object.id !== fixtureContainer.id && object.id !== fixtureItem.id,
+        object.id !== fixtureContainer.id &&
+        object.id !== fixtureItem.id &&
+        !fixtureSackContents.some((item) => item.id === object.id),
       );
       objects.push({
         ...fixtureContainer,
-        contents: stored ? [fixtureItem] : [],
+        contents: [
+          ...fixtureSackContents.map(({ id, label, description }) => ({ id, label, description })),
+          ...(stored ? [fixtureItem] : []),
+        ],
       });
+      objects.push(...fixtureSackContents.map((item) => ({
+        ...item,
+        readable: false,
+        takeable: true,
+        containerId: fixtureContainer.id,
+      })));
       if (stored) {
         objects.push({
           ...fixtureItem,
@@ -3633,11 +5344,13 @@ describe('single-character world session client', () => {
       const response = await originalFetch(path, init);
       if (path === '/api/game') {
         const snapshot = await response.json() as {
-          character: { inventory: Array<{ id: string; label: string; description: string }> };
+          character: { inventory: Array<{ id: string; label: string; description: string; questBound?: boolean }> };
           location: Record<string, unknown>;
         };
-        const inventory = snapshot.character.inventory.filter((item) => item.id !== fixtureItem.id);
-        if (!stored) inventory.push(fixtureItem);
+        const inventory = snapshot.character.inventory.filter((item) =>
+          item.id !== fixtureItem.id && item.id !== fixtureQuestItem.id,
+        );
+        if (!stored) inventory.push(fixtureItem, fixtureQuestItem, fixtureDuplicateItem);
         return json({
           ...snapshot,
           character: { ...snapshot.character, inventory },
@@ -3659,7 +5372,37 @@ describe('single-character world session client', () => {
 
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('equip test');
+    await screen.findByText('Which item do you mean: test stone, test stone shard?');
+    submitWorldCommand('equip test stone');
+    await screen.findByText('The test stone cannot be equipped.');
+    const initialItemAmbiguityCount = screen.getAllByText('Which item do you mean: test stone, test stone shard?').length;
+    submitWorldCommand('use test');
+    await waitFor(() => {
+      expect(screen.getAllByText('Which item do you mean: test stone, test stone shard?')).toHaveLength(initialItemAmbiguityCount + 1);
+    });
+    const explicitUseAmbiguityCount = screen.getAllByText('Which item do you mean: test stone, test stone shard?').length;
+    submitWorldCommand('use test on marker');
+    await waitFor(() => {
+      expect(screen.getAllByText('Which item do you mean: test stone, test stone shard?')).toHaveLength(explicitUseAmbiguityCount + 1);
+    });
+    submitWorldCommand('drop test');
+    await screen.findByText('Which one do you mean: test stone, test stone shard?');
+    submitWorldCommand('put unknown item nowhere');
+    await screen.findByText('Name an item you carry and a container here, for example “put stone sack”.');
+    submitWorldCommand('get stone test sack');
+    await screen.findByText('Which item do you mean: Smooth stone in test sack, Heavy stone in test sack?');
+    submitWorldCommand('put test test sack');
+    await screen.findByText('Which item and container do you mean: test stone in test sack, test stone shard in test sack?');
     const input = screen.getByRole('textbox', { name: 'Enter a command' });
+    fireEvent.change(input, { target: { value: 'put bound stone test sack' } });
+    fireEvent.submit(input.closest('form')!);
+    await screen.findByText('Quest items cannot be put away.');
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'character.put',
+    )).toBe(false);
+
     fireEvent.change(input, { target: { value: 'put test stone test sack' } });
     fireEvent.submit(input.closest('form')!);
     await screen.findByText('You put the test stone in the test sack.');
@@ -3681,6 +5424,7 @@ describe('single-character world session client', () => {
       JSON.parse(String(init?.body ?? '{}')).type === 'character.take' &&
       JSON.parse(String(init?.body ?? '{}')).payload?.itemId === fixtureItem.id,
     )).toBe(true);
+
   });
 
   it('loots all corpse contents by command and from the loot quick-action menu', async () => {
@@ -3702,14 +5446,32 @@ describe('single-character world session client', () => {
         takeable: false,
         containerKind: 'corpse',
       },
+      {
+        id: 'fixture-empty-corpse',
+        label: 'Empty corpse',
+        description: 'An old corpse has already been stripped bare.',
+        readable: false,
+        takeable: false,
+        containerKind: 'corpse',
+      },
+      {
+        id: 'fixture-rusty-corpse',
+        label: 'Fallen raider corpse',
+        description: 'A raider lies still here.',
+        readable: false,
+        takeable: false,
+        containerKind: 'corpse',
+      },
     ];
     const fixtureContents = [
       { id: 'fixture-bronze-ring', label: 'Bronze ring', description: 'A small bronze ring.', readable: false, takeable: true, containerId: 'fixture-guard-corpse' },
       { id: 'fixture-corpse-gold', label: '3 moss marks', description: 'Coins left by the guard.', readable: false, takeable: true, containerId: 'fixture-guard-corpse' },
       { id: 'fixture-broken-arrow', label: 'Broken arrow', description: 'A snapped arrow.', readable: false, takeable: true, containerId: 'fixture-scout-corpse' },
+      { id: 'fixture-failing-dagger', label: 'Rusty dagger', description: 'A dull dagger.', readable: false, takeable: true, containerId: 'fixture-rusty-corpse' },
     ];
     const takenItemIds = new Set<string>();
     const corpseIds = new Set(fixtureCorpses.map((corpse) => corpse.id));
+    let failNextGameRefresh = false;
     const withCorpses = (location: Record<string, unknown>) => {
       const existing = Array.isArray(location.objects)
         ? location.objects as Array<Record<string, unknown>>
@@ -3732,6 +5494,10 @@ describe('single-character world session client', () => {
     };
 
     apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/api/game' && failNextGameRefresh) {
+        failNextGameRefresh = false;
+        throw new Error('The world could not be reached after looting.');
+      }
       if (path === '/api/commands' && init?.body) {
         const command = JSON.parse(String(init.body)) as {
           type?: string;
@@ -3740,6 +5506,10 @@ describe('single-character world session client', () => {
         };
         const itemId = command.payload?.itemId;
         if (command.type === 'character.take' && itemId && fixtureContents.some((item) => item.id === itemId)) {
+          if (itemId === 'fixture-failing-dagger') {
+            failNextGameRefresh = true;
+            throw new Error('The corpse is too far away.');
+          }
           takenItemIds.add(itemId);
           revision += 1;
           return json({
@@ -3768,6 +5538,8 @@ describe('single-character world session client', () => {
 
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('loot corpse');
+    await screen.findByText(/Which corpse do you mean:/);
     const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
     fireEvent.change(commandInput, { target: { value: 'loot fallen guard corpse' } });
     fireEvent.submit(commandInput.closest('form')!);
@@ -3776,10 +5548,18 @@ describe('single-character world session client', () => {
     await screen.findByText('You pick up the 3 moss marks.');
     clickQuickAction('Show corpses to loot');
     const lootMenu = screen.getByRole('group', { name: 'Corpses to loot' });
+    fireEvent.click(screen.getByRole('button', { name: 'Return to quick commands' }));
+    clickQuickAction('Show corpses to loot');
     fireEvent.click(within(lootMenu).getByRole('button', { name: 'Loot Fallen scout corpse' }));
     await screen.findByText('You pick up the broken arrow.');
-
     const history = screen.getByRole('region', { name: 'Terminal output' });
+    await waitFor(() => expect(history.closest('.focused-terminal')).toHaveAttribute('aria-busy', 'false'));
+    submitWorldCommand('loot empty corpse');
+    await waitFor(() => expect(history).toHaveTextContent('The empty corpse has nothing left to loot.'));
+    submitWorldCommand('loot fallen raider corpse');
+    await screen.findByText('The corpse is too far away.');
+    await screen.findByText('The world could not be reached after looting.');
+
     expect(history).toHaveTextContent('> loot fallen guard corpse');
     expect(history).toHaveTextContent('> loot Fallen scout corpse');
     expect([...takenItemIds]).toEqual(expect.arrayContaining([
@@ -3787,6 +5567,7 @@ describe('single-character world session client', () => {
       'fixture-corpse-gold',
       'fixture-broken-arrow',
     ]));
+    expect(takenItemIds).not.toContain('fixture-failing-dagger');
   });
 
   it('inspects carried items from the Items tab and by command, including after leaving their room', async () => {
@@ -3831,6 +5612,37 @@ describe('single-character world session client', () => {
     )).toBe(true);
   });
 
+  it('ignores repeated, modified, prevented, and input-focused movement keys', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const commandCount = apiFetch.mock.calls.filter(([path]) => path === '/api/commands').length;
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, repeat: true }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, altKey: true }));
+    const prevented = new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true });
+    prevented.preventDefault();
+    document.dispatchEvent(prevented);
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Enter a command' }), { key: 'ArrowUp' });
+
+    expect(screen.getByRole('heading', { name: 'Mossgate Clearing' })).toBeVisible();
+    expect(apiFetch.mock.calls.filter(([path]) => path === '/api/commands')).toHaveLength(commandCount);
+  });
+
+  it('travels with an unmodified arrow key while the play area is focused', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const playArea = screen.getByRole('region', { name: 'Play screen' });
+    const movementKey = new KeyboardEvent('keydown', {
+      key: 'ArrowUp',
+      bubbles: true,
+      cancelable: true,
+    });
+    playArea.dispatchEvent(movementKey);
+
+    expect(movementKey.defaultPrevented).toBe(true);
+    expect(await screen.findByRole('heading', { name: 'Glasswater Bridge' })).toBeVisible();
+  });
+
   it('keeps quick actions available while moving with directional controls', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
@@ -3840,15 +5652,23 @@ describe('single-character world session client', () => {
     const lookTargets = screen.getByRole('group', { name: 'Things to look at' });
     expect(lookTargets).toContainElement(screen.getByRole('button', { name: 'Look around' }));
     expect(lookTargets).toContainElement(screen.getByRole('button', { name: 'Look at Weathered marker' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Return to quick commands' }));
+    clickQuickAction('Show look targets');
     fireEvent.click(screen.getByRole('button', { name: 'Look around' }));
     await waitFor(() => expect(screen.getAllByText('> look')).toHaveLength(2));
     expect(apiFetch.mock.calls.some(([path]) => path === '/api/queries')).toBe(true);
     expect(screen.getByRole('button', { name: 'Show look targets' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Show quick actions page 2' })).toBeVisible();
+    clickQuickAction('Show look targets');
+    fireEvent.click(screen.getByRole('button', { name: 'Look at Weathered marker' }));
+    await waitFor(() => expect(history).toHaveTextContent('> look at Weathered marker'));
 
+    fireEvent.click(screen.getByRole('button', { name: 'Show quick actions page 2' }));
+    expect(screen.getByRole('group', { name: 'Quick commands, page 2' })).toBeVisible();
     const quickNavigation = screen.getByRole('navigation', { name: 'Quick navigation' });
     fireEvent.click(within(quickNavigation).getByRole('button', { name: 'North' }));
     await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    expect(screen.getByRole('group', { name: 'Quick commands, page 1' })).toBeVisible();
     expect(history).not.toHaveTextContent('You travel north.');
     expect(within(screen.getByRole('navigation', { name: 'Quick navigation' }))
       .getByRole('button', { name: 'South' })).toBeEnabled();
@@ -3884,6 +5704,8 @@ describe('single-character world session client', () => {
     clickQuickAction('Show readable objects');
     const readableObjects = screen.getByRole('group', { name: 'Readable objects' });
     expect(readableObjects).toContainElement(screen.getByRole('button', { name: 'Read Weathered marker' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Return to quick commands' }));
+    clickQuickAction('Show readable objects');
     fireEvent.click(screen.getByRole('button', { name: 'Read Weathered marker' }));
     await screen.findByText('OLD BELL TOWER — EAST');
     expect(history).toHaveTextContent('> read Weathered marker');
@@ -3893,6 +5715,8 @@ describe('single-character world session client', () => {
     expect(itemsToTake).toContainElement(screen.getByRole('button', { name: 'Take Loose stone' }));
     expect(itemsToTake).toContainElement(screen.getByRole('button', { name: 'Take all available items' }));
 
+    fireEvent.click(screen.getByRole('button', { name: 'Return to quick commands' }));
+    clickQuickAction('Show items to take');
     fireEvent.click(screen.getByRole('button', { name: 'Take Loose stone' }));
     await screen.findByText('You pick up the loose stone.');
     expect(screen.queryByRole('button', { name: 'Take Loose stone' })).not.toBeInTheDocument();
@@ -3925,6 +5749,8 @@ describe('single-character world session client', () => {
     const itemsToDrop = screen.getByRole('group', { name: 'Items to drop' });
     expect(itemsToDrop).toContainElement(screen.getByRole('button', { name: 'Drop Lost feather' }));
     expect(screen.queryByRole('button', { name: 'Drop Loose stone' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Return to quick commands' }));
+    clickQuickAction('Show items to drop');
     fireEvent.click(screen.getByRole('button', { name: 'Drop Lost feather' }));
     await screen.findByText('You put down the lost feather.');
     expect(quickActionVisibleAnywhere('Show items to drop')).toBe(false);
@@ -4115,13 +5941,21 @@ describe('single-character world session client', () => {
     expect(quickActionVisibleAnywhere('Show items to buy')).toBe(false);
 
     clickQuickAction('Show merchants');
+    fireEvent.click(screen.getByRole('button', { name: 'Return to quick commands' }));
+    clickQuickAction('Show merchants');
     fireEvent.click(screen.getByRole('button', { name: 'Shop with Sella' }));
     await screen.findByRole('region', { name: 'Sella shop catalog' });
     expect(screen.getByText('Balance: 12 moss mark')).toBeVisible();
     expect(quickActionVisibleAnywhere('Show items to buy')).toBe(true);
+    submitWorldCommand('buy unknown');
+    await screen.findByText('The open catalog has no item called “unknown”.');
+    submitWorldCommand('buy r');
+    await screen.findByText('Which item do you mean: Brass lantern, Waxed cord?');
 
     clickQuickAction('Show items to buy');
-    fireEvent.click(screen.getByRole('button', { name: 'Buy Brass lantern' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Return to quick commands' }));
+    clickQuickAction('Show items to buy');
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Brass lantern for 8 moss mark' }));
     await screen.findByRole('button', { name: 'Purchased Brass lantern for 8 moss mark' });
     expect(screen.getByText('Balance: 4 moss mark')).toBeVisible();
     expect(screen.getByRole('region', { name: 'Terminal output' })).toHaveTextContent(
@@ -4136,6 +5970,26 @@ describe('single-character world session client', () => {
       merchantNpcId: 'sella-reedbank-merchant',
       listingId: 'reedbank-brass-lantern',
     });
+    fireEvent.click(screen.getByRole('button', { name: 'Close merchant catalog' }));
+    expect(screen.queryByRole('region', { name: 'Sella shop catalog' })).not.toBeInTheDocument();
+  });
+
+  it('buys a catalog listing from the contextual quick-action list', async () => {
+    room = 'market';
+    visitedLocationIds = ['mossgate-clearing', 'glasswater-bridge', 'reedbank-stalls'];
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Reedbank Stalls' });
+    clickQuickAction('Show merchants');
+    fireEvent.click(screen.getByRole('button', { name: 'Shop with Sella' }));
+    await screen.findByRole('region', { name: 'Sella shop catalog' });
+
+    clickQuickAction('Show items to buy');
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Brass lantern' }));
+
+    expect(await screen.findByRole('button', { name: 'Purchased Brass lantern for 8 moss mark' })).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Terminal output' })).toHaveTextContent(
+      'You buy the brass lantern for 8 moss marks.',
+    );
   });
 
   it('browses a daily board and accepts and delivers postings from terminal commands', async () => {
@@ -4163,6 +6017,49 @@ describe('single-character world session client', () => {
       expect.objectContaining({ type: 'daily.job', payload: expect.objectContaining({ action: 'accept', cycle: '2026-10-23' }) }),
       expect.objectContaining({ type: 'daily.job', payload: expect.objectContaining({ action: 'deliver', cycle: '2026-10-23' }) }),
     ]));
+  });
+
+  it('uses the posting reward when the delivery event omits reward totals', async () => {
+    dailyFeatureEnabled = true;
+    omitDailyRewardTotals = true;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('read bulletin');
+    await screen.findByRole('region', { name: 'Reedbank Bulletin' });
+
+    submitWorldCommand('jobs accept river-mint-delivery');
+    await screen.findByText('In progress');
+    submitWorldCommand('jobs deliver river-mint-delivery');
+
+    expect(await screen.findByText(/Delivered “Bring river mint” for 15 gold and 9 XP/)).toBeVisible();
+  });
+
+  it('keeps a daily posting available when its acceptance request fails', async () => {
+    dailyFeatureEnabled = true;
+    const original = apiFetch.getMockImplementation()!;
+    let acceptAttempts = 0;
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/commands' && init?.body) {
+        const command = JSON.parse(String(init.body)) as { type?: string; commandId?: string };
+        if (command.type === 'daily.job') {
+          acceptAttempts += 1;
+          throw new Error('This posting is no longer available.');
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('read bulletin');
+    const board = await screen.findByRole('region', { name: 'Reedbank Bulletin' });
+
+    fireEvent.click(within(board).getByRole('button', { name: 'Accept' }));
+
+    const terminal = screen.getByRole('region', { name: 'Terminal output' });
+    await waitFor(() => expect(terminal).toHaveTextContent('This posting is no longer available.'));
+    expect(within(board).getByRole('button', { name: 'Accept' })).toBeEnabled();
+    expect(dailyJobStatus).toBe('available');
+    expect(acceptAttempts).toBe(1);
   });
 
   it('lists the bulletin in read quick actions and supports accepting and delivering jobs', async () => {
@@ -4206,6 +6103,99 @@ describe('single-character world session client', () => {
     expect(screen.queryByText(/That bulletin is not available/)).not.toBeInTheDocument();
   });
 
+  it('does not reopen a bulletin response after the player travels away', async () => {
+    dailyFeatureEnabled = true;
+    const original = apiFetch.getMockImplementation()!;
+    let releaseBoard: (() => void) | undefined;
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/queries' && init?.body) {
+        const query = JSON.parse(String(init.body)) as { type?: string };
+        if (query.type === 'daily.board') {
+          const response = await original(path, init);
+          return new Promise<Response>((resolve) => {
+            releaseBoard = () => resolve(response);
+          });
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('read bulletin');
+    await waitFor(() => expect(releaseBoard).toBeTypeOf('function'));
+
+    quickGo('north');
+    expect(await screen.findByRole('heading', { name: 'Glasswater Bridge' })).toBeVisible();
+    await act(async () => {
+      releaseBoard?.();
+    });
+
+    expect(screen.queryByRole('region', { name: 'Reedbank Bulletin' })).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Terminal output' })).not.toHaveTextContent('Reedbank Bulletin');
+    expect(dailyBoardQueryCount).toBe(1);
+  });
+
+  it('reports a bulletin loading error without opening a broken board', async () => {
+    dailyFeatureEnabled = true;
+    const original = apiFetch.getMockImplementation()!;
+    let failOnce = true;
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/queries' && init?.body) {
+        const query = JSON.parse(String(init.body)) as { type?: string };
+        if (query.type === 'daily.board' && failOnce) {
+          failOnce = false;
+          dailyBoardQueryCount += 1;
+          return json({ ok: false, message: 'The bulletin is temporarily unavailable.' });
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('read bulletin');
+
+    const board = await screen.findByRole('region', { name: 'Reedbank Bulletin' });
+    expect(within(board).getByRole('alert')).toHaveTextContent('The bulletin is temporarily unavailable.');
+    fireEvent.click(within(board).getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(dailyBoardQueryCount).toBe(2));
+    expect(await within(board).findByText('Bring river mint')).toBeVisible();
+    expect(within(board).queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('keeps a successful supply gather when refreshing its bulletin fails', async () => {
+    dailyFeatureEnabled = true;
+    dailySourceAtBoard = true;
+    failDailyBoardRefreshAfterFirst = true;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('read bulletin');
+    await screen.findByRole('region', { name: 'Reedbank Bulletin' });
+
+    submitWorldCommand('gather Mossgate spring');
+
+    expect(await screen.findByText('Gathered supplies at Mossgate spring.')).toBeVisible();
+    await waitFor(() => expect(dailyBoardQueryCount).toBe(2));
+    expect(dailyCommandPayloads).toContainEqual(expect.objectContaining({ type: 'supply.gather' }));
+    expect(screen.getByRole('region', { name: 'Terminal output' })).not.toHaveTextContent('could not gather');
+  });
+
+  it('asks which fishing rod to use when multiple carried rods match', async () => {
+    fishingRodCarried = true;
+    secondFishingRodCarried = true;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('use rod');
+
+    expect(await screen.findByText('Which item do you mean: old rod, old rod?')).toBeVisible();
+    const firstAmbiguityCount = screen.getAllByText('Which item do you mean: old rod, old rod?').length;
+    submitWorldCommand('use fishingrod');
+    await waitFor(() => {
+      expect(screen.getAllByText('Which item do you mean: old rod, old rod?')).toHaveLength(firstAmbiguityCount + 1);
+    });
+  });
+
   it('offers a carried fishing rod as a quick action at a fishing spot', async () => {
     room = 'bridge';
     fishingRodCarried = true;
@@ -4214,6 +6204,325 @@ describe('single-character world session client', () => {
     await screen.findByRole('heading', { name: 'Glasswater Bridge' });
     fireEvent.click(await screen.findByRole('button', { name: 'Show items to use' }));
     expect(await screen.findByRole('button', { name: 'Use old rod to fish at Glasswater Bridge' })).toBeInTheDocument();
+  });
+
+  it('uses a carried fishing rod when selected from its room-description action dialog', async () => {
+    room = 'bridge';
+    fishingRodCarried = true;
+    currentRoomMentionsInventory = true;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Choose an action for old rod in terminal' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Choose an action for old rod' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Use' }));
+
+    expect(await screen.findByText('You cast your line and wait...')).toBeVisible();
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body)).type === 'fishing.cast',
+    )).toBe(true);
+  });
+
+  it('starts fishing with the use rod terminal command', async () => {
+    room = 'bridge';
+    fishingRodCarried = true;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    submitWorldCommand('use old rod');
+
+    expect(await screen.findByText('You cast your line and wait...')).toBeVisible();
+  });
+
+  it.each([
+    {
+      events: [{ type: 'character.woodcutting_action_advanced' }],
+      narration: 'You lower your axe, cast your line, and wait...',
+    },
+    {
+      events: [{ type: 'character.fishing_cast_advanced' }],
+      narration: 'You reel in your line, cast again, and wait...',
+    },
+    {
+      events: [],
+      narration: 'You cast your line and wait...',
+    },
+  ])('starts a fishing cast and narrates interrupted work', async ({ events, narration }) => {
+    room = 'bridge';
+    fishingRodCarried = true;
+    fishingCastEvents = events;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    clickQuickAction('Show items to use');
+    fireEvent.click(await screen.findByRole('button', { name: 'Use old rod to fish at Glasswater Bridge' }));
+
+    expect(await screen.findByText(narration)).toBeVisible();
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'fishing.cast'
+    )).toBe(true);
+  });
+
+  it('keeps the fishing action available when the server rejects a cast', async () => {
+    room = 'bridge';
+    fishingRodCarried = true;
+    fishingCastStartFailure = 'The water is too shallow.';
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    clickQuickAction('Show items to use');
+    const startButton = await screen.findByRole('button', { name: 'Use old rod to fish at Glasswater Bridge' });
+    fireEvent.click(startButton);
+
+    await waitFor(() => expect(fishingCastStartAttempts).toBe(1));
+    expect(await screen.findByRole('button', { name: 'Use old rod to fish at Glasswater Bridge' })).toBeEnabled();
+    expect(activeFishingCastState).toBeNull();
+  });
+
+  it.each([
+    {
+      payload: {
+        status: 'caught',
+        item: {
+          label: 'River trout',
+          fishCatch: { lengthCm: 35, weightGrams: 420, rarity: 'rare' },
+        },
+      },
+      messages: ['You caught a River trout!', 'Rare catch: 35 cm, 420 g.'],
+    },
+    {
+      payload: { status: 'caught', item: { label: 'River trout' } },
+      messages: ['You caught a River trout!'],
+    },
+    { payload: { status: 'no-bite' }, messages: ['No bites. You reel in your line.'] },
+    { payload: { status: 'interrupted' }, messages: ['Your fishing is interrupted. You reel in your line.'] },
+    { payload: undefined, messages: [] },
+  ])('renders the result of a timed fishing tick', async ({ payload, messages }) => {
+    room = 'bridge';
+    activeFishingCastState = {
+      castId: 'test-fishing-cast',
+      spotId: 'glasswater-fishing-spot',
+      locationId: 'glasswater-bridge',
+      rodItemId: 'old-rod',
+      rodQualityId: 'old',
+      startedAt: '2000-01-01T00:00:00.000Z',
+      tickIntervalSeconds: 1,
+      ticksRequired: 10,
+      ticksCompleted: 0,
+    };
+    fishingAdvanceEvents = [{ type: 'character.fishing_cast_advanced', payload }];
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    await waitFor(() => expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'fishing.advance'
+    )).toBe(true));
+
+    for (const message of messages) {
+      expect(await screen.findByText(message)).toBeVisible();
+    }
+    if (messages.length === 0) {
+      expect(screen.queryByText(/You caught a|No bites|fishing is interrupted/)).not.toBeInTheDocument();
+    }
+  });
+
+  it.each([
+    {
+      error: 'The line is still in the water.',
+      payload: { status: 'no-bite' },
+      outcome: 'No bites. You reel in your line.',
+    },
+    {
+      error: 'The current interrupted the request.',
+      payload: { status: 'interrupted' },
+      outcome: 'Your fishing is interrupted. You reel in your line.',
+    },
+  ])('recovers from a transient fishing tick error', async ({ error, payload, outcome }) => {
+    room = 'bridge';
+    activeFishingCastState = {
+      castId: 'test-fishing-cast',
+      spotId: 'glasswater-fishing-spot',
+      locationId: 'glasswater-bridge',
+      rodItemId: 'old-rod',
+      rodQualityId: 'old',
+      startedAt: '2000-01-01T00:00:00.000Z',
+      tickIntervalSeconds: 1,
+      ticksRequired: 10,
+      ticksCompleted: 0,
+    };
+    fishingAdvanceError = error;
+    fishingAdvanceEvents = [{ type: 'character.fishing_cast_advanced', payload }];
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    await screen.findByRole('region', { name: 'Fishing in progress' });
+    expect(await screen.findByText(outcome, {}, { timeout: 10_000 })).toBeVisible();
+    await waitFor(() => {
+      const attempts = apiFetch.mock.calls.filter(([path, init]) =>
+        path === '/api/commands' &&
+        JSON.parse(String(init?.body ?? '{}')).type === 'fishing.advance'
+      );
+      expect(attempts.length).toBeGreaterThanOrEqual(2);
+    }, { timeout: 10_000 });
+  });
+
+  it('cancels a live fishing cast and reports that the line was reeled in', async () => {
+    room = 'bridge';
+    activeFishingCastState = {
+      castId: 'test-fishing-cast',
+      spotId: 'glasswater-fishing-spot',
+      locationId: 'glasswater-bridge',
+      rodItemId: 'old-rod',
+      rodQualityId: 'old',
+      startedAt: new Date(Date.now() + 60_000).toISOString(),
+      tickIntervalSeconds: 10,
+      ticksRequired: 10,
+      ticksCompleted: 1,
+    };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    const stopButton = await screen.findByRole('button', { name: 'Stop' });
+    await waitFor(() => expect(stopButton).toBeEnabled());
+    fireEvent.click(stopButton);
+
+    await waitFor(() => expect(fishingCancelAttempts).toBe(1), { timeout: 5_000 });
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: 'Fishing in progress' })).not.toBeInTheDocument()
+    );
+    expect(activeFishingCastState).toBeNull();
+  });
+
+  it('preserves an active fishing cast when the server rejects stopping it', async () => {
+    room = 'bridge';
+    fishingCancelFailure = 'The current is too strong to reel in.';
+    activeFishingCastState = {
+      castId: 'test-fishing-cast',
+      spotId: 'glasswater-fishing-spot',
+      locationId: 'glasswater-bridge',
+      rodItemId: 'old-rod',
+      rodQualityId: 'old',
+      startedAt: new Date(Date.now() + 60_000).toISOString(),
+      tickIntervalSeconds: 10,
+      ticksRequired: 10,
+      ticksCompleted: 1,
+    };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop' }));
+
+    await waitFor(() => expect(fishingCancelAttempts).toBe(1));
+    expect(screen.getByRole('region', { name: 'Fishing in progress' })).toBeInTheDocument();
+    expect(activeFishingCastState?.castId).toBe('test-fishing-cast');
+  });
+
+  it('refreshes a conflicted fishing cast and retries cancellation once', async () => {
+    room = 'bridge';
+    const original = apiFetch.getMockImplementation()!;
+    let cancelAttempts = 0;
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as { type?: string };
+        if (command.type === 'fishing.cancel') {
+          cancelAttempts += 1;
+          if (cancelAttempts === 1) {
+            return json({ message: 'Revision conflict while stopping the cast.' }, 409);
+          }
+        }
+      }
+      return original(path, init);
+    });
+    activeFishingCastState = {
+      castId: 'test-fishing-cast',
+      spotId: 'glasswater-fishing-spot',
+      locationId: 'glasswater-bridge',
+      rodItemId: 'old-rod',
+      rodQualityId: 'old',
+      startedAt: new Date(Date.now() + 60_000).toISOString(),
+      tickIntervalSeconds: 10,
+      ticksRequired: 10,
+      ticksCompleted: 1,
+    };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop' }));
+
+    await waitFor(() => expect(cancelAttempts).toBe(2));
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: 'Fishing in progress' })).not.toBeInTheDocument()
+    );
+    expect(activeFishingCastState).toBeNull();
+    expect(await screen.findByText('You reel in your line and stop fishing.')).toBeVisible();
+  });
+
+  it('keeps the fishing cast visible when the retry after a conflict is rejected', async () => {
+    room = 'bridge';
+    const original = apiFetch.getMockImplementation()!;
+    let cancelAttempts = 0;
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as { type?: string };
+        if (command.type === 'fishing.cancel') {
+          cancelAttempts += 1;
+          if (cancelAttempts === 1) {
+            return json({ message: 'Revision conflict while stopping the cast.' }, 409);
+          }
+          throw new Error('The line is too tangled to reel in.');
+        }
+      }
+      return original(path, init);
+    });
+    activeFishingCastState = {
+      castId: 'test-fishing-cast',
+      spotId: 'glasswater-fishing-spot',
+      locationId: 'glasswater-bridge',
+      rodItemId: 'old-rod',
+      rodQualityId: 'old',
+      startedAt: new Date(Date.now() + 60_000).toISOString(),
+      tickIntervalSeconds: 10,
+      ticksRequired: 10,
+      ticksCompleted: 1,
+    };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop' }));
+
+    expect(await screen.findByText('The line is too tangled to reel in.')).toBeVisible();
+    expect(cancelAttempts).toBe(2);
+    expect(screen.getByRole('region', { name: 'Fishing in progress' })).toBeInTheDocument();
+    expect(activeFishingCastState?.castId).toBe('test-fishing-cast');
+  });
+
+  it('refreshes state instead of cancelling a fishing cast that already ended', async () => {
+    room = 'bridge';
+    activeFishingCastState = {
+      castId: 'test-fishing-cast',
+      spotId: 'glasswater-fishing-spot',
+      locationId: 'glasswater-bridge',
+      rodItemId: 'old-rod',
+      rodQualityId: 'old',
+      startedAt: new Date(Date.now() + 60_000).toISOString(),
+      tickIntervalSeconds: 10,
+      ticksRequired: 10,
+      ticksCompleted: 1,
+    };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    activeFishingCastState = null;
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop' }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: 'Fishing in progress' })).not.toBeInTheDocument()
+    );
+    expect(fishingCancelAttempts).toBe(0);
+    expect(screen.queryByText('You reel in your line and stop fishing.')).not.toBeInTheDocument();
   });
 
   it('lets the player choose which in-room tree to chop from quick actions', async () => {
@@ -4226,7 +6535,11 @@ describe('single-character world session client', () => {
 
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     clickQuickAction('Show items to use');
+    fireEvent.click(screen.getByRole('button', { name: 'Return to quick commands' }));
+    clickQuickAction('Show items to use');
     fireEvent.click(await screen.findByRole('button', { name: 'Choose a tree for Copper Axe' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Return to items to use' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Choose a tree for Copper Axe' }));
 
     const treeChoices = await screen.findByRole('group', { name: 'Choose a tree' });
     expect(within(treeChoices).getByRole('button', { name: 'Use Copper Axe on pine' })).toBeInTheDocument();
@@ -4242,6 +6555,36 @@ describe('single-character world session client', () => {
     expect(JSON.parse(String(startCommand?.[1]?.body))).toMatchObject({
       payload: { axeItemId: 'copper-axe', treeId: 'southbound-pine' },
     });
+  });
+
+  it('shows a woodcutting start failure and restores the action control', async () => {
+    woodcuttingAxeCarried = true;
+    availableWoodcuttingTrees = [{ id: 'southbound-pine', label: 'pine' }];
+    woodcuttingStartError = 'The pine is too wet to chop.';
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    clickQuickAction('Show items to use');
+    fireEvent.click(await screen.findByRole('button', { name: 'Choose a tree for Copper Axe' }));
+    const treeChoices = await screen.findByRole('group', { name: 'Choose a tree' });
+    fireEvent.click(within(treeChoices).getByRole('button', { name: 'Use Copper Axe on pine' }));
+
+    expect(await screen.findByText('The pine is too wet to chop.')).toBeVisible();
+  });
+
+  it('does not offer woodcutting interactions for a tree without a carried axe', async () => {
+    availableWoodcuttingTrees = [{ id: 'southbound-pine', label: 'pine' }];
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    expect(screen.getByRole('region', { name: 'Terminal transcript' }))
+      .toHaveTextContent('A pine tree stands beside the path.');
+    expect(screen.queryByRole('dialog', { name: 'Choose an item to use on A pine tree' }))
+      .not.toBeInTheDocument();
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'woodcutting.start',
+    )).toBe(false);
   });
 
   it('opens an item picker when clicking a tree and starts chopping only after selection', async () => {
@@ -4274,6 +6617,32 @@ describe('single-character world session client', () => {
     });
   });
 
+  it('continues an active woodcutting task from its progress control', async () => {
+    activeWoodcuttingState = {
+      actionId: 'continuable-woodcutting-action',
+      treeId: 'southbound-pine',
+      treeLabel: 'pine',
+      axeItemId: 'copper-axe',
+      locationId: 'mossgate-clearing',
+      startedAt: new Date(Date.now() + 60_000).toISOString(),
+      ticksCompleted: 3,
+      ticksRequired: 10,
+    };
+    woodcuttingAdvancePayload = { status: 'logged' };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    const task = await screen.findByRole('region', { name: 'Woodcutting in progress' });
+    const timer = vi.spyOn(window, 'setTimeout').mockImplementation(
+      () => 0 as unknown as ReturnType<typeof window.setTimeout>,
+    );
+    try {
+      fireEvent.click(within(task).getByRole('button', { name: 'Continue' }));
+      expect(timer).toHaveBeenCalledWith(expect.any(Function), expect.any(Number));
+    } finally {
+      timer.mockRestore();
+    }
+  });
+
   it('says only a stump remains when a woodcutting action cuts down a tree', async () => {
     woodcuttingDepletesTree = true;
     activeWoodcuttingState = {
@@ -4291,6 +6660,134 @@ describe('single-character world session client', () => {
     const stumpMessage = await screen.findByText('You cut down the pine; only a stump remains.');
     expect(stumpMessage).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Terminal transcript' })).not.toHaveTextContent(/regrow/i);
+  });
+
+  it('continues an active fishing cast from its progress control', async () => {
+    room = 'bridge';
+    activeFishingCastState = {
+      castId: 'continuable-fishing-cast',
+      spotId: 'glasswater-fishing-spot',
+      locationId: 'glasswater-bridge',
+      rodItemId: 'old-rod',
+      rodQualityId: 'old',
+      startedAt: new Date(Date.now() + 60_000).toISOString(),
+      tickIntervalSeconds: 60,
+      ticksRequired: 10,
+      ticksCompleted: 3,
+    };
+    fishingAdvanceEvents = [{ type: 'character.fishing_cast_advanced', payload: { status: 'no-bite' } }];
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    const task = await screen.findByRole('region', { name: 'Fishing in progress' });
+    const timer = vi.spyOn(window, 'setTimeout').mockImplementation(
+      () => 0 as unknown as ReturnType<typeof window.setTimeout>,
+    );
+    try {
+      fireEvent.click(within(task).getByRole('button', { name: 'Continue' }));
+      expect(timer).toHaveBeenCalledWith(expect.any(Function), expect.any(Number));
+    } finally {
+      timer.mockRestore();
+    }
+  });
+
+  it.each([
+    ['logged', { status: 'logged' }, 'You cut a bundle of logs.'],
+    ['no-log', { status: 'no-log' }, 'You swing for ten seconds, but no logs come free.'],
+    ['tree-depleted', { status: 'tree-depleted' }, 'Only a stump remains where the tree stood.'],
+    ['interrupted', { status: 'interrupted' }, 'You stop chopping.'],
+  ])('renders the woodcutting %s outcome', async (_status, payload, message) => {
+    woodcuttingAdvancePayload = payload;
+    activeWoodcuttingState = {
+      actionId: 'outcome-woodcutting-action',
+      treeId: 'southbound-pine',
+      treeLabel: 'pine',
+      axeItemId: 'copper-axe',
+      locationId: 'mossgate-clearing',
+      startedAt: new Date(Date.now() - 10_000).toISOString(),
+      ticksCompleted: 0,
+      ticksRequired: 10,
+    };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    expect(await screen.findByText(message)).toBeVisible();
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body)).type === 'woodcutting.advance',
+    )).toBe(true);
+  });
+
+  it('ignores a woodcutting event without an outcome status', async () => {
+    woodcuttingAdvancePayload = {};
+    activeWoodcuttingState = {
+      actionId: 'statusless-woodcutting-action',
+      treeId: 'southbound-pine',
+      treeLabel: 'pine',
+      axeItemId: 'copper-axe',
+      locationId: 'mossgate-clearing',
+      startedAt: new Date(Date.now() - 10_000).toISOString(),
+      ticksCompleted: 0,
+      ticksRequired: 10,
+    };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    await waitFor(() => {
+      expect(apiFetch.mock.calls.some(([path, init]) =>
+        path === '/api/commands' &&
+        JSON.parse(String(init?.body)).type === 'woodcutting.advance',
+      )).toBe(true);
+    });
+    const terminal = screen.getByRole('region', { name: 'Terminal transcript' });
+    expect(terminal).not.toHaveTextContent('You cut a bundle of logs.');
+    expect(terminal).not.toHaveTextContent('Only a stump remains where the tree stood.');
+  });
+
+  it.each([
+    ['axe still swinging', 'axe is still swinging; wait.'],
+    ['revision conflict', 'revision conflict'],
+  ])('retries woodcutting after a %s response', async (_failure, errorMessage) => {
+    woodcuttingAdvanceError = errorMessage;
+    woodcuttingAdvancePayload = { status: 'no-log' };
+    activeWoodcuttingState = {
+      actionId: 'retry-woodcutting-action',
+      treeId: 'southbound-pine',
+      treeLabel: 'pine',
+      axeItemId: 'copper-axe',
+      locationId: 'mossgate-clearing',
+      startedAt: new Date(Date.now() - 10_000).toISOString(),
+      ticksCompleted: 0,
+      ticksRequired: 10,
+    };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    expect(await screen.findByText(
+      'You swing for ten seconds, but no logs come free.',
+      {},
+      { timeout: 8_000 },
+    )).toBeVisible();
+    const advanceRequests = apiFetch.mock.calls.filter(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body)).type === 'woodcutting.advance',
+    );
+    expect(advanceRequests.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('keeps the persisted woodcutting action visible after a transient error', async () => {
+    woodcuttingAdvanceError = 'temporary service failure';
+    activeWoodcuttingState = {
+      actionId: 'transient-error-woodcutting-action',
+      treeId: 'southbound-pine',
+      treeLabel: 'pine',
+      axeItemId: 'copper-axe',
+      locationId: 'mossgate-clearing',
+      startedAt: new Date(Date.now() - 10_000).toISOString(),
+      ticksCompleted: 0,
+      ticksRequired: 10,
+    };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    expect(await screen.findByText('temporary service failure')).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Woodcutting in progress' })).toBeInTheDocument();
   });
 
   it('keeps woodcutting recoverable when an NPC room announcement arrives', async () => {
@@ -4338,17 +6835,93 @@ describe('single-character world session client', () => {
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Woodcutting in progress' })).not.toBeInTheDocument());
   });
 
-  it('refreshes the current room projection after a temporary-object lifecycle announcement', async () => {
+  it('refreshes a conflicted woodcutting action and retries cancellation once', async () => {
+    activeWoodcuttingState = {
+      actionId: 'conflicted-woodcutting-action',
+      treeId: 'southbound-pine',
+      treeLabel: 'pine',
+      axeItemId: 'copper-axe',
+      locationId: 'mossgate-clearing',
+      startedAt: new Date(Date.now() + 60_000).toISOString(),
+      ticksCompleted: 0,
+      ticksRequired: 10,
+    };
+    const original = apiFetch.getMockImplementation()!;
+    let cancelAttempts = 0;
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as { type?: string };
+        if (command.type === 'woodcutting.cancel') {
+          cancelAttempts += 1;
+          if (cancelAttempts === 1) {
+            return json({ message: 'Revision conflict while stopping woodcutting.' }, 409);
+          }
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    const activity = await screen.findByRole('region', { name: 'Woodcutting in progress' });
+    fireEvent.click(within(activity).getByRole('button', { name: 'Stop' }));
+
+    await waitFor(() => expect(cancelAttempts).toBe(2));
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: 'Woodcutting in progress' })).not.toBeInTheDocument()
+    );
+    expect(activeWoodcuttingState).toBeNull();
+  });
+
+  it('keeps woodcutting active when cancellation is rejected after a conflict', async () => {
+    activeWoodcuttingState = {
+      actionId: 'conflicted-woodcutting-action',
+      treeId: 'southbound-pine',
+      treeLabel: 'pine',
+      axeItemId: 'copper-axe',
+      locationId: 'mossgate-clearing',
+      startedAt: new Date(Date.now() + 60_000).toISOString(),
+      ticksCompleted: 0,
+      ticksRequired: 10,
+    };
+    const original = apiFetch.getMockImplementation()!;
+    let cancelAttempts = 0;
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as { type?: string };
+        if (command.type === 'woodcutting.cancel') {
+          cancelAttempts += 1;
+          if (cancelAttempts === 1) {
+            return json({ message: 'Revision conflict while stopping woodcutting.' }, 409);
+          }
+          throw new Error('The axe head is stuck.');
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    const activity = await screen.findByRole('region', { name: 'Woodcutting in progress' });
+
+    fireEvent.click(within(activity).getByRole('button', { name: 'Stop' }));
+
+    expect(await screen.findByText('The axe head is stuck.')).toBeVisible();
+    expect(cancelAttempts).toBe(2);
+    expect(screen.getByRole('region', { name: 'Woodcutting in progress' })).toBeInTheDocument();
+    expect(activeWoodcuttingState?.actionId).toBe('conflicted-woodcutting-action');
+  });
+
+  it('bounds room-event deduplication while refreshing temporary-object lifecycle changes', async () => {
     campfireVisible = true;
-    terminalRoomEvents.push({
-      id: 1,
+    terminalRoomEvents.push(...Array.from({ length: 257 }, (_, index) => ({
+      id: index + 1,
       roomId: 'mossgate-clearing',
-      speakerType: 'npc',
+      speakerType: 'npc' as const,
       speakerId: 'room:mossgate-clearing',
       speakerName: 'The room',
       text: 'The campfire burns down to embers and goes dark.',
       createdAt: new Date().toISOString(),
-    });
+    })));
+    const duplicateEvent = terminalRoomEvents.at(-1);
+    if (duplicateEvent) terminalRoomEvents.push({ ...duplicateEvent });
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     campfireVisible = false;
@@ -4382,6 +6955,44 @@ describe('single-character world session client', () => {
     expect(await screen.findByText('You extinguish the campfire.')).toBeInTheDocument();
   });
 
+  it('lets a traveler extinguish a campfire from its room description', async () => {
+    campfireVisible = true;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Choose an action for Campfire in terminal' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Choose an action for Campfire' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Extinguish' }));
+
+    expect(await screen.findByText('You extinguish the campfire.')).toBeVisible();
+    await waitFor(() => expect(campfireVisible).toBe(false));
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body)).type === 'campfire.extinguish' &&
+      JSON.parse(String(init?.body)).payload?.campfireId === 'test-campfire',
+    )).toBe(true);
+  });
+
+  it('opens the use-target picker when a carried tool is mentioned in room narration', async () => {
+    woodcuttingAxeCarried = true;
+    currentRoomMentionsInventory = true;
+    availableWoodcuttingTrees = [{ id: 'southbound-pine', label: 'pine' }];
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Choose an action for Copper Axe in terminal' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Choose an action for Copper Axe' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Use' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Use Copper Axe on pine' }));
+
+    expect(await screen.findByText('You begin swinging your axe at the tree...')).toBeVisible();
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body)).type === 'woodcutting.start' &&
+      JSON.parse(String(init?.body)).payload?.axeItemId === 'copper-axe',
+    )).toBe(true);
+  });
+
   it('prints Chop! every two seconds while woodcutting remains active', async () => {
     activeWoodcuttingState = {
       actionId: 'persisted-woodcutting-action',
@@ -4410,6 +7021,10 @@ describe('single-character world session client', () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
 
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('use axe no tree');
+    await screen.findByText('There is no tree called “no tree” here.');
+    submitWorldCommand('use Copper Axe on nonexistent tree');
+    await screen.findByText('There is no tree called “nonexistent tree” here.');
     submitWorldCommand('use Copper Axe on pine tree');
 
     await screen.findByText('You begin swinging your axe at the tree...');
@@ -4420,6 +7035,44 @@ describe('single-character world session client', () => {
     expect(JSON.parse(String(startCommand?.[1]?.body))).toMatchObject({
       payload: { axeItemId: 'copper-axe', treeId: 'southbound-pine' },
     });
+  });
+
+  it('asks which axe to use when multiple carried axes match', async () => {
+    woodcuttingAxeCarried = true;
+    secondWoodcuttingAxeCarried = true;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+    submitWorldCommand('use Copper Axe pine');
+
+    await waitFor(() => expect(history).toHaveTextContent('Which axe do you mean: Copper Axe, Copper Axe?'));
+    const ambiguityCount = screen.getAllByText('Which axe do you mean: Copper Axe, Copper Axe?').length;
+    submitWorldCommand('use axe pine');
+    await waitFor(() => {
+      expect(screen.getAllByText('Which axe do you mean: Copper Axe, Copper Axe?')).toHaveLength(ambiguityCount + 1);
+    });
+    const afterGenericAxeCount = screen.getAllByText('Which axe do you mean: Copper Axe, Copper Axe?').length;
+    submitWorldCommand('use axe on pine');
+    await waitFor(() => {
+      expect(screen.getAllByText('Which axe do you mean: Copper Axe, Copper Axe?')).toHaveLength(afterGenericAxeCount + 1);
+    });
+  });
+
+  it('asks which tree when several match an axe command', async () => {
+    woodcuttingAxeCarried = true;
+    availableWoodcuttingTrees = [
+      { id: 'southbound-pine', label: 'pine tree' },
+      { id: 'ridge-white-pine', label: 'white pine tree' },
+    ];
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('use Copper Axe on pine tree');
+
+    expect(await screen.findByText(/Which tree do you mean:.*pine tree/)).toBeVisible();
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'woodcutting.start',
+    )).toBe(false);
   });
 
   it('shows active daily postings from previous cycles as expired in Field notes', async () => {

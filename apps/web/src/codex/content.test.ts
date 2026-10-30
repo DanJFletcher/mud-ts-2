@@ -5,9 +5,11 @@ import {
   ORRAVETH_ARTICLES,
   ORRAVETH_ARTICLES_BY_ID,
   ORRAVETH_ARTICLES_BY_SLUG,
+  parseCodexArticle,
   searchCodexArticles,
+  validateCodexArticleRelationships,
 } from "./content.js";
-import { CODEX_CATEGORIES, CodexArticleMetadataSchema } from "./types.js";
+import { CODEX_CATEGORIES, CodexArticleMetadataSchema, type CodexArticle } from "./types.js";
 
 describe("Orraveth Codex content", () => {
   it("loads a structured catalog that belongs only to Orraveth", () => {
@@ -92,9 +94,53 @@ describe("Orraveth Codex content", () => {
     );
   });
 
+  it("returns no search results for blank or unmatched queries", () => {
+    expect(searchCodexArticles(" \n\t ")).toEqual([]);
+    expect(searchCodexArticles("no article has this phrase")).toEqual([]);
+  });
+
+  it("uses an article title or the unresolved slug when expanding an unlabeled wiki link", () => {
+    const title = ORRAVETH_ARTICLES_BY_SLUG.get("bellwold")!.title;
+    expect(expandWikiLinks("[[bellwold]]")).toBe(`[${title}](${articleHref("bellwold")})`);
+    expect(expandWikiLinks("[[unwritten-slug]]")).toBe(
+      `[unwritten-slug](${articleHref("unwritten-slug")})`,
+    );
+    expect(articleHref("a/b c")).toContain("a%2Fb%20c");
+  });
+
   it("rejects metadata that attempts to attach Orraveth content to another world", () => {
     const existing = ORRAVETH_ARTICLES[0];
     const { body: _body, sourcePath: _sourcePath, ...metadata } = existing;
     expect(CodexArticleMetadataSchema.safeParse({ ...metadata, worldId: "mudd-demo-instance" }).success).toBe(false);
+  });
+
+  it("reports malformed YAML and metadata with the article source path", () => {
+    expect(() => parseCodexArticle("broken.yml.md", "---\ntitle: [unfinished\n---\nBody"))
+      .toThrow("Codex article broken.yml.md has invalid YAML:");
+    expect(() => parseCodexArticle("missing-fields.md", "---\nid: invalid\n---\nBody"))
+      .toThrow("Codex article missing-fields.md has invalid metadata:");
+  });
+
+  it("rejects related IDs, regions, and wiki links that do not resolve", () => {
+    const { regionId: _regionId, ...base } = ORRAVETH_ARTICLES[0]!;
+    const makeArticle = (overrides: Partial<CodexArticle> = {}): CodexArticle => ({
+      ...base,
+      id: "orraveth-test-article",
+      slug: "test-article",
+      relatedIds: [],
+      relationships: [],
+      body: "Test body.",
+      ...overrides,
+    });
+
+    expect(() => validateCodexArticleRelationships([
+      makeArticle({ relatedIds: ["orraveth-missing-article"] }),
+    ])).toThrow("refers to missing article ID orraveth-missing-article");
+    expect(() => validateCodexArticleRelationships([
+      makeArticle({ regionId: "orraveth-missing-region" }),
+    ])).toThrow("refers to missing region orraveth-missing-region");
+    expect(() => validateCodexArticleRelationships([
+      makeArticle({ body: "See [[missing-article]]." }),
+    ])).toThrow("links to missing article slug missing-article");
   });
 });

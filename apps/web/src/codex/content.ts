@@ -10,7 +10,7 @@ const articleFiles = import.meta.glob("./content/**/*.md", {
 
 const wikiLinkPattern = /\[\[([a-z0-9-]+)(?:\|([^\]]+))?\]\]/g;
 
-function parseArticle(sourcePath: string, raw: string): CodexArticle {
+export function parseCodexArticle(sourcePath: string, raw: string): CodexArticle {
   const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)([\s\S]*)$/);
   if (!match) throw new Error(`Codex article ${sourcePath} is missing YAML frontmatter.`);
 
@@ -33,7 +33,7 @@ function parseArticle(sourcePath: string, raw: string): CodexArticle {
   return { ...validatedMetadata, body, sourcePath };
 }
 
-function validateRelationships(articles: readonly CodexArticle[]): void {
+export function validateCodexArticleRelationships(articles: readonly CodexArticle[]): void {
   const byId = new Map(articles.map((article) => [article.id, article]));
   const bySlug = new Map(articles.map((article) => [article.slug, article]));
   if (byId.size !== articles.length) throw new Error("The Orraveth Codex contains duplicate article IDs.");
@@ -57,10 +57,10 @@ function validateRelationships(articles: readonly CodexArticle[]): void {
 }
 
 const parsedArticles = Object.entries(articleFiles)
-  .map(([sourcePath, raw]) => parseArticle(sourcePath, raw))
+  .map(([sourcePath, raw]) => parseCodexArticle(sourcePath, raw))
   .sort((left, right) => left.title.localeCompare(right.title));
 
-validateRelationships(parsedArticles);
+validateCodexArticleRelationships(parsedArticles);
 
 export const ORRAVETH_ARTICLES: readonly CodexArticle[] = parsedArticles;
 export const ORRAVETH_ARTICLES_BY_ID = new Map(ORRAVETH_ARTICLES.map((article) => [article.id, article]));

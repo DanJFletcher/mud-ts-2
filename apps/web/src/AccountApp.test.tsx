@@ -213,6 +213,17 @@ describe('world lobby and explicit character entry', () => {
     expect(await screen.findByText(`Sign in return: /worlds/${demo}`)).toBeInTheDocument();
   });
 
+  it('remembers the current destination when signing in from the mobile navigation', async () => {
+    mocks.signedIn = false;
+    const { container } = open(`/worlds/${demo}`);
+    const primary = container.querySelector<HTMLElement>('[aria-label="Primary navigation"]')!;
+
+    fireEvent.click(within(primary).getByRole('link', { name: 'Sign in' }));
+
+    expect(sessionStorage.getItem('mudd-entry-intent')).toBe(`/worlds/${demo}`);
+    expect(await screen.findByText(`Sign in return: /worlds/${demo}`)).toBeInTheDocument();
+  });
+
   it('signs out from both the mobile and desktop navigation actions', () => {
     const { container } = open();
     const primary = container.querySelector<HTMLElement>('[aria-label="Primary navigation"]')!;

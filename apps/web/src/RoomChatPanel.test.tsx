@@ -88,6 +88,41 @@ describe('RoomChatPanel message polling', () => {
     expect(screen.getByText('Room')).toBeInTheDocument();
   });
 
+  it.each([
+    {
+      label: 'a server error without a message',
+      response: () => new Response('{}', { status: 503, headers: { 'content-type': 'application/json' } }),
+      expected: 'Room chat is unavailable. Retrying…',
+    },
+    {
+      label: 'a response for another room',
+      response: () => Response.json({ roomId: 'different-room', messages: [] }),
+      expected: 'Room chat is unavailable. Retrying…',
+    },
+  ])('reports a useful load error for $label', async ({ response, expected }) => {
+    fetchMock.mockImplementationOnce(async () => response());
+    render(<RoomChatPanel worldInstanceId={worldInstanceId} roomId="test-room" fullscreen={false} onFullscreenChange={vi.fn()} />);
+
+    expect(await screen.findByText(expected)).toBeVisible();
+  });
+
+  it('bounds the seen-message history while retaining the latest chat entries', async () => {
+    storedMessages = Array.from({ length: 205 }, (_, index) => ({
+      id: index + 1,
+      roomId: 'test-room',
+      speakerType: 'npc' as const,
+      speakerName: 'Mara',
+      text: `Notice ${index + 1}`,
+      createdAt: `2026-10-18T12:00:${String(index % 60).padStart(2, '0')}.000Z`,
+    }));
+    render(<RoomChatPanel worldInstanceId={worldInstanceId} roomId="test-room" fullscreen={false} onFullscreenChange={vi.fn()} />);
+
+    expect(await screen.findByText('Notice 205')).toBeVisible();
+    expect(screen.queryByText('Notice 1')).not.toBeInTheDocument();
+    expect(screen.getByRole('log', { name: 'Room chat messages' }).querySelectorAll('.focused-room-chat__message'))
+      .toHaveLength(100);
+  });
+
   it('shows a count badge for new messages while chat is collapsed and opens to the latest', async () => {
     render(
       <RoomChatPanel worldInstanceId={worldInstanceId} roomId="test-room" fullscreen={false} onFullscreenChange={vi.fn()} />,
@@ -160,6 +195,39 @@ describe('RoomChatPanel message polling', () => {
     messages.scrollTop = 120;
     fireEvent.scroll(messages);
     expect(screen.queryByRole('button', { name: /unread chat message/ })).not.toBeInTheDocument();
+  });
+
+  it('scrolls an open chat to the latest message from its unread badge', async () => {
+    storedMessages = [{
+      id: 1,
+      roomId: 'test-room',
+      speakerType: 'npc',
+      speakerName: 'Mara',
+      text: 'The first notice.',
+      createdAt: '2026-10-18T12:00:00.000Z',
+    }];
+    render(<RoomChatPanel worldInstanceId={worldInstanceId} roomId="test-room" fullscreen={false} onFullscreenChange={vi.fn()} />);
+    expect(await screen.findByText('The first notice.')).toBeVisible();
+    const messages = screen.getByRole('log', { name: 'Room chat messages' });
+    Object.defineProperty(messages, 'scrollHeight', { configurable: true, value: 240 });
+    Object.defineProperty(messages, 'clientHeight', { configurable: true, value: 120 });
+    messages.scrollTop = 0;
+    fireEvent.scroll(messages);
+    storedMessages.push({
+      id: 2,
+      roomId: 'test-room',
+      speakerType: 'player',
+      speakerName: 'Alder',
+      text: 'I found a trail marker.',
+      createdAt: '2026-10-18T12:00:01.000Z',
+    });
+
+    await act(async () => { intervals[0]?.(); });
+    fireEvent.click(await screen.findByRole('button', {
+      name: '1 unread chat message. Jump to latest.',
+    }));
+
+    expect(messages.scrollTop).toBe(240);
   });
 
   it('pauses hidden-tab chat polling and refreshes immediately on becoming visible', async () => {
@@ -290,6 +358,30 @@ describe('RoomChatPanel message polling', () => {
     expect(new Headers(post?.[1]?.headers).get('x-mudd-world-instance')).toBe(worldInstanceId);
   });
 
+  it('records first-feedback timing for a traced chat send', async () => {
+    window.history.replaceState(null, '', '/?muddTrace=1');
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const animationFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callback(performance.now());
+      return 1;
+    });
+    try {
+      render(<RoomChatPanel worldInstanceId={worldInstanceId} roomId="test-room" fullscreen={false} onFullscreenChange={vi.fn()} />);
+      const textbox = await screen.findByRole('textbox', { name: 'Message the room' });
+      fireEvent.change(textbox, { target: { value: 'Measured chat.' } });
+      fireEvent.submit(textbox.closest('form')!);
+
+      expect(info).toHaveBeenCalledWith(
+        '[mudd_perf_trace_feedback]',
+        expect.stringContaining('"action":"chat.send"'),
+      );
+    } finally {
+      animationFrame.mockRestore();
+      info.mockRestore();
+      window.history.replaceState(null, '', '/');
+    }
+  });
+
   it('reuses the same submission ID when the player retries a failed send', async () => {
     failedPostRequests = 1;
     render(<RoomChatPanel worldInstanceId={worldInstanceId} roomId="test-room" fullscreen={false} onFullscreenChange={vi.fn()} />);
@@ -305,6 +397,118 @@ describe('RoomChatPanel message polling', () => {
     expect(postedSubmissionIds).toHaveLength(2);
     expect(postedSubmissionIds[1]).toBe(postedSubmissionIds[0]);
     expect(textbox).toHaveValue('Keep this draft');
+  });
+
+  it('reuses a pending submission ID across resubmission after uncertain delivery', async () => {
+    failedPostRequests = 2;
+    const coordinator = new PendingActionCoordinator();
+    render(<RoomChatPanel
+      pendingActionCoordinator={coordinator}
+      worldInstanceId={worldInstanceId}
+      characterId="fern"
+      roomId="test-room"
+      fullscreen={false}
+      onFullscreenChange={vi.fn()}
+    />);
+    const textbox = await screen.findByRole('textbox', { name: 'Message the room' });
+    fireEvent.change(textbox, { target: { value: 'The ford is passable.' } });
+    fireEvent.submit(textbox.closest('form')!);
+    expect(await screen.findByText('Temporary failure.')).toBeVisible();
+    const firstSubmissionId = postedSubmissionIds[0];
+
+    fireEvent.submit(textbox.closest('form')!);
+    await waitFor(() => expect(postedSubmissionIds).toHaveLength(2));
+    expect(postedSubmissionIds[1]).toBe(firstSubmissionId);
+    expect(coordinator.getSnapshot()[0]?.state).toBe('uncertain');
+    coordinator.clearWhere(() => true);
+
+    fireEvent.submit(textbox.closest('form')!);
+    await waitFor(() => expect(postedSubmissionIds).toHaveLength(3));
+    expect(postedSubmissionIds[2]).toBe(firstSubmissionId);
+    expect(await screen.findByText('The ford is passable.')).toBeVisible();
+  });
+
+  it('rejects a send explicitly when the server returns a client error', async () => {
+    const coordinator = new PendingActionCoordinator();
+    const originalFetch = fetchMock.getMockImplementation() as typeof fetch;
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        return new Response(JSON.stringify({ message: 'That message is too long.' }), {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return originalFetch(input, init);
+    });
+    render(<RoomChatPanel
+      pendingActionCoordinator={coordinator}
+      worldInstanceId={worldInstanceId}
+      characterId="fern"
+      roomId="test-room"
+      fullscreen={false}
+      onFullscreenChange={vi.fn()}
+    />);
+    const textbox = await screen.findByRole('textbox', { name: 'Message the room' });
+    fireEvent.change(textbox, { target: { value: 'A very long message.' } });
+    fireEvent.submit(textbox.closest('form')!);
+
+    expect(await screen.findByText('That message is too long.')).toBeVisible();
+    expect(coordinator.getSnapshot()[0]?.state).toBe('rejected');
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+    coordinator.clearWhere(() => true);
+  });
+
+  it('keeps delivery uncertain after a network error', async () => {
+    const originalFetch = fetchMock.getMockImplementation() as typeof fetch;
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') throw new Error('Network unavailable.');
+      return originalFetch(input, init);
+    });
+    render(<RoomChatPanel worldInstanceId={worldInstanceId} roomId="test-room" fullscreen={false} onFullscreenChange={vi.fn()} />);
+    const textbox = await screen.findByRole('textbox', { name: 'Message the room' });
+    fireEvent.change(textbox, { target: { value: 'Can anyone hear me?' } });
+    fireEvent.submit(textbox.closest('form')!);
+
+    expect(await screen.findByText(
+      'Delivery is unconfirmed. Retry to check safely; the same message ID will be reused.',
+    )).toBeVisible();
+  });
+
+  it('keeps delivery uncertain when a send acknowledgement belongs to another room', async () => {
+    const coordinator = new PendingActionCoordinator();
+    const originalFetch = fetchMock.getMockImplementation() as typeof fetch;
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        return Response.json({
+          message: {
+            id: 30,
+            roomId: 'different-room',
+            speakerType: 'player',
+            speakerName: 'Fern',
+            text: 'Is anyone there?',
+            createdAt: '2026-10-18T12:00:03.000Z',
+          },
+        }, { status: 201 });
+      }
+      return originalFetch(input, init);
+    });
+    render(<RoomChatPanel
+      pendingActionCoordinator={coordinator}
+      worldInstanceId={worldInstanceId}
+      characterId="fern"
+      roomId="test-room"
+      fullscreen={false}
+      onFullscreenChange={vi.fn()}
+    />);
+    const textbox = await screen.findByRole('textbox', { name: 'Message the room' });
+    fireEvent.change(textbox, { target: { value: 'Is anyone there?' } });
+    fireEvent.submit(textbox.closest('form')!);
+
+    expect(await screen.findByText(
+      'Delivery is unconfirmed. Retry to check safely; the same message ID will be reused.',
+    )).toBeVisible();
+    expect(coordinator.getSnapshot()[0]?.state).toBe('uncertain');
+    coordinator.clearWhere(() => true);
   });
 
   it('shows a pending message before the post acknowledgement and reconciles it without a duplicate', async () => {
@@ -350,6 +554,49 @@ describe('RoomChatPanel message polling', () => {
     });
     await waitFor(() => expect(coordinator.getSnapshot()[0]?.state).toBe('confirmed'));
     expect(screen.getAllByText('The bridge is clear.')).toHaveLength(1);
+    coordinator.clearWhere(() => true);
+  });
+
+  it('confirms a late post without rendering it after changing rooms', async () => {
+    const coordinator = new PendingActionCoordinator();
+    let resolvePost!: (response: Response) => void;
+    const originalFetch = fetchMock.getMockImplementation() as typeof fetch;
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        return new Promise<Response>((resolve) => { resolvePost = resolve; });
+      }
+      return Promise.resolve(originalFetch(input, init));
+    });
+    const props = {
+      pendingActionCoordinator: coordinator,
+      worldInstanceId,
+      characterId: 'fern',
+      fullscreen: false,
+      onFullscreenChange: vi.fn(),
+    };
+    const view = render(<RoomChatPanel {...props} roomId="test-room" />);
+    const textbox = await screen.findByRole('textbox', { name: 'Message the room' });
+    fireEvent.change(textbox, { target: { value: 'The old bridge is clear.' } });
+    fireEvent.submit(textbox.closest('form')!);
+    expect(await screen.findByText('The old bridge is clear.')).toBeVisible();
+    expect(screen.getByText('Sending…')).toBeVisible();
+
+    view.rerender(<RoomChatPanel {...props} roomId="other-room" />);
+    await act(async () => {
+      resolvePost(new Response(JSON.stringify({
+        message: {
+          id: 22,
+          roomId: 'test-room',
+          speakerType: 'player',
+          speakerName: 'Fern',
+          text: 'The old bridge is clear.',
+          createdAt: '2026-10-18T12:00:03.000Z',
+        },
+      }), { status: 201, headers: { 'content-type': 'application/json' } }));
+    });
+
+    await waitFor(() => expect(coordinator.getSnapshot()[0]?.state).toBe('confirmed'));
+    expect(screen.queryByText('The old bridge is clear.')).not.toBeInTheDocument();
     coordinator.clearWhere(() => true);
   });
 

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import CodexScreen from "./CodexScreen.js";
+import { ORRAVETH_ARTICLES_BY_SLUG } from "./content.js";
 
 describe("CodexScreen", () => {
   beforeEach(() => {
@@ -74,6 +75,19 @@ describe("CodexScreen", () => {
     expect(document.activeElement).toBe(search);
   });
 
+  it("clears and blurs search with Escape while staying on the index", () => {
+    render(<CodexScreen />);
+    const search = screen.getByRole("textbox", { name: "Search articles" });
+    fireEvent.change(search, { target: { value: "Bellwold" } });
+    search.focus();
+
+    fireEvent.keyDown(search, { key: "Escape" });
+
+    expect(search).toHaveValue("");
+    expect(document.activeElement).not.toBe(search);
+    expect(window.location.hash).toBe("#/info/codex");
+  });
+
   it("browses category results and provides recovery for unknown archive paths", async () => {
     window.location.hash = "#/info/codex/explore";
     const view = render(<CodexScreen />);
@@ -96,6 +110,14 @@ describe("CodexScreen", () => {
     expect(screen.getByRole("link", { name: /Return to the index/ })).toHaveAttribute("href", "#/info/codex/explore");
   });
 
+  it("shows a recovery page for an unknown Codex section", async () => {
+    window.location.hash = "#/info/codex/unknown-section";
+    render(<CodexScreen />);
+
+    expect(await screen.findByRole("heading", { name: "This archive path is unknown" })).toBeVisible();
+    expect(screen.getByRole("link", { name: /Return to the index/ })).toHaveAttribute("href", "#/info/codex");
+  });
+
   it("builds article contents links from markdown headings", async () => {
     window.location.hash = "#/info/codex/article/bellwold-roadside-wildlife";
     render(<CodexScreen />);
@@ -106,6 +128,21 @@ describe("CodexScreen", () => {
     expect(within(tableOfContents as HTMLElement).getByRole("link", { name: "Stray hounds" }))
       .toHaveAttribute("href", "#stray-hounds");
     expect(screen.getByRole("heading", { name: "Stray hounds", level: 3 })).toBeVisible();
+  });
+
+  it("renders second-level article headings with stable anchor ids", async () => {
+    const article = ORRAVETH_ARTICLES_BY_SLUG.get("bellwold-roadside-wildlife")!;
+    const originalBody = article.body;
+    article.body = "## Trail signs\n\nThe tracks are easiest to read after rain.";
+    window.location.hash = "#/info/codex/article/bellwold-roadside-wildlife";
+
+    try {
+      render(<CodexScreen />);
+      const heading = await screen.findByRole("heading", { level: 2, name: "Trail signs" });
+      expect(heading).toHaveAttribute("id", "trail-signs");
+    } finally {
+      article.body = originalBody;
+    }
   });
 
   it("shows the empty timeline state and recorded relationship rows", async () => {
