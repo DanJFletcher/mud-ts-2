@@ -32,7 +32,12 @@ async function openInfoSection(section: 'Vitals' | 'Items' | 'Equipment' | 'Stat
   return tabs;
 }
 
-function classApiFixture(initiallySelected = false, completedDuel = false) {
+function classApiFixture(
+  initiallySelected = false,
+  completedDuel = false,
+  abilityFailure = false,
+  adoptionFailure = false,
+) {
   const original = apiFetch.getMockImplementation()!;
   const commands: Array<{ type: string; payload: Record<string, unknown> }> = [];
   let selected = initiallySelected;
@@ -57,6 +62,12 @@ function classApiFixture(initiallySelected = false, completedDuel = false) {
       const command = JSON.parse(String(init.body));
       if (command.type === 'character.class.choose' || command.payload?.action === 'ability') {
         commands.push(command);
+        if (command.type === 'character.class.choose' && adoptionFailure) {
+          return json({ message: 'Class adoption is temporarily unavailable.' }, 503);
+        }
+        if (command.payload?.action === 'ability' && abilityFailure) {
+          return json({ message: 'Heavy Strike cannot be used right now.' }, 503);
+        }
         if (command.type === 'character.class.choose') selected = true;
         revision += 1;
         return json({ receipt: { ok: true, commandId: command.commandId, eventIds: [], newAggregateVersion: revision }, events: [] });
@@ -113,6 +124,7 @@ let dailyCommandPayloads: Array<{ type: string; payload: Record<string, unknown>
 let visitedLocationIds: string[];
 let revision: number;
 let moveError: string | null;
+let bridgeWatcherMobile: boolean;
 let movementEvents: Array<{ type: string; payload?: unknown }>;
 let itemTaken: boolean;
 let maraChoice: string | null;
@@ -400,7 +412,7 @@ function currentLocation(includeNpcDescriptions = false) {
         qualifiedName: 'Glasswater Bridge',
         description: 'A stone bridge crosses clear water.',
         roomDetails: 'A Bridge Watcher is here, eyes alert. A brass token lies here.',
-        npcs: [{ id: 'bridge-watcher', name: 'Bridge Watcher', mobile: true }],
+        npcs: [{ id: 'bridge-watcher', name: 'Bridge Watcher', mobile: bridgeWatcherMobile }],
       },
     }] : room === 'bridge' ? [{
       id: 'bridge-to-clearing',
@@ -645,6 +657,7 @@ beforeEach(() => {
   visitedLocationIds = ['mossgate-clearing'];
   revision = 1;
   moveError = null;
+  bridgeWatcherMobile = true;
   movementEvents = [];
   itemTaken = false;
   maraChoice = null;
@@ -1855,6 +1868,55 @@ describe('single-character world session client', () => {
     timers.mockRestore();
   });
 
+  it('reconciles an optimistic destination when the server reports another room', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as { type?: string };
+        if (command.type === 'character.move') {
+          const response = await original(path, init);
+          room = 'market';
+          visitedLocationIds = ['mossgate-clearing', 'glasswater-bridge', 'reedbank-stalls'];
+          return response;
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    quickGo('north');
+
+    expect(await screen.findByRole('heading', { name: 'Reedbank Stalls' })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Glasswater Bridge' })).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Terminal output' })).toHaveTextContent('Reedbank Stalls');
+  });
+
+  it('appends authoritative destination details omitted from the travel preview', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation(async (path, init) => {
+      const response = await original(path, init);
+      if (path !== '/api/game' || room !== 'bridge') return response;
+      const game = await response.json() as {
+        location: { description: string };
+      } & Record<string, unknown>;
+      return json({
+        ...game,
+        location: {
+          ...game.location,
+          description: `${game.location.description}\n\nBeyond the bridge, the mill wheel turns.`,
+        },
+      });
+    });
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    quickGo('north');
+
+    expect(await screen.findByRole('heading', { name: 'Glasswater Bridge' })).toBeVisible();
+    expect(await screen.findByText('Beyond the bridge, the mill wheel turns.')).toBeVisible();
+  });
+
   it('shows the destination room immediately without request-status messages', async () => {
     const original = apiFetch.getMockImplementation()!;
     let departureEvents: TestRoomChatMessage[] = [];
@@ -1937,7 +1999,10 @@ describe('single-character world session client', () => {
       const projection = {
         character: game.character,
         stats: game.stats,
-        location: game.location,
+        location: {
+          ...(game.location as Record<string, unknown>),
+          npcs: [{ id: 'bridge-watcher', name: 'Bridge Watcher', mobile: true }],
+        },
         map: game.map,
         questJournal: game.questJournal ?? [],
         availableFishingSpots: game.availableFishingSpots ?? [],
@@ -1954,11 +2019,77 @@ describe('single-character world session client', () => {
     quickGo('north');
 
     expect(await screen.findByRole('heading', { name: 'Glasswater Bridge' })).toBeVisible();
+    expect(screen.queryByText('Bridge Watcher leaves the room.')).not.toBeInTheDocument();
     await waitFor(() => expect(apiFetch.mock.calls.some(([path, init]) =>
       path === '/api/commands' &&
       JSON.parse(String(init?.body ?? '{}')).type === 'character.move'
     )).toBe(true));
     expect(apiFetch.mock.calls.filter(([path]) => path === '/api/game')).toHaveLength(gameRequestCountBeforeMove);
+  });
+
+  it('rolls back optimistic travel when the authoritative projection reports another room', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    const startingGame = await (await original('/api/game', {})).json() as Record<string, unknown>;
+    const startingLocation = startingGame.location;
+    apiFetch.mockImplementation(async (path, init) => {
+      const response = await original(path, init);
+      if (path !== '/api/commands' || init?.method !== 'POST') return response;
+      const command = JSON.parse(String(init.body)) as { type?: string };
+      if (command.type !== 'character.move') return response;
+
+      const commandResult = await response.json() as Record<string, unknown>;
+      const movedGame = await (await original('/api/game', {})).json() as Record<string, unknown>;
+      return Response.json({
+        ...commandResult,
+        movementProjection: { ...movedGame, location: startingLocation },
+      });
+    });
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    quickGo('north');
+    expect(await screen.findByRole('heading', { name: 'Glasswater Bridge' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Mossgate Clearing' })).toBeVisible();
+    expect(screen.queryByText('Traveling north…')).not.toBeInTheDocument();
+  });
+
+  it('retries fishing after the server says the line is still in the water', async () => {
+    room = 'bridge';
+    activeFishingCastState = {
+      castId: 'retry-fishing-cast',
+      spotId: 'glasswater-fishing-spot',
+      locationId: 'glasswater-bridge',
+      rodItemId: 'old-rod',
+      rodQualityId: 'old',
+      startedAt: '2000-01-01T00:00:00.000Z',
+      tickIntervalSeconds: 1,
+      ticksRequired: 10,
+      ticksCompleted: 0,
+    };
+    fishingAdvanceEvents = [{
+      type: 'character.fishing_cast_advanced',
+      payload: { status: 'no-bite' },
+    }];
+    const original = apiFetch.getMockImplementation()!;
+    let attempts = 0;
+    apiFetch.mockImplementation((path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as { type?: string };
+        if (command.type === 'fishing.advance') {
+          attempts += 1;
+          if (attempts === 1) {
+            return Promise.resolve(json({ message: 'The line is still in the water.' }, 409));
+          }
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    expect(await screen.findByText('No bites. You reel in your line.', {}, { timeout: 10_000 })).toBeVisible();
+    await waitFor(() => expect(attempts).toBeGreaterThanOrEqual(2), { timeout: 10_000 });
+    expect(screen.getByRole('region', { name: 'Terminal output' }))
+      .not.toHaveTextContent('The line is still in the water.');
   });
 
   it.each([
@@ -2118,6 +2249,52 @@ describe('single-character world session client', () => {
       .not.toBeInTheDocument();
   });
 
+  it('rolls back an optimistic destination when conflict recovery finds another room', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    let moveAttempts = 0;
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as {
+          type?: string;
+          commandId?: string;
+          expectedVersion?: number;
+        };
+        if (command.type === 'character.move') {
+          moveAttempts += 1;
+          const expectedVersion = command.expectedVersion ?? revision;
+          revision = expectedVersion + 1;
+          if (moveAttempts === 4) {
+            room = 'market';
+            visitedLocationIds = ['mossgate-clearing', 'glasswater-bridge', 'reedbank-stalls'];
+          }
+          return json({
+            receipt: {
+              ok: false,
+              commandId: command.commandId,
+              code: 'VERSION_CONFLICT',
+              message: `Expected revision ${expectedVersion}; current revision is ${revision}.`,
+              retryable: true,
+            },
+            streamId: characterId,
+            events: [],
+          });
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    quickGo('north');
+
+    await waitFor(() => {
+      expect(moveAttempts).toBe(4);
+      expect(screen.getByRole('heading', { name: 'Reedbank Stalls' })).toBeVisible();
+    });
+    expect(screen.getByRole('region', { name: 'Terminal output' })).toHaveTextContent('Reedbank Stalls');
+    expect(screen.queryByRole('heading', { name: 'Glasswater Bridge' })).not.toBeInTheDocument();
+  });
+
   it('shows an uncertain PvP challenge and reuses its command ID when retried', async () => {
     roomOccupants = [{ id: 'mira-character', displayName: 'Mira' }];
     heartbeatOccupants = [{ id: 'mira-character', displayName: 'Mira' }];
@@ -2242,6 +2419,48 @@ describe('single-character world session client', () => {
     expect(responseCommands[1]?.commandId).toBe(responseCommands[0]?.commandId);
     await act(async () => {
       releases[1]!(Response.json({ message: 'Challenge response rejected.' }, { status: 400 }));
+    });
+  });
+
+  it('confirms an uncertain PvP response when the refreshed inbox records it', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    const incomingRequest = {
+      requestId: 'incoming-challenge',
+      kind: 'pvp.challenge' as const,
+      initiatorCharacterId: 'mira-character',
+      initiatorName: 'Mira',
+      recipientCharacterId: characterId,
+      recipientName: 'Rowan',
+      status: 'pending' as const,
+      createdAt: '2026-10-25T12:00:00.000Z',
+      expiresAt: '2026-10-25T12:05:00.000Z',
+    };
+    let inbox: InteractionInbox = { requests: [incomingRequest], encounter: null };
+    apiFetch.mockImplementation((path, init) => {
+      if (path === '/api/interactions') return Promise.resolve(json(inbox));
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as { type?: string };
+        if (command.type === 'interaction.respond') {
+          return Promise.resolve(json({ message: 'Temporary server issue.' }, 503));
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('accept incoming-challenge');
+    expect(await screen.findByText('Response status is unconfirmed.')).toBeVisible();
+
+    inbox = {
+      ...inbox,
+      requests: [{ ...incomingRequest, status: 'accepted' }],
+    };
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText('Response status is unconfirmed.')).not.toBeInTheDocument();
     });
   });
 
@@ -3123,12 +3342,58 @@ describe('single-character world session client', () => {
     expect(scrollTop).toBe(400);
   });
 
+  it('ignores a late world catalog response after the client unmounts', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    let releaseWorlds: (() => void) | undefined;
+    apiFetch.mockImplementation(async (path, init) => {
+      const response = await original(path, init);
+      if (path === '/api/worlds') {
+        return new Promise<Response>((resolve) => {
+          releaseWorlds = () => resolve(response);
+        });
+      }
+      return response;
+    });
+    const view = render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    await waitFor(() => expect(releaseWorlds).toBeTypeOf('function'));
+    view.unmount();
+    await act(async () => releaseWorlds?.());
+  });
+
+  it('does not poll the world snapshot while the tab is hidden', async () => {
+    const visibilityDescriptor = Object.getOwnPropertyDescriptor(document, 'visibilityState');
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'hidden',
+    });
+    const timers = vi.spyOn(window, 'setInterval');
+    const view = render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const refreshSnapshot = timers.mock.calls.find(([, delay]) => delay === 15_000)?.[0];
+    expect(refreshSnapshot).toBeTypeOf('function');
+    const initialGameRequests = apiFetch.mock.calls.filter(([path]) => path === '/api/game').length;
+
+    act(() => { (refreshSnapshot as () => void)(); });
+
+    expect(apiFetch.mock.calls.filter(([path]) => path === '/api/game')).toHaveLength(initialGameRequests);
+    view.unmount();
+    timers.mockRestore();
+    if (visibilityDescriptor) {
+      Object.defineProperty(document, 'visibilityState', visibilityDescriptor);
+    } else {
+      Reflect.deleteProperty(document, 'visibilityState');
+    }
+  });
+
   it('closes the bottom navigation menu on Escape and restores focus to its trigger', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     const menuTrigger = screen.getByRole('button', { name: 'Open menu' });
 
     fireEvent.click(menuTrigger);
+    expect(screen.getByRole('region', { name: 'Menu' })).toBeVisible();
+    fireEvent.keyDown(document, { key: 'Enter' });
     expect(screen.getByRole('region', { name: 'Menu' })).toBeVisible();
     fireEvent.keyDown(document, { key: 'Escape' });
 
@@ -3208,6 +3473,44 @@ describe('single-character world session client', () => {
     await screen.findByText('4/6');
     expect(screen.getByLabelText('Character health')).toHaveAttribute('aria-valuenow', '4');
     expect(screen.queryByText(/You recover/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps an invalid daily reset date readable in Field notes', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation(async (path, init) => {
+      const response = await original(path, init);
+      if (path !== '/api/game') return response;
+      const game = await response.json() as {
+        character: Record<string, unknown>;
+      } & Record<string, unknown>;
+      return json({
+        ...game,
+        character: {
+          ...game.character,
+          dailyJobs: [{
+            boardId: 'reedbank-board',
+            cycle: '2026-99-99',
+            jobId: 'river-mint-delivery',
+            title: 'Bring river mint',
+            status: 'active',
+            details: {
+              id: 'river-mint-delivery',
+              poster: 'Sella',
+              title: 'Bring river mint',
+              supplyTypeId: 'river-mint',
+              quantity: 1,
+              gold: 15,
+              experience: 9,
+            },
+          }],
+        },
+      });
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    await openInfoSection('Field notes');
+
+    expect(screen.getByText('2026-99-99 · resets 2026-99-99')).toBeVisible();
   });
 
   it('shows active and completed quest objectives on Field notes', async () => {
@@ -3395,6 +3698,20 @@ describe('single-character world session client', () => {
     });
   });
 
+  it('does not announce a stationary NPC as leaving during travel reconciliation', async () => {
+    bridgeWatcherMobile = false;
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    quickGo('north');
+
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    await waitFor(() =>
+      expect(screen.getByRole('textbox', { name: 'Enter a command' })).toBeEnabled(),
+    );
+    expect(screen.queryByText('Bridge Watcher leaves the room.')).not.toBeInTheDocument();
+  });
+
   it('uses arrow keys for cardinal movement but leaves command fields alone', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
@@ -3507,6 +3824,55 @@ describe('single-character world session client', () => {
     await screen.findByRole('dialog', { name: 'World map' });
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'World map' })).not.toBeInTheDocument());
+  });
+
+  it('keeps consecutive NPC departure announcements while pruning prior entries', async () => {
+    room = 'bridge';
+    visitedLocationIds = ['mossgate-clearing', 'glasswater-bridge'];
+    const original = apiFetch.getMockImplementation()!;
+    const events: TestRoomChatMessage[] = [
+      {
+        id: 1,
+        roomId: 'glasswater-bridge',
+        speakerType: 'npc',
+        speakerId: 'bridge-watcher',
+        speakerName: 'Bridge Watcher',
+        text: 'The watcher leaves for the south bank.',
+        createdAt: '2026-10-26T12:00:00.000Z',
+      },
+      {
+        id: 2,
+        roomId: 'glasswater-bridge',
+        speakerType: 'npc',
+        speakerId: 'mill-worker',
+        speakerName: 'Mill Worker',
+        text: 'The worker departs toward the mill.',
+        createdAt: '2026-10-26T12:00:01.000Z',
+      },
+    ];
+    apiFetch.mockImplementation((path, init) => {
+      if (path.startsWith('/api/chat') && (!init?.method || init.method === 'GET')) {
+        const url = new URL(path, 'http://mudd.test');
+        if (url.searchParams.get('roomId') === 'glasswater-bridge') {
+          return Promise.resolve(json({
+            roomId: 'glasswater-bridge',
+            messages: [],
+            terminalEvents: events,
+            cursor: 2,
+          }));
+        }
+      }
+      return original(path, init);
+    });
+    const view = render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+
+    await waitFor(() => {
+      expect(history).toHaveTextContent('Bridge Watcher: The watcher leaves for the south bank.');
+      expect(history).toHaveTextContent('Mill Worker: The worker departs toward the mill.');
+    });
+    view.unmount();
   });
 
   it('replaces available paths with shared room chat for player and NPC messages', async () => {
@@ -4099,6 +4465,36 @@ describe('single-character world session client', () => {
     await waitFor(() => expect(history).toHaveTextContent('Name an item you carry and a container here'));
   });
 
+  it('explains when there is nothing left to take from the room', async () => {
+    itemTaken = true;
+    secondItemTaken = true;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('take all');
+
+    expect(await screen.findByText('There is nothing here you can take.')).toBeVisible();
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'character.take',
+    )).toBe(false);
+  });
+
+  it('rechecks the room when take-all targets disappear before the request', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    itemTaken = true;
+    secondItemTaken = true;
+
+    submitWorldCommand('take all');
+
+    expect(await screen.findByText('There is nothing here you can take.')).toBeVisible();
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'character.take',
+    )).toBe(false);
+  });
+
   it('uses a carried item on a room target from the terminal', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
@@ -4121,6 +4517,28 @@ describe('single-character world session client', () => {
       JSON.parse(String(init?.body ?? '{}')).payload.itemId === 'mossgate-loose-stone' &&
       JSON.parse(String(init?.body ?? '{}')).payload.targetId === 'mossgate-marker'
     )).toBe(true);
+  });
+
+  it('keeps the carried item when the server rejects its use', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation((path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as { type?: string };
+        if (command.type === 'character.use') {
+          return json({ message: 'The stone slips from your grip before it can strike.' }, 503);
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('take loose stone');
+    await screen.findByText('You pick up the loose stone.');
+
+    submitWorldCommand('use the loose stone on the marker');
+
+    expect(await screen.findByText('The stone slips from your grip before it can strike.')).toBeVisible();
+    expect(itemTaken).toBe(true);
   });
 
   it('asks which room target to use when several objects match', async () => {
@@ -4390,6 +4808,25 @@ describe('single-character world session client', () => {
     })).toBe(false);
   });
 
+  it('reports a server rejection when changing resting posture', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation((path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as { type?: string };
+        if (command.type === 'character.rest') {
+          return json({ message: 'You cannot settle down just now.' }, 503);
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('rest');
+
+    expect(await screen.findByText('You cannot settle down just now.')).toBeVisible();
+  });
+
   it('supports free rest and stand at Orraveth’s Kindly Roof without an inn service', async () => {
     orravethWorld = true;
     room = 'inn';
@@ -4446,6 +4883,41 @@ describe('single-character world session client', () => {
     await screen.findByText(/You use the small healing draught and recover 2 health/);
     expect(screen.getByLabelText('Character health')).toHaveTextContent('6/6');
     expect(healingDraughtCarried).toBe(false);
+  });
+
+  it('reports a combat action failure without losing the active encounter', async () => {
+    combatEncounter = {
+      encounterId: 'combat-ui-encounter',
+      locationId: 'mossgate-clearing',
+      opponentNpcId: 'mossgate-training-sentinel',
+      opponentName: 'Practice Sentinel',
+      round: 1,
+      playerHealth: 3,
+      playerMaxHealth: 6,
+      opponentHealth: 2,
+      opponentMaxHealth: 4,
+      status: 'active',
+      lastAction: 'attack',
+      lastNarration: 'The sentinel waits.',
+    };
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation((path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as { type?: string };
+        if (command.type === 'combat.action') {
+          return json({ message: 'The sentinel is out of reach.' }, 503);
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const actions = screen.getByRole('group', { name: 'Combat actions' });
+
+    fireEvent.click(within(actions).getByRole('button', { name: 'Attack during active combat' }));
+
+    expect(await screen.findByText('The sentinel is out of reach.')).toBeVisible();
+    expect(screen.getByRole('group', { name: 'Combat actions' })).toBeVisible();
   });
 
   it('offers healing items in combat controls only when health is missing', async () => {
@@ -4694,6 +5166,27 @@ describe('single-character world session client', () => {
         return command.type === 'character.unequip' && command.payload?.slot === 'armor';
       })).toBe(true);
     });
+  });
+
+  it('keeps equipment unchanged when the server rejects an equip action', async () => {
+    includeEquipmentFixture = true;
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation((path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as { type?: string };
+        if (command.type === 'character.equip') {
+          return json({ message: 'The shield strap is damaged.' }, 503);
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('equip test shield');
+
+    expect(await screen.findByText('The shield strap is damaged.')).toBeVisible();
+    expect(equipmentSnapshot).toBeNull();
   });
 
   it('supports equipping and unequipping gear through terminal commands', async () => {
@@ -5003,11 +5496,30 @@ describe('single-character world session client', () => {
   });
 
   it('keeps an open NPC dialogue modal visible after the final reply until the player closes it', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    let restartRequested = false;
+    let restartedTalkRequests = 0;
+    apiFetch.mockImplementation((path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as { type?: string };
+        if (command.type === 'npc.dialogue.restart') restartRequested = true;
+      }
+      if (path === '/api/queries' && init?.method === 'POST') {
+        const query = JSON.parse(String(init.body)) as { type?: string };
+        if (query.type === 'npc.talk' && restartRequested) {
+          restartedTalkRequests += 1;
+          return json({ message: 'The conversation has reset.' }, 503);
+        }
+      }
+      return original(path, init);
+    });
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     submitWorldCommand('talk Mara');
 
     const dialog = await screen.findByRole('dialog', { name: 'Conversation with Mara' });
+    fireEvent.keyDown(document, { key: 'Enter' });
+    expect(dialog).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Ask about the marker' }));
     await waitFor(() => expect(dialog).toHaveTextContent('The marker points east to the Old Bell Tower.'));
 
@@ -5018,6 +5530,25 @@ describe('single-character world session client', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Close conversation' }));
     expect(screen.queryByRole('dialog', { name: 'Conversation with Mara' })).not.toBeInTheDocument();
+    await waitFor(() => expect(restartedTalkRequests).toBe(1));
+    expect(screen.queryByRole('dialog', { name: 'Conversation with Mara' })).not.toBeInTheDocument();
+  });
+
+  it('shows a useful message when an NPC dialogue query fails', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation((path, init) => {
+      if (path === '/api/queries' && init?.method === 'POST') {
+        const query = JSON.parse(String(init.body)) as { type?: string };
+        if (query.type === 'npc.talk') return json({ message: 'Mara cannot hear you over the rain.' }, 503);
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('talk Mara');
+
+    expect(await screen.findByText('Mara cannot hear you over the rain.')).toBeVisible();
   });
 
   it('restarts an already-ended NPC conversation when the player talks to them again', async () => {
@@ -5035,6 +5566,55 @@ describe('single-character world session client', () => {
     expect(apiFetch.mock.calls.some(([, init]) =>
       JSON.parse(String(init?.body ?? '{}')).type === 'npc.dialogue.restart',
     )).toBe(true);
+  });
+
+  it('reports an error when an NPC conversation cannot be restarted on close', async () => {
+    maraChoice = 'ask-tower';
+    const original = apiFetch.getMockImplementation()!;
+    let restartAttempts = 0;
+    apiFetch.mockImplementation((path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as { type?: string };
+        if (command.type === 'npc.dialogue.restart' && ++restartAttempts === 2) {
+          return json({ message: 'The conversation could not be reset right now.' }, 503);
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('talk Mara');
+    const conversation = await screen.findByRole('dialog', { name: 'Conversation with Mara' });
+    await waitFor(() => expect(restartAttempts).toBe(1));
+    fireEvent.click(within(conversation).getByRole('button', { name: 'Ask about the marker' }));
+    await screen.findByText('The marker points east to the Old Bell Tower. Its direction is still true.');
+
+    fireEvent.click(within(conversation).getByRole('button', { name: 'Until next time' }));
+
+    expect(await screen.findByText('The conversation could not be reset right now.')).toBeVisible();
+    expect(screen.queryByRole('dialog', { name: 'Conversation with Mara' })).not.toBeInTheDocument();
+  });
+
+  it('reports an NPC reply failure without replacing the open conversation', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation((path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as { type?: string };
+        if (command.type === 'npc.dialogue.choose') {
+          return json({ message: 'Mara cannot answer that just now.' }, 503);
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('talk Mara');
+    const conversation = await screen.findByRole('dialog', { name: 'Conversation with Mara' });
+
+    fireEvent.click(within(conversation).getByRole('button', { name: 'Ask about the marker' }));
+
+    expect(await screen.findByText('Mara cannot answer that just now.')).toBeVisible();
+    expect(screen.getByRole('dialog', { name: 'Conversation with Mara' })).toBeVisible();
   });
 
   it('shows the description of a named NPC with the look command', async () => {
@@ -5158,6 +5738,44 @@ describe('single-character world session client', () => {
     )).toHaveLength(1);
   });
 
+  it('prints the authoritative error when reading a room object fails', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as { type?: string; commandId?: string };
+        if (command.type === 'character.read') {
+          return json({ message: 'The marker text is too faded to read.' }, 500);
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('read marker');
+
+    expect(await screen.findByText('The marker text is too faded to read.')).toBeVisible();
+  });
+
+  it('prints the authoritative error when taking a room item fails', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation((path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as { type?: string };
+        if (command.type === 'character.take') {
+          return json({ message: 'The loose stone is wedged in the earth.' }, 503);
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('take loose stone');
+
+    expect(await screen.findByText('The loose stone is wedged in the earth.')).toBeVisible();
+  });
+
   it('announces newly completed quest objectives once and does not replay them after reload', async () => {
     questJournal = [{
       questId: 'mara-wayfinding',
@@ -5168,6 +5786,12 @@ describe('single-character world session client', () => {
         { id: 'read-marker', label: 'Read the weathered marker', completed: false },
         { id: 'visit-bridge', label: 'Visit Glasswater Bridge', completed: false },
       ],
+    }, {
+      questId: 'completed-sample',
+      title: 'A Completed Errand',
+      summary: 'Return a message.',
+      status: 'completed',
+      objectives: [{ id: 'deliver-message', label: 'Deliver the message', completed: true }],
     }];
     const firstRun = render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
@@ -5179,6 +5803,7 @@ describe('single-character world session client', () => {
     fireEvent.submit(commandInput.closest('form')!);
     const markerNotice = 'Objective complete: Read the weathered marker — The Waystone Path.';
     await screen.findByText(markerNotice);
+    expect(history).not.toHaveTextContent('Objective complete: Deliver the message');
     fireEvent.change(commandInput, { target: { value: 'read marker' } });
     fireEvent.submit(commandInput.closest('form')!);
     await waitFor(() => expect(screen.getAllByText('OLD BELL TOWER — EAST')).toHaveLength(2));
@@ -5286,6 +5911,7 @@ describe('single-character world session client', () => {
       contents: [],
     };
     let stored = false;
+    let failPut = false;
     const withContainer = (location: Record<string, unknown>) => {
       const existing = Array.isArray(location.objects)
         ? location.objects as Array<Record<string, unknown>>
@@ -5325,6 +5951,9 @@ describe('single-character world session client', () => {
           commandId?: string;
           payload?: { itemId?: string; containerId?: string };
         };
+        if (command.type === 'character.put' && failPut) {
+          return json({ message: 'The test sack is torn.' }, 503);
+        }
         if (command.type === 'character.put' || (
           command.type === 'character.take' && command.payload?.itemId === fixtureItem.id
         )) {
@@ -5425,9 +6054,15 @@ describe('single-character world session client', () => {
       JSON.parse(String(init?.body ?? '{}')).payload?.itemId === fixtureItem.id,
     )).toBe(true);
 
+    failPut = true;
+    const inputAfterGet = screen.getByRole('textbox', { name: 'Enter a command' });
+    fireEvent.change(inputAfterGet, { target: { value: 'put test stone test sack' } });
+    fireEvent.submit(inputAfterGet.closest('form')!);
+    await screen.findByText('The test sack is torn.');
+    expect(stored).toBe(false);
   });
 
-  it('loots all corpse contents by command and from the loot quick-action menu', async () => {
+  it('loots available corpse contents and skips an item taken mid-action', async () => {
     const originalFetch = apiFetch.getMockImplementation()!;
     const fixtureCorpses = [
       {
@@ -5467,12 +6102,14 @@ describe('single-character world session client', () => {
       { id: 'fixture-bronze-ring', label: 'Bronze ring', description: 'A small bronze ring.', readable: false, takeable: true, containerId: 'fixture-guard-corpse' },
       { id: 'fixture-corpse-gold', label: '3 moss marks', description: 'Coins left by the guard.', readable: false, takeable: true, containerId: 'fixture-guard-corpse' },
       { id: 'fixture-broken-arrow', label: 'Broken arrow', description: 'A snapped arrow.', readable: false, takeable: true, containerId: 'fixture-scout-corpse' },
+      { id: 'fixture-scout-arrowhead', label: 'Dull arrowhead', description: 'A dull iron arrowhead.', readable: false, takeable: true, containerId: 'fixture-scout-corpse' },
       { id: 'fixture-failing-dagger', label: 'Rusty dagger', description: 'A dull dagger.', readable: false, takeable: true, containerId: 'fixture-rusty-corpse' },
     ];
     const takenItemIds = new Set<string>();
     const corpseIds = new Set(fixtureCorpses.map((corpse) => corpse.id));
     let failNextGameRefresh = false;
-    const withCorpses = (location: Record<string, unknown>) => {
+    let omitGuardCorpseOnNextGame = false;
+    const withCorpses = (location: Record<string, unknown>, omitGuardCorpse = false) => {
       const existing = Array.isArray(location.objects)
         ? location.objects as Array<Record<string, unknown>>
         : [];
@@ -5482,7 +6119,9 @@ describe('single-character world session client', () => {
       );
       const availableContents = fixtureContents.filter((item) => !takenItemIds.has(item.id));
       objects.push(
-        ...fixtureCorpses.map((corpse) => ({
+        ...fixtureCorpses.filter((corpse) =>
+          !omitGuardCorpse || corpse.id !== 'fixture-guard-corpse',
+        ).map((corpse) => ({
           ...corpse,
           contents: availableContents
             .filter((item) => item.containerId === corpse.id)
@@ -5511,6 +6150,9 @@ describe('single-character world session client', () => {
             throw new Error('The corpse is too far away.');
           }
           takenItemIds.add(itemId);
+          if (itemId === 'fixture-broken-arrow') {
+            takenItemIds.add('fixture-scout-arrowhead');
+          }
           revision += 1;
           return json({
             receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision },
@@ -5521,9 +6163,11 @@ describe('single-character world session client', () => {
       const response = await originalFetch(path, init);
       if (path === '/api/game') {
         const snapshot = await response.json() as { location: Record<string, unknown> | null };
+        const omitGuardCorpse = omitGuardCorpseOnNextGame;
+        omitGuardCorpseOnNextGame = false;
         return json({
           ...snapshot,
-          ...(snapshot.location ? { location: withCorpses(snapshot.location) } : {}),
+          ...(snapshot.location ? { location: withCorpses(snapshot.location, omitGuardCorpse) } : {}),
         });
       }
       if (path === '/api/queries' && init?.body) {
@@ -5552,6 +6196,7 @@ describe('single-character world session client', () => {
     clickQuickAction('Show corpses to loot');
     fireEvent.click(within(lootMenu).getByRole('button', { name: 'Loot Fallen scout corpse' }));
     await screen.findByText('You pick up the broken arrow.');
+    expect(screen.queryByText('You pick up the dull arrowhead.')).not.toBeInTheDocument();
     const history = screen.getByRole('region', { name: 'Terminal output' });
     await waitFor(() => expect(history.closest('.focused-terminal')).toHaveAttribute('aria-busy', 'false'));
     submitWorldCommand('loot empty corpse');
@@ -5568,6 +6213,16 @@ describe('single-character world session client', () => {
       'fixture-broken-arrow',
     ]));
     expect(takenItemIds).not.toContain('fixture-failing-dagger');
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'character.take' &&
+      JSON.parse(String(init?.body ?? '{}')).payload?.itemId === 'fixture-scout-arrowhead',
+    )).toBe(false);
+
+    await waitFor(() => expect(history.closest('.focused-terminal')).toHaveAttribute('aria-busy', 'false'));
+    omitGuardCorpseOnNextGame = true;
+    submitWorldCommand('loot fallen guard corpse');
+    await screen.findByText('You do not see the fallen guard corpse here.');
   });
 
   it('inspects carried items from the Items tab and by command, including after leaving their room', async () => {
@@ -5610,6 +6265,29 @@ describe('single-character world session client', () => {
       JSON.parse(String(init?.body ?? '{}')).type === 'object.inspect' &&
       JSON.parse(String(init?.body ?? '{}')).payload.objectId === 'mossgate-loose-stone'
     )).toBe(true);
+  });
+
+  it('keeps the inventory visible and reports an inspection query failure', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation((path, init) => {
+      if (path === '/api/queries' && init?.method === 'POST') {
+        const query = JSON.parse(String(init.body)) as { type?: string };
+        if (query.type === 'object.inspect') {
+          return json({ ok: false, message: 'Item details are temporarily unavailable.' });
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('take loose stone');
+    await screen.findByText('You pick up the loose stone.');
+    await openInfoSection('Items');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect Loose stone' }));
+
+    expect(await screen.findByText('Item details are temporarily unavailable.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Inspect Loose stone' })).toBeVisible();
   });
 
   it('ignores repeated, modified, prevented, and input-focused movement keys', async () => {
@@ -5892,6 +6570,23 @@ describe('single-character world session client', () => {
     expect(await screen.findByRole('heading', { name: 'Class · Vanguard' })).toBeVisible();
   });
 
+  it('reports class-adoption failures without recording a class', async () => {
+    classApiFixture(false, false, false, true);
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    await openInfoSection('Stats');
+    await screen.findByRole('heading', { name: 'Choose your class' });
+    fireEvent.click(screen.getByRole('radio'));
+    fireEvent.click(screen.getByRole('button', { name: 'Adopt this class' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirm permanent choice' }));
+
+    fireEvent.click(screen.getByRole('link', { name: 'Play' }));
+    expect(await screen.findByText('Class adoption is temporarily unavailable.')).toBeVisible();
+    await openInfoSection('Stats');
+    expect(screen.getByRole('heading', { name: 'Choose your class' })).toBeVisible();
+  });
+
   it('shows a recovery message when class choices fail to load', async () => {
     const original = apiFetch.getMockImplementation()!;
     apiFetch.mockImplementation((path, init) => {
@@ -5930,6 +6625,78 @@ describe('single-character world session client', () => {
     expect(commands[0]).toMatchObject({ type: mode === 'solo' ? 'combat.action' : 'team.combat.action', payload: {
       action: 'ability', encounterId: mode === 'solo' ? 'class-encounter' : 'team-combat-ui-encounter', abilityId: 'fixture.heavy-strike',
     } });
+  });
+
+  it('reports class-action failures while keeping the combat action available', async () => {
+    classApiFixture(true, true, true);
+    combatEncounter = {
+      encounterId: 'class-encounter',
+      locationId: 'mossgate-clearing',
+      opponentNpcId: 'mossgate-training-sentinel',
+      opponentName: 'Practice Sentinel',
+      round: 1,
+      playerHealth: 6,
+      playerMaxHealth: 6,
+      opponentHealth: 6,
+      opponentMaxHealth: 6,
+      status: 'active',
+      lastAction: 'attack',
+      lastNarration: 'The practice continues.',
+    };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByText('The earlier duel is finished.');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Use Heavy Strike' }));
+
+    expect(await screen.findByText('Heavy Strike cannot be used right now.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Use Heavy Strike' })).toBeEnabled();
+  });
+
+  it('reports when a merchant catalog cannot be loaded', async () => {
+    room = 'market';
+    visitedLocationIds = ['mossgate-clearing', 'glasswater-bridge', 'reedbank-stalls'];
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation((path, init) => {
+      if (path === '/api/queries' && init?.method === 'POST') {
+        const query = JSON.parse(String(init.body)) as { type?: string };
+        if (query.type === 'merchant.catalog') {
+          return json({ ok: false, message: 'Sella’s catalog is temporarily unavailable.' });
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Reedbank Stalls' });
+    clickQuickAction('Show merchants');
+    fireEvent.click(screen.getByRole('button', { name: 'Shop with Sella' }));
+
+    expect(await screen.findByText('Sella’s catalog is temporarily unavailable.')).toBeVisible();
+    expect(screen.queryByRole('region', { name: 'Sella shop catalog' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the merchant catalog open and shows a purchase failure', async () => {
+    room = 'market';
+    visitedLocationIds = ['mossgate-clearing', 'glasswater-bridge', 'reedbank-stalls'];
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation((path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as { type?: string };
+        if (command.type === 'merchant.purchase') {
+          return json({ message: 'The lantern cannot be purchased right now.' }, 503);
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Reedbank Stalls' });
+    clickQuickAction('Show merchants');
+    fireEvent.click(screen.getByRole('button', { name: 'Shop with Sella' }));
+    await screen.findByRole('region', { name: 'Sella shop catalog' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Brass lantern for 8 moss mark' }));
+
+    expect(await screen.findByText('The lantern cannot be purchased right now.')).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Sella shop catalog' })).toBeVisible();
   });
 
   it('browses and buys merchant goods from the terminal catalog', async () => {
@@ -6133,6 +6900,38 @@ describe('single-character world session client', () => {
     expect(screen.queryByRole('region', { name: 'Reedbank Bulletin' })).not.toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Terminal output' })).not.toHaveTextContent('Reedbank Bulletin');
     expect(dailyBoardQueryCount).toBe(1);
+  });
+
+  it('refreshes the open bulletin when its reset time arrives', async () => {
+    dailyFeatureEnabled = true;
+    const original = apiFetch.getMockImplementation()!;
+    let boardRequests = 0;
+    apiFetch.mockImplementation(async (path, init) => {
+      const response = await original(path, init);
+      if (path === '/api/queries' && init?.body) {
+        const query = JSON.parse(String(init.body)) as { type?: string };
+        if (query.type === 'daily.board') {
+          boardRequests += 1;
+          const result = await response.json() as {
+            value: Record<string, unknown> & { resetsAt?: string };
+          };
+          if (boardRequests === 1) {
+            return json({
+              ...result,
+              value: { ...result.value, resetsAt: new Date(Date.now() + 20).toISOString() },
+            });
+          }
+          return json(result);
+        }
+      }
+      return response;
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    submitWorldCommand('read bulletin');
+    await screen.findByRole('region', { name: 'Reedbank Bulletin' });
+
+    await waitFor(() => expect(boardRequests).toBeGreaterThan(1), { timeout: 2_000 });
   });
 
   it('reports a bulletin loading error without opening a broken board', async () => {
@@ -6932,6 +7731,27 @@ describe('single-character world session client', () => {
         JSON.parse(String(init?.body)).type === 'location.describe',
       )).toBe(true);
     }, { timeout: 6_000 });
+  });
+
+  it('keeps a campfire visible and reports when extinguishing fails', async () => {
+    campfireVisible = true;
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation((path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as { type?: string };
+        if (command.type === 'campfire.extinguish') {
+          return json({ message: 'The fire flares back to life.' }, 503);
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('extinguish campfire');
+
+    expect(await screen.findByText('The fire flares back to life.')).toBeVisible();
+    expect(campfireVisible).toBe(true);
   });
 
   it('lets a traveler extinguish a campfire through the room command', async () => {

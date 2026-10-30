@@ -118,6 +118,23 @@ describe("CodexScreen", () => {
     expect(screen.getByRole("link", { name: /Return to the index/ })).toHaveAttribute("href", "#/info/codex");
   });
 
+  it("shows a recovery page when the current hash is outside the Codex", async () => {
+    window.location.hash = "#/worlds";
+    render(<CodexScreen />);
+
+    expect(await screen.findByRole("heading", { name: "This archive path is unknown" })).toBeVisible();
+  });
+
+  it("opens search results when ArrowDown is pressed from an inline suggestion", async () => {
+    render(<CodexScreen />);
+    const search = screen.getByRole("textbox", { name: "Search articles" });
+    fireEvent.change(search, { target: { value: "Bellwold" } });
+    fireEvent.keyDown(search, { key: "ArrowDown" });
+
+    expect(await screen.findByRole("heading", { name: "“Bellwold”" })).toBeVisible();
+    expect(screen.getByRole("listbox", { name: "Search results" })).toBeVisible();
+  });
+
   it("builds article contents links from markdown headings", async () => {
     window.location.hash = "#/info/codex/article/bellwold-roadside-wildlife";
     render(<CodexScreen />);

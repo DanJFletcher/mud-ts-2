@@ -121,6 +121,16 @@ describe("Orraveth Codex content", () => {
       .toThrow("Codex article missing-fields.md has invalid metadata:");
   });
 
+  it("rejects missing frontmatter and empty article bodies", () => {
+    expect(() => parseCodexArticle("plain.md", "A page without frontmatter."))
+      .toThrow("Codex article plain.md is missing YAML frontmatter.");
+    const validMetadata = ORRAVETH_ARTICLES[0]!;
+    const { body: _body, sourcePath: _sourcePath, ...metadata } = validMetadata;
+    expect(() => parseCodexArticle("empty-body.md", `---\n${Object.entries(metadata)
+      .map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join("\n")}\n---\n`))
+      .toThrow("Codex article empty-body.md has no article body.");
+  });
+
   it("rejects related IDs, regions, and wiki links that do not resolve", () => {
     const { regionId: _regionId, ...base } = ORRAVETH_ARTICLES[0]!;
     const makeArticle = (overrides: Partial<CodexArticle> = {}): CodexArticle => ({
@@ -142,5 +152,13 @@ describe("Orraveth Codex content", () => {
     expect(() => validateCodexArticleRelationships([
       makeArticle({ body: "See [[missing-article]]." }),
     ])).toThrow("links to missing article slug missing-article");
+    expect(() => validateCodexArticleRelationships([
+      makeArticle({ id: "duplicate-id", slug: "first-slug" }),
+      makeArticle({ id: "duplicate-id", slug: "second-slug" }),
+    ])).toThrow("duplicate article IDs");
+    expect(() => validateCodexArticleRelationships([
+      makeArticle({ id: "first-id", slug: "duplicate-slug" }),
+      makeArticle({ id: "second-id", slug: "duplicate-slug" }),
+    ])).toThrow("duplicate article slugs");
   });
 });

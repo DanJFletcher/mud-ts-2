@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import { renderToString } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { WorldMapProjection } from '@mudd/contracts';
 import { WorldMapPanel } from './WorldMapPanel.js';
@@ -47,6 +48,33 @@ function arrowYBounds(path: SVGElement): Readonly<{ top: number; bottom: number 
 }
 
 describe('map switching between floors', () => {
+  it('can render a map without browser globals during server rendering', () => {
+    vi.stubGlobal('window', undefined);
+    try {
+      const markup = renderToString(
+        <WorldMapPanel map={undefined} fullscreen={false} onFullscreenChange={vi.fn()} />,
+      );
+      expect(markup).toContain('aria-label="World map"');
+      expect(markup).not.toContain('Directional map of visited locations');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('renders the default empty map layout when no locations are available', () => {
+    const map: WorldMapProjection = {
+      ...overworld,
+      currentLocationId: '',
+      locations: [],
+      connections: [],
+    };
+    const { container } = render(
+      <WorldMapPanel map={map} fullscreen={false} onFullscreenChange={vi.fn()} />,
+    );
+    expect(container.querySelector('.focused-world-map__svg')).not.toBeInTheDocument();
+    expect(container.querySelector('.focused-world-map__minimap-svg')).not.toBeInTheDocument();
+  });
+
   it('stacks up above down inside a location square with a visible gap', () => {
     const churchMap: WorldMapProjection = {
       worldInstanceId: 'world',
@@ -454,7 +482,7 @@ describe('map switching between floors', () => {
     expect(readViewBox()).toEqual(initialViewBox);
   });
 
-  it('pans the full-screen map by dragging after zooming in', () => {
+  it('pans the full-screen map by dragging after zooming in', async () => {
     render(<WorldMapPanel map={denseMap} fullscreen onFullscreenChange={vi.fn()} />);
     const svg = document.querySelector<SVGSVGElement>('.focused-world-map__svg')!;
     const readViewBox = () => svg.getAttribute('viewBox')!.split(/\s+/).map(Number);
@@ -465,6 +493,7 @@ describe('map switching between floors', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
     const zoomedViewBox = readViewBox();
 
+    fireEvent.pointerMove(svg, { pointerId: 99, pointerType: 'touch', clientX: 150, clientY: 150 });
     fireEvent.pointerDown(svg, {
       pointerId: 1,
       pointerType: 'touch',
@@ -472,19 +501,63 @@ describe('map switching between floors', () => {
       clientX: 200,
       clientY: 150,
     });
+    fireEvent.pointerMove(svg, { pointerId: 2, pointerType: 'touch', clientX: 160, clientY: 150 });
+    fireEvent.pointerMove(svg, { pointerId: 1, pointerType: 'touch', clientX: 202, clientY: 152 });
+    fireEvent.pointerUp(svg, { pointerId: 2, pointerType: 'touch' });
+    expect(readViewBox()).toEqual(zoomedViewBox);
+
+    fireEvent.pointerDown(svg, {
+      pointerId: 3,
+      pointerType: 'touch',
+      button: 0,
+      clientX: 200,
+      clientY: 150,
+    });
     fireEvent.pointerMove(svg, {
-      pointerId: 1,
+      pointerId: 3,
       pointerType: 'touch',
       clientX: 160,
       clientY: 150,
     });
-    fireEvent.pointerUp(svg, { pointerId: 1, pointerType: 'touch' });
+    fireEvent.pointerUp(svg, { pointerId: 3, pointerType: 'touch' });
     const destination = screen.getByRole('button', { name: 'Focus West of Old Bell Tower on map' });
     fireEvent.click(destination);
 
     expect(readViewBox()[0]).toBeGreaterThan(zoomedViewBox[0]!);
     expect(currentRoom).toHaveAttribute('aria-pressed', 'true');
     expect(destination).toHaveAttribute('aria-pressed', 'false');
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+  });
+
+  it('does not start a pan from a secondary mouse click or a zero-size map surface', () => {
+    render(<WorldMapPanel map={denseMap} fullscreen onFullscreenChange={vi.fn()} />);
+    const svg = document.querySelector<SVGSVGElement>('.focused-world-map__svg')!;
+    vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 0, 0));
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+    const initialViewBox = svg.getAttribute('viewBox');
+
+    fireEvent.pointerDown(svg, {
+      pointerId: 4,
+      pointerType: 'mouse',
+      button: 2,
+      clientX: 200,
+      clientY: 150,
+    });
+    fireEvent.pointerDown(svg, {
+      pointerId: 5,
+      pointerType: 'touch',
+      button: 0,
+      clientX: 200,
+      clientY: 150,
+    });
+    fireEvent.pointerMove(svg, {
+      pointerId: 5,
+      pointerType: 'touch',
+      clientX: 160,
+      clientY: 150,
+    });
+
+    expect(svg.getAttribute('viewBox')).toBe(initialViewBox);
   });
 
   it('keeps location taps working while zoomed', () => {
@@ -541,7 +614,7 @@ describe('map switching between floors', () => {
     expect(onFullscreenChange).toHaveBeenCalledWith(false);
   });
 
-  it('lets the minimap be dragged without opening the map and remembers its position', () => {
+  it('lets the minimap be dragged without opening the map and remembers its position', async () => {
     window.localStorage.removeItem('mudd.mobile-map-minimap-offset.v1');
     const onFullscreenChange = vi.fn();
     const { container, unmount } = render(
@@ -570,6 +643,9 @@ describe('map switching between floors', () => {
     expect(minimap).toHaveStyle({ transform: 'translate3d(40px, 50px, 0)' });
     expect(onFullscreenChange).not.toHaveBeenCalled();
     expect(window.localStorage.getItem('mudd.mobile-map-minimap-offset.v1')).toBe('{"x":40,"y":50}');
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    fireEvent.click(minimap);
+    expect(onFullscreenChange).toHaveBeenCalledWith(true);
 
     unmount();
     const restored = render(
@@ -631,6 +707,19 @@ describe('map switching between floors', () => {
       fireEvent.pointerUp(minimap, { pointerId: 2, pointerType: 'touch' });
 
       expect(minimap).toHaveStyle({ transform: 'translate3d(0px, 500px, 0)' });
+      expect(window.localStorage.getItem('mudd.mobile-map-minimap-offset.v1')).toBe('{"x":0,"y":500}');
+
+      fireEvent.pointerDown(minimap, {
+        pointerId: 9,
+        pointerType: 'touch',
+        button: 0,
+        clientX: 350,
+        clientY: 50,
+      });
+      fireEvent.pointerMove(minimap, { pointerId: 10, pointerType: 'touch', clientX: 400, clientY: 50 });
+      fireEvent.pointerMove(minimap, { pointerId: 9, pointerType: 'touch', clientX: 352, clientY: 52 });
+      fireEvent.pointerUp(minimap, { pointerId: 10, pointerType: 'touch' });
+      fireEvent.pointerUp(minimap, { pointerId: 9, pointerType: 'touch' });
       expect(window.localStorage.getItem('mudd.mobile-map-minimap-offset.v1')).toBe('{"x":0,"y":500}');
     } finally {
       unmount();

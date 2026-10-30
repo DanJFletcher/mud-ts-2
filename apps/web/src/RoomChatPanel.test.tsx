@@ -88,6 +88,119 @@ describe('RoomChatPanel message polling', () => {
     expect(screen.getByText('Room')).toBeInTheDocument();
   });
 
+  it('ignores an empty chat submission', async () => {
+    render(
+      <RoomChatPanel worldInstanceId={worldInstanceId} roomId="test-room" fullscreen={false} onFullscreenChange={vi.fn()} />,
+    );
+    const textbox = await screen.findByRole('textbox', { name: 'Message the room' });
+    fireEvent.submit(textbox.closest('form')!);
+
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false);
+  });
+
+  it('shows an acknowledged pending message while waiting for room history', async () => {
+    const coordinator = new PendingActionCoordinator();
+    coordinator.begin({
+      id: 'acknowledged-chat',
+      scope: { worldInstanceId, roomId: 'test-room', characterId: 'fern' },
+      details: {
+        kind: 'chat.send',
+        roomId: 'test-room',
+        clientMessageId: 'acknowledged-chat',
+        text: 'The river is rising.',
+        speakerName: 'Fern',
+      },
+    });
+    coordinator.acknowledge('acknowledged-chat');
+    render(
+      <RoomChatPanel
+        pendingActionCoordinator={coordinator}
+        worldInstanceId={worldInstanceId}
+        characterId="fern"
+        roomId="test-room"
+        fullscreen={false}
+        onFullscreenChange={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText('Sent; waiting for room history…')).toBeVisible();
+    expect(screen.getByText('The river is rising.')).toBeVisible();
+  });
+
+  it('does not display pending movement actions as room chat messages', async () => {
+    const coordinator = new PendingActionCoordinator();
+    coordinator.begin({
+      id: 'pending-move',
+      scope: { worldInstanceId, roomId: 'test-room', characterId: 'fern' },
+      details: {
+        kind: 'character.move',
+        fromLocationId: 'west-bank',
+        exitId: 'north-road',
+        direction: 'north',
+      },
+    });
+    render(
+      <RoomChatPanel
+        pendingActionCoordinator={coordinator}
+        worldInstanceId={worldInstanceId}
+        characterId="fern"
+        roomId="test-room"
+        fullscreen={false}
+        onFullscreenChange={vi.fn()}
+      />,
+    );
+
+    await screen.findByRole('log', { name: 'Room chat messages' });
+    expect(document.querySelector('.focused-room-chat__message--pending')).not.toBeInTheDocument();
+    expect(screen.getByText('No room messages yet.')).toBeVisible();
+  });
+
+  it('does not forward room events from a response that arrives after unmount', async () => {
+    let releaseRequest!: (response: Response) => void;
+    fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => { releaseRequest = resolve; }));
+    const onTerminalEvent = vi.fn();
+    const view = render(
+      <RoomChatPanel
+        worldInstanceId={worldInstanceId}
+        roomId="test-room"
+        fullscreen={false}
+        onFullscreenChange={vi.fn()}
+        onTerminalEvent={onTerminalEvent}
+      />,
+    );
+    await waitFor(() => expect(releaseRequest).toBeDefined());
+    view.unmount();
+    await act(async () => {
+      releaseRequest(Response.json({
+        roomId: 'test-room',
+        messages: [],
+        terminalEvents: [{
+          id: 1,
+          roomId: 'test-room',
+          speakerType: 'npc',
+          speakerName: 'The room',
+          text: 'The campfire goes out.',
+          createdAt: '2026-10-18T12:00:00.000Z',
+        }],
+      }));
+    });
+
+    expect(onTerminalEvent).not.toHaveBeenCalled();
+  });
+
+  it('ignores a room-history error that arrives after the chat unmounts', async () => {
+    let rejectRequest!: (failure: Error) => void;
+    fetchMock.mockImplementationOnce(() => new Promise<Response>((_resolve, reject) => { rejectRequest = reject; }));
+    const view = render(
+      <RoomChatPanel worldInstanceId={worldInstanceId} roomId="test-room" fullscreen={false} onFullscreenChange={vi.fn()} />,
+    );
+    await waitFor(() => expect(rejectRequest).toBeDefined());
+    view.unmount();
+    await act(async () => { rejectRequest(new Error('Late chat failure.')); });
+
+    expect(screen.queryByText('Late chat failure.')).not.toBeInTheDocument();
+  });
+
   it.each([
     {
       label: 'a server error without a message',
@@ -539,6 +652,8 @@ describe('RoomChatPanel message polling', () => {
     expect(await screen.findByText('The bridge is clear.')).toBeVisible();
     expect(screen.getByText('Sending…')).toBeVisible();
     expect(coordinator.getSnapshot()[0]?.state).toBe('sending');
+    fireEvent.submit(textbox.closest('form')!);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
 
     await act(async () => {
       resolvePost(new Response(JSON.stringify({

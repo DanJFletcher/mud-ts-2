@@ -764,6 +764,21 @@ describe('world lobby and explicit character entry', () => {
     expect(calls('POST', '/api/guest-session')).toHaveLength(0);
   });
 
+  it('shows an explicit empty-roster state instead of a missing-character error', async () => {
+    characters = [];
+    open(`/character/${one}`);
+
+    expect(await screen.findByRole('heading', { name: 'No characters in this roster' })).toBeVisible();
+  });
+
+  it('resolves the world label from the roster when a character has no saved world name', async () => {
+    characters = [{ ...fixture, worldName: undefined }];
+    open(`/character/${one}`);
+
+    expect(await screen.findByRole('heading', { name: 'Rowan' })).toBeVisible();
+    expect(screen.getByText('The Waystone Path')).toBeVisible();
+  });
+
   it('keeps character details in the management menu alongside play actions', async () => {
     open(`/worlds/${demo}`);
     await screen.findByRole('button', { name: 'Play as Rowan' });
