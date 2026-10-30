@@ -633,7 +633,7 @@ vi.mock('./db/client.js', async () => {
       execute: async () => undefined,
     }),
   };
-  return { db, pool: { end: async () => undefined } };
+  return { db, pool: { end: async () => undefined }, warmDatabasePool: async () => undefined };
 });
 
 vi.mock('./room-chat-service.js', () => ({

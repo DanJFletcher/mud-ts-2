@@ -586,7 +586,7 @@ describe('MuddHttpClient', () => {
       });
       stop = client.watchRealtime('chat', vi.fn(), 1_000);
       expect(MockSocket.urls).toEqual([
-        `wss://mudd.example/proxy/api/realtime?world=${DEMO_WORLD_INSTANCE_ID}`,
+        `wss://mudd.example/proxy/api/realtime?world=${DEMO_WORLD_INSTANCE_ID}&protocol=2`,
       ]);
       expect(client.realtimeConnectionState).toBeDefined();
       const socket = MockSocket.instances[0]!;

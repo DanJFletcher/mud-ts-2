@@ -78,7 +78,9 @@ export function createWorldRuntimes(
   for (const definition of registeredWorlds) {
     const locationGroupsFeature = createLocationGroupsPlugin(
       definition.world,
-      new PostgresLocationGroupCatalogStore(),
+      // Catalogs only change through this server's own writes, so a snapshot can
+      // be reused for a while instead of costing a revision query on every view.
+      new PostgresLocationGroupCatalogStore({ revalidateAfterMs: 30_000 }),
     );
     const plugins = [
       ...(definition.world.classCatalog ? [createClassRulesetPlugin(definition.world.classCatalog)] : []),

@@ -29,6 +29,7 @@ import {
   InteractionInboxSchema,
   PvpEncounterProjectionSchema,
   PartyInfoProjectionSchema,
+  REALTIME_PROTOCOL_VERSION,
   TeamCombatInfoProjectionSchema,
   locationGroupMembershipsForLocation,
   resolveLocationDisplayName,
@@ -47,7 +48,7 @@ import {
   projectWoodcuttingTreePresence,
 } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID } from '@mudd/world-demo';
-import { db, pool } from './db/client.js';
+import { db, pool, warmDatabasePool } from './db/client.js';
 import { characters, worldSessions, roomChatMessages } from './db/schema.js';
 import { PostgresEventStore } from './persistence/postgres-event-store.js';
 import { projectLocationWithGroups } from './location-group-projection.js';
@@ -91,6 +92,7 @@ import {
 
 const { trustedProxyHops, allowedOrigins, trustedHosts } = readServerConfiguration(process.env);
 
+await warmDatabasePool();
 const store = new PostgresEventStore();
 await store.rebuildRoomStates();
 function replayCharacter(events: Parameters<typeof reconstructCharacter>[0]) {
@@ -192,25 +194,57 @@ async function resetStaminaRecoveryAnchor(runtime: WorldRuntime, characterId: st
   throw new Error('Could not safely reset the stamina recovery anchor.');
 }
 
-let effectBatchRunning = false;
-async function runPendingEffectBatch() {
-  return store.withoutCommandReadCache(async () => {
-    if (effectBatchRunning) return;
-    effectBatchRunning = true;
-    try {
-      for (const runtime of worldRuntimes.values()) {
-        await measureDatabaseOperation('effect_batch.process_pending', () =>
-          runtime.engine.processPendingEffects(25, runtime.worldInstanceId));
-      }
-    } catch {
-      console.error('Could not process durable event effects.');
-    } finally {
-      effectBatchRunning = false;
+const EFFECT_BATCH_LIMIT = 25;
+const MAX_EFFECT_BATCH_PASSES = 8;
+const runningEffectBatches = new Set<string>();
+const requestedEffectBatches = new Set<string>();
+async function runWorldEffectBatch(runtime: WorldRuntime) {
+  const worldInstanceId = runtime.worldInstanceId;
+  if (runningEffectBatches.has(worldInstanceId)) {
+    // Don't overlap batches for a world; the running one repeats once it finishes.
+    requestedEffectBatches.add(worldInstanceId);
+    return;
+  }
+  runningEffectBatches.add(worldInstanceId);
+  try {
+    for (let pass = 0; pass < MAX_EFFECT_BATCH_PASSES; pass += 1) {
+      requestedEffectBatches.delete(worldInstanceId);
+      const processed = await measureDatabaseOperation('effect_batch.process_pending', () =>
+        runtime.engine.processPendingEffects(EFFECT_BATCH_LIMIT, worldInstanceId));
+      if (!requestedEffectBatches.has(worldInstanceId) && !(processed >= EFFECT_BATCH_LIMIT)) break;
     }
+  } catch {
+    console.error('Could not process durable event effects.');
+  } finally {
+    runningEffectBatches.delete(worldInstanceId);
+  }
+}
+/** Process due effects for one world, or for every world when none is given. */
+async function runPendingEffectBatch(worldInstanceId?: string) {
+  return store.withoutCommandReadCache(async () => {
+    const runtimes = worldInstanceId === undefined
+      ? [...worldRuntimes.values()]
+      : [worldRuntimes.get(worldInstanceId)].filter((runtime): runtime is WorldRuntime => Boolean(runtime));
+    await Promise.all(runtimes.map((runtime) => runWorldEffectBatch(runtime)));
   });
 }
+// Every commit already wakes this process through LISTEN, so newly queued
+// effects run promptly without polling each world every second. The slower
+// poll remains for delayed retries and missed notifications.
+const EFFECT_WAKEUP_DEBOUNCE_MS = 50;
+const effectWakeups = new Map<string, ReturnType<typeof setTimeout>>();
+function wakeEffectBatch(worldInstanceId: unknown) {
+  if (typeof worldInstanceId !== 'string' || !worldRuntimes.has(worldInstanceId)) return;
+  if (effectWakeups.has(worldInstanceId)) return;
+  const timer = setTimeout(() => {
+    effectWakeups.delete(worldInstanceId);
+    void runPendingEffectBatch(worldInstanceId);
+  }, EFFECT_WAKEUP_DEBOUNCE_MS);
+  timer.unref();
+  effectWakeups.set(worldInstanceId, timer);
+}
 void runPendingEffectBatch();
-const effectPoller = setInterval(() => void runPendingEffectBatch(), 1_000);
+const effectPoller = setInterval(() => void runPendingEffectBatch(), 5_000);
 effectPoller.unref();
 
 let interactionMaintenanceRunning = false;
@@ -286,6 +320,7 @@ app.use((req, res, next) => {
       queries: measurements.queries,
       poolWaitMs: measurements.poolWaitMs,
       queryMs: measurements.queryMs,
+      connectionsOpened: measurements.connectionsOpened,
       ...(databaseOperations.length > 0 ? { databaseOperations } : {}),
       ...(traceId ? { queryTimings: measurements.queryTimings } : {}),
     };
@@ -437,10 +472,19 @@ websocketApp.ws('/api/realtime', (socket, req) => {
   if (!origin || !(allowedOrigins.has(origin) || origin === `${req.protocol}://${req.get('host')}`)) {
     socket.close(1008); return;
   }
-  realtimeGateway.connect(socket, req);
+  // Installed PWAs can run older SDK builds; only clients that ask for protocol 2
+  // receive its additional frame fields.
+  realtimeGateway.connect(socket, req, {
+    protocolVersion: req.query.protocol === String(REALTIME_PROTOCOL_VERSION) ? REALTIME_PROTOCOL_VERSION : 1,
+  });
 });
-const stopRealtimeNotifications = startRealtimeNotifications(
-  (change) => realtimeGateway.invalidate(change), () => realtimeGateway.refreshAll());
+const stopRealtimeNotifications = startRealtimeNotifications((change) => {
+  realtimeGateway.invalidate(change);
+  wakeEffectBatch(change.world);
+}, () => {
+  realtimeGateway.refreshAll();
+  void runPendingEffectBatch();
+});
 
 async function ensureCharacterWallet(
   identity: AccountIdentity,
@@ -464,19 +508,26 @@ async function ensureCharacterWallet(
   return initialized;
 }
 
+type RoomOccupants = Awaited<ReturnType<typeof listRoomOccupants>>;
+
 async function locationWithRoomPresence(
   location: unknown,
   worldInstanceId: string,
   viewerCharacterId: string,
   locationGroups: readonly LocationGroupDefinition[],
+  prefetched?: { locationId: string; occupants: RoomOccupants },
 ) {
   const projection = projectLocationWithGroups(LocationProjectionSchema.parse(location), locationGroups);
-  const occupants = await listRoomOccupants(
-    store,
-    worldInstanceId,
-    projection.locationId,
-    viewerCharacterId,
-  );
+  // Callers start the occupant lookup alongside the describe query to save a
+  // round trip; reuse it only if it was made for the room being described.
+  const occupants = prefetched?.locationId === projection.locationId
+    ? prefetched.occupants
+    : await listRoomOccupants(
+      store,
+      worldInstanceId,
+      projection.locationId,
+      viewerCharacterId,
+    );
   return LocationProjectionSchema.parse({ ...projection, occupants });
 }
 
@@ -518,7 +569,7 @@ async function buildGameProjection(
     ? measureStage('woodcuttingTreeProjection', () =>
       store.readStream(session.worldInstanceId, WOODCUTTING_TREES_STREAM_ID))
     : Promise.resolve([]);
-  const [result, statsResult, locationGroupCatalog, treeEvents] = await Promise.all([
+  const [result, statsResult, locationGroupCatalog, treeEvents, occupants] = await Promise.all([
     measureStage('locationProjection', () => runtime.engine.query(query, worldContext(identity, session), {
       characterProjection: character,
       correlationId: requestId,
@@ -530,6 +581,12 @@ async function buildGameProjection(
     })),
     measureStage('locationGroupCatalog', () => runtime.locationGroupsFeature.catalog.read()),
     treeEventsPromise,
+    measureStage('roomOccupants', () => listRoomOccupants(
+      store,
+      session.worldInstanceId,
+      character.locationId,
+      session.characterId,
+    )),
   ]);
   if (!result.ok) {
     const status = result.code === 'INTERNAL_ERROR' ? 500 : result.code === 'NOT_FOUND' ? 404 : 403;
@@ -545,6 +602,7 @@ async function buildGameProjection(
     session.worldInstanceId,
     session.characterId,
     locationGroupCatalog.groups,
+    { locationId: character.locationId, occupants },
   );
   const treePresence = projectWoodcuttingTreePresence(
     localWoodcuttingTrees,
@@ -693,7 +751,7 @@ app.post('/api/world-session', async (req, res, next) => {
       const reset = await resetStaminaRecoveryAnchor(selected, result.session.characterId);
       if (!reset) return res.status(409).json({ message: 'Your character is no longer available.' });
     }
-    await runPendingEffectBatch();
+    await runPendingEffectBatch(result.session.worldInstanceId);
     return res.json({ sessionId: result.session.id, characterId: result.session.characterId });
   } catch (error) {
     next(error);
@@ -868,7 +926,8 @@ app.post('/api/chat', createRateLimiter({ windowMs: 60_000, maxRequests: 30 }), 
     if (submission.kind === 'conflict') {
       return res.status(409).json({ message: 'This message ID was already used for a different message.' });
     }
-    if (submission.effectId) await runPendingEffectBatch();
+    // Only this room's world can hold the NPC reply; don't wait on other worlds.
+    if (submission.effectId) await runPendingEffectBatch(current.session.worldInstanceId);
     const npcMessage = submission.kind === 'created' && submission.effectId
       ? await getRoomChatMessageBySourceEffectId(submission.effectId)
       : undefined;
@@ -1073,7 +1132,7 @@ app.post(
     }
     // Effects are durably queued with the command. Their worker is already
     // running; don't make the action wait for unrelated effects across worlds.
-    if (result.receipt.ok) void runPendingEffectBatch();
+    if (result.receipt.ok) void runPendingEffectBatch(selected.worldInstanceId);
     if (!result.receipt.ok && result.receipt.code === 'INTERNAL_ERROR') {
       return res.status(500).json({
         ...result,
@@ -1142,17 +1201,26 @@ app.post('/api/queries', async (req, res, next) => {
     if (character.combat?.status === 'defeat' || character.health?.current === 0) {
       return res.status(409).json({ message: 'Your character has died. Start a new character to begin again.' });
     }
-    const result = await selected.engine.query(query, worldContext(identity, current), {
-      characterProjection: character,
-      correlationId: res.locals.requestId,
-    });
-    if (result.ok && query.type === 'location.describe') {
-      const locationGroupCatalog = await selected.locationGroupsFeature.catalog.read();
+    const describesLocation = query.type === 'location.describe';
+    // A look also needs the group catalog and room occupants; fetch them alongside
+    // the query instead of after it.
+    const [result, locationGroupCatalog, occupants] = await Promise.all([
+      selected.engine.query(query, worldContext(identity, current), {
+        characterProjection: character,
+        correlationId: res.locals.requestId,
+      }),
+      describesLocation ? selected.locationGroupsFeature.catalog.read() : undefined,
+      describesLocation
+        ? listRoomOccupants(store, current.worldInstanceId, character.locationId, current.characterId)
+        : undefined,
+    ]);
+    if (result.ok && locationGroupCatalog && occupants) {
       const value = await locationWithRoomPresence(
         result.value,
         current.worldInstanceId,
         current.characterId,
         locationGroupCatalog.groups,
+        { locationId: character.locationId, occupants },
       );
       return res.json({ ...result, value });
     }
@@ -1201,6 +1269,9 @@ export const server = app.listen(port, '0.0.0.0', () => {
 });
 
 async function shutdown() {
+  clearInterval(effectPoller);
+  for (const timer of effectWakeups.values()) clearTimeout(timer);
+  effectWakeups.clear();
   stopRealtimeNotifications();
   realtimeGateway.close();
   server.close();

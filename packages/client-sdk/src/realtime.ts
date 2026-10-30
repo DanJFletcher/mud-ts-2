@@ -1,4 +1,4 @@
-import { RealtimeServerFrameSchema, type RealtimeChannel } from '@mudd/contracts';
+import { RealtimeServerFrameSchema, type RealtimeChannel, type RealtimeRevisionHints } from '@mudd/contracts';
 
 type Watcher = { channel: RealtimeChannel; run: () => Promise<unknown> | void; ready: () => boolean; dirty: boolean; running: boolean; next: number; interval: number };
 /** One connection per SDK client. HTTP callbacks remain the recovery authority. */
@@ -12,9 +12,15 @@ export class MuddRealtimeTransport {
   private sequence = 0;
   private healthy = false;
   private sentChannels = new Set<RealtimeChannel>();
+  // Scoped to the open connection; cleared whenever it may have missed frames.
+  private revisionHints: RealtimeRevisionHints = {};
   constructor(private url: () => string, private world: () => string) {}
   get connectionState(): 'connected' | 'connecting' | 'polling' {
     return this.healthy ? 'connected' : this.socket ? 'connecting' : 'polling';
+  }
+  /** Latest revision the server reported for a channel on the healthy connection. */
+  revisionHint(channel: keyof RealtimeRevisionHints): number | undefined {
+    return this.healthy ? this.revisionHints[channel] : undefined;
   }
 
   watch(channel: RealtimeChannel, run: Watcher['run'], interval: number, ready = () => true) {
@@ -60,11 +66,14 @@ export class MuddRealtimeTransport {
         const frame = RealtimeServerFrameSchema.parse(JSON.parse(data));
         if (frame.type === 'ready') {
           this.connectionId = frame.connectionId; this.sequence = 0; this.healthy = true; this.attempt = 0;
+          this.revisionHints = {};
         } else if (frame.type === 'resync_required') {
+          this.revisionHints = {};
           for (const watcher of this.watchers) watcher.dirty = true;
         } else {
           if (frame.worldInstanceId !== this.world() || frame.connectionId !== this.connectionId) throw new Error('Scope changed');
           if (frame.sequence <= this.sequence) return;
+          if (frame.revisions) this.revisionHints = { ...this.revisionHints, ...frame.revisions };
           if (frame.sequence !== this.sequence + 1) {
             for (const watcher of this.watchers) watcher.dirty = true;
           } else for (const watcher of this.watchers) {
@@ -78,7 +87,7 @@ export class MuddRealtimeTransport {
     socket.onerror = () => socket.close();
     socket.onclose = () => {
       if (this.socket !== socket) return;
-      this.socket = undefined; this.healthy = false;
+      this.socket = undefined; this.healthy = false; this.revisionHints = {};
       for (const watcher of this.watchers) watcher.dirty = true;
       this.retry();
     };
@@ -99,6 +108,7 @@ export class MuddRealtimeTransport {
   dispose() {
     clearInterval(this.timer); clearTimeout(this.reconnect);
     this.timer = undefined; this.reconnect = undefined; this.healthy = false;
+    this.revisionHints = {};
     this.sentChannels.clear();
     this.watchers.clear();
     const socket = this.socket; this.socket = undefined; socket?.close();

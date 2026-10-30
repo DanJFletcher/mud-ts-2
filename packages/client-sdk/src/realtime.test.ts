@@ -47,6 +47,37 @@ describe('MuddRealtimeTransport', () => {
     stopChat(); transport.dispose();
   });
 
+  it('keeps character revision hints only for the open, in-sequence connection', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('WebSocket', MockSocket);
+    const transport = new MuddRealtimeTransport(() => 'wss://x', () => 'world-a');
+    transport.watch('character', vi.fn(), 15_000);
+    const socket = MockSocket.instances[0]!;
+    socket.open();
+    socket.frame({ type: 'ready', version: 1, connectionId: 'c1' });
+    expect(transport.revisionHint('character')).toBeUndefined();
+
+    socket.frame({ type: 'invalidate', version: 2, connectionId: 'c1', sequence: 1,
+      eventId: 'evt-1', worldInstanceId: 'world-a', channels: ['character'], revisions: { character: 7 } });
+    expect(transport.revisionHint('character')).toBe(7);
+    socket.frame({ type: 'invalidate', version: 2, connectionId: 'c1', sequence: 2,
+      eventId: 'evt-2', worldInstanceId: 'world-a', channels: ['chat'] });
+    expect(transport.revisionHint('character')).toBe(7);
+    socket.frame({ type: 'invalidate', version: 2, connectionId: 'c1', sequence: 2,
+      eventId: 'evt-2-replayed', worldInstanceId: 'world-a', channels: ['character'], revisions: { character: 9 } });
+    expect(transport.revisionHint('character')).toBe(7);
+
+    socket.frame({ type: 'resync_required', version: 1 });
+    expect(transport.revisionHint('character')).toBeUndefined();
+    socket.frame({ type: 'invalidate', version: 2, connectionId: 'c1', sequence: 3,
+      eventId: 'evt-3', worldInstanceId: 'world-a', channels: ['character'], revisions: { character: 8 } });
+    expect(transport.revisionHint('character')).toBe(8);
+
+    socket.close();
+    expect(transport.revisionHint('character')).toBeUndefined();
+    transport.dispose();
+  });
+
   it('does not apply a notification from an old world or connection', async () => {
     vi.useFakeTimers();
     vi.stubGlobal('WebSocket', MockSocket);

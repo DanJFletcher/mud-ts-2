@@ -14,8 +14,25 @@ import { measureDatabaseOperation } from './performance.js';
 
 const MAX_CACHED_CATALOGS = 32;
 
+export interface LocationGroupCatalogStoreOptions {
+  /**
+   * Serve a cached snapshot without a revision query for this long after it was
+   * last confirmed. Writes from this store update the cache immediately; another
+   * process's write is seen once the window elapses. Zero checks every read.
+   */
+  readonly revalidateAfterMs?: number;
+  readonly now?: () => number;
+}
+
 export class PostgresLocationGroupCatalogStore implements LocationGroupCatalogStoragePort {
-  private readonly snapshots = new Map<string, LocationGroupCatalogSnapshot>();
+  private readonly snapshots = new Map<string, { snapshot: LocationGroupCatalogSnapshot; confirmedAt: number }>();
+  private readonly revalidateAfterMs: number;
+  private readonly now: () => number;
+
+  constructor(options: LocationGroupCatalogStoreOptions = {}) {
+    this.revalidateAfterMs = options.revalidateAfterMs ?? 0;
+    this.now = options.now ?? Date.now;
+  }
 
   private cacheKey(packId: string, packVersion: string): string {
     return JSON.stringify([packId, packVersion]);
@@ -24,7 +41,7 @@ export class PostgresLocationGroupCatalogStore implements LocationGroupCatalogSt
   private remember(snapshot: LocationGroupCatalogSnapshot): void {
     const key = this.cacheKey(snapshot.packId, snapshot.packVersion);
     this.snapshots.delete(key);
-    this.snapshots.set(key, snapshot);
+    this.snapshots.set(key, { snapshot, confirmedAt: this.now() });
     if (this.snapshots.size > MAX_CACHED_CATALOGS) {
       const oldestKey = this.snapshots.keys().next().value;
       if (oldestKey !== undefined) this.snapshots.delete(oldestKey);
@@ -47,6 +64,11 @@ export class PostgresLocationGroupCatalogStore implements LocationGroupCatalogSt
   }
 
   async read(packId: string, packVersion: string): Promise<LocationGroupCatalogSnapshot> {
+    const key = this.cacheKey(packId, packVersion);
+    const recent = this.snapshots.get(key);
+    if (recent && this.revalidateAfterMs > 0 && this.now() - recent.confirmedAt < this.revalidateAfterMs) {
+      return recent.snapshot;
+    }
     return measureDatabaseOperation('location_group.catalog_read', async () => {
       const [catalog] = await db.select({
         revision: worldLocationGroupCatalogs.revision,
@@ -55,14 +77,12 @@ export class PostgresLocationGroupCatalogStore implements LocationGroupCatalogSt
         eq(worldLocationGroupCatalogs.packVersion, packVersion),
       )).limit(1);
       if (!catalog) {
-        this.snapshots.delete(this.cacheKey(packId, packVersion));
+        this.snapshots.delete(key);
         throw new Error(`Location group catalog ${packId}@${packVersion} has not been initialized.`);
       }
-      const key = this.cacheKey(packId, packVersion);
-      const cached = this.snapshots.get(key);
+      const cached = this.snapshots.get(key)?.snapshot;
       if (cached?.revision === catalog.revision) {
-        this.snapshots.delete(key);
-        this.snapshots.set(key, cached);
+        this.remember(cached);
         return cached;
       }
 

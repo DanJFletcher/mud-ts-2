@@ -98,6 +98,40 @@ describe('realtime gateway authorization and recovery', () => {
     pressuredGateway.close();
   });
 
+  it('adds character revision hints for protocol 2 clients only', async () => {
+    const view = { worldInstanceId: 'w', characterId: 'a', playerId: 'player-a', roomId: 'room-a',
+      expiresAt: Date.now() + 30_000,
+      values: { chat: { cursor: 1 }, presence: [], interactions: [], party: null, team: null, character: 4 } };
+    const gateway = createRealtimeGateway(async () => view);
+    const current = new FakeSocket();
+    const legacy = new FakeSocket();
+    gateway.connect(current as never, request, { protocolVersion: 2 });
+    gateway.connect(legacy as never, request);
+    current.message({ type: 'subscribe', version: 1, channels: ['chat', 'character'] });
+    legacy.message({ type: 'subscribe', version: 1, channels: ['chat', 'character'] });
+    await flush();
+    expect(current.frames[2]).toMatchObject({
+      type: 'invalidate', version: 2, channels: ['chat', 'character'], revisions: { character: 4 },
+    });
+    expect(legacy.frames[2]).toMatchObject({ type: 'invalidate', version: 1, channels: ['chat', 'character'] });
+    expect(legacy.frames[2]).not.toHaveProperty('revisions');
+
+    current.frames.length = 0; legacy.frames.length = 0;
+    view.values.chat = { cursor: 2 };
+    gateway.invalidate({ world: 'w', kind: 'room', roomId: 'room-a' });
+    await flush();
+    expect(current.frames).toEqual([expect.objectContaining({ version: 2, channels: ['chat'] })]);
+    expect(current.frames[0]).not.toHaveProperty('revisions');
+
+    current.frames.length = 0;
+    view.values.character = 5;
+    gateway.invalidate({ world: 'w', kind: 'character', characterId: 'a' });
+    await flush();
+    expect(current.frames).toEqual([expect.objectContaining({ channels: ['character'], revisions: { character: 5 } })]);
+    expect(legacy.frames.at(-1)).not.toHaveProperty('revisions');
+    gateway.close();
+  });
+
   it('closes a player connection after membership changes and caps concurrent clients', async () => {
     const membershipSocket = new FakeSocket();
     const gateway = createRealtimeGateway(async () => ({

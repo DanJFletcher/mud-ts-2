@@ -787,32 +787,31 @@ export class PostgresEventStore implements EventStorePort {
 
   async claimNextEffect(leaseMs: number, worldInstanceId?: string): Promise<StoredEventEffect | undefined> {
     if (!Number.isInteger(leaseMs) || leaseMs < 1) throw new RangeError('Effect lease must be a positive integer.');
-    return db.transaction(async (tx) => {
-      const now = new Date();
-      const [pending] = await tx.select().from(durableEffects).where(and(
-        ...(worldInstanceId ? [eq(durableEffects.worldInstanceId, worldInstanceId)] : []),
-        lte(durableEffects.availableAt, now),
-        or(
-          eq(durableEffects.status, 'pending'),
-          and(
-            eq(durableEffects.status, 'processing'),
-            or(isNull(durableEffects.lockedUntil), lte(durableEffects.lockedUntil, now)),
-          ),
+    const now = new Date();
+    const leaseToken = globalThis.crypto.randomUUID();
+    // Lock and lease the next due effect in one autocommit statement, so an empty
+    // poll costs one round trip rather than a three-statement transaction. SKIP
+    // LOCKED still keeps concurrent workers from claiming the same row.
+    const nextDue = db.select({ id: durableEffects.id }).from(durableEffects).where(and(
+      ...(worldInstanceId ? [eq(durableEffects.worldInstanceId, worldInstanceId)] : []),
+      lte(durableEffects.availableAt, now),
+      or(
+        eq(durableEffects.status, 'pending'),
+        and(
+          eq(durableEffects.status, 'processing'),
+          or(isNull(durableEffects.lockedUntil), lte(durableEffects.lockedUntil, now)),
         ),
-      )).orderBy(asc(durableEffects.createdAt), asc(durableEffects.id))
-        .limit(1)
-        .for('update', { skipLocked: true });
-      if (!pending) return undefined;
-
-      const leaseToken = globalThis.crypto.randomUUID();
-      const [claimed] = await tx.update(durableEffects).set({
-        status: 'processing',
-        attempts: sql`${durableEffects.attempts} + 1`,
-        lockedUntil: new Date(now.getTime() + leaseMs),
-        leaseToken,
-      }).where(eq(durableEffects.id, pending.id)).returning();
-      return claimed ? toStoredEventEffect(claimed, leaseToken) : undefined;
-    });
+      ),
+    )).orderBy(asc(durableEffects.createdAt), asc(durableEffects.id))
+      .limit(1)
+      .for('update', { skipLocked: true });
+    const [claimed] = await db.update(durableEffects).set({
+      status: 'processing',
+      attempts: sql`${durableEffects.attempts} + 1`,
+      lockedUntil: new Date(now.getTime() + leaseMs),
+      leaseToken,
+    }).where(eq(durableEffects.id, sql`${nextDue}`)).returning();
+    return claimed ? toStoredEventEffect(claimed, leaseToken) : undefined;
   }
 
   async claimDueObjectLifecycles(
