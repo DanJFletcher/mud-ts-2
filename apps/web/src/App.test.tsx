@@ -2295,6 +2295,121 @@ describe('single-character world session client', () => {
     expect(screen.queryByRole('heading', { name: 'Glasswater Bridge' })).not.toBeInTheDocument();
   });
 
+  it('keeps the optimistic destination when conflict recovery confirms that room', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    let moveAttempts = 0;
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as {
+          type?: string;
+          commandId?: string;
+          expectedVersion?: number;
+        };
+        if (command.type === 'character.move') {
+          moveAttempts += 1;
+          const expectedVersion = command.expectedVersion ?? revision;
+          revision = expectedVersion + 1;
+          if (moveAttempts === 4) {
+            room = 'bridge';
+            visitedLocationIds = ['mossgate-clearing', 'glasswater-bridge'];
+          }
+          return json({
+            receipt: {
+              ok: false,
+              commandId: command.commandId,
+              code: 'VERSION_CONFLICT',
+              message: `Expected revision ${expectedVersion}; current revision is ${revision}.`,
+              retryable: true,
+            },
+            streamId: characterId,
+            events: [],
+          });
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    quickGo('north');
+
+    await waitFor(() => {
+      expect(moveAttempts).toBe(4);
+      expect(screen.getByRole('heading', { name: 'Glasswater Bridge' })).toBeVisible();
+    });
+    expect(screen.getByRole('region', { name: 'Terminal output' })).toHaveTextContent('Glasswater Bridge');
+    expect(screen.queryByRole('heading', { name: 'Mossgate Clearing' })).not.toBeInTheDocument();
+  });
+
+  it('rolls back optimistic travel when the server explicitly rejects the move', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation((path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as { type?: string };
+        if (command.type === 'character.move') {
+          return Promise.resolve(json({ message: 'The road is blocked.' }, 400));
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    quickGo('north');
+
+    expect(await screen.findByText('The road is blocked.')).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Mossgate Clearing' })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Glasswater Bridge' })).not.toBeInTheDocument();
+  });
+
+  it('silently rolls back optimistic travel when conflict recovery cannot refresh the room', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    let failRecoveryReads = 0;
+    let moveAttempts = 0;
+    apiFetch.mockImplementation((path, init) => {
+      if (path === '/api/game' && failRecoveryReads > 0) {
+        failRecoveryReads -= 1;
+        return Promise.resolve(json({ message: 'Temporary server issue.' }, 503));
+      }
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as {
+          type?: string;
+          commandId?: string;
+          expectedVersion?: number;
+        };
+        if (command.type === 'character.move') {
+          moveAttempts += 1;
+          const expectedVersion = command.expectedVersion ?? revision;
+          revision = expectedVersion + 1;
+          failRecoveryReads = 2;
+          return Promise.resolve(json({
+            receipt: {
+              ok: false,
+              commandId: command.commandId,
+              code: 'VERSION_CONFLICT',
+              message: `Expected revision ${expectedVersion}; current revision is ${revision}.`,
+              retryable: true,
+            },
+            streamId: characterId,
+            events: [],
+          }));
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    quickGo('north');
+
+    await waitFor(() => {
+      expect(moveAttempts).toBe(1);
+      expect(screen.getByRole('heading', { name: 'Mossgate Clearing' })).toBeVisible();
+    });
+    expect(screen.queryByRole('heading', { name: 'Glasswater Bridge' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Temporary server issue.')).not.toBeInTheDocument();
+  });
+
   it('shows an uncertain PvP challenge and reuses its command ID when retried', async () => {
     roomOccupants = [{ id: 'mira-character', displayName: 'Mira' }];
     heartbeatOccupants = [{ id: 'mira-character', displayName: 'Mira' }];
@@ -4493,6 +4608,32 @@ describe('single-character world session client', () => {
       path === '/api/commands' &&
       JSON.parse(String(init?.body ?? '{}')).type === 'character.take',
     )).toBe(false);
+  });
+
+  it('keeps completed take-all pickups when a later item request fails', async () => {
+    includeSecondTakeable = true;
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation((path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as {
+          type?: string;
+          payload?: { itemId?: string };
+        };
+        if (command.type === 'character.take' && command.payload?.itemId === 'mossgate-lost-feather') {
+          return Promise.resolve(json({ message: 'The feather can no longer be taken.' }, 409));
+        }
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+
+    submitWorldCommand('take all');
+
+    expect(await screen.findByText('The feather can no longer be taken.')).toBeVisible();
+    expect(history).toHaveTextContent('You pick up the loose stone.');
+    expect(apiFetch.mock.calls.filter(([path]) => path === '/api/game').length).toBeGreaterThanOrEqual(4);
   });
 
   it('uses a carried item on a room target from the terminal', async () => {
@@ -7167,6 +7308,77 @@ describe('single-character world session client', () => {
     }, { timeout: 10_000 });
   });
 
+  it('does not start overlapping fishing ticks while a tick is unresolved', async () => {
+    room = 'bridge';
+    activeFishingCastState = {
+      castId: 'single-flight-fishing-cast',
+      spotId: 'glasswater-fishing-spot',
+      locationId: 'glasswater-bridge',
+      rodItemId: 'old-rod',
+      rodQualityId: 'old',
+      startedAt: '2000-01-01T00:00:00.000Z',
+      tickIntervalSeconds: 1,
+      ticksRequired: 10,
+      ticksCompleted: 0,
+    };
+    const original = apiFetch.getMockImplementation()!;
+    let releaseAdvance: ((response: Response) => void) | undefined;
+    let attempts = 0;
+    apiFetch.mockImplementation((path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as { type?: string };
+        if (command.type === 'fishing.advance') {
+          attempts += 1;
+          return new Promise<Response>((resolve) => { releaseAdvance = resolve; });
+        }
+      }
+      return original(path, init);
+    });
+    const view = render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    await screen.findByRole('region', { name: 'Fishing in progress' });
+    await waitFor(() => expect(attempts).toBe(1));
+    await new Promise((resolve) => setTimeout(resolve, 1_100));
+    expect(attempts).toBe(1);
+
+    activeFishingCastState = null;
+    revision += 1;
+    await act(async () => {
+      releaseAdvance?.(json({
+        receipt: { ok: true, commandId: 'mock-command', eventIds: [], newAggregateVersion: revision },
+        streamId: characterId,
+        events: [{ type: 'character.fishing_cast_advanced', payload: { status: 'no-bite' } }],
+      }));
+    });
+    view.unmount();
+  });
+
+  it('reconciles a fishing stop when the cast already ended on the server', async () => {
+    room = 'bridge';
+    activeFishingCastState = {
+      castId: 'already-ended-fishing-cast',
+      spotId: 'glasswater-fishing-spot',
+      locationId: 'glasswater-bridge',
+      rodItemId: 'old-rod',
+      rodQualityId: 'old',
+      startedAt: new Date().toISOString(),
+      tickIntervalSeconds: 1,
+      ticksRequired: 10,
+      ticksCompleted: 0,
+    };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    const activity = await screen.findByRole('region', { name: 'Fishing in progress' });
+    activeFishingCastState = null;
+    fireEvent.click(within(activity).getByRole('button', { name: 'Stop' }));
+
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Fishing in progress' })).not.toBeInTheDocument());
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'fishing.cancel',
+    )).toBe(false);
+  });
+
   it('cancels a live fishing cast and reports that the line was reeled in', async () => {
     room = 'bridge';
     activeFishingCastState = {
@@ -7811,6 +8023,52 @@ describe('single-character world session client', () => {
       JSON.parse(String(init?.body)).type === 'woodcutting.start' &&
       JSON.parse(String(init?.body)).payload?.axeItemId === 'copper-axe',
     )).toBe(true);
+  });
+
+  it('does not start overlapping woodcutting ticks while a tick is unresolved', async () => {
+    activeWoodcuttingState = {
+      actionId: 'single-flight-woodcutting-action',
+      treeId: 'southbound-pine',
+      treeLabel: 'pine',
+      axeItemId: 'copper-axe',
+      locationId: 'mossgate-clearing',
+      startedAt: '2000-01-01T00:00:00.000Z',
+      ticksCompleted: 0,
+      ticksRequired: 10,
+    };
+    const original = apiFetch.getMockImplementation()!;
+    let releaseAdvance: ((response: Response) => void) | undefined;
+    let attempts = 0;
+    apiFetch.mockImplementation((path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST') {
+        const command = JSON.parse(String(init.body)) as { type?: string };
+        if (command.type === 'woodcutting.advance') {
+          attempts += 1;
+          return new Promise<Response>((resolve) => { releaseAdvance = resolve; });
+        }
+      }
+      return original(path, init);
+    });
+    const view = render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+
+    await screen.findByRole('region', { name: 'Woodcutting in progress' });
+    await waitFor(() => expect(attempts).toBe(1));
+    await new Promise((resolve) => setTimeout(resolve, 1_100));
+    expect(attempts).toBe(1);
+
+    activeWoodcuttingState = null;
+    revision += 1;
+    await act(async () => {
+      releaseAdvance?.(json({
+        receipt: { ok: true, commandId: 'mock-command', eventIds: [], newAggregateVersion: revision },
+        streamId: characterId,
+        events: [{
+          type: 'character.woodcutting_action_advanced',
+          payload: { status: 'no-log' },
+        }],
+      }));
+    });
+    view.unmount();
   });
 
   it('prints Chop! every two seconds while woodcutting remains active', async () => {
