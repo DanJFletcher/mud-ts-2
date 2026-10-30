@@ -14,7 +14,6 @@ import {
   requestIdentityCacheEnabled,
   setCachedIdentity,
   setCachedWorldSession,
-  type CachedWorldSession,
 } from './request-identity-cache.js';
 import { measureDatabaseOperation, recordRequestCacheLookup } from './performance.js';
 

@@ -165,12 +165,14 @@ export function rememberPrefetchedWorldSession(
   prefetchedWorldSessions.set(identity, sessionsForIdentity);
 }
 
-export function getPrefetchedWorldSession(
+export function takePrefetchedWorldSession(
   identity: AccountIdentity,
   worldInstanceId: string,
 ): { resolved: boolean; session?: CachedWorldSession } {
   const sessionsForIdentity = prefetchedWorldSessions.get(identity);
   if (!sessionsForIdentity?.has(worldInstanceId)) return { resolved: false };
-  const session = sessionsForIdentity.get(worldInstanceId);
+  const session = sessionsForIdentity.get(worldInstanceId) ?? null;
+  sessionsForIdentity.delete(worldInstanceId);
+  if (sessionsForIdentity.size === 0) prefetchedWorldSessions.delete(identity);
   return session ? { resolved: true, session } : { resolved: true };
 }

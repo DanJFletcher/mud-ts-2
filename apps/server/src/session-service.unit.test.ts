@@ -24,9 +24,10 @@ import {
 } from './session-service.js';
 import {
   clearRequestIdentityCachesForTests,
-  getCachedIdentity,
   getCachedWorldSession,
   invalidateCachedPlayer,
+  invalidateCachedWorldSession,
+  takePrefetchedWorldSession,
   setCachedWorldSession,
   setMembershipListenerConnected,
   type CachedWorldSession,
@@ -288,7 +289,6 @@ describe('account and guest session identity', () => {
     await expect(getAccountIdentityForRequest(request, { userId: null, sessionId: null }))
       .resolves.toMatchObject({ worldSessionResolved: false });
     expect(mockDb.select).toHaveBeenCalledTimes(2);
-    expect(getCachedIdentity('guest:expired')).toBeUndefined();
   });
 
   it('removes a cached guest identity when that guest is claimed by a Clerk account', async () => {
@@ -344,6 +344,62 @@ describe('account and guest session identity', () => {
     expect(signedIn.identity).toMatchObject({ playerId: 'account-1' });
     expect(signedOut.identity).toBeUndefined();
     expect(mockDb.select).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads guest identity and the active world session in one cache-miss query', async () => {
+    vi.stubEnv('MUDD_IDENTITY_CACHE', '1');
+    setMembershipListenerConnected(true);
+    const worldSession = {
+      id: 'session-one',
+      playerId: 'guest-player-1',
+      worldInstanceId: 'world-one',
+      characterId: 'character-one',
+      lastSeenAt: new Date(),
+    } as CachedWorldSession;
+    dbSelectRows.push([guestRow({
+      expiresAt: new Date(Date.now() + 60_000),
+      worldSession,
+    })]);
+    const request = { headers: { cookie: cookie('joined-query-guest') } };
+
+    const resolved = await getAccountIdentityForRequest(
+      request,
+      { userId: null, sessionId: null },
+      'world-one',
+    );
+
+    expect(resolved).toMatchObject({
+      identity: { playerId: 'guest-player-1' },
+      worldSessionResolved: true,
+    });
+    expect(mockDb.select).toHaveBeenCalledTimes(1);
+    expect(getCachedWorldSession('guest-player-1', 'world-one')).toEqual(worldSession);
+    expect(takePrefetchedWorldSession(resolved.identity!, 'world-one')).toEqual({
+      resolved: true,
+      session: worldSession,
+    });
+    expect(takePrefetchedWorldSession(resolved.identity!, 'world-one')).toEqual({
+      resolved: false,
+      session: undefined,
+    });
+
+    const warm = await getAccountIdentityForRequest(
+      request,
+      { userId: null, sessionId: null },
+      'world-one',
+    );
+    expect(warm.worldSessionResolved).toBe(false);
+    expect(mockDb.select).toHaveBeenCalledTimes(1);
+
+    invalidateCachedWorldSession('guest-player-1', 'world-one');
+    const afterSessionChange = await getAccountIdentityForRequest(
+      request,
+      { userId: null, sessionId: null },
+      'world-one',
+    );
+    expect(afterSessionChange.identity).toBe(resolved.identity);
+    expect(takePrefetchedWorldSession(afterSessionChange.identity!, 'world-one').resolved).toBe(false);
+    expect(getCachedWorldSession('guest-player-1', 'world-one')).toBeUndefined();
   });
 
   it('keeps world-session entries scoped by player and world and invalidates them', () => {

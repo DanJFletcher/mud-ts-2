@@ -77,7 +77,7 @@ import {
 } from './session-service.js';
 import {
   getCachedWorldSession,
-  getPrefetchedWorldSession,
+  takePrefetchedWorldSession,
   invalidateCachedPlayer,
   invalidateCachedWorldSession,
   requestIdentityCacheEnabled,
@@ -435,7 +435,7 @@ function selectedRuntime(response: Response): WorldRuntime {
 }
 
 async function activeSession(identity: AccountIdentity, worldInstanceId: string) {
-  const prefetched = getPrefetchedWorldSession(identity, worldInstanceId);
+  const prefetched = takePrefetchedWorldSession(identity, worldInstanceId);
   if (prefetched.resolved) return prefetched.session;
   if (requestIdentityCacheEnabled()) {
     const cached = getCachedWorldSession(identity.playerId, worldInstanceId);
