@@ -818,7 +818,10 @@ export class PostgresEventStore implements EventStorePort {
 
   private async claimDueEffect(leaseMs: number, ...filters: SQL[]): Promise<StoredEventEffect | undefined> {
     if (!Number.isInteger(leaseMs) || leaseMs < 1) throw new RangeError('Effect lease must be a positive integer.');
-    const now = new Date();
+    // Availability is written with the database clock (column default and
+    // retryEffect), so compare with it too: a JavaScript Date has only millisecond
+    // precision and can read an effect queued "now" as not yet due.
+    const now = sql`now()`;
     const leaseToken = globalThis.crypto.randomUUID();
     // Lock and lease the next due effect in one autocommit statement, so an empty
     // poll costs one round trip rather than a three-statement transaction. SKIP
@@ -839,7 +842,7 @@ export class PostgresEventStore implements EventStorePort {
     const [claimed] = await db.update(durableEffects).set({
       status: 'processing',
       attempts: sql`${durableEffects.attempts} + 1`,
-      lockedUntil: new Date(now.getTime() + leaseMs),
+      lockedUntil: sql`now() + (${leaseMs} * interval '1 millisecond')`,
       leaseToken,
     }).where(eq(durableEffects.id, sql`${nextDue}`)).returning();
     return claimed ? toStoredEventEffect(claimed, leaseToken) : undefined;

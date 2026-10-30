@@ -154,7 +154,7 @@ describe('road travel command', () => {
   it('rejects unavailable travelers and exits without a valid road segment', async () => {
     const fixture = roadFixture();
     const player = character(fixture.fromLocationId);
-    const { handlers, context } = harness(player, fixture);
+    const { context } = harness(player, fixture);
 
     const unavailable = new Map<string, (command: any, context: any) => Promise<unknown>>();
     roadTravelPlugin.register({

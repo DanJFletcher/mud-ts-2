@@ -1385,6 +1385,9 @@ describe('PostgresEventStore unit behavior', () => {
     expect(statement!.sql).toMatch(/^update "durable_effects" set /);
     expect(statement!.sql).toContain('"attempts" = "durable_effects"."attempts" + 1');
     expect(statement!.sql).toMatch(/where "durable_effects"\."id" = \(select .* limit \$\d+ for update skip locked\) returning /);
+    // Due times and leases use the database clock that wrote available_at.
+    expect(statement!.sql).toContain('"durable_effects"."available_at" <= now()');
+    expect(statement!.sql).toContain('"locked_until" = now() + (');
     expect(statement!.params).toEqual(expect.arrayContaining(['processing', 'pending', 'world-1', effect!.leaseToken]));
   });
 
