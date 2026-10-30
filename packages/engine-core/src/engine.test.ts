@@ -15,6 +15,7 @@ import {
   characterPlugin,
   combatPlugin,
   combatRoomPresenceCapability,
+  createClassRulesetPlugin,
   groupsPlugin,
   interactionPlugin,
   movementPlugin,
@@ -32,7 +33,7 @@ import {
 } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import type { CapabilityToken } from '@mudd/contracts';
-import { TeamCombatInfoProjectionSchema, WorldPackDraftSchema } from '@mudd/contracts';
+import { CharacterClassCatalogSchema, TeamCombatInfoProjectionSchema, WorldPackDraftSchema } from '@mudd/contracts';
 
 const session = {
   sessionId: 'session-1',
@@ -1551,6 +1552,81 @@ describe('MUDD engine host', () => {
     expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, created.streamId!))?.visitedLocationIds)
       .toEqual(['mossgate-clearing', 'glasswater-approach', 'glasswater-bridge']);
     await engine.stop();
+  });
+
+  it('adopts a class onto a legacy character through the host and replays the adoption event', async () => {
+    const catalog = CharacterClassCatalogSchema.parse({
+      id: 'integration-classes',
+      revision: 1,
+      classes: [{
+        id: 'integration-vanguard',
+        revision: 1,
+        label: 'Vanguard',
+        description: 'A strength-led fighter.',
+        primaryAttribute: 'strength',
+        attributes: { strength: 15, intelligence: 10, constitution: 15, dexterity: 10 },
+        coreAction: {
+          id: 'integration-heavy-strike',
+          revision: 1,
+          label: 'Heavy Strike',
+          description: 'A forceful blow.',
+          cost: { resource: 'stamina', amount: 20 },
+          baseDamage: 3,
+          scalingAttribute: 'strength',
+          weaponBonus: true,
+        },
+      }],
+    });
+    const store = new InMemoryEventStore();
+    const classlessHost = new EngineHost(
+      [worldItemsPlugin, characterPlugin],
+      store,
+      authorization,
+      demoWorld,
+      () => 'integration-legacy-character',
+      () => new Date('2026-10-17T12:00:00.000Z'),
+    );
+    await classlessHost.start();
+    const created = await classlessHost.dispatch({
+      type: 'character.create',
+      version: 1,
+      commandId: 'integration-create-legacy',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      payload: { name: 'Legacy Traveler' },
+    }, session);
+    expect(created.receipt.ok).toBe(true);
+    await classlessHost.stop();
+
+    const world = WorldPackDraftSchema.parse({
+      ...structuredClone(demoWorld),
+      classCatalog: catalog,
+    });
+    const classHost = new EngineHost(
+      [createClassRulesetPlugin(catalog), worldItemsPlugin, characterPlugin],
+      store,
+      authorization,
+      world,
+      () => 'integration-class-command',
+      () => new Date('2026-10-17T12:00:00.000Z'),
+    );
+    await classHost.start();
+    const adopted = await classHost.dispatch({
+      type: 'character.class.choose',
+      version: 1,
+      commandId: 'integration-adopt-class',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId: created.streamId,
+      expectedVersion: 1,
+      payload: { classId: 'integration-vanguard' },
+    }, session);
+    expect(adopted.receipt.ok).toBe(true);
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, created.streamId!))).toMatchObject({
+      characterClass: { id: 'integration-vanguard' },
+      attributes: { constitution: 15 },
+      health: { current: 6, maximum: 7 },
+      revision: 2,
+    });
+    await classHost.stop();
   });
 
   it('charges exactly five stamina for an ordinary move and does not charge a duplicate retry twice', async () => {

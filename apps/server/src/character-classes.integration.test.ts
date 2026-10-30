@@ -141,7 +141,14 @@ describe('optional world character classes through authorized hosts', () => {
       h.dispatch('character.class.choose', id, { classId }, 'alice', original.revision)));
     expect(choices.filter((result) => result.receipt.ok)).toHaveLength(1);
     const adopted = await h.load(id);
-    expect(adopted.health).toEqual({ current: 6, maximum: 7 });
+    const adoptedClass = orravethClassCatalog.classes.find(({ id: classId }) =>
+      classId === adopted.characterClass?.id);
+    expect(adoptedClass).toBeDefined();
+    const expectedMaximum = Math.max(
+      1,
+      6 + Math.floor(((adoptedClass?.attributes.constitution ?? 10) - 10) / 5),
+    );
+    expect(adopted.health).toEqual({ current: 6, maximum: expectedMaximum });
     expect(adopted.resources).toEqual(original.resources);
     expect(adopted.inventory).toEqual(original.inventory);
     expect(adopted.advancement).toEqual(original.advancement);

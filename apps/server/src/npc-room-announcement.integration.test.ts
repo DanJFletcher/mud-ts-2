@@ -104,6 +104,7 @@ const state = vi.hoisted(() => ({
   readStreamError: null as Error | null,
   readStreamGate: null as Promise<void> | null,
   readStreamSequence: [] as unknown[],
+  batchReadStreams: false,
   streamlessCharacterIds: new Set<string>(),
   pendingEffects: [] as Array<{
     effectId: string;
@@ -856,6 +857,15 @@ vi.mock('./persistence/postgres-event-store.js', () => ({
       if (state.streamlessCharacterIds.has(characterId)) return [];
       return state.characters[characterId as keyof typeof state.characters] ?? null;
     }
+    get readStreams() {
+      if (!state.batchReadStreams) return undefined;
+      return async (worldInstanceId: string, streamIds: string[]) => new Map(
+        await Promise.all(streamIds.map(async (streamId) => [
+          streamId,
+          await this.readStream(worldInstanceId, streamId),
+        ] as const)),
+      );
+    }
   },
 }));
 
@@ -964,6 +974,7 @@ describe('NPC room announcements through the server', () => {
     state.readStreamError = null;
     state.readStreamGate = null;
     state.readStreamSequence.length = 0;
+    state.batchReadStreams = false;
     state.streamlessCharacterIds.clear();
     state.nextChatSubmissionId = 1;
     state.moveReceipts.clear();
@@ -1144,6 +1155,22 @@ describe('NPC room announcements through the server', () => {
         id: expect.any(String),
         characterId: 'character-alice',
       }],
+    });
+  });
+
+  it('loads a character roster through the event store batch-read API', async () => {
+    state.batchReadStreams = true;
+
+    const response = await fetch(`${baseUrl}/api/characters`, {
+      headers: { 'x-test-user': 'alice' },
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      characters: [expect.objectContaining({
+        characterId: 'character-alice',
+        locationTitle: 'NPC Room',
+      })],
     });
   });
 
