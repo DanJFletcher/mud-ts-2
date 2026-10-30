@@ -5,13 +5,21 @@ import { DEFAULT_CHARACTER_EQUIPMENT } from '@mudd/contracts';
 import type { ReactNode } from 'react';
 
 const mocks = vi.hoisted(() => ({
-  fetch: vi.fn(), signOut: vi.fn(), signedIn: true,
+  fetch: vi.fn(), signOut: vi.fn(), signedIn: true, routerPush: vi.fn(), routerReplace: vi.fn(),
 }));
 vi.stubGlobal('fetch', mocks.fetch);
 vi.mock('@clerk/react', () => ({
   useUser: () => ({ isLoaded: true, isSignedIn: mocks.signedIn }),
   useClerk: () => ({ signOut: mocks.signOut }),
-  ClerkProvider: ({ children }: { children: ReactNode }) => children,
+  ClerkProvider: ({ children, routerPush, routerReplace }: {
+    children: ReactNode;
+    routerPush: (to: string) => void;
+    routerReplace: (to: string) => void;
+  }) => {
+    mocks.routerPush.mockImplementation(routerPush);
+    mocks.routerReplace.mockImplementation(routerReplace);
+    return children;
+  },
   SignIn: ({ forceRedirectUrl }: { forceRedirectUrl: string }) => <div>Sign in return: {forceRedirectUrl}</div>,
   SignUp: ({ forceRedirectUrl }: { forceRedirectUrl: string }) => <div>Sign up return: {forceRedirectUrl}</div>,
 }));
@@ -69,6 +77,9 @@ let guest: boolean;
 let entryFailure: boolean;
 let rosterFailure: boolean;
 let catalogFailure: boolean;
+let leaveFailure: boolean;
+let holdLeave: boolean;
+let releaseLeave: (() => void) | undefined;
 const commands: Array<Record<string, unknown>> = [];
 function json(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status }); }
 function roster() { return { player: { id: playerId, displayName: 'Rowan' }, characters, activeWorldSession: null, activeWorldSessions: sessions }; }
@@ -85,13 +96,14 @@ async function fillName(value = 'Aster') {
 }
 
 beforeEach(() => {
-  mocks.fetch.mockReset(); mocks.signOut.mockReset(); mocks.signedIn = true;
+  mocks.fetch.mockReset(); mocks.signOut.mockReset(); mocks.routerPush.mockReset(); mocks.routerReplace.mockReset(); mocks.signedIn = true;
   characters = [{ ...fixture }, { ...fixture, characterId: two, worldInstanceId: orra, name: 'Moss', worldName: 'Orraveth: Bellwold', lastPlayedAt: '2026-10-23T10:00:00.000Z' }];
   characters[0].health = { current: 8, maximum: 12 };
   characters[0].wallet = { currencyId: 'silver', balance: 27 };
   characters[0].advancement = { level: 4, experience: 83 };
   characters[0].inventory = [{ id: 'healing-herb', label: 'Dried yarrow', description: 'A bundle of dried yarrow.', stackable: true, quantity: 3 }];
   sessions = []; guest = false; entryFailure = false; rosterFailure = false; catalogFailure = false;
+  leaveFailure = false; holdLeave = false; releaseLeave = undefined;
   holdRoster = false; releaseRoster = undefined;
   holdCatalog = false; releaseCatalog = undefined; commands.length = 0;
   localStorage.clear(); sessionStorage.clear(); window.location.hash = '';
@@ -118,7 +130,12 @@ beforeEach(() => {
       if (!occupied) sessions.push({ id: sessionId, characterId: body.characterId, worldInstanceId: world });
       return json({ sessionId, characterId: body.characterId });
     }
-    if (url === '/api/world-session' && method === 'DELETE') { sessions = sessions.filter((item) => item.worldInstanceId !== world); return new Response(null, { status: 204 }); }
+    if (url === '/api/world-session' && method === 'DELETE') {
+      if (holdLeave) await new Promise<void>((resolve) => { releaseLeave = resolve; });
+      if (leaveFailure) return json({ message: 'Leaving the world failed' }, 503);
+      sessions = sessions.filter((item) => item.worldInstanceId !== world);
+      return new Response(null, { status: 204 });
+    }
     if (url === '/api/commands') {
       const body = JSON.parse(String(init.body)); commands.push(body);
       if (body.type === 'character.create') characters.unshift({ ...fixture, characterId: three, name: body.payload.name, worldInstanceId: world, worldName: worlds.find((item) => item.worldInstanceId === world)!.name,
@@ -172,6 +189,17 @@ describe('world lobby and explicit character entry', () => {
     expect(within(primary!).getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/sign-in');
     fireEvent.click(container.querySelector<HTMLButtonElement>('.lobby-mobile-menu-toggle')!);
     expect(within(navigation!).getByRole('link', { name: 'Sign in' })).toHaveClass('lobby-desktop-nav-item');
+  });
+
+  it('routes Clerk navigation through the client router for push and replace', async () => {
+    open('/');
+    act(() => mocks.routerPush('/worlds'));
+    expect(await screen.findByRole('heading', { name: 'Explore worlds' })).toBeInTheDocument();
+    expect(location.pathname).toBe('/worlds');
+
+    act(() => mocks.routerReplace('/codex'));
+    expect(await screen.findByRole('heading', { name: 'Orraveth Codex' })).toBeInTheDocument();
+    expect(location.pathname).toBe('/codex');
   });
 
   it('remembers the current destination when signing in from the header', async () => {
@@ -289,7 +317,7 @@ describe('world lobby and explicit character entry', () => {
     expect(await screen.findByRole('heading', { name: 'Characters are not available' })).toBeInTheDocument();
     const emptyState = screen.getByText(
       'Sign in or start a guest session from a world to see your characters here.',
-    ).closest('.lobby-empty')!;
+    ).closest('.lobby-empty')! as HTMLElement;
 
     fireEvent.click(within(emptyState).getByRole('link', { name: 'Sign in' }));
 
@@ -492,12 +520,63 @@ describe('world lobby and explicit character entry', () => {
     await screen.findByRole('heading', { level: 1, name: /The road begins.*where the map ends/i });
     expect(calls('POST', '/api/world-session')).toHaveLength(0);
   });
+
+  it('redirects the legacy world route to the last selected world without joining', async () => {
+    localStorage.setItem('mudd-world-instance-id', orra);
+    open('/world');
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Choose a character to enter' })).toBeInTheDocument();
+    expect(location.pathname).toBe(`/worlds/${orra}/play`);
+    expect(screen.getByRole('link', { name: 'Visit Orraveth: Bellwold' })).toHaveAttribute('href', `/worlds/${orra}`);
+    expect(calls('POST', '/api/world-session')).toHaveLength(0);
+  });
+
   it('shows a useful unknown world or missing-session screen, not gameplay', async () => {
     open('/worlds/missing');
     await screen.findByRole('heading', { name: 'World not found' });
+    visit('/worlds/missing/play');
+    expect(await screen.findByRole('heading', { name: 'World not found' })).toBeInTheDocument();
     visit(`/worlds/${demo}/play`);
     await screen.findByRole('heading', { name: 'Choose a character to enter' });
     expect(calls('POST', '/api/world-session')).toHaveLength(0);
+  });
+
+  it('retries a play page when catalog loading fails', async () => {
+    sessions = [{ id: sessionId, characterId: one, worldInstanceId: demo }];
+    catalogFailure = true;
+    open(`/worlds/${demo}/play`);
+    expect(await screen.findByRole('alert')).toHaveTextContent('World catalog unavailable');
+
+    catalogFailure = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+    expect(await screen.findByText(`World play: ${demo}`)).toBeInTheDocument();
+  });
+
+  it('shows a recoverable error when leaving gameplay fails', async () => {
+    sessions = [{ id: sessionId, characterId: one, worldInstanceId: demo }];
+    leaveFailure = true;
+    open(`/worlds/${demo}/play`);
+    fireEvent.click(await screen.findByRole('button', { name: 'Leave world' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Leaving the world failed');
+    expect(location.pathname).toBe(`/worlds/${demo}/play`);
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('ignores a duplicate leave action while the first request is pending', async () => {
+    sessions = [{ id: sessionId, characterId: one, worldInstanceId: demo }];
+    holdLeave = true;
+    open(`/worlds/${demo}/play`);
+    const leave = await screen.findByRole('button', { name: 'Leave world' });
+    fireEvent.click(leave);
+    await waitFor(() => expect(releaseLeave).toBeDefined());
+    fireEvent.click(leave);
+    expect(calls('DELETE', '/api/world-session')).toHaveLength(1);
+
+    act(() => releaseLeave?.());
+    expect(await screen.findByRole('heading', { level: 1, name: 'The Waystone Path' })).toBeInTheDocument();
   });
   it('preserves world/creation intent across authentication', async () => {
     mocks.signedIn = false; open(`/worlds/${orra}?create=1`);

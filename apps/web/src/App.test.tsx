@@ -2044,6 +2044,34 @@ describe('single-character world session client', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Terminal' })).not.toBeInTheDocument());
   });
 
+  it('records first-feedback timing for a traced travel action', async () => {
+    window.history.replaceState(null, '', '/?muddTrace=1');
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const animationFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callback(performance.now());
+      return 1;
+    });
+    try {
+      render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+      await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+      quickGo('north');
+      await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+
+      expect(info).toHaveBeenCalledWith(
+        '[mudd_perf_trace_feedback]',
+        expect.stringContaining('"action":"character.move"'),
+      );
+      expect(info).toHaveBeenCalledWith(
+        '[mudd_perf_trace_action]',
+        expect.stringContaining('"outcome":"success"'),
+      );
+    } finally {
+      animationFrame.mockRestore();
+      info.mockRestore();
+      window.history.replaceState(null, '', '/');
+    }
+  });
+
   it('tracks the current room and rooms already visited on the map', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     const map = await screen.findByRole('region', { name: 'World map' });
