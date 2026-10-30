@@ -78,6 +78,25 @@ const characterId = '11111111-1111-4111-8111-111111111111';
 let room: 'clearing' | 'bridge' | 'market' | 'inn' | 'belfry';
 let orravethWorld: boolean;
 let dailyFeatureEnabled: boolean;
+let includeEquipmentFixture: boolean;
+let equipmentSnapshot: { weaponItemId: string | null; armorItemId: string | null } | null;
+let craftingCatalog: {
+  skill: { level: number; experienceHundredths: number };
+  atWorkbench: boolean;
+  recipes: Array<{
+    recipeId: string;
+    outputTypeId: string;
+    outputLabel: string;
+    requiredLevel: number;
+    experience: number;
+    maxCraftable: number;
+  }>;
+} | null;
+let craftingCommandPayloads: Array<{ recipeId: string; quantity: number }>;
+let craftingCatalogError: string | null;
+let craftingCommandError: string | null;
+let failNextCraftingSnapshotRefresh: boolean;
+let craftingSnapshotRefreshShouldFail: boolean;
 let bulletinReadableObject: boolean;
 let dailyJobStatus: 'available' | 'active' | 'completed';
 let dailySupplyCount: number;
@@ -86,6 +105,7 @@ let dailyCommandPayloads: Array<{ type: string; payload: Record<string, unknown>
 let visitedLocationIds: string[];
 let revision: number;
 let moveError: string | null;
+let movementEvents: Array<{ type: string; payload?: unknown }>;
 let itemTaken: boolean;
 let maraChoice: string | null;
 let includeSecondTakeable: boolean;
@@ -116,6 +136,7 @@ let walletBalance: number;
 let worldCurrency: { id: string; name: string; symbol: string } | undefined;
 let merchantLanternPurchased: boolean;
 let healingDraughtCarried: boolean;
+let locationUnavailable: boolean;
 let fishingRodCarried: boolean;
 let woodcuttingAxeCarried: boolean;
 let availableWoodcuttingTrees: Array<{ id: string; label: string }>;
@@ -495,6 +516,14 @@ beforeEach(() => {
   room = 'clearing';
   orravethWorld = false;
   dailyFeatureEnabled = false;
+  includeEquipmentFixture = false;
+  equipmentSnapshot = null;
+  craftingCatalog = null;
+  craftingCommandPayloads = [];
+  craftingCatalogError = null;
+  craftingCommandError = null;
+  failNextCraftingSnapshotRefresh = false;
+  craftingSnapshotRefreshShouldFail = false;
   bulletinReadableObject = false;
   dailyJobStatus = 'available';
   dailySupplyCount = 0;
@@ -503,6 +532,7 @@ beforeEach(() => {
   visitedLocationIds = ['mossgate-clearing'];
   revision = 1;
   moveError = null;
+  movementEvents = [];
   itemTaken = false;
   maraChoice = null;
   includeSecondTakeable = false;
@@ -518,6 +548,7 @@ beforeEach(() => {
   worldCurrency = { id: 'moss-mark', name: 'moss mark', symbol: 'm' };
   merchantLanternPurchased = false;
   healingDraughtCarried = false;
+  locationUnavailable = false;
   fishingRodCarried = false;
   woodcuttingAxeCarried = false;
   availableWoodcuttingTrees = [];
@@ -594,6 +625,10 @@ beforeEach(() => {
       return json({ roomId, messages, terminalEvents, cursor });
     }
     if (path === '/api/game') {
+      if (craftingSnapshotRefreshShouldFail) {
+        craftingSnapshotRefreshShouldFail = false;
+        return json({ message: 'Snapshot unavailable.' }, 503);
+      }
       return json({
         player: { id: 'account-1', displayName: 'Traveler' },
         character: {
@@ -652,8 +687,23 @@ beforeEach(() => {
           },
           ...(combatEncounter ? { combat: combatEncounter } : {}),
           ...(activeWoodcuttingState ? { activeWoodcutting: activeWoodcuttingState } : {}),
-          ...(dailyFeatureEnabled ? { equipment: { weaponItemId: 'mint-equipped', armorItemId: null } } : {}),
+          ...(includeEquipmentFixture
+            ? { equipment: equipmentSnapshot ?? { weaponItemId: 'test-sword', armorItemId: null } }
+            : dailyFeatureEnabled ? { equipment: { weaponItemId: 'mint-equipped', armorItemId: null } } : {}),
           inventory: [
+            ...(includeEquipmentFixture ? [{
+              id: 'test-sword',
+              typeId: 'test-sword',
+              label: 'Test sword',
+              description: 'A practice sword for inventory-screen coverage.',
+              equipment: { slot: 'weapon' as const, attackBonus: 2, defenseBonus: 0 },
+            }, {
+              id: 'test-shield',
+              typeId: 'test-shield',
+              label: 'Test shield',
+              description: 'A small practice shield.',
+              equipment: { slot: 'armor' as const, attackBonus: 0, defenseBonus: 1 },
+            }] : []),
             ...(dailyFeatureEnabled ? [{
               id: 'mint-carried',
               typeId: 'river-mint',
@@ -723,7 +773,7 @@ beforeEach(() => {
           dodgePercent: 0,
         },
         currency: worldCurrency,
-        location: currentLocation(),
+        location: locationUnavailable ? undefined : currentLocation(),
         availableFishingSpots: room === 'bridge' && !orravethWorld
           ? [{ id: 'glasswater-fishing-spot', label: 'Glasswater Bridge' }]
           : [],
@@ -782,6 +832,17 @@ beforeEach(() => {
               carried: dailyJobStatus === 'active' || dailyJobStatus === 'completed' ? 1 : 0,
               status: dailyJobStatus,
             }],
+          },
+        });
+      }
+      if (query.type === 'crafting.catalog') {
+        if (craftingCatalogError) return json({ ok: false, message: craftingCatalogError });
+        return json({
+          ok: true,
+          value: craftingCatalog ?? {
+            skill: { level: 1, experienceHundredths: 0 },
+            atWorkbench: false,
+            recipes: [],
           },
         });
       }
@@ -889,8 +950,41 @@ beforeEach(() => {
           jobId?: string;
           sourceId?: string;
           campfireId?: string;
+          recipeId?: string;
+          quantity?: number;
         };
       };
+      if (command.type === 'crafting.craft') {
+        if (craftingCommandError) {
+          return json({
+            receipt: {
+              ok: false,
+              commandId: command.commandId ?? 'mock-command',
+              code: 'RULE_VIOLATION',
+              message: craftingCommandError,
+            },
+          });
+        }
+        craftingCommandPayloads.push({
+          recipeId: command.payload?.recipeId ?? '',
+          quantity: command.payload?.quantity ?? 0,
+        });
+        if (failNextCraftingSnapshotRefresh) {
+          failNextCraftingSnapshotRefresh = false;
+          craftingSnapshotRefreshShouldFail = true;
+        }
+        revision += 1;
+        return json({
+          receipt: {
+            ok: true,
+            commandId: command.commandId ?? 'mock-command',
+            eventIds: [],
+            newAggregateVersion: revision,
+          },
+          streamId: characterId,
+          events: [],
+        });
+      }
       if (command.type === 'campfire.extinguish') {
         if (room !== 'clearing' || !campfireVisible || command.payload?.campfireId !== 'test-campfire') {
           return json({
@@ -941,6 +1035,30 @@ beforeEach(() => {
           return json({ receipt: { ok: false, commandId: command.commandId ?? 'mock-command', code: 'RULE_VIOLATION', message: 'That supply is not here.' } });
         }
         dailySupplyCount += 1;
+        revision += 1;
+        return json({
+          receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision },
+          streamId: characterId,
+        });
+      }
+      if (command.type === 'character.equip') {
+        const itemId = command.payload?.itemId;
+        const current = equipmentSnapshot ?? { weaponItemId: 'test-sword', armorItemId: null };
+        equipmentSnapshot = itemId === 'test-shield'
+          ? { ...current, armorItemId: itemId }
+          : itemId === 'test-sword' ? { ...current, weaponItemId: itemId } : current;
+        revision += 1;
+        return json({
+          receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision },
+          streamId: characterId,
+        });
+      }
+      if (command.type === 'character.unequip') {
+        const current = equipmentSnapshot ?? { weaponItemId: 'test-sword', armorItemId: null };
+        const slot = (command.payload as Record<string, unknown> | undefined)?.slot;
+        equipmentSnapshot = slot === 'weapon'
+          ? { ...current, weaponItemId: null }
+          : slot === 'armor' ? { ...current, armorItemId: null } : current;
         revision += 1;
         return json({
           receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision },
@@ -1256,7 +1374,11 @@ beforeEach(() => {
         if (visitObjective) visitObjective.completed = true;
       }
       revision += 1;
-      return json({ receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision }, streamId: characterId });
+      return json({
+        receipt: { ok: true, commandId: command.commandId ?? 'mock-command', eventIds: [], newAggregateVersion: revision },
+        streamId: characterId,
+        ...(movementEvents.length ? { events: movementEvents } : {}),
+      });
     }
     return json({ message: 'Not found.' }, 404);
   });
@@ -1428,6 +1550,89 @@ describe('single-character world session client', () => {
       JSON.parse(String(init?.body ?? '{}')).type === 'character.move'
     )).toBe(true));
     expect(apiFetch.mock.calls.filter(([path]) => path === '/api/game')).toHaveLength(gameRequestCountBeforeMove);
+  });
+
+  it.each([
+    ['character.fishing_cast_advanced', 'You reel in your line before moving on.'],
+    ['character.woodcutting_action_advanced', 'You lower your axe before moving on.'],
+  ])('reports interrupted timed work after travel when the server returns %s', async (eventType, message) => {
+    movementEvents = [{ type: eventType }];
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    quickGo('north');
+
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    expect(await screen.findByText(message)).toBeVisible();
+  });
+
+  it('announces a combat encounter reported by a travel command', async () => {
+    movementEvents = [{ type: 'character.combat_encounter_started' }];
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    quickGo('north');
+
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    expect(await screen.findByText('A roadside opponent blocks your way.')).toBeVisible();
+  });
+
+  it('announces a cooperative road ambush and shows its encounter narration', async () => {
+    activePartyInfo = {
+      groupId: 'party-road-ambush',
+      groupType: 'party',
+      ownerPlayerId: 'account-1',
+      maxMembers: 4,
+      isPublic: true,
+      status: 'active',
+      members: [{ playerId: 'account-1', characterId, displayName: 'Rowan' }],
+      createdAt: '2026-10-19T12:00:00.000Z',
+      leaderName: 'Rowan',
+    };
+    teamCombatEncounter = {
+      encounterId: 'roadside-ambush',
+      locationId: 'glasswater-bridge',
+      sourceGroupId: 'party-road-ambush',
+      participants: [{
+        participantId: characterId,
+        teamId: 'allies',
+        kind: 'player',
+        characterId,
+        playerId: 'account-1',
+        displayName: 'Rowan',
+        health: 6,
+        maximumHealth: 6,
+        defending: false,
+        status: 'active',
+      }, {
+        participantId: 'roadside-bandit',
+        teamId: 'enemies',
+        kind: 'npc',
+        npcId: 'roadside-bandit',
+        displayName: 'Roadside bandit',
+        health: 4,
+        maximumHealth: 4,
+        defending: false,
+        status: 'active',
+      }],
+      contributingPlayerIds: [],
+      currentParticipantId: characterId,
+      round: 2,
+      status: 'active',
+      lastNarration: 'A roadside bandit blocks the way.',
+      consumedItemIdsByCharacter: {},
+      createdAt: '2026-10-19T12:00:00.000Z',
+      updatedAt: '2026-10-19T12:00:00.000Z',
+    };
+    movementEvents = [{ type: 'team.road_encounter_started' }];
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    quickGo('north');
+
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    expect(await screen.findByText('A roadside ambush interrupts your travel.')).toBeVisible();
+    expect(await screen.findByText('A roadside bandit blocks the way. Round 2.')).toBeVisible();
   });
 
   it('reuses the same movement command ID after an ambiguous server failure', async () => {
@@ -2892,6 +3097,261 @@ describe('single-character world session client', () => {
     expect(await screen.findByRole('dialog', { name: 'Conversation with Mara' })).toHaveTextContent(
       'The marker points east to the Old Bell Tower.',
     );
+  });
+
+  it('equips available gear and updates the equipped slots in the Equipment screen', async () => {
+    includeEquipmentFixture = true;
+    render(<WorldClient onLeaveWorld={async () => undefined} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    await openInfoSection('Equipment');
+
+    expect(screen.getAllByText('Test sword')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Unequip weapon' })).toBeEnabled();
+    const equipShield = screen.getByRole('button', { name: 'Equip Test shield' });
+    expect(equipShield).toBeEnabled();
+    fireEvent.click(equipShield);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Equipped Test shield' })).toBeDisabled());
+    expect(screen.getAllByText('Test shield')).toHaveLength(2);
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'character.equip' &&
+      JSON.parse(String(init?.body ?? '{}')).payload?.itemId === 'test-shield'
+    )).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Unequip weapon' }));
+    await waitFor(() => {
+      const weaponSlot = screen.getByText('weapon').parentElement;
+      expect(weaponSlot).toHaveTextContent('None');
+    });
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'character.unequip' &&
+      JSON.parse(String(init?.body ?? '{}')).payload?.slot === 'weapon'
+    )).toBe(true);
+  });
+
+  it('offers retry and exit actions when the world session has no room projection', async () => {
+    locationUnavailable = true;
+    const onLeaveWorld = vi.fn().mockResolvedValue(undefined);
+    render(<WorldClient onLeaveWorld={onLeaveWorld} />);
+
+    expect(await screen.findByText('Character unavailable')).toBeVisible();
+    expect(screen.getByText('This character can’t be loaded in the current world session.')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('Character unavailable')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Characters' }));
+    await waitFor(() => expect(onLeaveWorld).toHaveBeenCalledTimes(1));
+  });
+
+  it('opens the crafting quantity dialog and submits the selected amount', async () => {
+    craftingCatalog = {
+      skill: { level: 1, experienceHundredths: 0 },
+      atWorkbench: true,
+      recipes: [{
+        recipeId: 'leather-gloves',
+        outputTypeId: 'leather-gloves',
+        outputLabel: 'Leather gloves',
+        requiredLevel: 1,
+        experience: 13.8,
+        maxCraftable: 5,
+      }],
+    };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('craft leather gloves');
+    const dialog = await screen.findByRole('dialog', { name: 'How many?' });
+    expect(screen.getByRole('button', { name: 'Leather gloves ×1' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Leather gloves ×5' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Leather gloves ×10' })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Leather gloves ×5' }));
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+    expect(await screen.findByText('You craft 5 × leather gloves.')).toBeVisible();
+    expect(craftingCommandPayloads).toEqual([{ recipeId: 'leather-gloves', quantity: 5 }]);
+  });
+
+  it('accepts the numbered crafting command form and maps option three to ten items', async () => {
+    craftingCatalog = {
+      skill: { level: 1, experienceHundredths: 0 },
+      atWorkbench: true,
+      recipes: [{
+        recipeId: 'leather-gloves',
+        outputTypeId: 'leather-gloves',
+        outputLabel: 'Leather gloves',
+        requiredLevel: 1,
+        experience: 13.8,
+        maxCraftable: 10,
+      }],
+    };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('craft leather gloves 3');
+
+    expect(await screen.findByText('You craft 10 × leather gloves.')).toBeVisible();
+    expect(craftingCommandPayloads).toEqual([{ recipeId: 'leather-gloves', quantity: 10 }]);
+  });
+
+  it('lists craftable recipes but refuses to start crafting away from a workbench', async () => {
+    craftingCatalog = {
+      skill: { level: 1, experienceHundredths: 0 },
+      atWorkbench: false,
+      recipes: [{
+        recipeId: 'leather-gloves',
+        outputTypeId: 'leather-gloves',
+        outputLabel: 'Leather gloves',
+        requiredLevel: 1,
+        experience: 13.8,
+        maxCraftable: 5,
+      }],
+    };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('craft');
+    expect(await screen.findByText('You can craft:')).toBeVisible();
+    expect(screen.getByText('Leather gloves — Crafting level 1, 13.8 XP each')).toBeVisible();
+    expect(screen.getByText('Travel to a workbench to craft one of these items.')).toBeVisible();
+
+    submitWorldCommand('craft leather gloves');
+    expect(await screen.findByText('You need to be at a workbench to craft.')).toBeVisible();
+    expect(craftingCommandPayloads).toEqual([]);
+  });
+
+  it('reports when no recipes are available and when the crafting catalog cannot load', async () => {
+    craftingCatalog = {
+      skill: { level: 1, experienceHundredths: 0 },
+      atWorkbench: true,
+      recipes: [],
+    };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('craft');
+    expect(await screen.findByText('Nothing is craftable with your current materials and Crafting level.')).toBeVisible();
+
+    craftingCatalogError = 'Crafting list is temporarily unavailable.';
+    submitWorldCommand('craft');
+    expect(await screen.findByText('Crafting list is temporarily unavailable.')).toBeVisible();
+  });
+
+  it('handles ambiguous recipes and validates item and quantity selections', async () => {
+    craftingCatalog = {
+      skill: { level: 1, experienceHundredths: 0 },
+      atWorkbench: true,
+      recipes: [{
+        recipeId: 'leather-gloves',
+        outputTypeId: 'leather-gloves',
+        outputLabel: 'Leather gloves',
+        requiredLevel: 1,
+        experience: 13.8,
+        maxCraftable: 5,
+      }, {
+        recipeId: 'leather-boots',
+        outputTypeId: 'leather-boots',
+        outputLabel: 'Leather boots',
+        requiredLevel: 1,
+        experience: 16.25,
+        maxCraftable: 5,
+      }],
+    };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+
+    submitWorldCommand('craft leather');
+    expect(await screen.findByText('Choose an item to craft:')).toBeVisible();
+    expect(history).toHaveTextContent('Leather gloves');
+    expect(history).toHaveTextContent('Leather boots');
+
+    submitWorldCommand('craft leather gloves 3');
+    expect(await screen.findByText('You have enough materials to craft at most 5.')).toBeVisible();
+    submitWorldCommand('craft sword');
+    expect(await screen.findByText('You cannot craft “sword” with your current materials and Crafting level.')).toBeVisible();
+    submitWorldCommand('craft 2');
+    expect(await screen.findByText('Name an item to craft before choosing a quantity.')).toBeVisible();
+    submitWorldCommand('craft 4');
+    expect(await screen.findByText('Choose option 1, 2, or 3. These make 1, 5, or 10 items.')).toBeVisible();
+    expect(craftingCommandPayloads).toEqual([]);
+  });
+
+  it('closes the crafting dialog without sending a craft command', async () => {
+    craftingCatalog = {
+      skill: { level: 1, experienceHundredths: 0 },
+      atWorkbench: true,
+      recipes: [{
+        recipeId: 'leather-gloves',
+        outputTypeId: 'leather-gloves',
+        outputLabel: 'Leather gloves',
+        requiredLevel: 1,
+        experience: 13.8,
+        maxCraftable: 5,
+      }],
+    };
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('craft leather gloves');
+    const dialog = await screen.findByRole('dialog', { name: 'How many?' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+    expect(craftingCommandPayloads).toEqual([]);
+  });
+
+  it('keeps the quantity dialog open when the server rejects crafting', async () => {
+    craftingCatalog = {
+      skill: { level: 1, experienceHundredths: 0 },
+      atWorkbench: true,
+      recipes: [{
+        recipeId: 'leather-gloves',
+        outputTypeId: 'leather-gloves',
+        outputLabel: 'Leather gloves',
+        requiredLevel: 1,
+        experience: 13.8,
+        maxCraftable: 5,
+      }],
+    };
+    craftingCommandError = 'You need more tanned hides.';
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('craft leather gloves');
+    const dialog = await screen.findByRole('dialog', { name: 'How many?' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Leather gloves ×1' }));
+
+    expect(await screen.findByText('You need more tanned hides.')).toBeVisible();
+    expect(dialog).toBeInTheDocument();
+    expect(craftingCommandPayloads).toEqual([]);
+  });
+
+  it('closes after a successful craft even when the character refresh fails', async () => {
+    craftingCatalog = {
+      skill: { level: 1, experienceHundredths: 0 },
+      atWorkbench: true,
+      recipes: [{
+        recipeId: 'leather-gloves',
+        outputTypeId: 'leather-gloves',
+        outputLabel: 'Leather gloves',
+        requiredLevel: 1,
+        experience: 13.8,
+        maxCraftable: 5,
+      }],
+    };
+    failNextCraftingSnapshotRefresh = true;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+
+    submitWorldCommand('craft leather gloves');
+    const dialog = await screen.findByRole('dialog', { name: 'How many?' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Leather gloves ×1' }));
+
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+    expect(await screen.findByText('You craft 1 × leather gloves.')).toBeVisible();
+    expect(await screen.findByText('Crafting succeeded, but the character view could not refresh.')).toBeVisible();
+    expect(craftingCommandPayloads).toEqual([{ recipeId: 'leather-gloves', quantity: 1 }]);
   });
 
   it('keeps an open NPC dialogue modal visible after the final reply until the player closes it', async () => {
