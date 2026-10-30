@@ -183,6 +183,19 @@ integrationDescribe('single-call event append (real PostgreSQL)', () => {
     expect(effects).toHaveLength(1);
   });
 
+  it('returns the dedicated SQLSTATE for a non-read-committed invocation', async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+      await expect(client.query(
+        `SELECT * FROM mudd_append_command_v1('{}'::jsonb)`,
+      )).rejects.toMatchObject({ code: 'MU001' });
+    } finally {
+      await client.query('ROLLBACK').catch(() => undefined);
+      client.release();
+    }
+  });
+
   it('falls back without the append function and uses it again after a fresh runtime check', async () => {
     const migrationSql = await readFile(
       fileURLToPath(new URL('../drizzle/0014_single_call_append_isolation.sql', import.meta.url)),

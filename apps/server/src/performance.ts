@@ -58,6 +58,7 @@ const SAFE_DATABASE_OPERATION_NAMES = new Set([
   'event_store.stream_rows_read',
   'event_store.command_receipt_lookup',
   'event_store.command_append',
+  'event_store.single_call_append.readiness',
   'room_presence.heartbeat_update',
   'room_presence.occupants_lookup',
   'room_presence.active_characters_lookup',

@@ -114,12 +114,16 @@ function disableSingleCallAppend(reason: SingleCallAppendDisabledReason): void {
 
 function postgresErrorCode(error: unknown): string | undefined {
   let current: unknown = error;
+  let firstSqlState: string | undefined;
   for (let depth = 0; depth < 5 && current && typeof current === 'object'; depth += 1) {
     const candidate = current as { code?: unknown; cause?: unknown };
-    if (typeof candidate.code === 'string') return candidate.code;
+    if (typeof candidate.code === 'string' && /^[0-9A-Z]{5}$/.test(candidate.code)) {
+      if (candidate.code === '42883' || candidate.code === 'MU001') return candidate.code;
+      firstSqlState ??= candidate.code;
+    }
     current = candidate.cause;
   }
-  return undefined;
+  return firstSqlState;
 }
 
 async function isSingleCallAppendReady(): Promise<boolean> {

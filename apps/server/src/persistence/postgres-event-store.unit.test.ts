@@ -1743,12 +1743,29 @@ describe('PostgresEventStore single-call append', () => {
         retryable: true,
       },
     });
+    const nextStore = new PostgresEventStore({ singleCallAppend: true });
+    const nextStoreAppend = vi.spyOn(
+      nextStore as unknown as { appendInTransaction(request: AppendRequest): Promise<AppendOutcome> },
+      'appendInTransaction',
+    ).mockResolvedValue({
+      kind: 'conflict',
+      streamId: sharedRequest.streamId,
+      events: [],
+      receipt: {
+        ok: false,
+        commandId: sharedRequest.commandId,
+        code: 'VERSION_CONFLICT',
+        message: 'fallback',
+        retryable: true,
+      },
+    });
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
     await store.append(sharedRequest);
-    await store.append(sharedRequest);
+    await nextStore.append(sharedRequest);
 
-    expect(appendInTransaction).toHaveBeenCalledTimes(2);
+    expect(appendInTransaction).toHaveBeenCalledOnce();
+    expect(nextStoreAppend).toHaveBeenCalledOnce();
     expect(mockDb.execute).toHaveBeenCalledOnce();
     expect(warning).toHaveBeenCalledOnce();
     expect(warning.mock.calls[0]?.[0]).toContain(`"reason":"${reason}"`);
@@ -1775,15 +1792,32 @@ describe('PostgresEventStore single-call append', () => {
         retryable: true,
       },
     });
+    const nextStore = new PostgresEventStore({ singleCallAppend: true });
+    const nextStoreAppend = vi.spyOn(
+      nextStore as unknown as { appendInTransaction(request: AppendRequest): Promise<AppendOutcome> },
+      'appendInTransaction',
+    ).mockResolvedValue({
+      kind: 'conflict',
+      streamId: sharedRequest.streamId,
+      events: [],
+      receipt: {
+        ok: false,
+        commandId: sharedRequest.commandId,
+        code: 'VERSION_CONFLICT',
+        message: 'fallback',
+        retryable: true,
+      },
+    });
     mockDb.execute.mockRejectedValueOnce(Object.assign(new Error('sensitive query and parameters'), { code }));
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
     const first = await store.append(sharedRequest);
-    const second = await store.append(sharedRequest);
+    const second = await nextStore.append(sharedRequest);
 
     expect(first).toMatchObject({ kind: 'conflict', receipt: { message: 'fallback' } });
     expect(second).toMatchObject({ kind: 'conflict', receipt: { message: 'fallback' } });
-    expect(appendInTransaction).toHaveBeenCalledTimes(2);
+    expect(appendInTransaction).toHaveBeenCalledOnce();
+    expect(nextStoreAppend).toHaveBeenCalledOnce();
     expect(mockDb.execute).toHaveBeenCalledTimes(2);
     expect(warning).toHaveBeenCalledOnce();
     expect(String(warning.mock.calls[0]?.[0])).not.toContain('sensitive');
