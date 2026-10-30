@@ -32,6 +32,11 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # Replit records its internal package mirror in package-lock.json, and
+      # GitHub runners cannot reach it. The integrity hashes are unchanged, so
+      # npm ci installs the identical packages from the public registry.
+      - name: Resolve lockfile packages from the public npm registry
+        run: sed -i 's#http://package-firewall.replit.internal/npm/#https://registry.npmjs.org/#g' package-lock.json
       - run: npm ci
       - run: npm run db:migrate
       - run: npm test

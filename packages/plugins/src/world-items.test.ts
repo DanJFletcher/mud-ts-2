@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { StoredGameEvent } from '@mudd/engine-core';
-import { replayCharacter } from '@mudd/engine-core';
 import {
   WORLD_CORPSE_CREATE_EFFECT,
   WORLD_ITEM_CLAIM_EFFECT,

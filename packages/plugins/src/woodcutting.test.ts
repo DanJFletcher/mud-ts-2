@@ -4,7 +4,6 @@ import {
   woodcuttingPlugin,
   validateWoodcuttingTrees,
   WOODCUTTING_TREES_STREAM_ID,
-  projectWoodcuttingTreePresence,
 } from './woodcutting.js';
 
 const NOW = new Date('2026-10-27T12:00:00.000Z');
