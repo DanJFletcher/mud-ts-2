@@ -233,6 +233,26 @@ If the code changes are not sufficient, the remaining option is a PostgreSQL
 instance in the same cloud and region as the application server. That is an
 infrastructure change and needs its own review.
 
+## Implementation plans
+
+The table lists plans for the larger changes (recommendations 6–10) in a
+suggested order. Land the quick wins first. Plans in the same slot touch mostly
+separate code and can proceed in parallel.
+
+| Slot | Plan | Recommendation | Depends on |
+|---|---|---|---|
+| 1 | [Single-call event append](../implementation-plans/single-call-event-append.md) | 6 | — |
+| 1 | [Lazy vital recovery](../implementation-plans/lazy-vital-recovery.md) | 10 | — |
+| 1 | [Request identity and world-session cache](../implementation-plans/request-identity-cache.md) | 8 | — |
+| 2 | [Single-writer stream cache](../implementation-plans/single-writer-stream-cache.md) | 7 | Single-call append (same adapter code) |
+| 3 | [Realtime resume and re-authentication](../implementation-plans/realtime-resume-and-reauthentication.md) | 9 | Identity cache |
+
+The single-call append is first because it is the largest per-command saving.
+Lazy vital recovery removes the conflict retries that a lone player hits. The
+single-writer cache changes an accepted ADR, so it follows the append work
+rather than competing with it in the same adapter. Each plan names the ADR it
+needs before implementation.
+
 ## Verification and limits
 
 - Statement counts and timings come from existing telemetry and static tracing.
