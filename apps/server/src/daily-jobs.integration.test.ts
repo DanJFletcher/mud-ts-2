@@ -4,17 +4,21 @@ import { EngineHost, InMemoryEventStore, replayCharacter, type EnginePlugin, typ
 import {
   characterPlugin, dailyJobsPlugin, worldItemsPlugin, movementPlugin, interactionPlugin,
   combatPlugin, roadTravelPlugin, teamCombatPlugin, teamCombatRosterPolicyCapability,
-  npcDialoguePlugin,
+  combatRoomPresenceCapability, npcDialoguePlugin,
 } from '@mudd/core-plugins';
 import { orravethWorld } from '@mudd/world-orraveth';
 
 const roster: EnginePlugin = {
   manifest: { id: 'fixture.roster', version: '1.0.0', apiVersion: '1.0', category: 'first-party',
-    provides: [teamCombatRosterPolicyCapability.id] },
+    provides: [teamCombatRosterPolicyCapability.id, combatRoomPresenceCapability.id] },
   register({ provideCapability }) {
     provideCapability(teamCombatRosterPolicyCapability, {
       async resolve() { throw new Error('No party.'); },
       async resolveIfPartyPresent() { return undefined; },
+    });
+    provideCapability(combatRoomPresenceCapability, {
+      listActiveCharacters: async () => [],
+      getPresenceAnchors: async () => new Map(),
     });
   },
 };

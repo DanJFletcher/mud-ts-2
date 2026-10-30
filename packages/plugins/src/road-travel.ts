@@ -42,7 +42,14 @@ export const roadTravelPlugin: EnginePlugin = {
       const character = await characterState.load(context, command.characterId);
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
       assertCharacterAlive(character);
-      const movement = movementPolicy.plan(context.world, character, command.payload.exitId, true, context.now());
+      const movement = movementPolicy.plan(
+        context.world,
+        character,
+        command.payload.exitId,
+        true,
+        context.now(),
+        context.presenceAnchorAt,
+      );
       const roadId = movement.exit.roadId;
       if (!roadId) throw new RuleViolationError('That exit is not part of a road.');
       const road = context.world.roads.find((candidate) => candidate.id === roadId);

@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, ne, sql } from 'drizzle-orm';
 import type { EventStorePort } from '@mudd/engine-core';
 import { db } from './db/client.js';
 import { worldSessions, roomCharacterStates } from './db/schema.js';
@@ -121,4 +121,32 @@ export async function listActiveRoomCharacters(
     });
   }
   return [...activeByPlayer.values()];
+}
+
+export async function getCharacterPresenceAnchors(
+  worldInstanceId: string,
+  characterIds: readonly string[],
+) {
+  const requestedCharacterIds = [...new Set(characterIds)];
+  if (requestedCharacterIds.length === 0) return new Map<string, Date>();
+
+  const sessions = await measureDatabaseOperation('room_presence.anchors_lookup', () =>
+    db.select({
+      characterId: worldSessions.characterId,
+      lastSeenAt: worldSessions.lastSeenAt,
+    }).from(worldSessions).where(and(
+      eq(worldSessions.worldInstanceId, worldInstanceId),
+      inArray(worldSessions.characterId, requestedCharacterIds),
+    )));
+  const anchors = new Map<string, Date>();
+  for (const session of sessions) {
+    if (
+      session.characterId &&
+      (!anchors.has(session.characterId) ||
+        session.lastSeenAt.getTime() > anchors.get(session.characterId)!.getTime())
+    ) {
+      anchors.set(session.characterId, session.lastSeenAt);
+    }
+  }
+  return anchors;
 }

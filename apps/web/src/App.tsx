@@ -67,6 +67,51 @@ const client = new MuddHttpClient({
   commandProjection: "game",
 });
 
+function ProjectedVitalReadout({ snapshot }: { snapshot: GameSnapshot }) {
+  const [clientNow, setClientNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setClientNow(new Date()), 1_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const character = snapshot.character;
+  const projected = client.projectVitals(snapshot, clientNow);
+  const health = projected?.health ?? character?.health;
+  const stamina = projected?.stamina ?? character?.resources.stamina;
+  const mana = projected?.mana ?? character?.resources.mana;
+  return (
+    <div className="focused-terminal-vitals" role="group" aria-label="Quick info" aria-live="off">
+      {health && stamina && mana && (
+        <>
+          <span className="focused-terminal-vital" role="group" aria-label="Character health" title="Health">
+            <Heart size={14} aria-hidden="true" />
+            {health.current}/{health.maximum}
+          </span>
+          <span className="focused-terminal-vital" role="group" aria-label="Character stamina" title="Stamina">
+            <Zap size={14} aria-hidden="true" />
+            {stamina.current}/{stamina.maximum}
+          </span>
+          <span className="focused-terminal-vital" role="group" aria-label="Character mana" title="Mana">
+            <Sparkles size={14} aria-hidden="true" />
+            {mana.current}/{mana.maximum}
+          </span>
+        </>
+      )}
+      {character?.wallet && snapshot.currency && (
+        <span
+          className="focused-terminal-vital"
+          role="group"
+          aria-label={`Character currency balance: ${character.wallet.balance} ${snapshot.currency.name}`}
+          title={snapshot.currency.name}
+        >
+          <Coins size={14} aria-hidden="true" />
+          {character.wallet.balance} {snapshot.currency.symbol}
+        </span>
+      )}
+    </div>
+  );
+}
+
 /**
  * The game view after a successful command: the projection returned with it,
  * merged over the stable player and currency details, or a fresh snapshot when
@@ -4301,35 +4346,7 @@ export function WorldClient({
                       )}
                     </div>
                     {(snapshot.character?.health || (snapshot.character?.wallet && snapshot.currency)) && (
-                      <div className="focused-terminal-vitals" role="group" aria-label="Quick info">
-                        {snapshot.character?.health && (
-                          <>
-                            <span className="focused-terminal-vital" role="group" aria-label="Character health" title="Health">
-                              <Heart size={14} aria-hidden="true" />
-                              {snapshot.character.health.current}/{snapshot.character.health.maximum}
-                            </span>
-                            <span className="focused-terminal-vital" role="group" aria-label="Character stamina" title="Stamina">
-                              <Zap size={14} aria-hidden="true" />
-                              {snapshot.character.resources.stamina.current}/{snapshot.character.resources.stamina.maximum}
-                            </span>
-                            <span className="focused-terminal-vital" role="group" aria-label="Character mana" title="Mana">
-                              <Sparkles size={14} aria-hidden="true" />
-                              {snapshot.character.resources.mana.current}/{snapshot.character.resources.mana.maximum}
-                            </span>
-                          </>
-                        )}
-                        {snapshot.character.wallet && snapshot.currency && (
-                          <span
-                            className="focused-terminal-vital"
-                            role="group"
-                            aria-label={`Character currency balance: ${snapshot.character.wallet.balance} ${snapshot.currency.name}`}
-                            title={snapshot.currency.name}
-                          >
-                            <Coins size={14} aria-hidden="true" />
-                            {snapshot.character.wallet.balance} {snapshot.currency.symbol}
-                          </span>
-                        )}
-                      </div>
+                      <ProjectedVitalReadout snapshot={snapshot} />
                     )}
                     <div className="focused-terminal-history-shell">
                       <div

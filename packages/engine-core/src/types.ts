@@ -111,6 +111,7 @@ export interface AuthorizationPort {
 
 export interface EngineCommandContext {
   readonly session: SessionContext;
+  readonly presenceAnchorAt?: Date;
   readonly commandId: string;
   readonly worldInstanceId: string;
   readonly expectedVersion: number;
@@ -202,7 +203,12 @@ export interface QueryDefinition<T = unknown, R = unknown> {
 export interface PluginContext {
   registerCommand<T>(type: string, schema: z.ZodType<T>, handler: CommandHandler<T>): void;
   /** Register a command callable only through the trusted host system-command API. */
-  registerSystemCommand<T>(type: string, schema: z.ZodType<T>, handler: CommandHandler<T>): void;
+  registerSystemCommand<T>(
+    type: string,
+    schema: z.ZodType<T>,
+    handler: CommandHandler<T>,
+    version?: number,
+  ): void;
   registerQuery<T, R>(type: string, schema: z.ZodType<T>, handler: QueryHandler<T, R>): void;
   registerEffect<T>(
     type: string,

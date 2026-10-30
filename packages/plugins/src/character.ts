@@ -186,6 +186,46 @@ export function staminaRecoveryEvent(
   };
 }
 
+const VITAL_RECOVERY_PRESENCE_WINDOW_MS = 45_000;
+
+export function staminaRecoveryEventForCommand(
+  character: CharacterProjection,
+  commandAt: Date,
+  presenceAnchorAt?: Date,
+) {
+  if (!Number.isFinite(commandAt.getTime())) throw new Error('Invalid vital recovery command time.');
+  if (presenceAnchorAt && !Number.isFinite(presenceAnchorAt.getTime())) {
+    throw new Error('Invalid vital recovery presence anchor.');
+  }
+  const settlementLimit = presenceAnchorAt ??
+    (character.staminaRecovery.lastSettledAt
+      ? new Date(character.staminaRecovery.lastSettledAt)
+      : commandAt);
+  if (
+    presenceAnchorAt &&
+    commandAt.getTime() - presenceAnchorAt.getTime() <= VITAL_RECOVERY_PRESENCE_WINDOW_MS
+  ) {
+    return staminaRecoveryEvent(character, commandAt);
+  }
+
+  const settled = staminaRecoveryEvent(character, settlementLimit);
+  const settledThrough = settled.payload.recovery.lastSettledAt;
+  if (!settledThrough) throw new Error('Vital recovery did not produce a settlement anchor.');
+  const resetAt = new Date(Math.max(commandAt.getTime(), Date.parse(settledThrough)));
+  return {
+    ...settled,
+    payload: CharacterVitalRecoverySettledEventSchema.shape.payload.parse({
+      ...settled.payload,
+      settledAt: settledThrough,
+      recovery: {
+        ...settled.payload.recovery,
+        lastSettledAt: resetAt.toISOString(),
+      },
+      resetAnchor: true,
+    }),
+  };
+}
+
 export async function isInSharedCombat(
   context: EngineCommandContext,
   characterId: string,
@@ -370,6 +410,18 @@ export const characterPlugin: EnginePlugin = {
         resetAnchor: z.boolean().default(false),
       }).strict(),
     }).strict();
+    const VitalRecoverySystemCommandV2Schema = z.object({
+      type: z.literal('character.stamina.recover'),
+      version: z.literal(2),
+      commandId: z.string().min(1).max(128),
+      worldInstanceId: z.string().min(1).max(128),
+      characterId: z.string().min(1).max(128),
+      expectedVersion: z.number().int().nonnegative(),
+      payload: z.object({
+        settleAt: IsoDateTimeSchema,
+        resetAnchorAt: IsoDateTimeSchema.optional(),
+      }).strict(),
+    }).strict();
 
     registerSystemCommand(
       'character.stamina.recover',
@@ -381,6 +433,9 @@ export const characterPlugin: EnginePlugin = {
         }
         assertCharacterAlive(character);
         const settledAt = new Date(command.payload.settleAt);
+        const settled = command.payload.resetAnchor
+          ? undefined
+          : staminaRecoveryEvent(character, settledAt);
         const recovery = command.payload.resetAnchor
           ? CharacterStaminaRecoverySchema.parse({
             ...character.staminaRecovery,
@@ -389,16 +444,16 @@ export const characterPlugin: EnginePlugin = {
             healthFractionalCarry: 0,
             manaFractionalCarry: 0,
           })
-          : staminaRecoveryEvent(character, settledAt).payload.recovery;
+          : settled!.payload.recovery;
         const resources = command.payload.resetAnchor
           ? character.resources
-          : staminaRecoveryEvent(character, settledAt).payload.resources;
+          : settled!.payload.resources;
         const health = command.payload.resetAnchor
           ? character.health ?? {
             current: maximumHealthForLevel(character.advancement?.level ?? 1, character.attributes.constitution),
             maximum: maximumHealthForLevel(character.advancement?.level ?? 1, character.attributes.constitution),
           }
-          : staminaRecoveryEvent(character, settledAt).payload.health;
+          : settled!.payload.health;
         const payload = CharacterVitalRecoverySettledEventSchema.shape.payload.parse({
           characterId: character.characterId,
           health,
@@ -412,6 +467,49 @@ export const characterPlugin: EnginePlugin = {
           events: [{ type: 'character.vital_recovery_settled', version: 1, payload }],
         };
       },
+    );
+
+    registerSystemCommand(
+      'character.stamina.recover',
+      VitalRecoverySystemCommandV2Schema,
+      async (command, context) => {
+        const character = await state.load(context, command.characterId);
+        if (!character || character.archived) {
+          throw new RuleViolationError('That character is no longer available.');
+        }
+        assertCharacterAlive(character);
+
+        const settledAt = new Date(command.payload.settleAt);
+        const settled = staminaRecoveryEvent(character, settledAt);
+        const resetAnchorAt = command.payload.resetAnchorAt
+          ? new Date(command.payload.resetAnchorAt)
+          : undefined;
+        const settledThrough = settled.payload.recovery.lastSettledAt;
+        let recovery = settled.payload.recovery;
+        if (resetAnchorAt && !settledThrough) {
+          throw new Error('Vital recovery did not produce a settlement anchor.');
+        }
+        if (resetAnchorAt && settledThrough) {
+          recovery = {
+            ...recovery,
+            lastSettledAt: new Date(Math.max(
+              resetAnchorAt.getTime(),
+              Date.parse(settledThrough),
+            )).toISOString(),
+          };
+        }
+        const payload = CharacterVitalRecoverySettledEventSchema.shape.payload.parse({
+          ...settled.payload,
+          recovery,
+          ...(resetAnchorAt ? { settledAt: settledThrough!, resetAnchor: true } : {}),
+        });
+        return {
+          streamId: character.characterId,
+          expectedVersion: command.expectedVersion,
+          events: [{ type: 'character.vital_recovery_settled', version: 1, payload }],
+        };
+      },
+      2,
     );
 
     registerCommand('character.rest', CharacterRestCommandSchema, async (command, context) => {
@@ -430,7 +528,11 @@ export const characterPlugin: EnginePlugin = {
       if (!context.world.locations.some((candidate) => candidate.id === character.locationId)) {
         throw new RuleViolationError('Your current location is not available.');
       }
-      const settled = staminaRecoveryEvent(character, context.now());
+      const settled = staminaRecoveryEventForCommand(
+        character,
+        context.now(),
+        context.presenceAnchorAt,
+      );
       const posture = CharacterPostureChangedEventSchema.shape.payload.parse({
         characterId: character.characterId,
         posture: 'resting',
@@ -453,7 +555,11 @@ export const characterPlugin: EnginePlugin = {
       if (character.staminaRecovery.posture !== 'resting') {
         throw new RuleViolationError('You are already standing.');
       }
-      const settled = staminaRecoveryEvent(character, context.now());
+      const settled = staminaRecoveryEventForCommand(
+        character,
+        context.now(),
+        context.presenceAnchorAt,
+      );
       const posture = CharacterPostureChangedEventSchema.shape.payload.parse({
         characterId: character.characterId,
         posture: 'standing',

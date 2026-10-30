@@ -597,21 +597,39 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
       const maximum = state.health?.maximum ?? settled.health.maximum;
       const baseHealth = state.health ?? { current: maximum, maximum };
       const expected = at ? settled.resetAnchor
-        ? {
-          health: baseHealth,
-          stamina: state.resources.stamina,
-          mana: state.resources.mana,
-          recovery: {
-            ...state.staminaRecovery,
-            lastSettledAt: new Date(Math.max(
-              state.staminaRecovery.lastSettledAt ? Date.parse(state.staminaRecovery.lastSettledAt) : 0,
-              Date.parse(at),
-            )).toISOString(),
-            fractionalCarry: 0,
-            healthFractionalCarry: 0,
-            manaFractionalCarry: 0,
-          },
-        }
+        ? settled.settledAt
+          ? (() => {
+            const recovered = resolveVitalRecovery({
+              health: baseHealth,
+              stamina: state.resources.stamina,
+              mana: state.resources.mana,
+            }, state.staminaRecovery, new Date(settled.settledAt!));
+            return {
+              ...recovered,
+              recovery: {
+                ...recovered.recovery,
+                lastSettledAt: new Date(Math.max(
+                  Date.parse(recovered.recovery.lastSettledAt!),
+                  Date.parse(at),
+                )).toISOString(),
+              },
+            };
+          })()
+          : {
+            health: baseHealth,
+            stamina: state.resources.stamina,
+            mana: state.resources.mana,
+            recovery: {
+              ...state.staminaRecovery,
+              lastSettledAt: new Date(Math.max(
+                state.staminaRecovery.lastSettledAt ? Date.parse(state.staminaRecovery.lastSettledAt) : 0,
+                Date.parse(at),
+              )).toISOString(),
+              fractionalCarry: 0,
+              healthFractionalCarry: 0,
+              manaFractionalCarry: 0,
+            },
+          }
         : resolveVitalRecovery({
           health: baseHealth,
           stamina: state.resources.stamina,
@@ -622,6 +640,7 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
         settled.characterId !== state.characterId ||
         !at ||
         Date.parse(at) > Date.parse(event.occurredAt) ||
+        (settled.settledAt && (!settled.resetAnchor || Date.parse(settled.settledAt) > Date.parse(at))) ||
         !expected ||
         settled.health.maximum !== maximum ||
         (state.health?.current === 0) ||

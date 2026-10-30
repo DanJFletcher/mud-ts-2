@@ -1918,6 +1918,7 @@ describe('NPC room announcements through the server', () => {
     const snapshot = await fetch(`${baseUrl}/api/game`, { headers });
     expect(snapshot.status).toBe(200);
     expect(await snapshot.json()).toMatchObject({
+      serverTime: expect.stringMatching(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/),
       player: { id: 'player-alice', displayName: 'Alice' },
       character: {
         characterId: 'character-alice',
@@ -2384,7 +2385,8 @@ describe('NPC room announcements through the server', () => {
     await enterWorld('alice', 'character-alice');
     const session = state.sessions.get('player-alice') as { id: string; lastSeenAt?: Date };
     const staleTime = () => new Date(Date.now() - 60 * 60 * 1000);
-    session.lastSeenAt = staleTime();
+    const heartbeatAnchor = staleTime();
+    session.lastSeenAt = heartbeatAnchor;
 
     const heartbeat = await fetch(`${baseUrl}/api/world-session/heartbeat`, {
       method: 'POST',
@@ -2400,11 +2402,16 @@ describe('NPC room announcements through the server', () => {
     expect(state.systemCommands).toHaveLength(2);
     expect(state.systemCommands[1]).toMatchObject({
       type: 'character.stamina.recover',
+      version: 2,
       characterId: 'character-alice',
-      payload: { resetAnchor: true },
+      payload: {
+        settleAt: heartbeatAnchor.toISOString(),
+        resetAnchorAt: expect.any(String),
+      },
     });
 
-    session.lastSeenAt = staleTime();
+    const reconnectAnchor = staleTime();
+    session.lastSeenAt = reconnectAnchor;
     const reentered = await fetch(`${baseUrl}/api/world-session`, {
       method: 'POST',
       headers: {
@@ -2418,8 +2425,12 @@ describe('NPC room announcements through the server', () => {
     expect(state.systemCommands).toHaveLength(3);
     expect(state.systemCommands[2]).toMatchObject({
       type: 'character.stamina.recover',
+      version: 2,
       characterId: 'character-alice',
-      payload: { resetAnchor: true },
+      payload: {
+        settleAt: reconnectAnchor.toISOString(),
+        resetAnchorAt: expect.any(String),
+      },
     });
   });
 

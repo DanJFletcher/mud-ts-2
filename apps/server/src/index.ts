@@ -164,6 +164,7 @@ const staminaRecoverySchedulers = [...worldRuntimes.values()].map((runtime) =>
     engine: runtime.engine,
     store,
     worldInstanceId: runtime.worldInstanceId,
+    enabled: process.env.MUDD_TIMER_RECOVERY !== '0',
     listSessions: async (activeSince) => {
       const sessions = await db.select({
         characterId: worldSessions.characterId,
@@ -191,19 +192,28 @@ const objectLifecycleScheduler = createObjectLifecycleScheduler({
   },
 });
 
-async function resetStaminaRecoveryAnchor(runtime: WorldRuntime, characterId: string) {
+async function resetStaminaRecoveryAnchor(
+  runtime: WorldRuntime,
+  characterId: string,
+  presenceAnchorAt?: Date,
+) {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const character = replayCharacter(await store.readStream(runtime.worldInstanceId, characterId));
     if (!character || character.archived || character.health?.current === 0) return false;
+    const resetAnchorAt = new Date();
+    const settleAt = presenceAnchorAt ?? resetAnchorAt;
     const result = await runtime.engine.dispatchSystem({
       type: 'character.stamina.recover',
-      version: 1,
+      version: 2,
       commandId: `stamina-reconnect:${character.characterId}:${character.revision}`,
       worldInstanceId: runtime.worldInstanceId,
       characterId: character.characterId,
       expectedVersion: character.revision,
-      payload: { settleAt: new Date().toISOString(), resetAnchor: true },
-    }, SYSTEM_ACTOR_ID);
+      payload: {
+        settleAt: settleAt.toISOString(),
+        resetAnchorAt: resetAnchorAt.toISOString(),
+      },
+    }, SYSTEM_ACTOR_ID, undefined, presenceAnchorAt);
     if (result.receipt.ok) return true;
     if (result.receipt.code !== 'VERSION_CONFLICT') {
       throw new Error(result.receipt.message);
@@ -664,6 +674,7 @@ async function buildGameProjection(
   return {
     ok: true,
     value: MovementResultProjectionSchema.parse({
+      serverTime: new Date().toISOString(),
       character,
       stats: statsResult.value,
       location,
@@ -864,7 +875,11 @@ app.post('/api/world-session', async (req, res, next) => {
       if (lastSeenAt !== undefined) {
         await touchWorldSessionPresence(identity.playerId, result.session.worldInstanceId, result.session.id);
       }
-      const reset = await resetStaminaRecoveryAnchor(selected, result.session.characterId);
+      const reset = await resetStaminaRecoveryAnchor(
+        selected,
+        result.session.characterId,
+        result.session.lastSeenAt instanceof Date ? result.session.lastSeenAt : undefined,
+      );
       if (!reset) return res.status(409).json({ message: 'Your character is no longer available.' });
     }
     await runPendingEffectBatch(result.session.worldInstanceId);
@@ -901,7 +916,7 @@ app.post('/api/world-session/heartbeat', createRateLimiter({ windowMs: 60_000, m
     if (!refreshed) return res.status(409).json({ message: 'Your world session is no longer active.' });
     if (wasStale) {
       const reset = await measureStage('heartbeat.staminaAnchorReset', () =>
-        resetStaminaRecoveryAnchor(selected, current.characterId));
+        resetStaminaRecoveryAnchor(selected, current.characterId, current.lastSeenAt));
       if (!reset) return res.status(409).json({ message: 'Your character is no longer available.' });
     }
 
@@ -1243,7 +1258,21 @@ app.post(
       context = worldContext(identity, current);
     }
 
-    const result = await measureStage('command', () => selected.engine.dispatch(req.body, context, res.locals.requestId));
+    const presenceAnchorAt = commandSession?.lastSeenAt;
+    if (commandSession) {
+      const touched = await touchWorldSessionPresence(
+        identity.playerId,
+        commandSession.worldInstanceId,
+        commandSession.id,
+      );
+      if (!touched) return res.status(409).json({ message: 'Your world session is no longer active.' });
+    }
+    const result = await measureStage('command', () => selected.engine.dispatch(
+      req.body,
+      context,
+      res.locals.requestId,
+      presenceAnchorAt,
+    ));
     if (command?.type === 'character.archive' && result.receipt.ok) {
       invalidateCachedWorldSession(identity.playerId, selected.worldInstanceId);
     }

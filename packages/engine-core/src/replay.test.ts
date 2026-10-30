@@ -229,6 +229,88 @@ describe('character event replay validation', () => {
     });
   });
 
+  it('replays a recovery settlement followed by an anchor reset in one vital event', () => {
+    const start = new Date('2026-10-18T12:00:00.000Z');
+    const settledAt = new Date(start.getTime() + 10_000);
+    const resetAt = new Date(start.getTime() + 20_000);
+    const createdWithVitals = event('character.created', 1, {
+      characterId: 'character-test',
+      playerId: 'player-test',
+      name: 'Rowan',
+      startingLocationId: 'mossgate-clearing',
+      attributes: { strength: 10, intelligence: 10, constitution: 10, dexterity: 10 },
+      characterClass: {
+        id: 'replay-scout',
+        revision: 1,
+        catalogId: 'replay-catalog',
+        catalogRevision: 1,
+        label: 'Scout',
+        description: 'A replay fixture.',
+        primaryAttribute: 'dexterity',
+        attributes: { strength: 10, intelligence: 10, constitution: 10, dexterity: 10 },
+        coreAction: {
+          id: 'replay-action',
+          revision: 1,
+          label: 'Quick strike',
+          description: 'A test action.',
+          cost: { resource: 'stamina', amount: 1 },
+          baseDamage: 1,
+          scalingAttribute: 'dexterity',
+          weaponBonus: false,
+        },
+      },
+      health: { current: 1, maximum: 6 },
+      resources: {
+        stamina: { current: 0, maximum: 100 },
+        mana: { current: 0, maximum: 100 },
+      },
+    }, 3, start.toISOString());
+    const initial = replayCharacter([createdWithVitals])!;
+    const anchored = resolveVitalRecovery({
+      health: initial.health!,
+      stamina: initial.resources.stamina,
+      mana: initial.resources.mana,
+    }, initial.staminaRecovery, start);
+    const initialAnchor = event('character.vital_recovery_settled', 2, {
+      characterId: initial.characterId,
+      health: anchored.health,
+      resources: {
+        stamina: anchored.stamina,
+        mana: anchored.mana,
+      },
+      recovery: anchored.recovery,
+    }, 1, start.toISOString());
+    const anchoredCharacter = replayCharacter([createdWithVitals, initialAnchor])!;
+    const recovered = resolveVitalRecovery({
+      health: anchoredCharacter.health!,
+      stamina: anchoredCharacter.resources.stamina,
+      mana: anchoredCharacter.resources.mana,
+    }, anchoredCharacter.staminaRecovery, settledAt);
+    const resetEvent = event('character.vital_recovery_settled', 3, {
+      characterId: anchoredCharacter.characterId,
+      health: recovered.health,
+      resources: {
+        stamina: recovered.stamina,
+        mana: recovered.mana,
+      },
+      settledAt: recovered.recovery.lastSettledAt,
+      recovery: {
+        ...recovered.recovery,
+        lastSettledAt: resetAt.toISOString(),
+      },
+      resetAnchor: true,
+    }, 1, resetAt.toISOString());
+
+    expect(replayCharacter([createdWithVitals, initialAnchor, resetEvent])).toMatchObject({
+      health: { current: 1, maximum: 6 },
+      resources: {
+        stamina: { current: 10, maximum: 100 },
+        mana: { current: 10, maximum: 100 },
+      },
+      staminaRecovery: { lastSettledAt: resetAt.toISOString() },
+    });
+  });
+
   it('replays class selection, resource spending, and an exhausted class action', () => {
     const attributes = { strength: 10, intelligence: 10, constitution: 10, dexterity: 10 };
     const characterClass = {

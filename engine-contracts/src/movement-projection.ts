@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { IdSchema } from './ids.js';
+import { IdSchema, IsoDateTimeSchema } from './ids.js';
 import {
   CharacterProjectionSchema,
   CharacterStatsProjectionSchema,
@@ -28,6 +28,7 @@ export const GAME_COMMAND_PROJECTION = 'game';
  * client's existing snapshot and does not need to cross the wire again.
  */
 export const MovementResultProjectionSchema = z.object({
+  serverTime: IsoDateTimeSchema.optional(),
   character: CharacterProjectionSchema,
   stats: CharacterStatsProjectionSchema,
   location: LocationProjectionSchema,

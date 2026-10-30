@@ -57,6 +57,7 @@ const testCombatPresencePlugin: EnginePlugin = {
   register({ provideCapability }) {
     provideCapability(combatRoomPresenceCapability, {
       listActiveCharacters: async () => [],
+      getPresenceAnchors: async () => new Map(),
     });
   },
 };
@@ -164,7 +165,7 @@ function makeClient(
     const path = String(input);
     const body = JSON.parse(String(init.body ?? '{}')) as unknown;
     const result = path.endsWith('/commands')
-      ? await engine.dispatch(body, session)
+      ? await engine.dispatch(body, session, undefined, now())
       : await engine.query(body, session);
     return Response.json(result);
   };

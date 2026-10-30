@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { MuddHttpClient } from './index.js';
+import { GameSnapshotSchema, MuddHttpClient } from './index.js';
 import { EngineHost, InMemoryEventStore, projectQuestJournal, replayCharacter, type EnginePlugin } from '@mudd/engine-core';
 import {
   characterPlugin,
@@ -18,7 +18,100 @@ import {
   worldItemsPlugin,
 } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
-import { InitializeCharacterWalletCommandSchema, validateDraftWorldGraph } from '@mudd/contracts';
+import {
+  CharacterProjectionSchema,
+  InitializeCharacterWalletCommandSchema,
+  validateDraftWorldGraph,
+} from '@mudd/contracts';
+
+describe('client-side vital projection', () => {
+  it('uses server time to correct clock skew and projects from the recovery anchor', async () => {
+    vi.useFakeTimers();
+    const clientNow = new Date('2026-10-30T12:00:00.000Z');
+    vi.setSystemTime(clientNow);
+    try {
+      const serverTime = new Date(clientNow.getTime() + 5_000).toISOString();
+      const snapshot = GameSnapshotSchema.parse({
+        serverTime,
+        player: { id: 'player-one', displayName: 'Player' },
+        character: CharacterProjectionSchema.parse({
+          characterId: 'character-one',
+          worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+          name: 'Aster',
+          locationId: 'mossgate-clearing',
+          revision: 1,
+          health: { current: 1, maximum: 6 },
+          resources: {
+            stamina: { current: 0, maximum: 100 },
+            mana: { current: 0, maximum: 100 },
+          },
+          staminaRecovery: {
+            posture: 'standing',
+            lastSettledAt: serverTime,
+            fractionalCarry: 0,
+            healthFractionalCarry: 0,
+            manaFractionalCarry: 0,
+          },
+        }),
+      });
+      const client = new MuddHttpClient({
+        worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+        fetcher: async () => Response.json(snapshot),
+      });
+
+      const receivedSnapshot = await client.getGame();
+      const projected = client.projectVitals(
+        receivedSnapshot,
+        new Date(clientNow.getTime() + 1_000),
+      );
+
+      expect(projected).toMatchObject({
+        health: { current: 1, maximum: 6 },
+        stamina: { current: 1, maximum: 100 },
+        mana: { current: 1, maximum: 100 },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('falls back to the client clock for snapshots without serverTime', async () => {
+    const clientNow = new Date();
+    const character = CharacterProjectionSchema.parse({
+      characterId: 'character-one',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      name: 'Aster',
+      locationId: 'mossgate-clearing',
+      revision: 1,
+      health: { current: 1, maximum: 6 },
+      resources: {
+        stamina: { current: 0, maximum: 100 },
+        mana: { current: 0, maximum: 100 },
+      },
+      staminaRecovery: {
+        posture: 'standing',
+        lastSettledAt: clientNow.toISOString(),
+        fractionalCarry: 0,
+        healthFractionalCarry: 0,
+        manaFractionalCarry: 0,
+      },
+    });
+    const client = new MuddHttpClient({
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      fetcher: async () => Response.json({
+        player: { id: 'player-one', displayName: 'Player' },
+        character,
+      }),
+    });
+
+    const snapshot = await client.getGame();
+    const projected = client.projectVitals(snapshot, new Date(clientNow.getTime() + 1_000));
+
+    expect(snapshot.serverTime).toBeUndefined();
+    expect(projected?.stamina.current).toBe(1);
+    expect(projected?.mana.current).toBe(1);
+  });
+});
 
 describe('demo world navigation', () => {
   const compassVectors: Record<string, readonly [number, number]> = {
@@ -1371,6 +1464,7 @@ describe('MuddHttpClient', () => {
     } as const;
     const store = new InMemoryEventStore();
     let simulatedNow = new Date('2026-10-23T12:00:00.000Z');
+    let presenceAnchorAt = simulatedNow;
     const engine = new EngineHost(
       testPlugins,
       store,
@@ -1386,9 +1480,12 @@ describe('MuddHttpClient', () => {
     await engine.start();
     const fetcher: typeof fetch = async (input, init = {}) => {
       const body = JSON.parse(String(init.body ?? '{}')) as unknown;
-      const result = String(input).endsWith('/commands')
-        ? await engine.dispatch(body, session)
-        : await engine.query(body, session);
+      if (String(input).endsWith('/commands')) {
+        const result = await engine.dispatch(body, session, undefined, presenceAnchorAt);
+        presenceAnchorAt = new Date(simulatedNow);
+        return Response.json(result);
+      }
+      const result = await engine.query(body, session);
       return Response.json(result);
     };
     const client = new MuddHttpClient({ worldInstanceId: DEMO_WORLD_INSTANCE_ID, fetcher });
@@ -1972,6 +2069,7 @@ describe('MuddHttpClient', () => {
     } as const;
     const store = new InMemoryEventStore();
     let simulatedNow = new Date('2026-10-23T12:00:00.000Z');
+    let presenceAnchorAt = simulatedNow;
     const engine = new EngineHost(
       testPlugins,
       store,
@@ -1987,9 +2085,12 @@ describe('MuddHttpClient', () => {
     await engine.start();
     const fetcher: typeof fetch = async (input, init = {}) => {
       const body = JSON.parse(String(init.body ?? '{}')) as unknown;
-      const result = String(input).endsWith('/commands')
-        ? await engine.dispatch(body, session)
-        : await engine.query(body, session);
+      if (String(input).endsWith('/commands')) {
+        const result = await engine.dispatch(body, session, undefined, presenceAnchorAt);
+        presenceAnchorAt = new Date(simulatedNow);
+        return Response.json(result);
+      }
+      const result = await engine.query(body, session);
       return Response.json(result);
     };
     const client = new MuddHttpClient({ worldInstanceId: DEMO_WORLD_INSTANCE_ID, fetcher });
@@ -2163,6 +2264,7 @@ describe('MuddHttpClient', () => {
     } as const;
     const store = new InMemoryEventStore();
     let simulatedNow = new Date('2026-10-23T12:00:00.000Z');
+    let presenceAnchorAt = simulatedNow;
     const engine = new EngineHost(
       testPlugins,
       store,
@@ -2178,9 +2280,12 @@ describe('MuddHttpClient', () => {
     await engine.start();
     const fetcher: typeof fetch = async (input, init = {}) => {
       const body = JSON.parse(String(init.body ?? '{}')) as unknown;
-      const result = String(input).endsWith('/commands')
-        ? await engine.dispatch(body, session)
-        : await engine.query(body, session);
+      if (String(input).endsWith('/commands')) {
+        const result = await engine.dispatch(body, session, undefined, presenceAnchorAt);
+        presenceAnchorAt = new Date(simulatedNow);
+        return Response.json(result);
+      }
+      const result = await engine.query(body, session);
       return Response.json(result);
     };
     const client = new MuddHttpClient({ worldInstanceId: DEMO_WORLD_INSTANCE_ID, fetcher });

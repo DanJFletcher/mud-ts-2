@@ -89,6 +89,29 @@ function characterEvents(
 }
 
 describe('online stamina recovery scheduler', () => {
+  it('does not reconcile sessions or dispatch timer settlements when disabled', async () => {
+    const listSessions = vi.fn(async () => [{
+      characterId: 'character',
+      lastSeenAt: new Date('2026-10-23T12:00:00.000Z'),
+    }]);
+    const readStream = vi.fn(async () => characterEvents('2026-10-23T11:59:50.000Z'));
+    const dispatchSystem = vi.fn();
+    const scheduler = createStaminaRecoveryScheduler({
+      engine: { dispatchSystem } as unknown as EngineHost,
+      store: { readStream },
+      worldInstanceId: 'world',
+      listSessions,
+      enabled: false,
+    });
+
+    expect(await scheduler.tick()).toBe(0);
+    scheduler.start();
+    scheduler.stop();
+    expect(listSessions).not.toHaveBeenCalled();
+    expect(readStream).not.toHaveBeenCalled();
+    expect(dispatchSystem).not.toHaveBeenCalled();
+  });
+
   it('reconciles offline history once rather than replaying it every tick', async () => {
     const now = new Date('2026-10-23T12:05:00.000Z');
     const readStream = vi.fn(async () => characterEvents('2026-10-23T11:59:50.000Z'));
