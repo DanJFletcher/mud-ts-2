@@ -3,6 +3,7 @@ import { once } from 'node:events';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 import { ORRAVETH_WORLD_INSTANCE_ID } from '@mudd/world-orraveth';
+import { clearRequestIdentityCachesForTests, setMembershipListenerConnected } from './request-identity-cache.js';
 
 const state = vi.hoisted(() => ({
   world: {
@@ -82,6 +83,7 @@ const state = vi.hoisted(() => ({
   },
   characterWorldInstanceOverrides: new Map<string, string>(),
   sessions: new Map(),
+  worldSessionSelectCount: 0,
   guestIdentity: null as null | {
     playerId: string;
     displayName: string;
@@ -171,6 +173,7 @@ const state = vi.hoisted(() => ({
   realtimeNotificationCallbacks: null as null | {
     invalidate: (change: unknown) => void;
     refresh: () => void;
+    connectionState: (connected: boolean) => void;
   },
 }));
 
@@ -461,8 +464,10 @@ vi.mock('./realtime-notifications.js', () => ({
   startRealtimeNotifications: (
     invalidate: (change: unknown) => void,
     refresh: () => void,
+    connectionState: (connected: boolean) => void,
   ) => {
-    state.realtimeNotificationCallbacks = { invalidate, refresh };
+    state.realtimeNotificationCallbacks = { invalidate, refresh, connectionState };
+    connectionState(true);
     return vi.fn();
   },
 }));
@@ -535,6 +540,7 @@ vi.mock('./db/client.js', async () => {
               ...character,
             }));
           } else if (tableName === 'world_sessions') {
+            state.worldSessionSelectCount++;
             rows = [...state.sessions.values()];
           } else if (tableName === 'room_chat_messages') {
             rows = state.messages;

@@ -4,6 +4,7 @@ import { db } from './db/client.js';
 import { worldSessions, roomCharacterStates } from './db/schema.js';
 import { projectRoomOccupants, ROOM_PRESENCE_TTL_MS } from './room-presence-projection.js';
 import { measureDatabaseOperation } from './performance.js';
+import { updateCachedWorldSessionPresence } from './request-identity-cache.js';
 
 // Fail closed during mixed-version rollout if an older writer bypassed the
 // read model. The covering stream index makes this a bounded head check.
@@ -29,6 +30,7 @@ export async function touchWorldSessionPresence(
         eq(worldSessions.worldInstanceId, worldInstanceId),
       ))
       .returning({ id: worldSessions.id }));
+  if (updated) updateCachedWorldSessionPresence(playerId, worldInstanceId, sessionId, lastSeenAt);
   return Boolean(updated);
 }
 
