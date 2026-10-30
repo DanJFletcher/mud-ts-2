@@ -70,6 +70,48 @@ function toStoredEventEffect(
   };
 }
 
+/** Character aggregates use UUID stream IDs; shared streams are text IDs. */
+const CHARACTER_STREAM_ID = /^[0-9a-f-]{36}$/i;
+
+/** Events that also write side tables; their appends keep the transaction path. */
+const SIDE_TABLE_EVENT_TYPES = new Set([
+  'character.created',
+  'character.renamed',
+  'character.archived',
+  'character.restored',
+  'world.object_lifecycle_scheduled',
+  'world.object_lifecycle_rescheduled',
+  'world.object_lifecycle_cancelled',
+  'world.object_expiring',
+  'world.object_expired',
+]);
+
+type SingleCallAppendRow = {
+  outcome: 'prior' | 'guard_conflict' | 'version_conflict' | 'committed';
+  prior_stream_id: string | null;
+  prior_payload_hash: string | null;
+  prior_receipt: unknown;
+  prior_events: unknown;
+  current_revision: number | null;
+};
+
+function roomCharacterStateRow(
+  worldInstanceId: string,
+  characterId: string,
+  state: NonNullable<ReturnType<typeof replayCharacter>>,
+) {
+  return {
+    characterId, worldInstanceId, locationId: state.locationId,
+    revision: state.revision, schemaVersion: 1,
+    state: {
+      characterId, worldInstanceId, locationId: state.locationId,
+      name: state.name, archived: state.archived,
+      ...(state.health ? { health: state.health } : {}),
+      ...(state.combat ? { combat: { status: state.combat.status } } : {}),
+    },
+  };
+}
+
 function conflict(
   commandId: string,
   message: string,
@@ -78,7 +120,21 @@ function conflict(
   return { ok: false, commandId, code, message, retryable: code === 'VERSION_CONFLICT' };
 }
 
+export interface PostgresEventStoreOptions {
+  /**
+   * Commit eligible appends with one call to `mudd_append_command_v1` instead of
+   * a multi-statement transaction. Defaults to `MUDD_SINGLE_CALL_APPEND=1`.
+   */
+  readonly singleCallAppend?: boolean;
+}
+
 export class PostgresEventStore implements EventStorePort {
+  private readonly singleCallAppend: boolean;
+
+  constructor(options: PostgresEventStoreOptions = {}) {
+    this.singleCallAppend = options.singleCallAppend ?? process.env.MUDD_SINGLE_CALL_APPEND === '1';
+  }
+
   private async refreshRoomState(
     tx: Pick<typeof db, 'select' | 'insert'>,
     worldInstanceId: string,
@@ -87,7 +143,7 @@ export class PostgresEventStore implements EventStorePort {
     knownCharacterStream = false,
   ) {
     // Only character aggregates participate. Shared streams are text IDs.
-    if (!/^[0-9a-f-]{36}$/i.test(streamId)) return;
+    if (!CHARACTER_STREAM_ID.test(streamId)) return;
     if (!knownCharacterStream) {
       const [character] = await tx.select({ id: characters.id }).from(characters)
         .where(and(eq(characters.id, streamId), eq(characters.worldInstanceId, worldInstanceId))).limit(1);
@@ -105,16 +161,7 @@ export class PostgresEventStore implements EventStorePort {
     retainCharacterReplayPrefix(history, cached?.events);
     const state = replayCharacter(history);
     if (!state) throw new Error('Character room projection requires creation history.');
-    const values = {
-      characterId: streamId, worldInstanceId, locationId: state.locationId,
-      revision: state.revision, schemaVersion: 1,
-      state: {
-        characterId: streamId, worldInstanceId, locationId: state.locationId,
-        name: state.name, archived: state.archived,
-        ...(state.health ? { health: state.health } : {}),
-        ...(state.combat ? { combat: { status: state.combat.status } } : {}),
-      },
-    };
+    const values = roomCharacterStateRow(worldInstanceId, streamId, state);
     await tx.insert(roomCharacterStates).values(values)
       .onConflictDoUpdate({ target: roomCharacterStates.characterId, set: values });
   }
@@ -451,9 +498,140 @@ export class PostgresEventStore implements EventStorePort {
   }
 
   async append(request: AppendRequest): Promise<AppendOutcome> {
+    const outcome = await this.appendInOneCall(request) ?? await this.appendInTransaction(request);
+    this.updateCachesAfterAppend(request, outcome);
+    return outcome;
+  }
+
+  /**
+   * Commit in one round trip through `mudd_append_command_v1`, or return
+   * undefined when the append needs the transaction path: side-table events, or
+   * a character stream whose room read model cannot be computed from the cache.
+   */
+  private async appendInOneCall(request: AppendRequest): Promise<AppendOutcome | undefined> {
+    if (!this.singleCallAppend) return undefined;
+    const writes = [
+      { streamId: request.streamId, expectedVersion: request.expectedVersion, events: request.events },
+      ...(request.companions ?? []),
+    ];
+    // Malformed requests keep the transaction path, which reports them as before.
+    if (new Set(writes.map((write) => write.streamId)).size !== writes.length) return undefined;
+    if (writes.some((write) => write.events.length === 0)) return undefined;
+    if (writes.some((write) => write.events.some((event) => SIDE_TABLE_EVENT_TYPES.has(event.type)))) {
+      return undefined;
+    }
+
+    const committedAt = new Date().toISOString();
+    const stored = writes.map((write) => ({
+      ...write,
+      events: write.events.map((event, index): StoredGameEvent => ({
+        ...event,
+        eventId: globalThis.crypto.randomUUID(),
+        worldInstanceId: request.worldInstanceId,
+        streamId: write.streamId,
+        aggregateId: write.streamId,
+        aggregateVersion: write.expectedVersion + index + 1,
+        causationCommandId: request.commandId,
+        actorId: request.actorId,
+        occurredAt: committedAt,
+        tick: write.expectedVersion + index + 1,
+      })),
+    }));
+
+    const roomStates = [];
+    for (const write of stored) {
+      if (!CHARACTER_STREAM_ID.test(write.streamId)) continue;
+      const cached = this.streamCache.get(this.streamKey(request.worldInstanceId, write.streamId));
+      if (cached?.revision !== write.expectedVersion) return undefined;
+      const history = [...cached.events, ...write.events];
+      retainCharacterReplayPrefix(history, cached.events);
+      const state = replayCharacter(history);
+      if (!state) return undefined;
+      const row = roomCharacterStateRow(request.worldInstanceId, write.streamId, state);
+      roomStates.push({ character_id: row.characterId, location_id: row.locationId, revision: row.revision, state: row.state });
+    }
+
+    const [primary, ...companions] = stored;
+    const appended = primary!.events;
+    const receipt: Extract<CommandReceipt, { ok: true }> = {
+      ok: true,
+      commandId: request.commandId,
+      eventIds: appended.map((event) => event.eventId),
+      newAggregateVersion: appended.at(-1)!.aggregateVersion,
+    };
+    const checks = [...(request.companions ?? []), ...(request.guards ?? [])];
+    const effectKeyPrefix = commandEffectKeyPrefix(request.worldInstanceId, request.actorId, request.commandId);
+    const payload = {
+      worldInstanceId: request.worldInstanceId,
+      actorId: request.actorId,
+      commandId: request.commandId,
+      payloadHash: request.payloadHash,
+      streamId: request.streamId,
+      expectedVersion: request.expectedVersion,
+      lockStreamIds: [...new Set([...writes.map((write) => write.streamId), ...checks.map((check) => check.streamId)])],
+      checks: checks.map(({ streamId, expectedVersion }) => ({ streamId, expectedVersion })),
+      events: [...companions, primary!].flatMap((write) => write.events.map((event) => ({
+        event_id: event.eventId,
+        stream_id: event.streamId,
+        stream_version: event.aggregateVersion,
+        type: event.type,
+        contract_version: event.version,
+        payload: event.payload,
+        occurred_at: event.occurredAt,
+        tick: event.tick,
+      }))),
+      receipt,
+      receiptEvents: appended,
+      effects: (request.effects ?? []).map((effect, index) => ({
+        id: globalThis.crypto.randomUUID(),
+        effect_type: effect.type,
+        effect_version: effect.version,
+        payload: effect.payload,
+        dedupe_key: `${effectKeyPrefix}${index}`,
+      })),
+      roomStates,
+    };
+
+    const result = await measureDatabaseOperation('event_store.command_append', () =>
+      measureStage('event_store.append.single_call', () =>
+        db.execute(sql`SELECT * FROM mudd_append_command_v1(${JSON.stringify(payload)}::jsonb)`)));
+    const row = result.rows[0] as SingleCallAppendRow | undefined;
+    switch (row?.outcome) {
+      case 'prior':
+        return row.prior_payload_hash === request.payloadHash
+          ? {
+              kind: 'duplicate',
+              streamId: row.prior_stream_id!,
+              events: row.prior_events as StoredGameEvent[],
+              receipt: row.prior_receipt as CommandReceipt & { ok: true },
+            }
+          : {
+              kind: 'conflict',
+              streamId: row.prior_stream_id!,
+              events: row.prior_events as StoredGameEvent[],
+              receipt: conflict(request.commandId, 'Command ID was already used with a different payload.', 'INVALID_COMMAND'),
+            };
+      case 'guard_conflict':
+        return { kind: 'conflict', streamId: request.streamId, events: [],
+          receipt: conflict(request.commandId, 'An observed stream changed. Refresh and try again.') };
+      case 'version_conflict':
+        return {
+          kind: 'conflict',
+          streamId: request.streamId,
+          events: [],
+          receipt: conflict(request.commandId, `Expected revision ${request.expectedVersion}; current revision is ${row.current_revision}.`),
+        };
+      case 'committed':
+        return { kind: 'committed', streamId: request.streamId, events: appended, receipt };
+      default:
+        throw new Error('Command append returned no recognizable outcome.');
+    }
+  }
+
+  private async appendInTransaction(request: AppendRequest): Promise<AppendOutcome> {
     const appendStage = <T>(name: string, run: () => Promise<T>) =>
       measureStage(`event_store.append.${name}`, run);
-    const outcome = await measureDatabaseOperation('event_store.command_append', () => db.transaction(async (tx): Promise<AppendOutcome> => {
+    return measureDatabaseOperation('event_store.command_append', () => db.transaction(async (tx): Promise<AppendOutcome> => {
       // Lock command identity first so retries cannot race across different stream IDs.
       await appendStage('command_lock', () => tx.execute(sql`
         SELECT pg_advisory_xact_lock(hashtext(${request.worldInstanceId}), hashtext(${`${request.actorId}:${request.commandId}`}))`));
@@ -757,6 +935,9 @@ export class PostgresEventStore implements EventStorePort {
       });
       return { kind: 'committed', streamId: request.streamId, events: appended, receipt };
     }));
+  }
+
+  private updateCachesAfterAppend(request: AppendRequest, outcome: AppendOutcome): void {
     if (outcome.kind === 'committed') {
       this.appendCachedStream(
         request.worldInstanceId,
@@ -788,7 +969,6 @@ export class PostgresEventStore implements EventStorePort {
         this.invalidateCommandReadCache(request.worldInstanceId, companion.streamId);
       }
     }
-    return outcome;
   }
 
   async claimNextEffect(leaseMs: number, worldInstanceId?: string): Promise<StoredEventEffect | undefined> {

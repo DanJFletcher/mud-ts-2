@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import type { AppendRequest } from '@mudd/engine-core';
 
 const { mockDb } = vi.hoisted(() => ({
@@ -7,6 +8,7 @@ const { mockDb } = vi.hoisted(() => ({
     transaction: vi.fn(),
     update: vi.fn(),
     select: vi.fn(),
+    execute: vi.fn(),
   },
 }));
 
@@ -1558,5 +1560,154 @@ describe('PostgresEventStore unit behavior', () => {
     expect(update.lastError).toHaveLength(500);
     await expect(store.retryEffect('effect-1', 'lease-a', -1, 'invalid'))
       .rejects.toThrow('Effect retry delay must be non-negative.');
+  });
+});
+
+describe('PostgresEventStore single-call append', () => {
+  const dialect = new PgDialect();
+  const sharedRequest: AppendRequest = {
+    worldInstanceId: 'world-1',
+    streamId: 'world-items:world-1',
+    actorId: 'actor-1',
+    commandId: 'command-1',
+    payloadHash: 'hash-1',
+    expectedVersion: 4,
+    events: [{ type: 'world.item_dropped', version: 1, payload: { itemId: 'item-1' } }],
+    companions: [{
+      streamId: 'world-npc:guard',
+      expectedVersion: 2,
+      events: [{ type: 'npc.noticed', version: 1, payload: { itemId: 'item-1' } }],
+    }],
+    guards: [{ streamId: 'world-team-combat', expectedVersion: 7 }],
+    effects: [{ type: 'world.item.announce', version: 1, payload: { itemId: 'item-1' } }],
+  };
+
+  function respondWith(row: Record<string, unknown>) {
+    mockDb.execute.mockResolvedValueOnce({ rows: [{
+      prior_stream_id: null, prior_payload_hash: null, prior_receipt: null,
+      prior_events: null, current_revision: null, ...row,
+    }] });
+  }
+
+  function executed(call = 0) {
+    const query = dialect.sqlToQuery(mockDb.execute.mock.calls[call]![0]);
+    return { sql: query.sql, request: JSON.parse(String(query.params[0])) };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDb.transaction.mockRejectedValue(new Error('transaction path'));
+  });
+
+  it('keeps the transaction path unless the single call is enabled', async () => {
+    await expect(new PostgresEventStore({ singleCallAppend: false }).append(sharedRequest))
+      .rejects.toThrow('transaction path');
+    expect(mockDb.execute).not.toHaveBeenCalled();
+  });
+
+  it('commits in one call with the transaction path rows, lock set and effect keys', async () => {
+    respondWith({ outcome: 'committed', current_revision: 4 });
+    const store = new PostgresEventStore({ singleCallAppend: true });
+
+    const outcome = await store.append(sharedRequest);
+
+    expect(mockDb.transaction).not.toHaveBeenCalled();
+    expect(mockDb.execute).toHaveBeenCalledOnce();
+    expect(outcome).toMatchObject({ kind: 'committed', streamId: 'world-items:world-1' });
+    expect(outcome.events).toEqual([expect.objectContaining({
+      type: 'world.item_dropped', aggregateVersion: 5, tick: 5, actorId: 'actor-1', causationCommandId: 'command-1',
+    })]);
+    expect(outcome.receipt).toEqual({
+      ok: true, commandId: 'command-1', eventIds: [outcome.events[0]!.eventId], newAggregateVersion: 5,
+    });
+
+    const { sql: statement, request } = executed();
+    expect(statement).toBe('SELECT * FROM mudd_append_command_v1($1::jsonb)');
+    expect(request.lockStreamIds.sort()).toEqual(['world-items:world-1', 'world-npc:guard', 'world-team-combat']);
+    expect(request.checks).toEqual([
+      { streamId: 'world-npc:guard', expectedVersion: 2 },
+      { streamId: 'world-team-combat', expectedVersion: 7 },
+    ]);
+    expect(request.events.map((event: { stream_id: string; stream_version: number }) =>
+      [event.stream_id, event.stream_version])).toEqual([['world-npc:guard', 3], ['world-items:world-1', 5]]);
+    expect(request.receipt).toEqual(outcome.receipt);
+    expect(request.receiptEvents).toEqual(outcome.events);
+    expect(request.effects).toEqual([expect.objectContaining({
+      effect_type: 'world.item.announce', dedupe_key: 'command:world-1:actor-1:command-1:0',
+    })]);
+    expect(request.roomStates).toEqual([]);
+  });
+
+  it('maps prior receipts and revision conflicts to the transaction path outcomes', async () => {
+    const store = new PostgresEventStore({ singleCallAppend: true });
+    const priorReceipt = { ok: true, commandId: 'command-1', eventIds: ['event-1'], newAggregateVersion: 5 };
+    respondWith({ outcome: 'prior', prior_stream_id: 'world-items:world-1', prior_payload_hash: 'hash-1',
+      prior_receipt: priorReceipt, prior_events: [{ eventId: 'event-1' }] });
+    respondWith({ outcome: 'prior', prior_stream_id: 'world-items:world-1', prior_payload_hash: 'other-hash',
+      prior_receipt: priorReceipt, prior_events: [] });
+    respondWith({ outcome: 'guard_conflict', current_revision: 8 });
+    respondWith({ outcome: 'version_conflict', current_revision: 6 });
+
+    expect(await store.append(sharedRequest)).toEqual({
+      kind: 'duplicate', streamId: 'world-items:world-1', events: [{ eventId: 'event-1' }], receipt: priorReceipt,
+    });
+    expect(await store.append(sharedRequest)).toMatchObject({
+      kind: 'conflict', receipt: { code: 'INVALID_COMMAND', message: 'Command ID was already used with a different payload.' },
+    });
+    expect(await store.append(sharedRequest)).toMatchObject({
+      kind: 'conflict', events: [], receipt: { code: 'VERSION_CONFLICT', message: 'An observed stream changed. Refresh and try again.' },
+    });
+    expect(await store.append(sharedRequest)).toMatchObject({
+      kind: 'conflict', events: [], receipt: { code: 'VERSION_CONFLICT', message: 'Expected revision 4; current revision is 6.', retryable: true },
+    });
+    mockDb.execute.mockResolvedValueOnce({ rows: [] });
+    await expect(store.append(sharedRequest)).rejects.toThrow('Command append returned no recognizable outcome.');
+  });
+
+  it('sends the character room state computed from the cached history', async () => {
+    const characterId = '123e4567-e89b-42d3-a456-426614174000';
+    const store = new PostgresEventStore({ singleCallAppend: true });
+    const created = toStoredGameEvent({
+      type: 'character.created', contractVersion: 1,
+      payload: { characterId, playerId: 'player-1', name: 'Rowan', startingLocationId: 'room-a' },
+      eventId: 'event-created', worldInstanceId: 'world-1', streamId: characterId, streamVersion: 1,
+      causationCommandId: 'create-command', actorId: 'player-1', occurredAt: new Date('2026-10-28T12:00:00.000Z'), tick: 1,
+    } as Parameters<typeof toStoredGameEvent>[0]);
+    (store as unknown as { cacheStream(key: string, events: readonly unknown[]): void })
+      .cacheStream(`world-1\u0000${characterId}`, [created]);
+    respondWith({ outcome: 'committed', current_revision: 1 });
+
+    const outcome = await store.append({
+      worldInstanceId: 'world-1', streamId: characterId, actorId: 'player-1', commandId: 'take-1',
+      payloadHash: 'hash-take', expectedVersion: 1,
+      events: [{ type: 'character.item_taken', version: 1, payload: {
+        characterId, locationId: 'room-a', item: { id: 'item-1', label: 'Stone', description: 'A stone.' },
+      } }],
+    });
+
+    expect(outcome.kind).toBe('committed');
+    expect(executed().request.roomStates).toEqual([{
+      character_id: characterId, location_id: 'room-a', revision: 2,
+      state: { characterId, worldInstanceId: 'world-1', locationId: 'room-a', name: 'Rowan', archived: false },
+    }]);
+    expect((store as unknown as { streamCache: Map<string, { revision: number }> })
+      .streamCache.get(`world-1\u0000${characterId}`)?.revision).toBe(2);
+  });
+
+  it('falls back for side-table events, uncached character streams and malformed batches', async () => {
+    const store = new PostgresEventStore({ singleCallAppend: true });
+    const characterId = '123e4567-e89b-42d3-a456-426614174001';
+    for (const request of [
+      { ...sharedRequest, events: [{ type: 'character.renamed', version: 1, payload: { characterId, name: 'New' } }] },
+      { ...sharedRequest, companions: [{ streamId: 'lifecycle', expectedVersion: 0,
+        events: [{ type: 'world.object_lifecycle_scheduled', version: 1, payload: {} }] }] },
+      { ...sharedRequest, streamId: characterId, companions: [] },
+      { ...sharedRequest, companions: [{ streamId: sharedRequest.streamId, expectedVersion: 4, events: sharedRequest.events }] },
+      { ...sharedRequest, events: [] },
+    ] satisfies AppendRequest[]) {
+      await expect(store.append(request)).rejects.toThrow('transaction path');
+    }
+    expect(mockDb.execute).not.toHaveBeenCalled();
+    expect(mockDb.transaction).toHaveBeenCalledTimes(5);
   });
 });

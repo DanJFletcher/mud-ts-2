@@ -1,6 +1,6 @@
 # MUDD feature implementation plan — Single-call event append
 
-**Status:** Proposed; not started. Source: [round-trip latency audit](../performance/round-trip-latency-audit.md), recommendation 6.
+**Status:** Implemented behind `MUDD_SINGLE_CALL_APPEND` ([ADR 0039](../adr/0039-single-call-event-append.md)). Optional step 5 (a lazy receipt lookup in the engine) is not done. Source: [round-trip latency audit](../performance/round-trip-latency-audit.md), recommendation 6.
 
 **Goal / user-observable behavior:** Every eligible command commits in one database round trip instead of 9–10. At the measured production latency of about 27 ms per round trip, this removes roughly 220–240 ms from each move and from every other command. Gameplay, receipts and events are unchanged.
 
