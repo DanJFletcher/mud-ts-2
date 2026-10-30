@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The module requires its secret at import; use a throwaway one, as the
 // PostgreSQL suite does, so the test does not depend on the environment.
@@ -19,8 +19,19 @@ import {
   createGuestIdentity,
   expiredGuestCookie,
   getAccountIdentity,
+  getAccountIdentityForRequest,
   GUEST_SESSION_TTL_SECONDS,
 } from './session-service.js';
+import {
+  clearRequestIdentityCachesForTests,
+  getCachedWorldSession,
+  invalidateCachedPlayer,
+  invalidateCachedWorldSession,
+  takePrefetchedWorldSession,
+  setCachedWorldSession,
+  setMembershipListenerConnected,
+  type CachedWorldSession,
+} from './request-identity-cache.js';
 
 type Row = Record<string, unknown>;
 
@@ -32,6 +43,7 @@ function selectQuery(rows: Row[]) {
   const builder: Record<string, any> = {};
   builder.from = vi.fn(() => builder);
   builder.innerJoin = vi.fn(() => builder);
+  builder.leftJoin = vi.fn(() => builder);
   builder.where = vi.fn(() => builder);
   builder.limit = vi.fn(async () => rows);
   return builder;
@@ -66,11 +78,19 @@ function cookie(token: string): string {
 describe('account and guest session identity', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearRequestIdentityCachesForTests();
+    vi.stubEnv('MUDD_IDENTITY_CACHE', '0');
     dbSelectRows = [];
     txSelectRows = [];
     updateReturningRows = [];
     mockDb.select.mockImplementation(() => selectQuery(dbSelectRows.shift() ?? []));
     mockDb.transaction.mockImplementation(async (run: (transaction: typeof tx) => Promise<unknown>) => run(tx));
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.useRealTimers();
+    clearRequestIdentityCachesForTests();
   });
 
   it('refuses to load guest identity handling without a session secret', async () => {
@@ -247,6 +267,168 @@ describe('account and guest session identity', () => {
     mockDb.transaction.mockRejectedValueOnce(new Error('database unavailable'));
     await expect(getAccountIdentity({ headers: {} }, clerk))
       .rejects.toThrow('database unavailable');
+  });
+
+  it('expires cached guest identity no later than its guest-session expiry', async () => {
+    vi.stubEnv('MUDD_IDENTITY_CACHE', '1');
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-30T12:00:00.000Z'));
+    const request = { headers: { cookie: cookie('short-lived-guest') } };
+    dbSelectRows.push(
+      [guestRow({ expiresAt: new Date(Date.now() + 1_000) })],
+      [],
+    );
+
+    const first = await getAccountIdentityForRequest(request, { userId: null, sessionId: null });
+    expect(first.identity).toMatchObject({ playerId: 'guest-player-1', isGuest: true });
+    expect(await getAccountIdentityForRequest(request, { userId: null, sessionId: null }))
+      .toMatchObject({ identity: { playerId: 'guest-player-1' } });
+    expect(mockDb.select).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(1_001);
+    await expect(getAccountIdentityForRequest(request, { userId: null, sessionId: null }))
+      .resolves.toMatchObject({ worldSessionResolved: false });
+    expect(mockDb.select).toHaveBeenCalledTimes(2);
+  });
+
+  it('removes a cached guest identity when that guest is claimed by a Clerk account', async () => {
+    vi.stubEnv('MUDD_IDENTITY_CACHE', '1');
+    const request = { headers: { cookie: cookie('claimable-guest') } };
+    const guest = guestRow({ expiresAt: new Date(Date.now() + 60_000) });
+    dbSelectRows.push([guest], [guest], [], []);
+    txSelectRows.push([]);
+    updateReturningRows.push([{ id: 'guest-player-1', displayName: 'Traveler GUEST' }]);
+
+    await getAccountIdentityForRequest(request, { userId: null, sessionId: null });
+    await getAccountIdentityForRequest(request, clerk);
+    const staleGuest = await getAccountIdentityForRequest(request, { userId: null, sessionId: null });
+
+    expect(staleGuest.identity).toBeUndefined();
+    expect(tx.update).toHaveBeenCalledTimes(1);
+    expect(tx.delete).toHaveBeenCalledTimes(1);
+    expect(mockDb.select).toHaveBeenCalledTimes(4);
+  });
+
+  it('removes a cached guest identity when its characters migrate to an existing account', async () => {
+    vi.stubEnv('MUDD_IDENTITY_CACHE', '1');
+    const request = { headers: { cookie: cookie('migrating-guest') } };
+    const guest = guestRow({ expiresAt: new Date(Date.now() + 60_000) });
+    dbSelectRows.push(
+      [guest],
+      [guest],
+      [{ id: 'account-2', displayName: 'Account Traveler' }],
+      [],
+    );
+    txSelectRows.push([{ id: 'guest-player-1' }]);
+
+    await getAccountIdentityForRequest(request, { userId: null, sessionId: null });
+    await getAccountIdentityForRequest(request, clerk);
+    const staleGuest = await getAccountIdentityForRequest(request, { userId: null, sessionId: null });
+
+    expect(staleGuest.identity).toBeUndefined();
+    expect(tx.update).toHaveBeenCalledTimes(1);
+    expect(tx.delete).toHaveBeenCalledTimes(2);
+    expect(mockDb.select).toHaveBeenCalledTimes(4);
+  });
+
+  it('does not treat a cached Clerk profile as authentication after sign-out', async () => {
+    vi.stubEnv('MUDD_IDENTITY_CACHE', '1');
+    dbSelectRows.push([{ id: 'account-1', displayName: 'Existing Traveler' }]);
+
+    const signedIn = await getAccountIdentityForRequest({ headers: {} }, clerk);
+    const signedOut = await getAccountIdentityForRequest(
+      { headers: {} },
+      { userId: null, sessionId: null },
+    );
+
+    expect(signedIn.identity).toMatchObject({ playerId: 'account-1' });
+    expect(signedOut.identity).toBeUndefined();
+    expect(mockDb.select).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads guest identity and the active world session in one cache-miss query', async () => {
+    vi.stubEnv('MUDD_IDENTITY_CACHE', '1');
+    setMembershipListenerConnected(true);
+    const worldSession = {
+      id: 'session-one',
+      playerId: 'guest-player-1',
+      worldInstanceId: 'world-one',
+      characterId: 'character-one',
+      lastSeenAt: new Date(),
+    } as CachedWorldSession;
+    dbSelectRows.push([guestRow({
+      expiresAt: new Date(Date.now() + 60_000),
+      worldSession,
+    })]);
+    const request = { headers: { cookie: cookie('joined-query-guest') } };
+
+    const resolved = await getAccountIdentityForRequest(
+      request,
+      { userId: null, sessionId: null },
+      'world-one',
+    );
+
+    expect(resolved).toMatchObject({
+      identity: { playerId: 'guest-player-1' },
+      worldSessionResolved: true,
+    });
+    expect(mockDb.select).toHaveBeenCalledTimes(1);
+    expect(getCachedWorldSession('guest-player-1', 'world-one')).toEqual(worldSession);
+    expect(takePrefetchedWorldSession(resolved.identity!, 'world-one')).toEqual({
+      resolved: true,
+      session: worldSession,
+    });
+    expect(takePrefetchedWorldSession(resolved.identity!, 'world-one')).toEqual({
+      resolved: false,
+      session: undefined,
+    });
+
+    const warm = await getAccountIdentityForRequest(
+      request,
+      { userId: null, sessionId: null },
+      'world-one',
+    );
+    expect(warm.worldSessionResolved).toBe(false);
+    expect(mockDb.select).toHaveBeenCalledTimes(1);
+
+    invalidateCachedWorldSession('guest-player-1', 'world-one');
+    const afterSessionChange = await getAccountIdentityForRequest(
+      request,
+      { userId: null, sessionId: null },
+      'world-one',
+    );
+    expect(afterSessionChange.identity).toBe(resolved.identity);
+    expect(takePrefetchedWorldSession(afterSessionChange.identity!, 'world-one').resolved).toBe(false);
+    expect(getCachedWorldSession('guest-player-1', 'world-one')).toBeUndefined();
+  });
+
+  it('keeps world-session entries scoped by player and world and invalidates them', () => {
+    const session = {
+      id: 'session-one',
+      playerId: 'player-one',
+      worldInstanceId: 'world-one',
+      characterId: 'character-one',
+      lastSeenAt: new Date(),
+    } as CachedWorldSession;
+    setMembershipListenerConnected(true);
+    setCachedWorldSession(session);
+
+    expect(getCachedWorldSession('player-one', 'world-one')).toEqual(session);
+    expect(getCachedWorldSession('player-one', 'world-two')).toBeUndefined();
+
+    invalidateCachedPlayer('player-one', 'world-one');
+    expect(getCachedWorldSession('player-one', 'world-one')).toBeUndefined();
+  });
+
+  it('does not cache identity lookups while the feature flag is off', async () => {
+    const guest = guestRow({ expiresAt: new Date(Date.now() + 60_000) });
+    dbSelectRows.push([guest], [guest]);
+    const request = { headers: { cookie: cookie('uncached-guest') } };
+
+    await getAccountIdentityForRequest(request, { userId: null, sessionId: null });
+    await getAccountIdentityForRequest(request, { userId: null, sessionId: null });
+
+    expect(mockDb.select).toHaveBeenCalledTimes(2);
   });
 
   it('returns an existing guest session without rotating its cookie', async () => {

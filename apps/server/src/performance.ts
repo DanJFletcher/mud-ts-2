@@ -18,6 +18,10 @@ export type Measurements = {
   queries: number;
   poolWaitMs: number;
   queryMs: number;
+  identityCacheHits: number;
+  identityCacheMisses: number;
+  worldSessionCacheHits: number;
+  worldSessionCacheMisses: number;
   /** New physical PostgreSQL connections opened while serving the request. */
   connectionsOpened: number;
   traceId?: string;
@@ -69,11 +73,24 @@ export function newMeasurements(traceId?: string): Measurements {
     queries: 0,
     poolWaitMs: 0,
     queryMs: 0,
+    identityCacheHits: 0,
+    identityCacheMisses: 0,
+    worldSessionCacheHits: 0,
+    worldSessionCacheMisses: 0,
     connectionsOpened: 0,
     traceId,
     queryTimings: [],
     databaseOperations: {},
   };
+}
+
+export function recordRequestCacheLookup(cache: 'identity' | 'worldSession', hit: boolean): void {
+  const metrics = requestMeasurements.getStore();
+  if (!metrics) return;
+  const key = cache === 'identity'
+    ? hit ? 'identityCacheHits' : 'identityCacheMisses'
+    : hit ? 'worldSessionCacheHits' : 'worldSessionCacheMisses';
+  metrics[key]++;
 }
 export async function measureStage<T>(stage: string, run: () => Promise<T>): Promise<T> {
   const started = performance.now();

@@ -3,8 +3,19 @@ import { and, eq, gt, isNull } from 'drizzle-orm';
 import type { SessionContext } from '@mudd/contracts';
 import { DEMO_WORLD_INSTANCE_ID } from '@mudd/world-demo';
 import { db } from './db/client.js';
-import { characters, players, sessions } from './db/schema.js';
-import { measureDatabaseOperation } from './performance.js';
+import { characters, players, sessions, worldSessions } from './db/schema.js';
+import {
+  getCachedIdentity,
+  invalidateCachedIdentity,
+  invalidateCachedPlayer,
+  invalidateCachedWorldSessionsForPlayer,
+  rememberPrefetchedWorldSession,
+  REQUEST_IDENTITY_CACHE_TTL_MS,
+  requestIdentityCacheEnabled,
+  setCachedIdentity,
+  setCachedWorldSession,
+} from './request-identity-cache.js';
+import { measureDatabaseOperation, recordRequestCacheLookup } from './performance.js';
 
 const secret = process.env.SESSION_SECRET;
 if (!secret) throw new Error('SESSION_SECRET is required to preserve existing guest accounts.');
@@ -31,6 +42,8 @@ export interface AccountIdentity {
   displayName: string;
   clearGuestCookie: boolean;
   isGuest: boolean;
+  /** Internal expiry used to keep a cached guest identity within its session lifetime. */
+  guestSessionExpiresAt?: Date;
 }
 
 interface ClerkIdentity {
@@ -49,6 +62,7 @@ export async function getAccountIdentity(
       id: players.id,
       displayName: players.displayName,
       sessionId: sessions.id,
+      expiresAt: sessions.expiresAt,
     }).from(sessions)
       .innerJoin(players, eq(sessions.playerId, players.id))
       .where(and(
@@ -74,8 +88,11 @@ export async function getAccountIdentity(
       displayName: guest.displayName,
       clearGuestCookie: false,
       isGuest: true,
+      guestSessionExpiresAt: guest.expiresAt,
     };
   }
+
+  if (tokenHash) invalidateCachedIdentity(`guest:${tokenHash}`);
 
   const findAccount = () => measureDatabaseOperation('account.clerk_profile_lookup', () =>
     db.select({
@@ -103,6 +120,7 @@ export async function getAccountIdentity(
               .returning({ id: players.id, displayName: players.displayName });
             if (claimed) {
               await tx.delete(sessions).where(eq(sessions.playerId, claimed.id));
+              invalidateCachedPlayer(claimed.id);
               return claimed;
             }
             const [raced] = await tx.select({
@@ -140,6 +158,8 @@ export async function getAccountIdentity(
         await tx.delete(sessions).where(eq(sessions.playerId, guest.id));
         await tx.delete(players).where(and(eq(players.id, guest.id), isNull(players.clerkUserId)));
       }));
+    invalidateCachedPlayer(guest.id);
+    invalidateCachedPlayer(account.id);
   }
 
   return {
@@ -158,12 +178,185 @@ export async function getAccountIdentity(
   };
 }
 
+function guestAccountIdentity(guest: {
+  id: string;
+  displayName: string;
+  sessionId: string;
+  expiresAt: Date;
+}): AccountIdentity {
+  return {
+    session: {
+      sessionId: guest.sessionId,
+      playerId: guest.id,
+      actorId: guest.id,
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      grantedPermissions: [],
+      authenticated: true,
+    },
+    playerId: guest.id,
+    displayName: guest.displayName,
+    clearGuestCookie: false,
+    isGuest: true,
+    guestSessionExpiresAt: guest.expiresAt,
+  };
+}
+
+function clerkAccountIdentity(
+  account: { id: string; displayName: string },
+  auth: ClerkIdentity,
+): AccountIdentity {
+  return {
+    session: {
+      sessionId: auth.sessionId || auth.userId || account.id,
+      playerId: account.id,
+      actorId: account.id,
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      grantedPermissions: [],
+      authenticated: true,
+    },
+    playerId: account.id,
+    displayName: account.displayName,
+    clearGuestCookie: false,
+    isGuest: false,
+  };
+}
+
+export async function getAccountIdentityForRequest(
+  request: { headers: { cookie?: string } },
+  auth: ClerkIdentity,
+  worldInstanceId?: string,
+): Promise<{ identity?: AccountIdentity; worldSessionResolved: boolean }> {
+  if (!requestIdentityCacheEnabled()) {
+    return { identity: await getAccountIdentity(request, auth), worldSessionResolved: false };
+  }
+
+  const guestToken = readGuestToken(request);
+  const tokenHash = guestToken ? hashToken(guestToken) : undefined;
+  // A signed-in request carrying a guest cookie may be claiming or migrating it.
+  // Always use the authoritative path and remove any old guest cache entry.
+  if (auth.userId && guestToken) {
+    if (tokenHash) invalidateCachedIdentity(`guest:${tokenHash}`);
+    const identity = await getAccountIdentity(request, auth);
+    if (identity?.clearGuestCookie) {
+      invalidateCachedPlayer(identity.playerId);
+      invalidateCachedWorldSessionsForPlayer(identity.playerId);
+    }
+    return { identity, worldSessionResolved: false };
+  }
+
+  const cacheKey = auth.userId
+    ? `clerk:${auth.userId}`
+    : tokenHash ? `guest:${tokenHash}` : undefined;
+  if (!cacheKey) return { identity: undefined, worldSessionResolved: false };
+
+  const cachedIdentity = getCachedIdentity(cacheKey);
+  recordRequestCacheLookup('identity', Boolean(cachedIdentity));
+  if (cachedIdentity) return { identity: cachedIdentity, worldSessionResolved: false };
+
+  if (!auth.userId && tokenHash) {
+    const now = new Date();
+    if (worldInstanceId) {
+      const [row] = await measureDatabaseOperation('account.guest_session_lookup', () =>
+        db.select({
+          id: players.id,
+          displayName: players.displayName,
+          sessionId: sessions.id,
+          expiresAt: sessions.expiresAt,
+          worldSession: worldSessions,
+        }).from(sessions)
+          .innerJoin(players, eq(sessions.playerId, players.id))
+          .leftJoin(worldSessions, and(
+            eq(worldSessions.playerId, players.id),
+            eq(worldSessions.worldInstanceId, worldInstanceId),
+          ))
+          .where(and(
+            eq(sessions.tokenHash, tokenHash),
+            gt(sessions.expiresAt, now),
+            isNull(players.clerkUserId),
+          )).limit(1));
+      if (!row) return { identity: undefined, worldSessionResolved: true };
+      const identity = guestAccountIdentity(row);
+      const expiresAt = Math.min(
+        Date.now() + REQUEST_IDENTITY_CACHE_TTL_MS,
+        row.expiresAt.getTime(),
+      );
+      setCachedIdentity(cacheKey, identity, expiresAt);
+      recordRequestCacheLookup('worldSession', false);
+      if (row.worldSession) setCachedWorldSession(row.worldSession);
+      rememberPrefetchedWorldSession(identity, worldInstanceId, row.worldSession);
+      return { identity, worldSessionResolved: true };
+    }
+    const [row] = await measureDatabaseOperation('account.guest_session_lookup', () =>
+      db.select({
+        id: players.id,
+        displayName: players.displayName,
+        sessionId: sessions.id,
+        expiresAt: sessions.expiresAt,
+      }).from(sessions)
+        .innerJoin(players, eq(sessions.playerId, players.id))
+        .where(and(
+          eq(sessions.tokenHash, tokenHash),
+          gt(sessions.expiresAt, now),
+          isNull(players.clerkUserId),
+        )).limit(1));
+    if (!row) return { identity: undefined, worldSessionResolved: false };
+    const identity = guestAccountIdentity(row);
+    setCachedIdentity(cacheKey, identity, Math.min(
+      Date.now() + REQUEST_IDENTITY_CACHE_TTL_MS,
+      row.expiresAt.getTime(),
+    ));
+    return { identity, worldSessionResolved: false };
+  }
+
+  if (auth.userId) {
+    if (worldInstanceId) {
+      const [row] = await measureDatabaseOperation('account.clerk_profile_lookup', () =>
+        db.select({
+          id: players.id,
+          displayName: players.displayName,
+          worldSession: worldSessions,
+        }).from(players)
+          .leftJoin(worldSessions, and(
+            eq(worldSessions.playerId, players.id),
+            eq(worldSessions.worldInstanceId, worldInstanceId),
+          ))
+          .where(eq(players.clerkUserId, auth.userId!))
+          .limit(1));
+      if (row) {
+        const identity = clerkAccountIdentity(row, auth);
+        setCachedIdentity(cacheKey, identity, Date.now() + REQUEST_IDENTITY_CACHE_TTL_MS);
+        recordRequestCacheLookup('worldSession', false);
+        if (row.worldSession) setCachedWorldSession(row.worldSession);
+        rememberPrefetchedWorldSession(identity, worldInstanceId, row.worldSession);
+        return { identity, worldSessionResolved: true };
+      }
+    } else {
+      const [row] = await measureDatabaseOperation('account.clerk_profile_lookup', () =>
+        db.select({ id: players.id, displayName: players.displayName })
+          .from(players)
+          .where(eq(players.clerkUserId, auth.userId!))
+          .limit(1));
+      if (row) {
+        const identity = clerkAccountIdentity(row, auth);
+        setCachedIdentity(cacheKey, identity, Date.now() + REQUEST_IDENTITY_CACHE_TTL_MS);
+        return { identity, worldSessionResolved: false };
+      }
+    }
+    // Profile creation is intentionally not cached. It is an exceptional,
+    // transactional first-sign-in path and the next request performs a lookup.
+    return { identity: await getAccountIdentity(request, auth), worldSessionResolved: false };
+  }
+
+  return { identity: undefined, worldSessionResolved: false };
+}
+
 export async function createGuestIdentity(request: { headers: { cookie?: string } }): Promise<{
   identity: AccountIdentity;
   setCookie?: string;
 }> {
   const existingToken = readGuestToken(request);
   const existingHash = existingToken ? hashToken(existingToken) : undefined;
+  if (existingHash) invalidateCachedIdentity(`guest:${existingHash}`);
   if (existingHash) {
     const [existing] = await measureDatabaseOperation('account.guest_session_lookup', () =>
       db.select({
@@ -214,6 +407,7 @@ export async function createGuestIdentity(request: { headers: { cookie?: string 
         expiresAt,
       });
     }));
+  invalidateCachedPlayer(playerId);
 
   return {
     identity: {

@@ -9,6 +9,7 @@ import {
   measureDatabaseOperation,
   formatDatabaseOperationTimings,
   eventLoopDelayMs,
+  recordRequestCacheLookup,
 } from './performance.js';
 import cors from 'cors';
 import { getAuth, clerkMiddleware } from '@clerk/express';
@@ -71,9 +72,18 @@ import { projectWoodcuttingRoom } from './woodcutting-room-projection.js';
 import {
   createGuestIdentity,
   expiredGuestCookie,
-  getAccountIdentity,
+  getAccountIdentityForRequest,
   type AccountIdentity,
 } from './session-service.js';
+import {
+  getCachedWorldSession,
+  takePrefetchedWorldSession,
+  invalidateCachedPlayer,
+  invalidateCachedWorldSession,
+  requestIdentityCacheEnabled,
+  setCachedWorldSession,
+  setMembershipListenerConnected,
+} from './request-identity-cache.js';
 import { createCharacterOwnershipCheck } from './character-authorization.js';
 import { CLERK_PROXY_PATH, clerkProxyMiddleware, getClerkProxyHost } from './middlewares/clerkProxyMiddleware.js';
 import {
@@ -328,6 +338,10 @@ app.use((req, res, next) => {
       queries: measurements.queries,
       poolWaitMs: measurements.poolWaitMs,
       queryMs: measurements.queryMs,
+      identityCacheHits: measurements.identityCacheHits,
+      identityCacheMisses: measurements.identityCacheMisses,
+      worldSessionCacheHits: measurements.worldSessionCacheHits,
+      worldSessionCacheMisses: measurements.worldSessionCacheMisses,
       connectionsOpened: measurements.connectionsOpened,
       ...(databaseOperations.length > 0 ? { databaseOperations } : {}),
       ...(traceId ? { queryTimings: measurements.queryTimings } : {}),
@@ -380,9 +394,19 @@ app.use(clerkMiddleware((req: Request) => ({
   publishableKey: publishableKeyFromHost(getClerkProxyHost(req) ?? '', process.env.CLERK_PUBLISHABLE_KEY),
 })));
 
-async function accountFor(request: Request, response: Response): Promise<AccountIdentity | undefined> {
+async function accountFor(
+  request: Request,
+  response: Response,
+  needsWorldSession = true,
+): Promise<AccountIdentity | undefined> {
   const auth = getAuth(request);
-  const identity = await measureStage('account', () => getAccountIdentity(request, { userId: auth.userId, sessionId: auth.sessionId }));
+  const selected = selectedRuntime(response);
+  const resolved = await measureStage('account', () => getAccountIdentityForRequest(
+    request,
+    { userId: auth.userId, sessionId: auth.sessionId },
+    needsWorldSession ? selected.worldInstanceId : undefined,
+  ));
+  const identity = resolved.identity;
   if (!identity) {
     response.status(401).json({ message: 'Start a guest session or sign in to access your characters.' });
     return undefined;
@@ -411,11 +435,19 @@ function selectedRuntime(response: Response): WorldRuntime {
 }
 
 async function activeSession(identity: AccountIdentity, worldInstanceId: string) {
+  const prefetched = takePrefetchedWorldSession(identity, worldInstanceId);
+  if (prefetched.resolved) return prefetched.session;
+  if (requestIdentityCacheEnabled()) {
+    const cached = getCachedWorldSession(identity.playerId, worldInstanceId);
+    recordRequestCacheLookup('worldSession', Boolean(cached));
+    if (cached) return cached;
+  }
   const [session] = await measureDatabaseOperation('world_session.active_lookup', () =>
     measureStage('session', () => db.select().from(worldSessions).where(and(
       eq(worldSessions.playerId, identity.playerId),
       eq(worldSessions.worldInstanceId, worldInstanceId),
     )).limit(1)));
+  if (session && requestIdentityCacheEnabled()) setCachedWorldSession(session);
   return session;
 }
 
@@ -439,9 +471,14 @@ function worldContext(identity: AccountIdentity, session: typeof worldSessions.$
 const realtimeGateway = createRealtimeGateway(async (req, channels) => {
   const auth = getAuth(req);
   if (auth.sessionClaims?.exp && Date.now() >= auth.sessionClaims.exp * 1000) return undefined;
-  const identity = await getAccountIdentity(req, { userId: auth.userId, sessionId: auth.sessionId });
-  if (!identity) return undefined;
   const worldId = typeof req.query.world === 'string' ? req.query.world : '';
+  const resolved = await getAccountIdentityForRequest(
+    req,
+    { userId: auth.userId, sessionId: auth.sessionId },
+    worldId || undefined,
+  );
+  const identity = resolved.identity;
+  if (!identity) return undefined;
   const runtime = worldRuntimes.get(worldId);
   if (!runtime) return undefined;
   const current = await activeCharacter(identity, worldId);
@@ -487,12 +524,15 @@ websocketApp.ws('/api/realtime', (socket, req) => {
   });
 });
 const stopRealtimeNotifications = startRealtimeNotifications((change) => {
+  if (change.kind === 'membership' && change.playerId) {
+    invalidateCachedPlayer(change.playerId, change.world);
+  }
   realtimeGateway.invalidate(change);
   wakeEffectBatch(change.world);
 }, () => {
   realtimeGateway.refreshAll();
   void runPendingEffectBatch();
-});
+}, setMembershipListenerConnected);
 
 async function ensureCharacterWallet(
   identity: AccountIdentity,
@@ -717,7 +757,7 @@ app.get('/api/worlds', (_req, res) => {
 
 app.get('/api/characters', async (req, res, next) => {
   try {
-    const identity = await accountFor(req, res);
+    const identity = await accountFor(req, res, false);
     if (!identity) return;
     const selected = selectedRuntime(res);
     const rows = await db.select({
@@ -789,7 +829,7 @@ app.get('/api/characters', async (req, res, next) => {
 
 app.post('/api/world-session', async (req, res, next) => {
   try {
-    const identity = await accountFor(req, res);
+    const identity = await accountFor(req, res, false);
     if (!identity) return;
     const selected = selectedRuntime(res);
     const input = z.object({
@@ -816,6 +856,7 @@ app.post('/api/world-session', async (req, res, next) => {
 
     if (result.kind === 'missing') return res.status(404).json({ message: 'That character is unavailable.' });
     if (result.kind === 'occupied') return res.status(409).json({ message: 'Leave the current world session before switching characters.' });
+    invalidateCachedWorldSession(identity.playerId, result.session.worldInstanceId);
     const lastSeenAt = result.session.lastSeenAt instanceof Date
       ? result.session.lastSeenAt.getTime()
       : undefined;
@@ -882,13 +923,14 @@ app.post('/api/world-session/heartbeat', createRateLimiter({ windowMs: 60_000, m
 
 app.delete('/api/world-session', async (req, res, next) => {
   try {
-    const identity = await accountFor(req, res);
+    const identity = await accountFor(req, res, false);
     if (!identity) return;
     const selected = selectedRuntime(res);
     await db.delete(worldSessions).where(and(
       eq(worldSessions.playerId, identity.playerId),
       eq(worldSessions.worldInstanceId, selected.worldInstanceId),
     ));
+    invalidateCachedWorldSession(identity.playerId, selected.worldInstanceId);
     return res.status(204).end();
   } catch (error) {
     next(error);
@@ -1202,6 +1244,9 @@ app.post(
     }
 
     const result = await measureStage('command', () => selected.engine.dispatch(req.body, context, res.locals.requestId));
+    if (command?.type === 'character.archive' && result.receipt.ok) {
+      invalidateCachedWorldSession(identity.playerId, selected.worldInstanceId);
+    }
     // The completing-effect count only steers settlement below; clients never see it.
     const { completingEffects: _completingEffects, ...dispatched } = result;
     if (result.commitOutcome === 'duplicate' && commandSession) {
