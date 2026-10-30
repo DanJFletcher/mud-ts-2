@@ -20,3 +20,9 @@ The current development database reports `track_wal_io_timing=off`, and `pg_stat
 **Why:** A 12-move development sample observed a 265 ms write `COMMIT` with under 1 ms of pool wait; a separate 30-sample read-only benchmark measured commit p95 below 1 ms. Server-side statement/WAL timing could not be queried.
 
 **How to apply:** Use application-side commit timings plus available database service metrics. Treat aggregate WAL counters as contextual only; do not attribute them to an individual command.
+
+For Vitest worker-pool changes, compare end-to-end coverage duration with isolation enabled; a lower reported environment/setup share does not necessarily reduce total runtime.
+
+**Why:** In the web workspace, `vmThreads` reduced the reported environment share but did not improve total coverage duration, while the standard thread pool was modestly faster.
+
+**How to apply:** Benchmark the same complete test-and-coverage command before and after a pool change, and keep isolation settings constant when evaluating worker reuse.
