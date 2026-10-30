@@ -759,6 +759,126 @@ describe('character event replay validation', () => {
     });
   });
 
+  it('replays full-stack daily job delivery and rejects invalid item consumption', () => {
+    const logs = {
+      id: 'pine-log-stack',
+      typeId: 'pine-logs',
+      label: 'Pine Logs',
+      description: 'A stack of pine logs.',
+      stackable: true,
+      quantity: 2,
+    };
+    const questItem = {
+      id: 'quest-map',
+      typeId: 'map',
+      label: 'Marked map',
+      description: 'A map that must remain with its owner.',
+      questBound: true,
+    };
+    const otherLogs = {
+      id: 'other-log-stack',
+      typeId: 'birch-logs',
+      label: 'Birch Logs',
+      description: 'A stack of birch logs.',
+      stackable: true,
+      quantity: 2,
+    };
+    const details = {
+      id: 'pine-delivery',
+      poster: 'Tomas',
+      title: 'Logs for the hearth',
+      supplyTypeId: 'pine-logs',
+      quantity: 2,
+      gold: 5,
+      experience: 8,
+    };
+    const activeJob = {
+      boardId: 'south-common',
+      cycle: '2026-10-18',
+      jobId: 'pine-delivery',
+      title: 'Logs for the hearth',
+      status: 'active',
+      details,
+    };
+    const completedJob = { ...activeJob, status: 'completed' };
+    const base = [
+      created,
+      event('character.wallet_initialized', 2, {
+        characterId: 'character-test',
+        wallet: { currencyId: 'gold', balance: 10 },
+      }),
+      event('character.item_granted', 3, {
+        characterId: 'character-test',
+        sourceId: 'woodcutting',
+        item: logs,
+      }),
+      event('character.item_granted', 4, {
+        characterId: 'character-test',
+        sourceId: 'quest',
+        item: questItem,
+      }),
+      event('character.item_granted', 5, {
+        characterId: 'character-test',
+        sourceId: 'woodcutting',
+        item: otherLogs,
+      }),
+      event('character.daily_job_changed', 6, {
+        characterId: 'character-test',
+        job: activeJob,
+        consumedItemIds: [],
+        gold: 0,
+        experience: 0,
+        currencyId: 'gold',
+        level: 1,
+        maximumHealth: 6,
+      }),
+    ];
+    const completion = (overrides: Record<string, unknown> = {}) => event(
+      'character.daily_job_changed',
+      7,
+      {
+        characterId: 'character-test',
+        job: completedJob,
+        consumedItemIds: ['pine-log-stack'],
+        gold: 5,
+        experience: 8,
+        currencyId: 'gold',
+        level: 1,
+        maximumHealth: 6,
+        ...overrides,
+      },
+    );
+
+    const projection = replayCharacter([...base, completion()]);
+    expect(projection).toMatchObject({
+      wallet: { currencyId: 'gold', balance: 15 },
+      dailyJobs: [completedJob],
+      inventory: [questItem, otherLogs],
+    });
+    expect(projection?.itemLocations.map((entry) => entry.item.id)).not.toContain('pine-log-stack');
+
+    expect(() => replayCharacter([...base, completion({
+      consumedItemIds: ['pine-log-stack', 'pine-log-stack'],
+    })])).toThrow('Invalid daily job transition.');
+    expect(() => replayCharacter([...base, completion({
+      consumedItemIds: ['quest-map'],
+    })])).toThrow('Invalid daily job transition.');
+    expect(() => replayCharacter([...base, completion({
+      consumedItemIds: [],
+      consumedItemQuantities: [
+        { itemId: 'pine-log-stack', quantity: 1 },
+        { itemId: 'pine-log-stack', quantity: 1 },
+      ],
+    })])).toThrow('Invalid daily job transition.');
+    expect(() => replayCharacter([...base, completion({
+      consumedItemIds: [],
+      consumedItemQuantities: [{ itemId: 'pine-log-stack', quantity: 2 }],
+    })])).toThrow('Invalid daily job transition.');
+    expect(() => replayCharacter([...base, completion({
+      consumedItemIds: ['other-log-stack'],
+    })])).toThrow('Invalid daily job transition.');
+  });
+
   it('replays crafting outputs, quantity materials, and charge-based tool materials', () => {
     const needle = {
       id: 'needle-one',
@@ -1001,6 +1121,107 @@ describe('character event replay validation', () => {
       staminaRecovery: { posture: 'standing', lastSettledAt: null },
       inventory: [],
       itemLocations: [],
+    });
+  });
+
+  it('replays team combat outcomes and validates their rewards and consumed items', () => {
+    const draught = {
+      id: 'healing-draught',
+      typeId: 'healing-draught',
+      label: 'Healing draught',
+      description: 'A restorative drink.',
+      consumable: { effect: 'heal', amount: 2 },
+    };
+    const questDraught = { ...draught, id: 'quest-draught', questBound: true };
+    const plainItem = {
+      id: 'plain-stone',
+      typeId: 'river-stone',
+      label: 'River stone',
+      description: 'A smooth gray stone.',
+    };
+    const base = [
+      created,
+      event('character.item_granted', 2, {
+        characterId: 'character-test',
+        sourceId: 'healer',
+        item: draught,
+      }),
+      event('character.item_granted', 3, {
+        characterId: 'character-test',
+        sourceId: 'quest',
+        item: questDraught,
+      }),
+      event('character.item_granted', 4, {
+        characterId: 'character-test',
+        sourceId: 'riverbank',
+        item: plainItem,
+      }),
+    ];
+    const outcome = (
+      overrides: Record<string, unknown> = {},
+      revision = 5,
+    ) => event('character.team_combat_outcome_applied', revision, {
+      characterId: 'character-test',
+      encounterId: 'team-victory',
+      result: 'victory',
+      health: { current: 4, maximum: 6 },
+      consumedItemIds: ['healing-draught'],
+      ...overrides,
+    });
+
+    const victorious = replayCharacter([
+      ...base,
+      outcome(),
+      event('character.advancement_awarded', 6, {
+        characterId: 'character-test',
+        encounterId: 'team-victory',
+        experienceAwarded: 10,
+        totalExperience: 10,
+        level: 2,
+        maximumHealth: 8,
+        source: 'team-pve',
+      }, 2),
+    ]);
+    expect(victorious).toMatchObject({
+      health: { current: 4, maximum: 8 },
+      advancement: { experience: 10, level: 2, lastRewardedEncounterId: 'team-victory' },
+      inventory: [questDraught, plainItem],
+    });
+    expect(victorious?.itemLocations.map((entry) => entry.item.id)).not.toContain('healing-draught');
+
+    expect(() => replayCharacter([...base, outcome({ consumedItemIds: ['missing-item'] })]))
+      .toThrow('Invalid team combat outcome at revision 5.');
+    expect(() => replayCharacter([...base, outcome({ consumedItemIds: ['plain-stone'] })]))
+      .toThrow('Invalid team combat outcome at revision 5.');
+    expect(() => replayCharacter([...base, outcome({ consumedItemIds: ['quest-draught'] })]))
+      .toThrow('Invalid team combat outcome at revision 5.');
+    expect(() => replayCharacter([...base, outcome({
+      consumedItemIds: ['healing-draught', 'healing-draught'],
+    })])).toThrow('Invalid team combat outcome at revision 5.');
+    expect(() => replayCharacter([...base, outcome({
+      health: { current: 7, maximum: 6 },
+    })])).toThrow('Invalid team combat outcome at revision 5.');
+
+    const defeated = replayCharacter([
+      created,
+      outcome({
+        encounterId: 'team-defeat',
+        result: 'defeat',
+        health: { current: 0, maximum: 6 },
+        consumedItemIds: [],
+      }, 2),
+      event('character.respawned', 3, {
+        characterId: 'character-test',
+        cause: 'team-pve',
+        encounterId: 'team-defeat',
+        deathLocationId: 'mossgate-clearing',
+        respawnLocationId: 'bellwold-south-gate',
+        health: { current: 6, maximum: 6 },
+      }),
+    ]);
+    expect(defeated).toMatchObject({
+      locationId: 'bellwold-south-gate',
+      health: { current: 6, maximum: 6 },
     });
   });
 
