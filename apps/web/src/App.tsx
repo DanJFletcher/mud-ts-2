@@ -53,6 +53,7 @@ import {
 import { ChevronDown, Coins, Compass, Heart, Info as InfoIcon, Keyboard, Menu, Moon, Sparkles, Sun, Users, X, Zap } from "lucide-react";
 import { RoomChatPanel, type RoomChatMessage } from "./RoomChatPanel.js";
 import { ActionRefreshGate } from "./action-refresh-gate.js";
+import { commandResultProjection } from "./command-projection.js";
 import { TerminalPanel } from "./TerminalPanel.js";
 import { WorldMapPanel } from "./WorldMapPanel.js";
 import { PwaInstallAction } from "./lobby/PwaInstallAction.js";
@@ -60,7 +61,26 @@ import { getNpcFarewellLabel } from "./npc-farewell.js";
 
 const CodexScreen = lazy(() => import("./codex/CodexScreen.js"));
 
-const client = new MuddHttpClient({ worldInstanceId: "mudd-demo-instance", basePath: import.meta.env.BASE_URL });
+const client = new MuddHttpClient({
+  worldInstanceId: "mudd-demo-instance",
+  basePath: import.meta.env.BASE_URL,
+  commandProjection: "game",
+});
+
+/**
+ * The game view after a successful command: the projection returned with it,
+ * merged over the stable player and currency details, or a fresh snapshot when
+ * the response has none the client may apply.
+ */
+async function snapshotAfterCommand(
+  base: GameSnapshot,
+  response: CommandResponse,
+  traceId?: string,
+): Promise<GameSnapshot> {
+  const projection = commandResultProjection(response, client.realtimeRevisionHint("character"));
+  return projection ? { ...base, ...projection } : client.getGame(traceId);
+}
+
 type ClassCatalogSummary = { id: string; revision: number; classes: CharacterClassDefinition[] };
 type CharacterClassSnapshot = CharacterClassDefinition & { catalogId: string; catalogRevision: number };
 type ClassAwareCharacter = NonNullable<GameSnapshot["character"]> & {
@@ -1235,11 +1255,14 @@ export function WorldClient({
 
   const refreshAfterMutation = useCallback(async (
     message: string,
+    command?: { base: GameSnapshot; response: CommandResponse },
     announceQuestObjectives = false,
     traceId?: string,
   ) => {
     addEntry("system", message);
-    const nextSnapshot = await client.getGame(traceId);
+    const nextSnapshot = command
+      ? await snapshotAfterCommand(command.base, command.response, traceId)
+      : await client.getGame(traceId);
     setSnapshot(nextSnapshot);
     setConnectionError("");
     addDefaultLook(nextSnapshot.location);
@@ -1364,7 +1387,7 @@ export function WorldClient({
           : job.experience;
         message = `Delivered “${job.title}” for ${actualGold} gold and ${actualExperience} XP.`;
       }
-      const updatedSnapshot = await refreshAfterMutation(message);
+      const updatedSnapshot = await refreshAfterMutation(message, { base: snapshot, response });
       const stillAtBoard = updatedSnapshot.character?.characterId === snapshot.character.characterId &&
         updatedSnapshot.location?.locationId === snapshot.location?.locationId &&
         updatedSnapshot.dailyActivities?.boards.some((candidate) => candidate.id === board.boardId);
@@ -1392,8 +1415,8 @@ export function WorldClient({
     }
     setPending("gather");
     try {
-      await client.gatherSupply(snapshot.character.characterId, snapshot.character.revision, sourceId, cycle);
-      const updatedSnapshot = await refreshAfterMutation(`Gathered supplies at ${label}.`);
+      const response = await client.gatherSupply(snapshot.character.characterId, snapshot.character.revision, sourceId, cycle);
+      const updatedSnapshot = await refreshAfterMutation(`Gathered supplies at ${label}.`, { base: snapshot, response });
       const stillAtBoard = dailyBoard && updatedSnapshot.character?.characterId === snapshot.character.characterId &&
         updatedSnapshot.location?.locationId === snapshot.location?.locationId &&
         updatedSnapshot.dailyActivities?.boards.some((candidate) => candidate.id === dailyBoard.boardId);
@@ -1424,7 +1447,7 @@ export function WorldClient({
       const result = await client.advanceFishingCast(character.characterId, castId, character.revision);
       const event = result.events?.find((candidate) => candidate.type === "character.fishing_cast_advanced");
       const payload = event?.payload;
-      const next = await client.getGame();
+      const next = await snapshotAfterCommand(current, result);
       setSnapshot(next);
       setConnectionError("");
       if (!payload || typeof payload !== "object" || !("status" in payload)) return;
@@ -1476,7 +1499,7 @@ export function WorldClient({
         rodItemId,
         snapshot.character.revision,
       );
-      const next = await client.getGame();
+      const next = await snapshotAfterCommand(snapshot, result);
       setSnapshot(next);
       setConnectionError("");
       const stoppedChopping = result.events?.some((event) =>
@@ -1509,8 +1532,9 @@ export function WorldClient({
         setSnapshot(current);
         return;
       }
+      let response: CommandResponse;
       try {
-        await client.cancelFishingCast(characterId, castId, character.revision);
+        response = await client.cancelFishingCast(characterId, castId, character.revision);
       } catch (error) {
         if (!/revision|conflict/i.test(error instanceof Error ? error.message : "")) throw error;
         current = await client.getGame();
@@ -1519,9 +1543,9 @@ export function WorldClient({
           setSnapshot(current);
           return;
         }
-        await client.cancelFishingCast(characterId, castId, character.revision);
+        response = await client.cancelFishingCast(characterId, castId, character.revision);
       }
-      setSnapshot(await client.getGame());
+      setSnapshot(await snapshotAfterCommand(current, response));
       setConnectionError("");
       addEntry("narration", "You reel in your line and stop fishing.");
     } catch (error) {
@@ -1586,7 +1610,7 @@ export function WorldClient({
       const result = await client.advanceWoodcutting(character.characterId, actionId, character.revision);
       const event = result.events?.find((candidate) => candidate.type === "character.woodcutting_action_advanced");
       const payload = event?.payload;
-      const next = await client.getGame();
+      const next = await snapshotAfterCommand(current, result);
       setSnapshot(next);
       setConnectionError("");
       if (!payload || typeof payload !== "object" || !("status" in payload)) return;
@@ -1656,7 +1680,7 @@ export function WorldClient({
         treeId,
         snapshot.character.revision,
       );
-      const next = await client.getGame();
+      const next = await snapshotAfterCommand(snapshot, result);
       setSnapshot(next);
       setConnectionError("");
       const stoppedFishing = result.events?.some((event) =>
@@ -1689,8 +1713,9 @@ export function WorldClient({
         setSnapshot(current);
         return;
       }
+      let response: CommandResponse;
       try {
-        await client.cancelWoodcutting(characterId, actionId, character.revision);
+        response = await client.cancelWoodcutting(characterId, actionId, character.revision);
       } catch (error) {
         if (!/revision|conflict/i.test(error instanceof Error ? error.message : "")) throw error;
         current = await client.getGame();
@@ -1699,9 +1724,9 @@ export function WorldClient({
           setSnapshot(current);
           return;
         }
-        await client.cancelWoodcutting(characterId, actionId, character.revision);
+        response = await client.cancelWoodcutting(characterId, actionId, character.revision);
       }
-      setSnapshot(await client.getGame());
+      setSnapshot(await snapshotAfterCommand(current, response));
       setConnectionError("");
       addEntry("narration", "You lower your axe and stop chopping.");
     } catch (error) {
@@ -1886,8 +1911,8 @@ export function WorldClient({
       let dialogue = await client.talk(character.characterId, npcId, topic);
       const progress = character.npcProgress.find((entry) => entry.npcId === npcId);
       if (!topic && dialogue.choices.length === 0 && progress?.lastChoiceId) {
-        await client.restartNpcDialogue(character.characterId, npcId, character.revision);
-        const nextSnapshot = await client.getGame();
+        const response = await client.restartNpcDialogue(character.characterId, npcId, character.revision);
+        const nextSnapshot = await snapshotAfterCommand(snapshot, response);
         setSnapshot(nextSnapshot);
         setConnectionError("");
         dialogue = await client.talk(character.characterId, npcId);
@@ -1941,14 +1966,14 @@ export function WorldClient({
     setPending("talk");
     if (announceChoice) addEntry("system", `> ${choice.label}`);
     try {
-      await client.chooseNpcDialogue(
+      const response = await client.chooseNpcDialogue(
         snapshot.character.characterId,
         activeDialogue.npcId,
         choice.id,
         snapshot.character.revision,
       );
       const [nextSnapshot, dialogue] = await Promise.all([
-        client.getGame(),
+        snapshotAfterCommand(snapshot, response),
         client.talk(snapshot.character.characterId, activeDialogue.npcId),
       ]);
       rememberCompletedQuestObjectives(nextSnapshot);
@@ -1968,8 +1993,8 @@ export function WorldClient({
     if (!snapshot?.character || !snapshot.location || pending) return;
     setPending("take");
     try {
-      await client.take(snapshot.character.characterId, itemId, snapshot.location.revision);
-      await refreshAfterMutation(`You pick up the ${label.toLocaleLowerCase()}.`);
+      const response = await client.take(snapshot.character.characterId, itemId, snapshot.location.revision);
+      await refreshAfterMutation(`You pick up the ${label.toLocaleLowerCase()}.`, { base: snapshot, response });
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "You cannot take that item just now.");
     } finally {
@@ -1981,12 +2006,12 @@ export function WorldClient({
     if (!snapshot?.character || !snapshot.location || pending) return;
     setPending("use");
     try {
-      await client.extinguishCampfire(
+      const response = await client.extinguishCampfire(
         snapshot.character.characterId,
         campfireId,
         snapshot.character.revision,
       );
-      await refreshAfterMutation("You extinguish the campfire.");
+      await refreshAfterMutation("You extinguish the campfire.", { base: snapshot, response });
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "You cannot extinguish that campfire.");
     } finally {
@@ -2009,8 +2034,8 @@ export function WorldClient({
       for (const item of initialTakeables) {
         const location = latestSnapshot.location;
         if (!location || !location.objects.some((object) => object.id === item.id && object.takeable)) continue;
-        await client.take(snapshot.character.characterId, item.id, location.revision);
-        latestSnapshot = await client.getGame();
+        const response = await client.take(snapshot.character.characterId, item.id, location.revision);
+        latestSnapshot = await snapshotAfterCommand(latestSnapshot, response);
         setSnapshot(latestSnapshot);
         setConnectionError("");
         addEntry("narration", `You pick up the ${item.label.toLocaleLowerCase()}.`);
@@ -2067,8 +2092,8 @@ export function WorldClient({
           object.takeable,
         )) continue;
 
-        await client.take(snapshot.character.characterId, item.id, currentLocation.revision);
-        latestSnapshot = await client.getGame();
+        const response = await client.take(snapshot.character.characterId, item.id, currentLocation.revision);
+        latestSnapshot = await snapshotAfterCommand(latestSnapshot, response);
         setSnapshot(latestSnapshot);
         setConnectionError("");
         addEntry("narration", `You pick up the ${item.label.toLocaleLowerCase()}.`);
@@ -2100,8 +2125,8 @@ export function WorldClient({
     }
     setPending("drop");
     try {
-      await client.drop(snapshot.character.characterId, itemId, snapshot.location.revision);
-      await refreshAfterMutation(`You put down the ${label.toLocaleLowerCase()}.`);
+      const response = await client.drop(snapshot.character.characterId, itemId, snapshot.location.revision);
+      await refreshAfterMutation(`You put down the ${label.toLocaleLowerCase()}.`, { base: snapshot, response });
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "You cannot drop that item just now.");
     } finally {
@@ -2130,7 +2155,7 @@ export function WorldClient({
     }
     setPending("put");
     try {
-      await client.put(
+      const response = await client.put(
         snapshot.character.characterId,
         itemId,
         containerId,
@@ -2138,6 +2163,7 @@ export function WorldClient({
       );
       await refreshAfterMutation(
         `You put the ${itemLabel.toLocaleLowerCase()} in the ${containerLabel.toLocaleLowerCase()}.`,
+        { base: snapshot, response },
       );
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "You cannot put that item away just now.");
@@ -2158,12 +2184,10 @@ export function WorldClient({
     if (!slot) return;
     setPending("equip");
     try {
-      if (action === "equip") {
-        await client.equip(snapshot.character.characterId, item!.id, snapshot.character.revision);
-      } else {
-        await client.unequip(snapshot.character.characterId, slot, snapshot.character.revision);
-      }
-      const nextSnapshot = await client.getGame();
+      const response = action === "equip"
+        ? await client.equip(snapshot.character.characterId, item!.id, snapshot.character.revision)
+        : await client.unequip(snapshot.character.characterId, slot, snapshot.character.revision);
+      const nextSnapshot = await snapshotAfterCommand(snapshot, response);
       setSnapshot(nextSnapshot);
       setConnectionError("");
       addEntry("narration", action === "equip"
@@ -2298,10 +2322,9 @@ export function WorldClient({
       client.pendingActions.acknowledge(commandId);
       commandAccepted = true;
       const partyAmbush = response.events?.some((event) => event.type === "team.road_encounter_started");
-      const nextSnapshot = response.movementProjection
-        ? { ...snapshot, ...response.movementProjection }
-        : await client.getGame(traceId);
-      projectionSource = response.movementProjection ? "command-response" : "snapshot-fallback";
+      const projection = commandResultProjection(response, client.realtimeRevisionHint("character"));
+      const nextSnapshot = projection ? { ...snapshot, ...projection } : await client.getGame(traceId);
+      projectionSource = projection ? "command-response" : "snapshot-fallback";
       snapshotReadyAt = traceId ? performance.now() : undefined;
       setSnapshot(nextSnapshot);
       setConnectionError("");
@@ -2424,14 +2447,14 @@ export function WorldClient({
     if (recordCommand) addEntry("system", `> buy ${listing.item.label.toLocaleLowerCase()}`);
     setPending("buy");
     try {
-      await client.purchaseMerchantListing(
+      const response = await client.purchaseMerchantListing(
         snapshot.character.characterId,
         activeMerchantCatalog.merchantNpcId,
         listing.id,
         snapshot.location.revision,
       );
       const [nextSnapshot, nextCatalog] = await Promise.all([
-        client.getGame(),
+        snapshotAfterCommand(snapshot, response),
         client.getMerchantCatalog(snapshot.character.characterId, activeMerchantCatalog.merchantNpcId),
       ]);
       setSnapshot(nextSnapshot);
@@ -2461,7 +2484,7 @@ export function WorldClient({
     }
     setPending("craft");
     try {
-      await client.craft(
+      const response = await client.craft(
         snapshot.character.characterId,
         snapshot.character.revision,
         recipeId,
@@ -2469,7 +2492,7 @@ export function WorldClient({
       );
       addEntry("narration", `You craft ${quantity} × ${outputLabel.toLocaleLowerCase()}.`);
       try {
-        setSnapshot(await client.getGame());
+        setSnapshot(await snapshotAfterCommand(snapshot, response));
       } catch {
         setConnectionError("Crafting succeeded, but the character view could not refresh.");
       }
@@ -2639,7 +2662,7 @@ export function WorldClient({
       }
       if (!result.receipt.ok) throw new Error(result.receipt.message);
       const [nextSnapshot, nextTeamInfo] = await Promise.all([
-        client.getGame(),
+        snapshotAfterCommand(snapshot, result),
         refreshTeamCombat(),
       ]);
       setSnapshot(nextSnapshot);
@@ -2701,7 +2724,7 @@ export function WorldClient({
           );
       if (!result.receipt.ok) throw new Error(result.receipt.message);
       const [nextSnapshot, nextTeamInfo, nextInbox] = await Promise.all([
-        client.getGame(),
+        snapshotAfterCommand(game, result),
         refreshTeamCombat(),
         pvpEncounter ? client.getInteractionInbox() : Promise.resolve(interactionInbox),
       ]);
@@ -2867,7 +2890,10 @@ export function WorldClient({
     setPending("combat");
     try {
       const result = await client.performPvpAction(snapshot.character.characterId, encounter.encounterId, action, itemId);
-      const [inbox, nextSnapshot] = await Promise.all([client.getInteractionInbox(), client.getGame()]);
+      const [inbox, nextSnapshot] = await Promise.all([
+        client.getInteractionInbox(),
+        snapshotAfterCommand(snapshot, result),
+      ]);
       setInteractionInbox(inbox);
       setSnapshot(nextSnapshot);
       const nextEncounter = inbox.encounter;
@@ -2888,12 +2914,10 @@ export function WorldClient({
     if (!snapshot?.character || pending) return;
     setPending(posture);
     try {
-      if (posture === "rest") {
-        await client.rest(snapshot.character.characterId, snapshot.character.revision);
-      } else {
-        await client.stand(snapshot.character.characterId, snapshot.character.revision);
-      }
-      const nextSnapshot = await client.getGame();
+      const response = posture === "rest"
+        ? await client.rest(snapshot.character.characterId, snapshot.character.revision)
+        : await client.stand(snapshot.character.characterId, snapshot.character.revision);
+      const nextSnapshot = await snapshotAfterCommand(snapshot, response);
       setSnapshot(nextSnapshot);
       setConnectionError("");
       addEntry("narration", posture === "rest"
@@ -2913,8 +2937,8 @@ export function WorldClient({
     const previousResources = snapshot.character.resources;
     setPending("rest");
     try {
-      await client.restAtInn(snapshot.character.characterId, inn.id, snapshot.character.revision);
-      const nextSnapshot = await client.getGame();
+      const response = await client.restAtInn(snapshot.character.characterId, inn.id, snapshot.character.revision);
+      const nextSnapshot = await snapshotAfterCommand(snapshot, response);
       setSnapshot(nextSnapshot);
       setConnectionError("");
       const nextHealth = nextSnapshot.character?.health;

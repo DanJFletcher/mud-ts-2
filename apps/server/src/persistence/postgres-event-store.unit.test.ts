@@ -1405,6 +1405,53 @@ describe('PostgresEventStore unit behavior', () => {
     expect(claim.statements[0]!.sql).not.toContain('"world_instance_id" =');
   });
 
+  it('leases a due effect only from one actor’s command and the given effect types', async () => {
+    const claim = mockEffectClaim([{
+      id: 'effect-2',
+      worldInstanceId: 'world-1',
+      sourceStreamId: 'world-items',
+      causationCommandId: 'command-1',
+      effectType: 'world-item.claim',
+      effectVersion: 1,
+      payload: { worldItemId: 'item-1' },
+      attempts: 1,
+    }]);
+    const store = new PostgresEventStore();
+    const scope = {
+      worldInstanceId: 'world-1',
+      actorId: 'player-1',
+      commandId: 'command-1',
+      types: ['world-item.claim', 'world-item.drop'],
+    };
+
+    const effect = await store.claimCommandEffect(30_000, scope);
+
+    expect(effect).toMatchObject({
+      id: 'effect-2',
+      causationCommandId: 'command-1',
+      type: 'world-item.claim',
+      leaseToken: expect.any(String),
+    });
+    expect(claim.statements).toHaveLength(1);
+    const [statement] = claim.statements;
+    expect(statement!.sql).toContain('"causation_command_id" = $');
+    expect(statement!.sql).toContain('starts_with("durable_effects"."dedupe_key", $');
+    expect(statement!.sql).toContain('"effect_type" in ($');
+    expect(statement!.sql).toMatch(/limit \$\d+ for update skip locked\) returning /);
+    expect(statement!.params).toEqual(expect.arrayContaining([
+      'world-1',
+      'command-1',
+      'command:world-1:player-1:command-1:',
+      'world-item.claim',
+      'world-item.drop',
+      'pending',
+    ]));
+
+    await expect(store.claimCommandEffect(30_000, { ...scope, types: [] })).resolves.toBeUndefined();
+    await expect(store.claimCommandEffect(0, scope)).rejects.toThrow('Effect lease must be a positive integer.');
+    expect(mockDb.update).toHaveBeenCalledTimes(1);
+  });
+
   it('claims due object lifecycles with bounded leases and releases a claim', async () => {
     const now = new Date('2026-10-28T12:00:00.000Z');
     const rows = [

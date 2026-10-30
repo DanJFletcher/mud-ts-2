@@ -1,10 +1,11 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
-import { and, asc, desc, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
 import type { CommandReceipt } from '@mudd/contracts';
 import type {
   AppendOutcome,
   AppendRequest,
+  CommandEffectScope,
   EventStorePort,
   StoredEventEffect,
   StoredGameEvent,
@@ -46,6 +47,11 @@ type CommandStreamReadCache = {
   revision?: number;
   events?: readonly StoredGameEvent[];
 };
+
+/** Each effect a command queues is keyed by this prefix plus its index. */
+function commandEffectKeyPrefix(worldInstanceId: string, actorId: string, commandId: string) {
+  return `command:${worldInstanceId}:${actorId}:${commandId}:`;
+}
 
 function toStoredEventEffect(
   row: typeof durableEffects.$inferSelect,
@@ -606,7 +612,7 @@ export class PostgresEventStore implements EventStorePort {
           effectType: effect.type,
           effectVersion: effect.version,
           payload: effect.payload,
-          dedupeKey: `command:${request.worldInstanceId}:${request.actorId}:${request.commandId}:${index}`,
+          dedupeKey: `${commandEffectKeyPrefix(request.worldInstanceId, request.actorId, request.commandId)}${index}`,
         }))));
       }
 
@@ -786,6 +792,31 @@ export class PostgresEventStore implements EventStorePort {
   }
 
   async claimNextEffect(leaseMs: number, worldInstanceId?: string): Promise<StoredEventEffect | undefined> {
+    return this.claimDueEffect(
+      leaseMs,
+      ...(worldInstanceId ? [eq(durableEffects.worldInstanceId, worldInstanceId)] : []),
+    );
+  }
+
+  async claimCommandEffect(leaseMs: number, scope: CommandEffectScope): Promise<StoredEventEffect | undefined> {
+    if (scope.types.length === 0) return undefined;
+    // The causation ID alone is client-chosen and can repeat across players;
+    // the dedupe key also names the actor. Only pending and processing rows
+    // can match, and the existing pending-effects index finds those.
+    return this.claimDueEffect(
+      leaseMs,
+      eq(durableEffects.worldInstanceId, scope.worldInstanceId),
+      eq(durableEffects.causationCommandId, scope.commandId),
+      sql`starts_with(${durableEffects.dedupeKey}, ${commandEffectKeyPrefix(
+        scope.worldInstanceId,
+        scope.actorId,
+        scope.commandId,
+      )})`,
+      inArray(durableEffects.effectType, [...scope.types]),
+    );
+  }
+
+  private async claimDueEffect(leaseMs: number, ...filters: SQL[]): Promise<StoredEventEffect | undefined> {
     if (!Number.isInteger(leaseMs) || leaseMs < 1) throw new RangeError('Effect lease must be a positive integer.');
     // Availability is written with the database clock (column default and
     // retryEffect), so compare with it too: a JavaScript Date has only millisecond
@@ -796,7 +827,7 @@ export class PostgresEventStore implements EventStorePort {
     // poll costs one round trip rather than a three-statement transaction. SKIP
     // LOCKED still keeps concurrent workers from claiming the same row.
     const nextDue = db.select({ id: durableEffects.id }).from(durableEffects).where(and(
-      ...(worldInstanceId ? [eq(durableEffects.worldInstanceId, worldInstanceId)] : []),
+      ...filters,
       lte(durableEffects.availableAt, now),
       or(
         eq(durableEffects.status, 'pending'),

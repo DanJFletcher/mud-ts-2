@@ -724,6 +724,111 @@ describe('MUDD engine host', () => {
     await engine.stop();
   });
 
+  function settlementFixture(failures = 0) {
+    const delivered: string[] = [];
+    let remainingFailures = failures;
+    const plugin: EnginePlugin = {
+      manifest: {
+        id: 'test.command-settlement',
+        version: '1.0.0',
+        apiVersion: '1.0',
+        category: 'core',
+      },
+      register({ registerCommand, registerEffect }) {
+        registerCommand('test.settled-command', z.object({
+          type: z.literal('test.settled-command'),
+          version: z.literal(1),
+          commandId: z.string(),
+          worldInstanceId: z.string(),
+        }), async (command) => ({
+          streamId: `settlement-stream:${command.commandId}`,
+          expectedVersion: 0,
+          events: [{ type: 'test.settlement-commanded', version: 1, payload: {} }],
+          effects: [
+            { type: 'test.announcement', version: 1, payload: { value: command.commandId } },
+            { type: 'test.completion', version: 1, payload: { value: command.commandId } },
+          ],
+        }));
+        registerEffect('test.announcement', 1, z.object({ value: z.string() }), async (payload) => {
+          delivered.push(`announcement:${payload.value}`);
+        });
+        registerEffect('test.completion', 1, z.object({ value: z.string() }), async (payload) => {
+          if (remainingFailures > 0) {
+            remainingFailures -= 1;
+            throw new Error('temporary completion failure');
+          }
+          delivered.push(`completion:${payload.value}`);
+        }, { completesCommand: true });
+      },
+    };
+    const store = new InMemoryEventStore();
+    const engine = new EngineHost([plugin], store, authorization, demoWorld);
+    const command = (commandId: string) => ({
+      type: 'test.settled-command',
+      version: 1,
+      commandId,
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+    });
+    return { engine, store, delivered, command };
+  }
+
+  it('settles only the command-completing effects a committed command queued', async () => {
+    const { engine, delivered, command } = settlementFixture();
+    await engine.start();
+
+    const committed = await engine.dispatch(command('settled-1'), session);
+    expect(committed).toMatchObject({ commitOutcome: 'committed', completingEffects: 1 });
+    expect(await engine.settleCommandEffects(session, committed)).toBe(true);
+    expect(delivered).toEqual(['completion:settled-1']);
+
+    // The announcement stays with the background worker, and the completion is not repeated.
+    expect(await engine.processPendingEffects()).toBe(1);
+    expect(delivered).toEqual(['completion:settled-1', 'announcement:settled-1']);
+
+    const duplicate = await engine.dispatch(command('settled-1'), session);
+    expect(duplicate.commitOutcome).toBe('duplicate');
+    expect(duplicate).not.toHaveProperty('completingEffects');
+    expect(await engine.settleCommandEffects(session, duplicate)).toBe(false);
+    await engine.stop();
+  });
+
+  it('reports a command as unsettled when its completing effect runs elsewhere or fails', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-30T12:00:00.000Z'));
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const { engine, store, delivered, command } = settlementFixture(1);
+      await engine.start();
+
+      // The completion fails once; settlement says so, and the worker retries it later.
+      const failed = await engine.dispatch(command('failing-1'), session);
+      expect(await engine.settleCommandEffects(session, failed)).toBe(false);
+      expect(delivered).toEqual([]);
+      expect(await engine.processPendingEffects()).toBe(1);
+      expect(delivered).toEqual(['announcement:failing-1']);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(await engine.processPendingEffects()).toBe(1);
+      expect(delivered).toEqual(['announcement:failing-1', 'completion:failing-1']);
+
+      // The worker claimed the completion first, so the request cannot vouch for it.
+      const raced = await engine.dispatch(command('raced-1'), session);
+      const announcement = await store.claimNextEffect(60_000);
+      const completion = await store.claimNextEffect(60_000);
+      expect([announcement?.type, completion?.type]).toEqual(['test.announcement', 'test.completion']);
+      expect(await engine.settleCommandEffects(session, raced)).toBe(false);
+      expect(delivered).toHaveLength(2);
+
+      const claimCommandEffect = vi.spyOn(store, 'claimCommandEffect');
+      expect(await engine.settleCommandEffects(session, { ...raced, completingEffects: 0 })).toBe(true);
+      expect(await engine.settleCommandEffects(session, { ...raced, completingEffects: 5 })).toBe(false);
+      expect(claimCommandEffect).not.toHaveBeenCalled();
+      await engine.stop();
+    } finally {
+      errorLog.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it('returns safe system-command failures and logs only unexpected errors', async () => {
     const plugin: EnginePlugin = {
       manifest: {
@@ -2680,6 +2785,77 @@ describe('MUDD engine host', () => {
       inventory: [{ id: 'drop-test-pebble' }],
       itemLocations: [{ item: { id: 'drop-test-pebble' }, locationId: null }],
     });
+    await engine.stop();
+  });
+
+  it('settles a shared item take and drop so each command’s outcome is complete', async () => {
+    const { engine, store } = makeEngine();
+    await engine.start();
+    const created = await engine.dispatch({
+      type: 'character.create',
+      version: 1,
+      commandId: 'settle-create',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      payload: { name: 'Rill' },
+    }, session);
+    const characterId = created.streamId!;
+    const roomId = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!.locationId;
+    const lantern = {
+      id: 'settle-test-lantern',
+      sharedItemId: 'settle-test-lantern',
+      label: 'Brass lantern',
+      description: 'A dented brass lantern.',
+    };
+    const worldItems = worldItemsStreamId(DEMO_WORLD_INSTANCE_ID);
+    await store.append({
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      streamId: worldItems,
+      actorId: SYSTEM_ACTOR_ID,
+      commandId: 'settle-seed-lantern',
+      payloadHash: 'settle-seed-lantern',
+      expectedVersion: 0,
+      events: [{
+        type: 'world.item_dropped',
+        version: 1,
+        payload: { worldItemId: lantern.id, fromCharacterId: 'another-character', locationId: roomId, item: lantern },
+      }],
+    });
+
+    const take = await engine.dispatch({
+      type: 'character.take',
+      version: 1,
+      commandId: 'settle-take',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: 1,
+      payload: { itemId: lantern.id },
+    }, session);
+    expect(take).toMatchObject({ streamId: worldItems, commitOutcome: 'committed', completingEffects: 1 });
+    // The claim has committed, but only its effect puts the lantern in the pack.
+    expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!.inventory).toEqual([]);
+    expect(await engine.settleCommandEffects(session, take)).toBe(true);
+    const holder = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    expect(holder.inventory).toEqual([expect.objectContaining({ id: lantern.id, sharedItemId: lantern.id })]);
+
+    const drop = await engine.dispatch({
+      type: 'character.drop',
+      version: 1,
+      commandId: 'settle-drop',
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      characterId,
+      expectedVersion: holder.revision,
+      payload: { itemId: lantern.id },
+    }, session);
+    expect(drop).toMatchObject({ commitOutcome: 'committed', completingEffects: 1 });
+    expect(projectWorldItems(await store.readStream(DEMO_WORLD_INSTANCE_ID, worldItems)).items).toEqual([
+      expect.objectContaining({ worldItemId: lantern.id, locationId: null, holderCharacterId: characterId }),
+    ]);
+    expect(await engine.settleCommandEffects(session, drop)).toBe(true);
+    expect(projectWorldItems(await store.readStream(DEMO_WORLD_INSTANCE_ID, worldItems)).items).toEqual([
+      expect.objectContaining({ worldItemId: lantern.id, locationId: roomId, holderCharacterId: null }),
+    ]);
+    // Settled effects are not left for the worker to repeat.
+    expect(await engine.processPendingEffects()).toBe(0);
     await engine.stop();
   });
 

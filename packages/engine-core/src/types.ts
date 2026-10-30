@@ -72,6 +72,14 @@ export type AppendOutcome =
   | { readonly kind: 'committed' | 'duplicate'; readonly receipt: Extract<CommandReceipt, { ok: true }>; readonly streamId: string; readonly events: readonly StoredGameEvent[] }
   | { readonly kind: 'conflict'; readonly receipt: Extract<CommandReceipt, { ok: false }>; readonly streamId: string; readonly events: readonly StoredGameEvent[] };
 
+/** The effects one actor's command queued; another actor's command with the same ID is excluded. */
+export interface CommandEffectScope {
+  readonly worldInstanceId: string;
+  readonly actorId: string;
+  readonly commandId: string;
+  readonly types: readonly string[];
+}
+
 export interface EventStorePort {
   readStream(worldInstanceId: string, streamId: string): Promise<readonly StoredGameEvent[]>;
   /** Read multiple authoritative streams with a storage-optimized batch when available. */
@@ -89,6 +97,8 @@ export interface EventStorePort {
   ): Promise<AppendOutcome | undefined>;
   append(request: AppendRequest): Promise<AppendOutcome>;
   claimNextEffect(leaseMs: number, worldInstanceId?: string): Promise<StoredEventEffect | undefined>;
+  /** Claim the next due effect that one actor's command queued, limited to the given types. */
+  claimCommandEffect?(leaseMs: number, scope: CommandEffectScope): Promise<StoredEventEffect | undefined>;
   completeEffect(effectId: string, leaseToken: string): Promise<boolean>;
   retryEffect(effectId: string, leaseToken: string, delayMs: number, errorMessage: string): Promise<boolean>;
   deadLetterEffect(effectId: string, leaseToken: string, errorMessage: string): Promise<boolean>;
@@ -143,7 +153,17 @@ export type DomainEventHandler<T = unknown> = (
   context: EventEffectContext & { readonly actorId: string },
 ) => Promise<void>;
 
-export interface EventEffectDefinition<T = unknown> {
+export interface EventEffectOptions {
+  /**
+   * The handler finishes the acting character's own outcome of the command that
+   * queued it, such as adding a claimed item to the taker's pack. A host may run
+   * these effects before it answers the command, so its response can show that
+   * outcome. Announcements and changes for other players stay in the background.
+   */
+  readonly completesCommand?: boolean;
+}
+
+export interface EventEffectDefinition<T = unknown> extends EventEffectOptions {
   readonly version: number;
   readonly schema: z.ZodType<T>;
   readonly handle: EventEffectHandler<T>;
@@ -184,7 +204,13 @@ export interface PluginContext {
   /** Register a command callable only through the trusted host system-command API. */
   registerSystemCommand<T>(type: string, schema: z.ZodType<T>, handler: CommandHandler<T>): void;
   registerQuery<T, R>(type: string, schema: z.ZodType<T>, handler: QueryHandler<T, R>): void;
-  registerEffect<T>(type: string, version: number, schema: z.ZodType<T>, handler: EventEffectHandler<T>): void;
+  registerEffect<T>(
+    type: string,
+    version: number,
+    schema: z.ZodType<T>,
+    handler: EventEffectHandler<T>,
+    options?: EventEffectOptions,
+  ): void;
   registerEventHandler<T>(
     eventType: string,
     eventVersion: number,
@@ -211,4 +237,9 @@ export interface DispatchResult {
   readonly events: readonly StoredGameEvent[];
   readonly commitOutcome?: AppendOutcome['kind'];
   readonly correlationId?: string;
+  /**
+   * How many command-completing effects this commit queued. Set only when this
+   * dispatch committed; a duplicate cannot report what its original queued.
+   */
+  readonly completingEffects?: number;
 }

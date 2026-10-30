@@ -351,6 +351,44 @@ describe('MuddHttpClient', () => {
     await expect(client.getGame()).rejects.toThrow('The server returned an invalid response.');
   });
 
+  it('asks for command-response game projections only when configured to', async () => {
+    const requests: Array<{ path: string; projection: string | null }> = [];
+    let commandBody: Record<string, unknown> = {
+      receipt: { ok: true, commandId: 'rest-command', eventIds: [], newAggregateVersion: 3 },
+      streamId: 'character-1',
+      events: [],
+    };
+    const fetcher: typeof fetch = async (input, init = {}) => {
+      const path = String(input);
+      requests.push({ path, projection: new Headers(init.headers).get('x-mudd-command-projection') });
+      if (path === '/api/game') {
+        return Response.json({ player: { id: 'player-1', displayName: 'Player' } });
+      }
+      return Response.json(commandBody);
+    };
+    const projecting = new MuddHttpClient({
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      fetcher,
+      commandProjection: 'game',
+    });
+    const plain = new MuddHttpClient({ worldInstanceId: DEMO_WORLD_INSTANCE_ID, fetcher });
+
+    // A server that predates the header simply omits the projection.
+    await expect(projecting.rest('character-1', 2, 'rest-command')).resolves.not.toHaveProperty('gameProjection');
+    await projecting.getGame();
+    await plain.rest('character-1', 2, 'plain-rest-command');
+    expect(requests).toEqual([
+      { path: '/api/commands', projection: 'game' },
+      { path: '/api/game', projection: null },
+      { path: '/api/commands', projection: null },
+    ]);
+
+    // The projection is validated like the rest of the response, never trusted as cast.
+    commandBody = { ...commandBody, gameProjection: { character: { characterId: 'character-1' } } };
+    await expect(projecting.rest('character-1', 2, 'invalid-projection-command'))
+      .rejects.toThrow('The server returned an invalid response.');
+  });
+
   it('correlates an opt-in movement trace with its server request', async () => {
     const traceId = 'de305d54-75b4-431b-adb2-eb6b9e546014';
     const requests: Array<{ path: string; headers: Headers }> = [];

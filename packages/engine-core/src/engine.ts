@@ -19,6 +19,7 @@ import type {
   PluginContext,
   QueryDefinition,
   QueryContext,
+  StoredEventEffect,
 } from './types.js';
 import type { RngPort } from '@mudd/contracts';
 import type { WorldPackDraft } from '@mudd/contracts';
@@ -28,6 +29,9 @@ import { isRuleViolationError } from './domain-error.js';
 const apiVersion = '1.0';
 const EFFECT_LEASE_MS = 60_000;
 const MAX_EFFECT_ATTEMPTS = 10;
+// Commands queue at most one completing effect today; anything beyond this
+// bound is left to the background worker rather than held in the request.
+const MAX_SETTLED_COMMAND_EFFECTS = 4;
 const DOMAIN_EVENT_EFFECT = 'engine.domain_event_dispatch';
 const DOMAIN_EVENT_EFFECT_SCHEMA = z.object({
   eventType: z.string().min(1),
@@ -167,10 +171,15 @@ export class EngineHost {
         if (this.queries.has(type)) throw new Error(`Duplicate query registration: ${type}`);
         this.queries.set(type, { schema, handle } as QueryDefinition);
       },
-      registerEffect: (type, version, schema, handle) => {
+      registerEffect: (type, version, schema, handle, options = {}) => {
         if (this.effects.has(type)) throw new Error(`Duplicate event effect registration: ${type}`);
         if (!Number.isInteger(version) || version < 1) throw new Error(`Invalid event effect version for ${type}.`);
-        this.effects.set(type, { version, schema, handle } as EventEffectDefinition);
+        this.effects.set(type, {
+          version,
+          schema,
+          handle,
+          completesCommand: options.completesCommand === true,
+        } as EventEffectDefinition);
       },
       registerEventHandler: (eventType, eventVersion, schema, handle) => {
         if (!eventType || !Number.isInteger(eventVersion) || eventVersion < 1) {
@@ -278,52 +287,103 @@ export class EngineHost {
       const effect = await this.store.claimNextEffect(EFFECT_LEASE_MS, worldInstanceId);
       if (!effect) break;
       processed += 1;
-      const definition = this.effects.get(effect.type);
-      if (!definition || definition.version !== effect.version) {
-        const reason = definition
-          ? `Unsupported effect version ${effect.version} for ${effect.type}.`
-          : `No plugin registered a handler for ${effect.type}.`;
-        await this.store.deadLetterEffect(effect.id, effect.leaseToken, reason);
-        console.error(`[effect:${effect.id}] ${reason}`);
-        continue;
-      }
-
-      const parsed = definition.schema.safeParse(effect.payload);
-      if (!parsed.success) {
-        const reason = `Persisted payload did not match effect contract ${effect.type}@${effect.version}.`;
-        await this.store.deadLetterEffect(effect.id, effect.leaseToken, reason);
-        console.error(`[effect:${effect.id}] ${reason}`);
-        continue;
-      }
-
-      const context: EventEffectContext = {
-        effectId: effect.id,
-        worldInstanceId: effect.worldInstanceId,
-        sourceStreamId: effect.sourceStreamId,
-        causationCommandId: effect.causationCommandId,
-        store: this.store,
-        world: this.world,
-        now: this.now,
-        makeId: this.makeId,
-        rng: this.rng,
-      };
-      try {
-        await definition.handle(parsed.data, context);
-        await this.store.completeEffect(effect.id, effect.leaseToken);
-      } catch (error) {
-        const errorName = error instanceof Error ? error.name : 'UnknownError';
-        const message = `Effect handler failed (${errorName}).`;
-        if (effect.attempts >= MAX_EFFECT_ATTEMPTS) {
-          await this.store.deadLetterEffect(effect.id, effect.leaseToken, message);
-          console.error(`[effect:${effect.id}] Dead-lettered after ${effect.attempts} attempts (${errorName}).`);
-          continue;
-        }
-        const delayMs = Math.min(300_000, 1_000 * 2 ** Math.min(effect.attempts - 1, 8));
-        await this.store.retryEffect(effect.id, effect.leaseToken, delayMs, message);
-        console.error(`[effect:${effect.id}] Delivery failed; retry scheduled (${errorName}).`, error);
-      }
+      await this.runEffect(effect);
     }
     return processed;
+  }
+
+  /**
+   * Run the command-completing effects that a committed player command queued,
+   * instead of leaving them to the background worker, so a response built
+   * afterwards shows the command's finished outcome. Its other effects stay
+   * queued. Returns false if any could not be completed here: another worker
+   * holds it, it awaits a retry, its handler failed, or the store cannot claim
+   * by command.
+   */
+  async settleCommandEffects(session: SessionContext, result: DispatchResult): Promise<boolean> {
+    const expected = result.completingEffects;
+    if (expected === 0) return true;
+    const store = this.store;
+    if (
+      !this.started ||
+      expected === undefined ||
+      expected > MAX_SETTLED_COMMAND_EFFECTS ||
+      !store.claimCommandEffect
+    ) return false;
+    const scope = {
+      worldInstanceId: session.worldInstanceId,
+      actorId: session.actorId,
+      commandId: result.receipt.commandId,
+      types: [...this.effects]
+        .filter(([, definition]) => definition.completesCommand)
+        .map(([type]) => type),
+    };
+    // Claim them all before running any, so the worker cannot take one meanwhile.
+    const claimed: StoredEventEffect[] = [];
+    let completed = 0;
+    try {
+      while (claimed.length < expected) {
+        const effect = await store.claimCommandEffect(EFFECT_LEASE_MS, scope);
+        if (!effect) break;
+        claimed.push(effect);
+      }
+    } finally {
+      // Every claimed effect runs, even if a later claim failed, so no lease is left to expire.
+      for (const effect of claimed) {
+        if (await this.runEffect(effect)) completed += 1;
+      }
+    }
+    return completed === expected;
+  }
+
+  /** Deliver one claimed effect; true once its handler has committed its work. */
+  private async runEffect(effect: StoredEventEffect): Promise<boolean> {
+    const definition = this.effects.get(effect.type);
+    if (!definition || definition.version !== effect.version) {
+      const reason = definition
+        ? `Unsupported effect version ${effect.version} for ${effect.type}.`
+        : `No plugin registered a handler for ${effect.type}.`;
+      await this.store.deadLetterEffect(effect.id, effect.leaseToken, reason);
+      console.error(`[effect:${effect.id}] ${reason}`);
+      return false;
+    }
+
+    const parsed = definition.schema.safeParse(effect.payload);
+    if (!parsed.success) {
+      const reason = `Persisted payload did not match effect contract ${effect.type}@${effect.version}.`;
+      await this.store.deadLetterEffect(effect.id, effect.leaseToken, reason);
+      console.error(`[effect:${effect.id}] ${reason}`);
+      return false;
+    }
+
+    const context: EventEffectContext = {
+      effectId: effect.id,
+      worldInstanceId: effect.worldInstanceId,
+      sourceStreamId: effect.sourceStreamId,
+      causationCommandId: effect.causationCommandId,
+      store: this.store,
+      world: this.world,
+      now: this.now,
+      makeId: this.makeId,
+      rng: this.rng,
+    };
+    try {
+      await definition.handle(parsed.data, context);
+      await this.store.completeEffect(effect.id, effect.leaseToken);
+      return true;
+    } catch (error) {
+      const errorName = error instanceof Error ? error.name : 'UnknownError';
+      const message = `Effect handler failed (${errorName}).`;
+      if (effect.attempts >= MAX_EFFECT_ATTEMPTS) {
+        await this.store.deadLetterEffect(effect.id, effect.leaseToken, message);
+        console.error(`[effect:${effect.id}] Dead-lettered after ${effect.attempts} attempts (${errorName}).`);
+        return false;
+      }
+      const delayMs = Math.min(300_000, 1_000 * 2 ** Math.min(effect.attempts - 1, 8));
+      await this.store.retryEffect(effect.id, effect.leaseToken, delayMs, message);
+      console.error(`[effect:${effect.id}] Delivery failed; retry scheduled (${errorName}).`, error);
+      return false;
+    }
   }
 
   async dispatch(raw: unknown, session: SessionContext, correlationId = globalThis.crypto.randomUUID()): Promise<DispatchResult> {
@@ -413,6 +473,12 @@ export class EngineHost {
         streamId: outcome.streamId,
         events: outcome.events,
         commitOutcome: outcome.kind,
+        ...(outcome.kind === 'committed'
+          ? {
+            completingEffects: (plan.effects ?? [])
+              .filter((effect) => this.effects.get(effect.type)?.completesCommand).length,
+          }
+          : {}),
       };
     } catch (error) {
       if (isRuleViolationError(error)) {
