@@ -46,7 +46,8 @@ const roomAnnouncementTestPlugin: EnginePlugin = {
 
 const combatPresenceTestPlugin: EnginePlugin = {
   manifest: {
-    id: 'mudd.test-corpse-projection-combat-presence',
+    // Party combat policy depends on this plugin id, not only its capability.
+    id: 'mudd.room-combat-presence',
     version: '1.0.0',
     apiVersion: '1.0',
     category: 'core',

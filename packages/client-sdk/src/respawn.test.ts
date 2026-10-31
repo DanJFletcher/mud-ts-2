@@ -117,7 +117,7 @@ async function perform(
 ) {
   const character = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId));
   if (!character) throw new Error('Test character projection is missing.');
-  return engine.dispatch({
+  return dispatchAndSettle(engine, {
     type,
     version: 1,
     commandId,
@@ -126,6 +126,14 @@ async function perform(
     expectedVersion: character.revision,
     payload,
   }, session(playerId));
+}
+
+// Like the server's command route, settle a command's own completing effects
+// before answering; the background worker leaves fresh ones to the request.
+async function dispatchAndSettle(engine: EngineHost, command: unknown, context: ReturnType<typeof session>) {
+  const result = await engine.dispatch(command, context);
+  await engine.settleCommandEffects(context, result);
+  return result;
 }
 
 describe('character death and shared loot', () => {
@@ -150,9 +158,9 @@ describe('character death and shared loot', () => {
       expectedVersion: beforeDeath.revision,
       payload: { action: 'attack', targetNpcId: 'mossgate-training-sentinel' },
     };
-    const death = await engine.dispatch(deathCommand, session('fallen-player'));
+    const death = await dispatchAndSettle(engine, deathCommand, session('fallen-player'));
     expect(death.receipt.ok).toBe(true);
-    expect((await engine.dispatch(deathCommand, session('fallen-player'))).receipt.ok).toBe(true);
+    expect((await dispatchAndSettle(engine, deathCommand, session('fallen-player'))).receipt.ok).toBe(true);
     await engine.processPendingEffects();
 
     const fallen = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, fallenId));
