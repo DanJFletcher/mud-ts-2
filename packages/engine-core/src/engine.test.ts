@@ -823,6 +823,33 @@ describe('MUDD engine host', () => {
     await engine.stop();
   });
 
+  it('leaves a fresh completing effect to its command, then lets the worker take it if never settled', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-31T12:00:00.000Z'));
+    try {
+      const { engine, delivered, command } = settlementFixture();
+      await engine.start();
+
+      // A worker batch already running when the command commits must not take its completion.
+      const committed = await engine.dispatch(command('reserved-1'), session);
+      expect(await engine.processPendingEffects()).toBe(1);
+      expect(delivered).toEqual(['announcement:reserved-1']);
+      expect(await engine.settleCommandEffects(session, committed)).toBe(true);
+      expect(delivered).toEqual(['announcement:reserved-1', 'completion:reserved-1']);
+
+      // A request that never settles hands its completion to the worker after the grace period.
+      await engine.dispatch(command('abandoned-1'), session);
+      expect(await engine.processPendingEffects()).toBe(1);
+      expect(delivered.at(-1)).toBe('announcement:abandoned-1');
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await engine.processPendingEffects()).toBe(1);
+      expect(delivered.at(-1)).toBe('completion:abandoned-1');
+      await engine.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('reports a command as unsettled when its completing effect runs elsewhere or fails', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-30T12:00:00.000Z'));
@@ -1561,14 +1588,17 @@ describe('MUDD engine host', () => {
       characterId: secondCharacterId,
       payload: { encounterId, action: 'defend' },
     }, secondPlayer)).receipt.ok).toBe(true);
-    expect((await engine.dispatch({
+    const finalTurn = await engine.dispatch({
       type: 'team.combat.action',
       version: 1,
       commandId: 'team-combat-final-turn',
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       characterId: firstCharacterId,
       payload: { encounterId, action: 'attack' },
-    }, firstPlayer)).receipt.ok).toBe(true);
+    }, firstPlayer);
+    expect(finalTurn.receipt.ok).toBe(true);
+    // Like the server, the victory's own request settles its corpse.
+    expect(await engine.settleCommandEffects(firstPlayer, finalTurn)).toBe(true);
     await engine.processPendingEffects();
     const firstAfterOutcome = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, firstCharacterId))!;
     const secondAfterOutcome = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, secondCharacterId))!;

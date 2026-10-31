@@ -1,10 +1,11 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
-import { and, asc, desc, eq, inArray, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lte, notInArray, or, sql, type SQL } from 'drizzle-orm';
 import type { CommandReceipt } from '@mudd/contracts';
 import type {
   AppendOutcome,
   AppendRequest,
+  CommandEffectReservation,
   CommandEffectScope,
   EventStorePort,
   StoredEventEffect,
@@ -1003,10 +1004,29 @@ export class PostgresEventStore implements EventStorePort {
     }
   }
 
-  async claimNextEffect(leaseMs: number, worldInstanceId?: string): Promise<StoredEventEffect | undefined> {
+  async claimNextEffect(
+    leaseMs: number,
+    worldInstanceId?: string,
+    reservation?: CommandEffectReservation,
+  ): Promise<StoredEventEffect | undefined> {
+    if (reservation && (!Number.isInteger(reservation.graceMs) || reservation.graceMs < 0)) {
+      throw new RangeError('Effect reservation grace must be a non-negative integer.');
+    }
     return this.claimDueEffect(
       leaseMs,
       ...(worldInstanceId ? [eq(durableEffects.worldInstanceId, worldInstanceId)] : []),
+      // Skip a reserved effect while its own command may still settle it; the
+      // created_at default uses the database clock, so compare with it too.
+      ...(reservation && reservation.types.length > 0
+        ? [or(
+          notInArray(durableEffects.effectType, [...reservation.types]),
+          gt(durableEffects.attempts, 0),
+          lte(
+            durableEffects.createdAt,
+            sql`now() - (${reservation.graceMs} * interval '1 millisecond')`,
+          ),
+        )!]
+        : []),
     );
   }
 

@@ -80,6 +80,16 @@ export interface CommandEffectScope {
   readonly types: readonly string[];
 }
 
+/**
+ * Effects of these types that no one has tried yet stay with the command that
+ * queued them for this long, so its request settles them rather than racing
+ * the background worker. After that, or once attempted, any worker may claim them.
+ */
+export interface CommandEffectReservation {
+  readonly types: readonly string[];
+  readonly graceMs: number;
+}
+
 export interface EventStorePort {
   readStream(worldInstanceId: string, streamId: string): Promise<readonly StoredGameEvent[]>;
   /** Read multiple authoritative streams with a storage-optimized batch when available. */
@@ -104,7 +114,11 @@ export interface EventStorePort {
     payloadHash: string,
   ): Promise<AppendOutcome | undefined>;
   append(request: AppendRequest): Promise<AppendOutcome>;
-  claimNextEffect(leaseMs: number, worldInstanceId?: string): Promise<StoredEventEffect | undefined>;
+  claimNextEffect(
+    leaseMs: number,
+    worldInstanceId?: string,
+    reservation?: CommandEffectReservation,
+  ): Promise<StoredEventEffect | undefined>;
   /** Claim the next due effect that one actor's command queued, limited to the given types. */
   claimCommandEffect?(leaseMs: number, scope: CommandEffectScope): Promise<StoredEventEffect | undefined>;
   completeEffect(effectId: string, leaseToken: string): Promise<boolean>;

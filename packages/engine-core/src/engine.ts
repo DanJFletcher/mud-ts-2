@@ -32,6 +32,10 @@ const MAX_EFFECT_ATTEMPTS = 10;
 // Commands queue at most one completing effect today; anything beyond this
 // bound is left to the background worker rather than held in the request.
 const MAX_SETTLED_COMMAND_EFFECTS = 4;
+// How long the background worker leaves an untried completing effect to the
+// request that queued it. Settlement starts right after commit, so this only
+// delays the worker's fallback when a request fails or skips settlement.
+const COMMAND_EFFECT_SETTLE_GRACE_MS = 5_000;
 const DOMAIN_EVENT_EFFECT = 'engine.domain_event_dispatch';
 const DOMAIN_EVENT_EFFECT_SCHEMA = z.object({
   eventType: z.string().min(1),
@@ -284,9 +288,17 @@ export class EngineHost {
       throw new RangeError('Effect processing limit must be an integer from 1 to 500.');
     }
 
+    // A fresh command-completing effect belongs to the request that queued it,
+    // which settles it before answering. Leave it alone unless that never happens.
+    const reservation = {
+      types: [...this.effects]
+        .filter(([, definition]) => definition.completesCommand)
+        .map(([type]) => type),
+      graceMs: COMMAND_EFFECT_SETTLE_GRACE_MS,
+    };
     let processed = 0;
     while (processed < limit) {
-      const effect = await this.store.claimNextEffect(EFFECT_LEASE_MS, worldInstanceId);
+      const effect = await this.store.claimNextEffect(EFFECT_LEASE_MS, worldInstanceId, reservation);
       if (!effect) break;
       processed += 1;
       await this.runEffect(effect);
