@@ -49,7 +49,7 @@ Nearby are the [[old-bell-tower|old bell tower]], [[eastern-forest|eastern fores
 
 An unfinished road leaves south from the Common House, crosses the [[lower-rill|Lower Rill]] by a low stone bridge, and continues for several rooms beyond the far bank. It currently ends at a shallow cut in the ground; no settlement is established beyond it. The road's eventual destination remains unrecorded.
 
-The west road leaves from the Kindly Roof and reaches an unmarked verge beyond the village fields. The eastbound mill road branches from Old Bell Tower Road, passes through the abandoned watermill, and ends beyond a low rise. Neither road currently establishes a destination beyond its mapped endpoint.
+The west road leaves from the Kindly Roof and reaches a verge beyond the village fields. There it continues as the Harrowfen Road, a rutted farm road beside a drainage ditch, to the field gate of [[harrowfen|Harrowfen]], about half a day's travel west. The eastbound mill road branches from Old Bell Tower Road, passes through the abandoned watermill, and ends beyond a low rise. It does not establish a destination beyond its mapped endpoint.
 
 Bellwold's records are incomplete. The old bell, the disappearance of [[elira-venn|Professor Elira Venn]], and the [[mill-that-never-sleeps|watermill's continued operation]] have made it a place of scholarly attention and local unease.
 
