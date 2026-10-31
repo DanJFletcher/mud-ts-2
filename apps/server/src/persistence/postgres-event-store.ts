@@ -23,6 +23,27 @@ import { db } from '../db/client.js';
 import { retainCharacterReplayPrefix, replayCharacter } from '@mudd/engine-core';
 import { measureDatabaseOperation, measureStage } from '../performance.js';
 
+/**
+ * The latest event of each stream. DISTINCT ON would read and sort every event
+ * of every stream; a LATERAL LIMIT 1 takes one backward index probe per stream,
+ * however long its history.
+ */
+export function streamHeadsQuery(worldInstanceId: string, streamIds: readonly string[]) {
+  const streamValues = sql.join(streamIds.map((streamId) => sql`(${streamId})`), sql`, `);
+  return db.select().from(gameEvents)
+    .where(inArray(gameEvents.eventId, sql`(
+      SELECT head.event_id
+      FROM (VALUES ${streamValues}) AS streams(stream_id)
+      CROSS JOIN LATERAL (
+        SELECT event_id
+        FROM game_events
+        WHERE world_instance_id = ${worldInstanceId} AND stream_id = streams.stream_id
+        ORDER BY stream_version DESC
+        LIMIT 1
+      ) AS head
+    )`));
+}
+
 export function toStoredGameEvent(row: typeof gameEvents.$inferSelect): StoredGameEvent {
   return {
     type: row.type,
@@ -436,14 +457,8 @@ export class PostgresEventStore implements EventStorePort {
   ): Promise<ReadonlyMap<string, StoredGameEvent>> {
     const uniqueStreamIds = [...new Set(streamIds)];
     if (uniqueStreamIds.length === 0) return new Map();
-    // One index-ordered row per stream, so the cost doesn't grow with history.
     const rows = await measureDatabaseOperation('event_store.stream_heads_read', () =>
-      db.selectDistinctOn([gameEvents.streamId]).from(gameEvents)
-        .where(and(
-          eq(gameEvents.worldInstanceId, worldInstanceId),
-          inArray(gameEvents.streamId, uniqueStreamIds),
-        ))
-        .orderBy(asc(gameEvents.streamId), desc(gameEvents.streamVersion)));
+      streamHeadsQuery(worldInstanceId, uniqueStreamIds));
     return new Map(rows.map((row) => [row.streamId, toStoredGameEvent(row)]));
   }
 
