@@ -135,7 +135,7 @@ function banditEncounter(id: string) {
 const draft = {
   formatVersion: 1,
   packId: 'orraveth.bellwold',
-  packVersion: '1.17.0',
+  packVersion: '1.18.0',
   displayName: 'Orraveth: Bellwold',
   dailyBoards: [{
     id: 'bellwold-notice-board', locationId: 'bellwold-south-common', name: 'South Common bulletin board',
@@ -1947,6 +1947,48 @@ const draft = {
       exits: [
         { id: 'east-road-verge-to-bend', fromLocationId: 'bellwold-east-road-verge', toLocationId: 'bellwold-east-road-bend', label: 'west', direction: 'west', roadId: 'bellwold-east-mill-road' },
       ],
+    },
+  ],
+  locationGroups: [
+    {
+      // Bellwold's room names already carry the village name, so memberships stay
+      // descriptive rather than primary to avoid titles such as "Bellwold: Bellwold Market Square".
+      id: 'bellwold',
+      name: 'Bellwold',
+      type: 'settlement',
+      description: 'A growing trading settlement near the frontier of the Crown of Heskar. Its exact legal status is not established.',
+      memberships: [
+        'bellwold-market-square',
+        'kindly-roof-inn',
+        'marrs-general-goods',
+        'bellwold-west-gate',
+        'old-bell-tower-approach',
+        'old-bell-tower',
+        'bellwold-south-common',
+        'green-mortar',
+        'blackwater-forge',
+        'bellwold-well-court',
+        'bellwold-wattle-row',
+        'sovens-wheelwright-yard',
+        'tallow-end-cottage',
+        'old-grain-house',
+        'bellwold-common-house',
+        'bellwold-south-gate',
+        'bellwold-hearth-alley',
+        'bellwold-lantern-court',
+        'bellwold-nettlemere-house',
+        'bellwold-upper-row-house',
+        'bellwold-lower-row-west',
+        'bellwold-lower-row-house',
+        'bellwold-lower-row',
+        'bellwold-south-lane-cottage',
+        'bellwold-jail',
+        'bellwold-jail-cell',
+        'bellwold-library',
+        'bellwold-library-upper-room',
+        'bellwold-local-museum',
+      ].map((locationId) => ({ locationId, isPrimary: false })),
+      metadata: { codexId: 'orraveth-bellwold', politicalStatus: 'unestablished' },
     },
   ],
   roads: [

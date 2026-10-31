@@ -403,7 +403,7 @@ HF(-9..-6,-1..1)◄─WV─WT─WG─inn─SQ─…─mill─bend─EV══ eas
 
 Orraveth has no groups yet. Add:
 
-- **`type: 'settlement'`** for `bellwold` (backfilled onto the existing town rooms, *not* the road segments) and for each new town. Every room is a primary member, so previews and room titles read "Rillford: North Quay". Suggested metadata: `{ codexId: 'orraveth-rillford', politicalStatus: 'crown-of-heskar' | 'independent' | 'disputed' | 'unestablished' }`, taken straight from the Codex directory. Bellwold's status is `unestablished`.
+- **`type: 'settlement'`** for `bellwold` (backfilled onto the existing town rooms, *not* the road segments) and for each new town. In new towns every room is a primary member, so previews and room titles read "Rillford: North Quay". *Revised during Phase 0:* Bellwold's memberships are **non-primary**, because its room names already include the village name and a primary group would produce titles like "Bellwold: Bellwold Market Square". Suggested metadata: `{ codexId: 'orraveth-rillford', politicalStatus: 'crown-of-heskar' | 'independent' | 'disputed' | 'unestablished' }`, taken straight from the Codex directory. Bellwold's status is `unestablished`.
 - **`type: 'waterway'`**, `lower-rill`: all river rooms and `rillford-crossing`. Primary for river reaches, non-primary for the crossing (which is primary in Rillford).
 - **`type: 'route'`**, one per road: non-primary memberships, useful for "you are on the Rill Towpath" UI.
 - **`type: 'region'`**, `bellwold-marches`: non-primary, covering everything. Its description should repeat the Codex caveat that the region has no fixed boundary.

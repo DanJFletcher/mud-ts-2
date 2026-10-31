@@ -561,6 +561,49 @@ describe('Orraveth Bellwold settlement', () => {
     expect(reached).toEqual(locationIds);
   });
 
+  it('gives every room its own map tile within its map area and level', () => {
+    const tiles = new Map<string, string>();
+    for (const location of orravethWorld.locations) {
+      if (!location.mapPosition) continue;
+      const { x, y, z } = location.mapPosition;
+      const key = `${location.mapAreaId ?? 'overworld'}:${z ?? 0}:${x},${y}`;
+      expect(tiles.get(key), `${location.id} shares tile ${key}`).toBeUndefined();
+      tiles.set(key, location.id);
+    }
+  });
+
+  it('keeps concealed canon out of all player-facing world text', () => {
+    // GM-only canon (docs/world-content/orraveth/world-bible.md): the watermill's extraction
+    // apparatus and Severin Vale's agents. Room text also feeds destination previews.
+    const concealedTerms = [/apparatus/i, /\bSeverin\b/i, /\bRefinement\b/];
+    const worldText = JSON.stringify(orravethWorld);
+    for (const term of concealedTerms) {
+      expect(worldText).not.toMatch(term);
+    }
+  });
+
+  it('groups Bellwold’s village rooms as a settlement without retitling them', () => {
+    const bellwold = orravethWorld.locationGroups.find(({ id }) => id === 'bellwold');
+    expect(bellwold).toMatchObject({
+      name: 'Bellwold',
+      type: 'settlement',
+      metadata: { codexId: 'orraveth-bellwold', politicalStatus: 'unestablished' },
+    });
+    const memberIds = bellwold!.memberships.map(({ locationId }) => locationId);
+    expect(memberIds).toEqual(expect.arrayContaining([
+      'bellwold-market-square',
+      'bellwold-west-gate',
+      'bellwold-south-gate',
+      'old-bell-tower',
+    ]));
+    expect(bellwold!.memberships.every(({ isPrimary }) => !isPrimary)).toBe(true);
+    const roadLocationIds = new Set(orravethWorld.roads.flatMap(({ locationIds }) => locationIds));
+    for (const locationId of memberIds) {
+      if (locationId === 'bellwold-west-gate' || locationId === 'bellwold-south-gate') continue;
+      expect(roadLocationIds.has(locationId), `${locationId} is a road segment`).toBe(false);
+    }
+  });
+
   it('connects Bellwold’s alleys, homes, jail, library, upstairs room, and rear museum', () => {
     const locationsById = new Map(orravethWorld.locations.map((location) => [location.id, location]));
     const exitTo = (fromId: string, toId: string) =>

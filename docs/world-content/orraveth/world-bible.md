@@ -19,26 +19,37 @@ The first session introduces Orraveth through Bellwold, a growing frontier settl
 
 ## Playable content in this slice
 
-The fifteen connected locations are Bellwold Market Square, The Kindly Roof, Marr's General Goods, Old Bell Tower Road, Old Bell Tower, the Abandoned Watermill, Bellwold South Common, the Green Mortar, Blackwater Forge, Bellwold Well Court, Wattle Row, Soven's Wheelwright Yard, Tallow End Cottage, Old Grain House, and Bellwold Common House. The market square is the starting room. The southern branch adds workshops, a well, residential lanes, shared storage, and a meeting room. Every route is reachable in both directions and uses the supported cardinal directions.
+The pack (`packVersion` 1.18.0) has 72 connected locations. The market square is the starting room.
 
-Ten residents are available to meet:
+- **The village:** the market square, the Kindly Roof, Marr's General Goods, Old Bell Tower Road and the tower; the southern lanes, with South Common, the Green Mortar, Blackwater Forge, Well Court, Wattle Row, Soven's Wheelwright Yard, Tallow End Cottage, the Old Grain House and the Common House; and the newer rows round Hearth Alley and Lantern Court, the jail, the library and the local museum. These rooms form the `bellwold` settlement location group.
+- **Roads:** five roads with room-by-room travel and encounters (stray hounds, roadside deer, bandits): the West Road to an unmarked verge, the South Road over the Lower Rill bridge to the unfinished road end, the Mile Marker West Road to the Milepost Workshop, the East Mill Road past the abandoned watermill, and the North Church Road.
+- **The Lower Rill:** seven river tiles at the south bridge, with a fishing spot. The world data still calls it "Bellwold River"; the rename is planned in [bellwold-region-expansion.md](bellwold-region-expansion.md).
+- **Separate maps:** the jail cell, the library's upper room, the abandoned church's belfry and annex, and the church undercrypt maze each use their own map area or level.
 
-- **Anwen Marr**, the practical shopkeeper, distinguishes repeatable observations from unproven causes. She offers the optional Mill Ledger quest.
+Every route is reachable in both directions and uses the supported cardinal directions. No two rooms share a map tile within the same map area and level.
+
+Eighteen residents are available to meet:
+
+- **Anwen Marr**, the practical shopkeeper, distinguishes repeatable observations from unproven causes. She sells tools and offers the Mill Ledger and Church Reliquary quests.
 - **Tomas**, innkeeper of the Kindly Roof, shares road reports while making clear that reports are not guarantees.
-- **Darric Holt** and **Ilya Fen**, established in the Codex as the blacksmith and healer, are now present at their respective workplaces.
-- **Rell Soven**, **Enna Pell**, **Seli Tor**, and **Aven Rusk** are new provisional residents associated with wheel repair, public records, weaving, and grain storage. Their knowledge stays close to their work.
-- **Linnet Reed** walks among Bellwold's public streets and shared spaces without a fixed itinerary.
-- **Taren Voss** follows a regular watch patrol from the tower road through the square and southern public spaces.
+- **Darric Holt** and **Ilya Fen**, established in the Codex as the blacksmith and healer, work at their workplaces.
+- **Rell Soven**, **Enna Pell**, **Seli Tor** and **Aven Rusk** are provisional residents associated with wheel repair, public records, weaving and grain storage. Their knowledge stays close to their work.
+- **Sella Nettlemere**, **Tovin Ashdown**, **Renna Kell**, **Pella Wren**, **Sergeant Nera Vail**, **Mira Dell** and **Nessa Rill** live and work in the newer rows, jail, library and Milepost Workshop. They are not yet in the Codex.
+- **Linnet Reed** walks among Bellwold's public streets without a fixed itinerary; **Taren Voss** and **Orin Vale** follow fixed routes.
 
-The optional **The Mill Ledger** quest asks the player to read the existing ledger and report its recorded observations to Anwen. It uses the character-scoped quest and dialogue APIs, has no reward, and does not establish why the wheel moved.
+Two optional, character-scoped quests are available. **The Mill Ledger** asks the player to read the mill's ledger and report its observations to Anwen; it has no reward and does not establish why the wheel moved. **The Church Reliquary** sends the player through the church undercrypt for a reliquary sword, with a 20-gold reward.
+
+Daily jobs on the South Common board, woodcutting, fishing, crafting at the Milepost Workshop and equipment all use existing engine capabilities.
 
 ## Content authoring guardrails
 
 - Keep NPCs' knowledge local and attributable. Do not make every resident an expert on every mystery.
 - Treat the new residents, southern buildings, and their exact arrangement as provisional until separately approved; do not extend their biographies or relationships beyond the documented facts.
 - Autonomous movement uses the existing shared-world NPC capability: Linnet may choose among authored public destinations, while Taren follows his ordered route. Neither behavior makes the NPC a combatant.
-- Do not add new world mechanics, combat, a puzzle chain, or private player state to this content slice.
+- Build content from existing engine capabilities. A new world mechanic needs its own engine contract first.
 - Keep stable IDs stable when names or prose change. A location ID must never be repurposed for a different place.
+- Keep concealed canon (the watermill's extraction apparatus and Severin Vale's agents) out of every player-facing string. Room text also appears in destination previews before arrival. The integration test scans the pack for these terms.
+- Grow the region by following [bellwold-region-expansion.md](bellwold-region-expansion.md). New roads start from an existing road's endpoint rather than extending that road, and NPCs the Codex doesn't name are unnamed roles.
 - Treat substantial additions to unresolved mysteries as proposals for Codex review before they become canonical.
 
 ## World identity and ownership
