@@ -493,7 +493,6 @@ describe('map switching between floors', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
     const zoomedViewBox = readViewBox();
 
-    fireEvent.pointerMove(svg, { pointerId: 99, pointerType: 'touch', clientX: 150, clientY: 150 });
     fireEvent.pointerDown(svg, {
       pointerId: 1,
       pointerType: 'touch',
@@ -501,25 +500,20 @@ describe('map switching between floors', () => {
       clientX: 200,
       clientY: 150,
     });
-    fireEvent.pointerMove(svg, { pointerId: 2, pointerType: 'touch', clientX: 160, clientY: 150 });
-    fireEvent.pointerMove(svg, { pointerId: 1, pointerType: 'touch', clientX: 202, clientY: 152 });
-    fireEvent.pointerUp(svg, { pointerId: 2, pointerType: 'touch' });
+    fireEvent.pointerMove(svg, { pointerId: 1, pointerType: 'touch', clientX: 160, clientY: 150 });
     expect(readViewBox()).toEqual(zoomedViewBox);
 
     fireEvent.pointerDown(svg, {
-      pointerId: 3,
+      pointerId: 2,
       pointerType: 'touch',
       button: 0,
-      clientX: 200,
+      clientX: 220,
       clientY: 150,
     });
-    fireEvent.pointerMove(svg, {
-      pointerId: 3,
-      pointerType: 'touch',
-      clientX: 160,
-      clientY: 150,
-    });
-    fireEvent.pointerUp(svg, { pointerId: 3, pointerType: 'touch' });
+    fireEvent.pointerMove(svg, { pointerId: 2, pointerType: 'touch', clientX: 180, clientY: 150 });
+    fireEvent.pointerMove(svg, { pointerId: 1, pointerType: 'touch', clientX: 140, clientY: 150 });
+    fireEvent.pointerUp(svg, { pointerId: 2, pointerType: 'touch' });
+    fireEvent.pointerUp(svg, { pointerId: 1, pointerType: 'touch' });
     const destination = screen.getByRole('button', { name: 'Focus West of Old Bell Tower on map' });
     fireEvent.click(destination);
 
@@ -558,6 +552,31 @@ describe('map switching between floors', () => {
     });
 
     expect(svg.getAttribute('viewBox')).toBe(initialViewBox);
+  });
+
+  it('keeps mouse dragging available while fullscreen touch panning requires two fingers', () => {
+    render(<WorldMapPanel map={denseMap} fullscreen onFullscreenChange={vi.fn()} />);
+    const svg = document.querySelector<SVGSVGElement>('.focused-world-map__svg')!;
+    vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 400, 300));
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+    const initialViewBox = svg.getAttribute('viewBox');
+
+    fireEvent.pointerDown(svg, {
+      pointerId: 6,
+      pointerType: 'mouse',
+      button: 0,
+      clientX: 200,
+      clientY: 150,
+    });
+    fireEvent.pointerMove(svg, {
+      pointerId: 6,
+      pointerType: 'mouse',
+      clientX: 160,
+      clientY: 150,
+    });
+    fireEvent.pointerUp(svg, { pointerId: 6, pointerType: 'mouse' });
+
+    expect(svg.getAttribute('viewBox')).not.toBe(initialViewBox);
   });
 
   it('keeps location taps working while zoomed', () => {

@@ -24,7 +24,7 @@ type MapViewBox = Readonly<{ x: number; y: number; width: number; height: number
 type MapPanOffset = Readonly<{ x: number; y: number }>;
 type CardinalMapDirection = 'north' | 'east' | 'south' | 'west';
 type MapPanDrag = {
-  pointerId: number;
+  pointerIds: number[];
   pointerX: number;
   pointerY: number;
   rect: DOMRect;
@@ -247,6 +247,7 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const mapPanDragRef = useRef<MapPanDrag | null>(null);
+  const mapTouchPointsRef = useRef(new Map<number, { x: number; y: number }>());
   const suppressMapClickRef = useRef(false);
   const wasFullscreenRef = useRef(false);
 
@@ -268,12 +269,39 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
     ));
   };
   const handleMapPointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
-    if (!fullscreenPresent || mapZoom <= 1 || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    if (!fullscreenPresent || mapZoom <= 1) return;
     const rect = event.currentTarget.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
 
+    if (event.pointerType === 'touch') {
+      mapTouchPointsRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (mapTouchPointsRef.current.size < 2 || mapPanDragRef.current) return;
+
+      const touchPoints = [...mapTouchPointsRef.current.entries()].slice(0, 2);
+      const [first, second] = touchPoints;
+      if (!first || !second) return;
+      const pointerIds = [first[0], second[0]];
+      mapPanDragRef.current = {
+        pointerIds,
+        pointerX: (first[1].x + second[1].x) / 2,
+        pointerY: (first[1].y + second[1].y) / 2,
+        rect,
+        viewBox: mapViewBox,
+        moved: false,
+      };
+      for (const pointerId of pointerIds) {
+        try {
+          event.currentTarget.setPointerCapture?.(pointerId);
+        } catch {
+          // Pointer capture can fail when a touch ended before the second finger arrived.
+        }
+      }
+      return;
+    }
+
+    if (event.pointerType !== 'mouse' || event.button !== 0) return;
     mapPanDragRef.current = {
-      pointerId: event.pointerId,
+      pointerIds: [event.pointerId],
       pointerX: event.clientX,
       pointerY: event.clientY,
       rect,
@@ -283,13 +311,25 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
   };
 
   const handleMapPointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (event.pointerType === 'touch' && mapTouchPointsRef.current.has(event.pointerId)) {
+      mapTouchPointsRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    }
     const drag = mapPanDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (!drag || !drag.pointerIds.includes(event.pointerId)) return;
 
-    const deltaX = event.clientX - drag.pointerX;
-    const deltaY = event.clientY - drag.pointerY;
+    let currentX = event.clientX;
+    let currentY = event.clientY;
+    if (event.pointerType === 'touch') {
+      const touchPoints = drag.pointerIds
+        .map((pointerId) => mapTouchPointsRef.current.get(pointerId))
+        .filter((point): point is { x: number; y: number } => point !== undefined);
+      if (touchPoints.length !== drag.pointerIds.length) return;
+      currentX = touchPoints.reduce((sum, point) => sum + point.x, 0) / touchPoints.length;
+      currentY = touchPoints.reduce((sum, point) => sum + point.y, 0) / touchPoints.length;
+    }
+    const deltaX = currentX - drag.pointerX;
+    const deltaY = currentY - drag.pointerY;
     if (!drag.moved && Math.hypot(deltaX, deltaY) < 4) return;
-    if (!drag.moved) event.currentTarget.setPointerCapture?.(event.pointerId);
     drag.moved = true;
     event.preventDefault();
 
@@ -307,9 +347,13 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
 
   const finishMapPan = (event: ReactPointerEvent<SVGSVGElement>) => {
     const drag = mapPanDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (event.pointerType === 'touch') {
+      mapTouchPointsRef.current.delete(event.pointerId);
+    }
+    if (!drag || !drag.pointerIds.includes(event.pointerId)) return;
     mapPanDragRef.current = null;
-    if (drag.moved) {
+    if (event.pointerType === 'touch') mapTouchPointsRef.current.clear();
+    if (drag.moved || drag.pointerIds.length > 1) {
       suppressMapClickRef.current = true;
       window.setTimeout(() => {
         suppressMapClickRef.current = false;
