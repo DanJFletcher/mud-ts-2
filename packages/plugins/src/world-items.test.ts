@@ -88,7 +88,7 @@ function corpseEffect(options: {
 }
 
 describe('world item projection cache', () => {
-  it('reuses only an authoritative revision and returns independent projection copies', async () => {
+  it('reuses only an authoritative revision and shares one frozen projection', async () => {
     let iterations = 0;
     const emptyHistory = new Proxy([] as StoredGameEvent[], {
       get(target, property, receiver) {
@@ -105,13 +105,14 @@ describe('world item projection cache', () => {
     } as never;
 
     const first = await capability.load(context);
-    (first.items as unknown[]).push({ not: 'shared with the cache' });
+    expect(() => (first.items as unknown[]).push({ not: 'shared with the cache' })).toThrow(TypeError);
     const sameRevision = await capability.load(context);
 
     expect(readStream).toHaveBeenCalledTimes(2);
     expect(iterations).toBe(1);
     expect(sameRevision.items).toEqual([]);
-    expect(sameRevision.items).not.toBe(first.items);
+    expect(sameRevision).toBe(first);
+    expect(Object.isFrozen(sameRevision)).toBe(true);
 
     history = [{
       type: 'world.item.invalid',
@@ -128,6 +129,64 @@ describe('world item projection cache', () => {
       tick: 1,
     }];
     await expect(capability.load(context)).rejects.toThrow('Unsupported world item event');
+  });
+
+  it('applies only new events to a cached revision and matches a full replay', async () => {
+    const item = { id: 'pine-logs-1', sharedItemId: 'pine-logs-1', label: 'Pine logs', description: 'A bundle of pine logs.' };
+    const history = [
+      event('world.item_dropped', { worldItemId: item.id, fromCharacterId: 'character-1', locationId: 'market', item }, 1),
+      event('world.item_claimed', { worldItemId: item.id, characterId: 'character-2', locationId: 'market' }, 2),
+      event('world.item_dropped', { worldItemId: item.id, fromCharacterId: 'character-2', locationId: 'inn', item }, 3),
+    ];
+    let visible = history.slice(0, 1);
+    const capability = captureWorldItemsCapability();
+    const context = { worldInstanceId: 'world-items-incremental-test', store: { readStream: async () => visible } } as never;
+
+    const first = await capability.load(context);
+    expect(first).toMatchObject({ revision: 1, items: [{ locationId: 'market' }] });
+
+    // Earlier events are never replayed: make them unreadable after the first load.
+    let tailReads = 0;
+    visible = history.map((stored, index) => index === 0
+      ? new Proxy(stored, { get: (target, property) => {
+        if (property === 'type' || property === 'payload') throw new Error('Replayed a cached event.');
+        return Reflect.get(target, property);
+      } })
+      : new Proxy(stored, { get: (target, property) => {
+        if (property === 'payload') tailReads += 1;
+        return Reflect.get(target, property);
+      } }));
+    const extended = await capability.load(context);
+    expect(tailReads).toBeGreaterThan(0);
+    expect(extended).toEqual(projectWorldItems(history));
+    expect(extended).toMatchObject({ revision: 3, items: [{ locationId: 'inn', holderCharacterId: null }] });
+    expect(first).toMatchObject({ revision: 1, items: [{ locationId: 'market' }] });
+  });
+
+  it('rebuilds from scratch when the history is not an extension of the cached one', async () => {
+    const item = { id: 'pine-logs-1', sharedItemId: 'pine-logs-1', label: 'Pine logs', description: 'A bundle of pine logs.' };
+    let visible = [event('world.item_dropped', { worldItemId: item.id, fromCharacterId: 'character-1', locationId: 'market', item }, 1)];
+    const capability = captureWorldItemsCapability();
+    const context = { worldInstanceId: 'world-items-rebuild-test', store: { readStream: async () => visible } } as never;
+    await capability.load(context);
+
+    const replaced = { ...event('world.item_dropped', { worldItemId: item.id, fromCharacterId: 'character-1', locationId: 'inn', item }, 1), eventId: 'other-event-1' };
+    visible = [replaced, event('world.item_claimed', { worldItemId: item.id, characterId: 'character-2', locationId: 'inn' }, 2)];
+    expect(await capability.load(context)).toEqual(projectWorldItems(visible));
+  });
+
+  it('discards a partly applied revision so the next load starts over', async () => {
+    const item = { id: 'pine-logs-1', sharedItemId: 'pine-logs-1', label: 'Pine logs', description: 'A bundle of pine logs.' };
+    const drop = event('world.item_dropped', { worldItemId: item.id, fromCharacterId: 'character-1', locationId: 'market', item }, 1);
+    let visible: StoredGameEvent[] = [drop];
+    const capability = captureWorldItemsCapability();
+    const context = { worldInstanceId: 'world-items-failure-test', store: { readStream: async () => visible } } as never;
+    await capability.load(context);
+
+    visible = [drop, event('world.item_claimed', { worldItemId: item.id, characterId: 'character-2', locationId: 'elsewhere' }, 2)];
+    await expect(capability.load(context)).rejects.toThrow('Invalid shared item claim');
+    visible = [drop];
+    expect(await capability.load(context)).toEqual(projectWorldItems([drop]));
   });
 
   it('evicts the least recently used world projection when the cache reaches its limit', async () => {

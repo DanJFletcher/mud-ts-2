@@ -41,11 +41,12 @@ export const WORLD_CORPSE_GOLD_CREDIT_EFFECT = 'world-corpse.gold-credit';
 
 export const worldItemsStreamId = (_worldInstanceId: string) => WORLD_ITEMS_STREAM_ID;
 
+/** Shared and frozen when loaded through the capability; treat as read-only. */
 export interface WorldItemsState {
-  revision: number;
-  items: WorldItemRecord[];
-  corpses: WorldCorpseRecord[];
-  currencyDrops: WorldCurrencyDropRecord[];
+  readonly revision: number;
+  readonly items: readonly WorldItemRecord[];
+  readonly corpses: readonly WorldCorpseRecord[];
+  readonly currencyDrops: readonly WorldCurrencyDropRecord[];
 }
 
 export interface WorldItemsStateCapability {
@@ -196,14 +197,48 @@ export function createWorldCorpseEffect(
   };
 }
 
-export function projectWorldItems(
-  events: readonly { type: string; version: number; aggregateVersion: number; payload: Readonly<Record<string, unknown>>; streamId?: string }[],
-): WorldItemsState {
-  const items = new Map<string, WorldItemRecord>();
-  const corpses = new Map<string, WorldCorpseRecord>();
-  const currencyDrops = new Map<string, WorldCurrencyDropRecord>();
-  const consumedIds = new Set<string>();
-  let revision = 0;
+type WorldItemEvent = {
+  type: string;
+  version: number;
+  aggregateVersion: number;
+  payload: Readonly<Record<string, unknown>>;
+  streamId?: string;
+};
+
+/** Running world-item projection that can continue from a cached revision. */
+type WorldItemsFold = {
+  readonly items: Map<string, WorldItemRecord>;
+  readonly corpses: Map<string, WorldCorpseRecord>;
+  readonly currencyDrops: Map<string, WorldCurrencyDropRecord>;
+  readonly consumedIds: Set<string>;
+  revision: number;
+};
+
+function emptyWorldItemsFold(): WorldItemsFold {
+  return { items: new Map(), corpses: new Map(), currencyDrops: new Map(), consumedIds: new Set(), revision: 0 };
+}
+
+function worldItemsStateFrom(fold: WorldItemsFold): WorldItemsState {
+  return {
+    revision: fold.revision,
+    items: [...fold.items.values()],
+    corpses: [...fold.corpses.values()],
+    currencyDrops: [...fold.currencyDrops.values()],
+  };
+}
+
+export function projectWorldItems(events: readonly WorldItemEvent[]): WorldItemsState {
+  return worldItemsStateFrom(foldWorldItems(events, emptyWorldItemsFold()));
+}
+
+/**
+ * Apply events in order on top of `fold`, mutating it. Records are replaced,
+ * never edited in place, so states built from earlier revisions stay valid.
+ * A thrown error leaves `fold` partly applied; callers must discard it.
+ */
+function foldWorldItems(events: readonly WorldItemEvent[], fold: WorldItemsFold): WorldItemsFold {
+  const { items, corpses, currencyDrops, consumedIds } = fold;
+  let revision = fold.revision;
   for (const stored of events) {
     if (stored.aggregateVersion !== revision + 1) {
       throw new Error(`Non-contiguous world item revision at ${stored.aggregateVersion}.`);
@@ -350,13 +385,17 @@ export function projectWorldItems(
       throw new Error(`Unsupported world item event "${stored.type}" at revision ${stored.aggregateVersion}.`);
     }
     revision = stored.aggregateVersion;
+    fold.revision = revision;
   }
-  return {
-    revision,
-    items: [...items.values()],
-    corpses: [...corpses.values()],
-    currencyDrops: [...currencyDrops.values()],
-  };
+  return fold;
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const nested of Object.values(value)) deepFreeze(nested);
+  }
+  return value;
 }
 
 async function appendWorldDrop(
@@ -542,8 +581,12 @@ export const worldItemsPlugin: EnginePlugin = {
     },
   },
   register({ provideCapability, registerEffect }) {
+    // One frozen state per world revision, shared by every reader instead of
+    // cloned per request. A newer revision applies only the events after the
+    // cached one, so the cost of a new drop or take doesn't grow with history.
     const projectionCache = new Map<string, {
-      revision: number;
+      fold: WorldItemsFold;
+      lastEventId: string | undefined;
       state: WorldItemsState;
     }>();
     const capability: WorldItemsStateCapability = {
@@ -554,15 +597,21 @@ export const worldItemsPlugin: EnginePlugin = {
         );
         const revision = events.at(-1)?.aggregateVersion ?? 0;
         const cached = projectionCache.get(context.worldInstanceId);
-        if (cached?.revision === revision) {
-          projectionCache.delete(context.worldInstanceId);
+        projectionCache.delete(context.worldInstanceId);
+        if (cached?.fold.revision === revision && cached.lastEventId === events.at(-1)?.eventId) {
           projectionCache.set(context.worldInstanceId, cached);
-          return structuredClone(cached.state);
+          return cached.state;
         }
 
-        const state = projectWorldItems(events);
-        projectionCache.delete(context.worldInstanceId);
-        projectionCache.set(context.worldInstanceId, { revision, state: structuredClone(state) });
+        // Continue only when the cached revision is a prefix of this history.
+        const continues = cached !== undefined &&
+          cached.fold.revision < revision &&
+          events[cached.fold.revision - 1]?.eventId === cached.lastEventId;
+        const fold = continues
+          ? foldWorldItems(events.slice(cached.fold.revision), cached.fold)
+          : foldWorldItems(events, emptyWorldItemsFold());
+        const state = deepFreeze(worldItemsStateFrom(fold));
+        projectionCache.set(context.worldInstanceId, { fold, lastEventId: events.at(-1)?.eventId, state });
         while (projectionCache.size > 16) {
           const oldestWorldId = projectionCache.keys().next().value as string;
           projectionCache.delete(oldestWorldId);

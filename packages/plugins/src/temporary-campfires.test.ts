@@ -217,6 +217,38 @@ describe('temporary campfires', () => {
     ]);
   });
 
+  it('replays the campfire stream only when its revision changes', async () => {
+    const lit = (campfireId: string, aggregateVersion: number) => storedEvent(TEMPORARY_CAMPFIRES_STREAM_ID, 'world.campfire_lit', {
+      campfireId,
+      locationId: 'mossgate-clearing',
+      createdAt: '2026-10-27T11:50:00.000Z',
+      expiresAt: '2026-10-27T12:10:00.000Z',
+    }, aggregateVersion);
+    let payloadReads = 0;
+    const counted = (event: StoredGameEvent) => new Proxy(event, {
+      get: (target, property) => {
+        if (property === 'payload') payloadReads += 1;
+        return Reflect.get(target, property);
+      },
+    });
+    let history = [counted(lit('first-fire', 1))];
+    const { capability } = captureCampfirePlugin(async () => ({ state: 'scheduled', expiresAt: '2026-10-27T12:10:00.000Z' }));
+    const context = {
+      worldInstanceId: 'campfire-cache-test',
+      store: { readStream: async () => history },
+      now: () => new Date('2026-10-27T12:00:00.000Z'),
+    };
+
+    expect((await capability.atLocations(context as never, ['mossgate-clearing'])).get('mossgate-clearing')).toHaveLength(1);
+    const afterFirstReplay = payloadReads;
+    await capability.atLocations(context as never, ['mossgate-clearing']);
+    expect(payloadReads).toBe(afterFirstReplay);
+
+    history = [...history, counted(lit('second-fire', 2))];
+    expect((await capability.atLocations(context as never, ['mossgate-clearing'])).get('mossgate-clearing')).toHaveLength(2);
+    expect(payloadReads).toBeGreaterThan(afterFirstReplay);
+  });
+
   it('ignores unrelated and stale expiry events, then finalizes missing campfires', async () => {
     const lifecycleStream = objectLifecycleStreamId('campfire-missing');
     const schedule = objectLifecycleScheduledEvent({
