@@ -3,6 +3,11 @@ import { once } from 'node:events';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 import { ORRAVETH_WORLD_INSTANCE_ID } from '@mudd/world-orraveth';
+import {
+  clearRequestIdentityCachesForTests,
+  getCachedWorldSession,
+  setMembershipListenerConnected,
+} from './request-identity-cache.js';
 
 const state = vi.hoisted(() => ({
   world: {
@@ -82,6 +87,7 @@ const state = vi.hoisted(() => ({
   },
   characterWorldInstanceOverrides: new Map<string, string>(),
   sessions: new Map(),
+  worldSessionSelectCount: 0,
   guestIdentity: null as null | {
     playerId: string;
     displayName: string;
@@ -171,6 +177,7 @@ const state = vi.hoisted(() => ({
   realtimeNotificationCallbacks: null as null | {
     invalidate: (change: unknown) => void;
     refresh: () => void;
+    connectionState: (connected: boolean) => void;
   },
 }));
 
@@ -461,8 +468,10 @@ vi.mock('./realtime-notifications.js', () => ({
   startRealtimeNotifications: (
     invalidate: (change: unknown) => void,
     refresh: () => void,
+    connectionState: (connected: boolean) => void,
   ) => {
-    state.realtimeNotificationCallbacks = { invalidate, refresh };
+    state.realtimeNotificationCallbacks = { invalidate, refresh, connectionState };
+    connectionState(true);
     return vi.fn();
   },
 }));
@@ -535,6 +544,7 @@ vi.mock('./db/client.js', async () => {
               ...character,
             }));
           } else if (tableName === 'world_sessions') {
+            state.worldSessionSelectCount++;
             rows = [...state.sessions.values()];
           } else if (tableName === 'room_chat_messages') {
             rows = state.messages;
@@ -885,33 +895,8 @@ vi.mock('./persistence/postgres-event-store.js', () => ({
   },
 }));
 
-vi.mock('./session-service.js', () => ({
-  expiredGuestCookie: '',
-  createGuestIdentity: async () => {
-    if (state.guestIdentityError) {
-      const error = state.guestIdentityError;
-      state.guestIdentityError = null;
-      throw error;
-    }
-    const playerId = 'player-guest';
-    const identity = {
-      playerId,
-      displayName: 'Guest Traveler',
-      clearGuestCookie: false as const,
-      isGuest: true as const,
-      session: {
-        sessionId: 'guest-session',
-        playerId,
-        actorId: playerId,
-        worldInstanceId: instanceId,
-        grantedPermissions: [],
-        authenticated: true as const,
-      },
-    };
-    state.guestIdentity = identity;
-    return { identity, setCookie: 'mudd_guest=test-guest-token; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000' };
-  },
-  getAccountIdentity: async (
+vi.mock('./session-service.js', () => {
+  const getAccountIdentity = async (
     request: { headers: { cookie?: string } },
     auth: { userId: string | null; sessionId: string },
   ) => {
@@ -920,7 +905,7 @@ vi.mock('./session-service.js', () => ({
     if (!account && !cookieGuest) return undefined;
     if (!account && cookieGuest) return cookieGuest;
     return {
-      ...account,
+      ...account!,
       clearGuestCookie: false,
       isGuest: false,
       session: {
@@ -932,8 +917,40 @@ vi.mock('./session-service.js', () => ({
         authenticated: true,
       },
     };
-  },
-}));
+  };
+  return {
+    expiredGuestCookie: '',
+    createGuestIdentity: async () => {
+      if (state.guestIdentityError) {
+        const error = state.guestIdentityError;
+        state.guestIdentityError = null;
+        throw error;
+      }
+      const playerId = 'player-guest';
+      const identity = {
+        playerId,
+        displayName: 'Guest Traveler',
+        clearGuestCookie: false as const,
+        isGuest: true as const,
+        session: {
+          sessionId: 'guest-session',
+          playerId,
+          actorId: playerId,
+          worldInstanceId: instanceId,
+          grantedPermissions: [],
+          authenticated: true as const,
+        },
+      };
+      state.guestIdentity = identity;
+      return { identity, setCookie: 'mudd_guest=test-guest-token; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000' };
+    },
+    getAccountIdentity,
+    getAccountIdentityForRequest: async (
+      request: { headers: { cookie?: string } },
+      auth: { userId: string | null; sessionId: string },
+    ) => ({ identity: await getAccountIdentity(request, auth), worldSessionResolved: false }),
+  };
+});
 
 describe('NPC room announcements through the server', () => {
   let baseUrl: string;
@@ -979,7 +996,10 @@ describe('NPC room announcements through the server', () => {
   });
 
   beforeEach(() => {
+    clearRequestIdentityCachesForTests();
+    setMembershipListenerConnected(true);
     state.sessions.clear();
+    state.worldSessionSelectCount = 0;
     state.characterWorldInstanceOverrides.clear();
     state.guestIdentity = null;
     state.messages.length = 0;
@@ -1898,6 +1918,7 @@ describe('NPC room announcements through the server', () => {
     const snapshot = await fetch(`${baseUrl}/api/game`, { headers });
     expect(snapshot.status).toBe(200);
     expect(await snapshot.json()).toMatchObject({
+      serverTime: expect.stringMatching(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/),
       player: { id: 'player-alice', displayName: 'Alice' },
       character: {
         characterId: 'character-alice',
@@ -1912,6 +1933,106 @@ describe('NPC room announcements through the server', () => {
       stats: { attackPower: 0, spellPower: 0 },
       map: { currentLocationId: 'npc-room' },
     });
+  });
+
+  it('clears the cached world session after archiving a character', async () => {
+    vi.stubEnv('MUDD_IDENTITY_CACHE', '1');
+    const originalOwner = state.charactersByOwner['character-bob'];
+    state.charactersByOwner['character-bob'] = 'player-alice';
+    await enterWorld('alice', 'character-alice');
+    try {
+      const warmSnapshot = await fetch(`${baseUrl}/api/game`, {
+        headers: { 'x-test-user': 'alice' },
+      });
+      expect(warmSnapshot.status).toBe(200);
+      expect(getCachedWorldSession('player-alice', instanceId)).toMatchObject({
+        characterId: 'character-alice',
+      });
+
+      state.nextCommandResult = {
+        receipt: { ok: true, commandId: 'archive-non-active-character' },
+        commitOutcome: 'committed',
+      };
+      const response = await fetch(`${baseUrl}/api/commands`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-test-user': 'alice',
+        },
+        body: JSON.stringify({
+          type: 'character.archive',
+          version: 1,
+          commandId: 'archive-non-active-character',
+          worldInstanceId: instanceId,
+          characterId: 'character-bob',
+          expectedVersion: 0,
+          payload: {},
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      expect(getCachedWorldSession('player-alice', instanceId)).toBeUndefined();
+    } finally {
+      state.charactersByOwner['character-bob'] = originalOwner;
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('reuses a warm world session and invalidates it on membership notifications', async () => {
+    vi.stubEnv('MUDD_IDENTITY_CACHE', '1');
+    const infoLog = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const traceIds = [
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    ];
+    const readsBeforeSnapshots = state.worldSessionSelectCount;
+    const requestGame = async (traceId: string) => fetch(`${baseUrl}/api/game`, {
+      headers: {
+        'x-test-user': 'alice',
+        'x-mudd-trace-id': traceId,
+        'x-mudd-trace-phase': 'snapshot',
+      },
+    });
+    const traceFor = (traceId: string) => infoLog.mock.calls
+      .map(([message]) => {
+        try { return JSON.parse(String(message)) as { traceId?: string; measurements?: { databaseOperations?: unknown[]; worldSessionCacheHits?: number; worldSessionCacheMisses?: number } }; }
+        catch { return undefined; }
+      })
+      .find((entry) => entry?.traceId === traceId);
+
+    try {
+      await enterWorld('alice', 'character-alice');
+      for (const traceId of traceIds.slice(0, 2)) {
+        expect((await requestGame(traceId)).status).toBe(200);
+      }
+      const readsAfterWarmSnapshot = state.worldSessionSelectCount;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const first = traceFor(traceIds[0]!);
+      const warm = traceFor(traceIds[1]!);
+      expect(first?.measurements?.worldSessionCacheMisses).toBe(1);
+      expect(warm?.measurements?.worldSessionCacheHits).toBe(1);
+      expect(readsAfterWarmSnapshot).toBeGreaterThan(readsBeforeSnapshots);
+      expect(state.worldSessionSelectCount).toBe(readsAfterWarmSnapshot);
+      expect(getCachedWorldSession('player-alice', instanceId)).toMatchObject({
+        characterId: 'character-alice',
+      });
+
+      const notifications = state.realtimeNotificationCallbacks;
+      if (!notifications) throw new Error('Realtime notification callbacks were not registered.');
+      notifications.invalidate({ world: instanceId, kind: 'membership', playerId: 'player-alice' });
+      expect(getCachedWorldSession('player-alice', instanceId)).toBeUndefined();
+
+      expect((await requestGame(traceIds[2]!)).status).toBe(200);
+      const readsAfterInvalidation = state.worldSessionSelectCount;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(readsAfterInvalidation).toBe(readsAfterWarmSnapshot + 1);
+      expect(traceFor(traceIds[2]!)?.measurements?.worldSessionCacheMisses).toBe(1);
+    } finally {
+      infoLog.mockRestore();
+      vi.unstubAllEnvs();
+    }
   });
 
   it('projects room-specific fishing, woodcutting, and bulletin-board options', async () => {
@@ -2264,7 +2385,8 @@ describe('NPC room announcements through the server', () => {
     await enterWorld('alice', 'character-alice');
     const session = state.sessions.get('player-alice') as { id: string; lastSeenAt?: Date };
     const staleTime = () => new Date(Date.now() - 60 * 60 * 1000);
-    session.lastSeenAt = staleTime();
+    const heartbeatAnchor = staleTime();
+    session.lastSeenAt = heartbeatAnchor;
 
     const heartbeat = await fetch(`${baseUrl}/api/world-session/heartbeat`, {
       method: 'POST',
@@ -2280,11 +2402,16 @@ describe('NPC room announcements through the server', () => {
     expect(state.systemCommands).toHaveLength(2);
     expect(state.systemCommands[1]).toMatchObject({
       type: 'character.stamina.recover',
+      version: 2,
       characterId: 'character-alice',
-      payload: { resetAnchor: true },
+      payload: {
+        settleAt: heartbeatAnchor.toISOString(),
+        resetAnchorAt: expect.any(String),
+      },
     });
 
-    session.lastSeenAt = staleTime();
+    const reconnectAnchor = staleTime();
+    session.lastSeenAt = reconnectAnchor;
     const reentered = await fetch(`${baseUrl}/api/world-session`, {
       method: 'POST',
       headers: {
@@ -2298,8 +2425,12 @@ describe('NPC room announcements through the server', () => {
     expect(state.systemCommands).toHaveLength(3);
     expect(state.systemCommands[2]).toMatchObject({
       type: 'character.stamina.recover',
+      version: 2,
       characterId: 'character-alice',
-      payload: { resetAnchor: true },
+      payload: {
+        settleAt: reconnectAnchor.toISOString(),
+        resetAnchorAt: expect.any(String),
+      },
     });
   });
 
@@ -2836,6 +2967,59 @@ describe('NPC room announcements through the server', () => {
         liveSocket.close();
         await closed;
       }
+    }
+  });
+
+  it('reuses active world sessions when realtime clients reconnect', async () => {
+    vi.stubEnv('MUDD_IDENTITY_CACHE', '1');
+    const sockets: WebSocket[] = [];
+    const subscribe = async () => {
+      const socket = new WebSocket(
+        `${baseUrl.replace(/^http/, 'ws')}/api/realtime?world=${encodeURIComponent(instanceId)}`,
+        { headers: { Origin: baseUrl, 'x-test-user': 'alice' } },
+      );
+      sockets.push(socket);
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Realtime session was not authorized.')), 3_000);
+        socket.on('message', (data) => {
+          const frame = JSON.parse(data.toString()) as { type?: string };
+          if (frame.type === 'ready') {
+            clearTimeout(timeout);
+            resolve();
+          }
+        });
+        socket.once('error', reject);
+        socket.once('open', () => socket.send(JSON.stringify({
+          type: 'subscribe',
+          version: 1,
+          channels: ['character'],
+        })));
+      });
+    };
+
+    try {
+      await enterWorld('alice', 'character-alice');
+      const readsBeforeConnections = state.worldSessionSelectCount;
+
+      await subscribe();
+      const readsAfterFirstConnection = state.worldSessionSelectCount;
+      expect(readsAfterFirstConnection).toBeGreaterThan(readsBeforeConnections);
+
+      const firstClosed = once(sockets[0]!, 'close');
+      sockets[0]!.close();
+      await firstClosed;
+
+      await subscribe();
+      expect(state.worldSessionSelectCount).toBe(readsAfterFirstConnection);
+    } finally {
+      for (const socket of sockets) {
+        if (socket.readyState !== WebSocket.CLOSED) {
+          const closed = once(socket, 'close');
+          socket.close();
+          await closed;
+        }
+      }
+      vi.unstubAllEnvs();
     }
   });
 

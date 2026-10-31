@@ -8,6 +8,7 @@ import {
   movementPlugin,
   teamCombatPlugin,
   teamCombatRosterPolicyCapability,
+  combatRoomPresenceCapability,
   roadTravelPlugin,
   worldItemsPlugin,
 } from '@mudd/core-plugins';
@@ -41,7 +42,7 @@ const roadPartyRosterPlugin: EnginePlugin = {
     version: '1.0.0',
     apiVersion: '1.0',
     category: 'first-party',
-    provides: [teamCombatRosterPolicyCapability.id],
+    provides: [teamCombatRosterPolicyCapability.id, combatRoomPresenceCapability.id],
   },
   register({ provideCapability }) {
     provideCapability(teamCombatRosterPolicyCapability, {
@@ -52,6 +53,14 @@ const roadPartyRosterPlugin: EnginePlugin = {
       async resolveIfPartyPresent() {
         return activeRoadPartyRoster;
       },
+    });
+    provideCapability(combatRoomPresenceCapability, {
+      listActiveCharacters: async () => [],
+      getPresenceAnchors: async (_worldInstanceId, characterIds) =>
+        new Map(characterIds.map((characterId) => [
+          characterId,
+          new Date('2026-10-20T12:00:00.000Z'),
+        ])),
     });
   },
 };

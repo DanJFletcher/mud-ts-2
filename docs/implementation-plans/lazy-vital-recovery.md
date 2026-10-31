@@ -1,21 +1,21 @@
 # MUDD feature implementation plan — Lazy vital recovery
 
-**Status:** Proposed; not started. Source: [round-trip latency audit](../performance/round-trip-latency-audit.md), finding 5 and recommendation 10. Once accepted, it amends [ADR 0029](../adr/0029-online-vital-recovery-and-unrestricted-rest.md).
+**Status:** Implemented; development measurements and staged rollout remain pending. Source: [round-trip latency audit](../performance/round-trip-latency-audit.md), finding 5 and recommendation 10. This plan amends [ADR 0029](../adr/0029-online-vital-recovery-and-unrestricted-rest.md).
 
 **Goal / user-observable behavior:** Recovery no longer writes events to an online character's stream on a timer. A lone player's commands stop conflicting with background settlements, so moves no longer pay for up to three snapshot-and-retry cycles. Vitals recover at the same rates, and the display still counts up between actions.
 
 **Existing repo findings:**
 
-- **Timer-driven settlement.** The stamina scheduler ticks once a second per world ([stamina-recovery-scheduler.ts:20](../../apps/server/src/stamina-recovery-scheduler.ts#L20)). For each tracked online session it reads the character stream. It dispatches `character.stamina.recover` ([stamina-recovery-scheduler.ts:70](../../apps/server/src/stamina-recovery-scheduler.ts#L70)) when two conditions hold:
+- **Timer-driven settlement.** The stamina scheduler ticks once a second per world ([stamina-recovery-scheduler.ts:20](../../apps/server/src/stamina-recovery-scheduler.ts#L20)). For each tracked online session it reads the character stream. It dispatches `character.stamina.recover` ([stamina-recovery-scheduler.ts:73](../../apps/server/src/stamina-recovery-scheduler.ts#L73)) when two conditions hold:
   - a vital is below its maximum;
-  - at least 1 s has passed since the last settlement ([stamina-recovery-scheduler.ts:66](../../apps/server/src/stamina-recovery-scheduler.ts#L66)).
+  - at least 1 s has passed since the last settlement ([stamina-recovery-scheduler.ts:69](../../apps/server/src/stamina-recovery-scheduler.ts#L69)).
 
-  Settlement stops at the session's last heartbeat ([stamina-recovery-scheduler.ts:51](../../apps/server/src/stamina-recovery-scheduler.ts#L51)). So these writes follow heartbeats: every 30 s, plus the heartbeats sent on presence invalidations.
-- **Why commands conflict.** Each settlement appends `character.vital_recovery_settled` ([character.ts:374](../../packages/plugins/src/character.ts#L374)). That bumps the revision the client sends as `expectedVersion`. A command sent before the client has refreshed fails with `VERSION_CONFLICT`.
-  - Moves now retry up to three times, and each retry costs a snapshot and a command ([client-sdk index.ts:1067](../../packages/client-sdk/src/index.ts#L1067)).
-  - After a final conflict, the move handler refetches the snapshot once more ([App.tsx:2324](../../apps/web/src/App.tsx#L2324)).
-- **Commands already settle first.** Commands that change vitals settle recovery before applying their change. That covers movement ([movement.ts:88](../../packages/plugins/src/movement.ts#L88)), combat, team combat, rest and stand: 11 call sites of `staminaRecoveryEvent` in all.
-- **Possible offline catch-up.** Those command-time settlements use the command's clock, and no plugin reads the session's last heartbeat. A command that arrives before the first heartbeat after a long gap may therefore settle offline time, which ADR 0029 rules out. Step 1 verifies this.
+  Settlement stops at the session's last heartbeat ([stamina-recovery-scheduler.ts:54](../../apps/server/src/stamina-recovery-scheduler.ts#L54)). So these writes follow heartbeats: every 30 s, plus the heartbeats sent on presence invalidations.
+- **Why commands conflict.** Each settlement appends `character.vital_recovery_settled` ([character.ts:151](../../packages/plugins/src/character.ts#L151)). That bumps the revision the client sends as `expectedVersion`. A command sent before the client has refreshed fails with `VERSION_CONFLICT`.
+  - Moves retry up to three times, and each retry costs a snapshot and a command ([client-sdk index.ts:1112](../../packages/client-sdk/src/index.ts#L1112)).
+  - After a final conflict, the move handler refetches the snapshot once more ([App.tsx:2410](../../apps/web/src/App.tsx#L2410)).
+- **Commands settle first.** Commands that change vitals settle recovery before applying their change. That covers movement ([movement.ts:90](../../packages/plugins/src/movement.ts#L90)), combat, team combat, rest and stand: all command-time recovery call sites use the presence-aware helper.
+- **Offline-gap characterization.** Before the change, a command after a 60-second gap with no intervening heartbeat settled all 60 seconds (stamina/mana +60 at maximum 100, health +3 at maximum 6). The presence-aware path now caps settlement at the saved heartbeat.
 - **ADR 0029 rules to keep:**
   - recovery only with a fresh heartbeat;
   - settlement stops at the last confirmed heartbeat;
@@ -23,8 +23,8 @@
   - the server clock is authoritative;
   - queries are read-only.
 
-  The ADR lists periodic settlement events as an accepted downside.
-- **Reconnect.** Today, reconnecting resets the anchor without first settling the recovery owed up to the last heartbeat. The reset happens in [index.ts:174](../../apps/server/src/index.ts#L174), called from the stale-heartbeat path at [index.ts:720](../../apps/server/src/index.ts#L720). The scheduler's final offline settlement covers that owed time today.
+  The ADR amendment replaces the former periodic-settlement downside.
+- **Reconnect.** The recovery reset helper in [index.ts:195](../../apps/server/src/index.ts#L195) now dispatches v2 to settle through the saved heartbeat before resetting the anchor. It is called from world entry ([index.ts:878](../../apps/server/src/index.ts#L878)) and the stale-heartbeat path ([index.ts:919](../../apps/server/src/index.ts#L919)).
 - **What the client already has.** The snapshot includes `character.staminaRecovery` (anchor, posture and carries). `resolveVitalRecovery` is a pure, shared function in [engine-contracts/src/stamina.ts](../../engine-contracts/src/stamina.ts).
 
 **Owning plugin/capability:**
@@ -67,7 +67,7 @@
 - **Display.**
   - The client projects vitals from the last snapshot's anchor up to now, corrected by `serverTime`, and caps them at their maximum.
   - Projected values are for display only; the next snapshot or command is authoritative.
-  - Keep the projected numbers outside the posture live region (`role="status"` in [StaminaStatus.tsx:33](../../packages/ui/src/components/StaminaStatus.tsx#L33)), so screen readers aren't flooded with updates.
+  - Keep the projected numbers outside the posture live region (`role="status"` in [StaminaStatus.tsx:34](../../packages/ui/src/components/StaminaStatus.tsx#L34)), so screen readers aren't flooded with updates.
 
 ## Invariants and failure paths
 
@@ -103,11 +103,11 @@
 
 ## Acceptance criteria
 
-- [ ] Timers write no character-stream events.
-- [ ] Recovery totals match the ADR 0029 rules in every characterization test.
-- [ ] There is no offline catch-up, including when a command arrives before the first heartbeat.
-- [ ] The UI shows vitals recovering between snapshots, without flooding screen readers.
-- [ ] Move version conflicts drop to those caused by real concurrent changes.
+- [x] With `MUDD_TIMER_RECOVERY=0`, the scheduler performs neither online settlement nor startup reconciliation.
+- [x] Recovery totals match the ADR 0029 rules in characterization tests, including no recovery after death.
+- [x] There is no offline catch-up, including when a command arrives before the first heartbeat.
+- [x] The UI projects vitals between snapshots without making ticking values a live region.
+- [ ] Development measurements confirm move conflicts and character wakeups fall to real concurrent changes only.
 
 ## Rollout and rollback
 

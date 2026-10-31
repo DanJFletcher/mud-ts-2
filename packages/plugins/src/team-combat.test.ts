@@ -6,6 +6,7 @@ import {
   characterStateCapability,
   type CharacterStateCapability,
 } from './character.js';
+import { combatRoomPresenceCapability } from './combat-presence.js';
 import {
   teamCombatRosterPolicyCapability,
   type TeamCombatRosterPolicy,
@@ -47,6 +48,11 @@ function harness(projection = player()) {
     })),
     resolveIfPartyPresent: vi.fn(async () => undefined),
   };
+  const roomPresence = {
+    listActiveCharacters: vi.fn(async () => []),
+    getPresenceAnchors: vi.fn(async (_worldInstanceId: string, characterIds: readonly string[]) =>
+      new Map(characterIds.map((characterId) => [characterId, now]))),
+  };
   teamCombatPlugin.register({
     registerCommand: (name: string, _schema: unknown, handler: unknown) => {
       commands.set(name, handler as (command: any, context: any) => Promise<any>);
@@ -69,6 +75,7 @@ function harness(projection = player()) {
         return state;
       }
       if (token.id === teamCombatRosterPolicyCapability.id) return roster;
+      if (token.id === combatRoomPresenceCapability.id) return roomPresence;
       throw new Error(`Unexpected capability: ${token.id}`);
     },
     optionalCapability: () => classCombatPolicy,
@@ -94,6 +101,7 @@ function harness(projection = player()) {
     queries,
     effects,
     roster,
+    roomPresence,
     roadCapability,
     context,
     setTeamHistory(events: StoredGameEvent[]) { teamHistory = events; },
@@ -340,6 +348,69 @@ describe('team combat commands and projections', () => {
       opponent,
       roadTravel,
     )).rejects.toThrow('no longer in this room');
+  });
+
+  it('settles each road-travel party member against their own presence anchor', async () => {
+    const test = harness();
+    const previousSettlement = new Date(now.getTime() - 20_000);
+    const companion = CharacterProjectionSchema.parse({
+    ...player(),
+    characterId: 'character-two',
+    name: 'Briar',
+    resources: {
+      ...player().resources,
+      stamina: { current: 0, maximum: 100 },
+    },
+    staminaRecovery: {
+      ...player().staminaRecovery,
+      lastSettledAt: previousSettlement.toISOString(),
+    },
+    });
+    test.setProjection(companion);
+    vi.mocked(test.roster.resolveIfPartyPresent).mockResolvedValue({
+    sourceGroupId: 'party-one',
+    maxPlayers: 2,
+    players: [
+      { characterId: 'character-one', playerId: 'player-one', displayName: 'Aster' },
+      { characterId: 'character-two', playerId: 'player-two', displayName: 'Briar' },
+    ],
+    });
+    const companionHeartbeat = new Date(now.getTime() - 10_000);
+    vi.mocked(test.roomPresence.getPresenceAnchors).mockResolvedValue(new Map([
+    ['character-one', new Date(now.getTime() - 60_000)],
+    ['character-two', companionHeartbeat],
+    ]));
+
+    const plan = await test.roadCapability.plan({
+    ...test.context,
+    presenceAnchorAt: new Date(now.getTime() - 60_000),
+    }, player(), {
+    id: 'road-bandit',
+    name: 'Road Bandit',
+    combatProfile: { maxHealth: 5, attackDamage: 2, style: 'steady' },
+    }, {
+    roadId: 'glasswater-road',
+    exitId: 'clearing-to-glasswater-road',
+    fromLocationId: 'mossgate-clearing',
+    toLocationId: 'glasswater-approach',
+    segmentIndex: 1,
+    encounterRoll: 7,
+    });
+    const companionRecovery = plan?.companions?.find((write: any) =>
+    write.streamId === 'character-two')?.events[0];
+
+    expect(companionRecovery).toMatchObject({
+    type: 'character.vital_recovery_settled',
+    payload: {
+      resources: { stamina: { current: 20, maximum: 100 } },
+      recovery: { lastSettledAt: now.toISOString() },
+    },
+    });
+    expect(companionRecovery.payload.settledAt).toBeUndefined();
+    expect(test.roomPresence.getPresenceAnchors).toHaveBeenCalledWith(
+    worldInstanceId,
+    ['character-one', 'character-two'],
+    );
   });
 
   it('rejects active encounters, invalid rosters, and party members who are no longer present', async () => {

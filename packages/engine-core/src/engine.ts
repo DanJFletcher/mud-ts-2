@@ -156,16 +156,18 @@ export class EngineHost {
     });
     const context: PluginContext = {
       registerCommand: (type, schema, handle) => {
-        if (this.commands.has(type) || this.systemCommands.has(type)) {
+        if (this.commands.has(type) ||
+            [...this.systemCommands.keys()].some((key) => key.startsWith(`${type}@`))) {
           throw new Error(`Duplicate command registration: ${type}`);
         }
         this.commands.set(type, { schema, handle } as CommandDefinition);
       },
-      registerSystemCommand: (type, schema, handle) => {
-        if (this.commands.has(type) || this.systemCommands.has(type)) {
-          throw new Error(`Duplicate command registration: ${type}`);
+      registerSystemCommand: (type, schema, handle, version = 1) => {
+        const key = `${type}@${version}`;
+        if (this.commands.has(type) || this.systemCommands.has(key)) {
+          throw new Error(`Duplicate command registration: ${key}`);
         }
-        this.systemCommands.set(type, { schema, handle } as CommandDefinition);
+        this.systemCommands.set(key, { schema, handle } as CommandDefinition);
       },
       registerQuery: (type, schema, handle) => {
         if (this.queries.has(type)) throw new Error(`Duplicate query registration: ${type}`);
@@ -386,7 +388,12 @@ export class EngineHost {
     }
   }
 
-  async dispatch(raw: unknown, session: SessionContext, correlationId = globalThis.crypto.randomUUID()): Promise<DispatchResult> {
+  async dispatch(
+    raw: unknown,
+    session: SessionContext,
+    correlationId = globalThis.crypto.randomUUID(),
+    presenceAnchorAt?: Date,
+  ): Promise<DispatchResult> {
     const untrusted = typeof raw === 'object' && raw !== null ? raw as Record<string, unknown> : {};
     const commandId = typeof untrusted.commandId === 'string' ? untrusted.commandId : this.makeId();
     const type = typeof untrusted.type === 'string' ? untrusted.type : '';
@@ -432,6 +439,7 @@ export class EngineHost {
       }
       const context: EngineCommandContext = {
         session,
+        ...(presenceAnchorAt ? { presenceAnchorAt } : {}),
         commandId,
         worldInstanceId,
         expectedVersion: typeof command.expectedVersion === 'number' ? command.expectedVersion : 0,
@@ -502,12 +510,14 @@ export class EngineHost {
     raw: unknown,
     actorId: string,
     correlationId = globalThis.crypto.randomUUID(),
+    presenceAnchorAt?: Date,
   ): Promise<DispatchResult> {
     const untrusted = typeof raw === 'object' && raw !== null ? raw as Record<string, unknown> : {};
     const commandId = typeof untrusted.commandId === 'string' ? untrusted.commandId : this.makeId();
     const type = typeof untrusted.type === 'string' ? untrusted.type : '';
     if (!this.started) return { receipt: failure(commandId, 'INTERNAL_ERROR', 'Engine is not ready.'), events: [] };
-    const definition = this.systemCommands.get(type);
+    const version = typeof untrusted.version === 'number' ? untrusted.version : 1;
+    const definition = this.systemCommands.get(`${type}@${version}`);
     if (!definition) {
       return { receipt: failure(commandId, 'UNKNOWN_COMMAND', `Unknown system command: ${type || '(missing type)'}.`), events: [] };
     }
@@ -537,6 +547,7 @@ export class EngineHost {
           grantedPermissions: ['system'],
           authenticated: true,
         },
+        ...(presenceAnchorAt ? { presenceAnchorAt } : {}),
         commandId,
         worldInstanceId,
         expectedVersion: typeof command.expectedVersion === 'number' ? command.expectedVersion : 0,

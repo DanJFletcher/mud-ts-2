@@ -317,6 +317,7 @@ export const CharacterVitalRecoverySettledEventSchema = DomainEventBaseSchema.ex
     health: CharacterHealthSchema,
     resources: CharacterResourcesSchema,
     recovery: CharacterStaminaRecoverySchema,
+    settledAt: IsoDateTimeSchema.optional(),
     resetAnchor: z.boolean().default(false),
   }).strict(),
 }).strict();

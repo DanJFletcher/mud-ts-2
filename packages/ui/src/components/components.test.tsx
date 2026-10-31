@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ActivityLog } from './ActivityLog.js';
 import { InteractionOptionsDialog } from './InteractionOptionsDialog.js';
@@ -83,7 +84,7 @@ describe('@mudd/ui components', () => {
     expect(container.querySelectorAll('.mudd-world-card--skeleton .mudd-skeleton')).toHaveLength(6);
   });
 
-  it('announces vital recovery and offers free rest anywhere', () => {
+  it('keeps changing vitals outside the status live region and keeps rest keyboard accessible', async () => {
     const onRest = vi.fn();
     render(
       <StaminaStatus
@@ -94,9 +95,15 @@ describe('@mudd/ui components', () => {
         onStand={vi.fn()}
       />,
     );
-    expect(screen.getByRole('progressbar', { name: 'Stamina 60 of 100' })).toHaveValue(60);
+    const progress = screen.getByRole('progressbar', { name: 'Stamina 60 of 100' });
+    expect(progress).toHaveValue(60);
+    expect(progress).toHaveAttribute('aria-live', 'off');
+    expect(screen.getByText('60 / 100').closest('[role="status"]')).toBeNull();
     expect(screen.getByRole('status')).toHaveTextContent('health, stamina, and mana recover by 2%');
-    fireEvent.click(screen.getByRole('button', { name: 'Rest for free' }));
+    const user = userEvent.setup();
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Rest for free' })).toHaveFocus();
+    await user.keyboard('{Enter}');
     expect(onRest).toHaveBeenCalledOnce();
   });
 

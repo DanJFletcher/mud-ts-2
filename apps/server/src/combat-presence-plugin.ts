@@ -3,7 +3,10 @@ import {
   combatRoomPresenceCapability,
   type CombatRoomPresenceCapability,
 } from '@mudd/core-plugins';
-import { listActiveRoomCharacters } from './room-presence-service.js';
+import {
+  getCharacterPresenceAnchors,
+  listActiveRoomCharacters,
+} from './room-presence-service.js';
 
 export const combatPresencePlugin: EnginePlugin = {
   manifest: {
@@ -21,6 +24,7 @@ export const combatPresencePlugin: EnginePlugin = {
           context.worldInstanceId,
           locationId,
         ),
+      getPresenceAnchors: getCharacterPresenceAnchors,
     };
     provideCapability(combatRoomPresenceCapability, implementation);
   },

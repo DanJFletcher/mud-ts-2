@@ -27,7 +27,7 @@ import {
   assertCharacterAlive,
   assertCharacterStanding,
   characterStateCapability,
-  staminaRecoveryEvent,
+  staminaRecoveryEventForCommand,
   type CharacterStateCapability,
 } from './character.js';
 import { prepareCharacterRespawn } from './respawn.js';
@@ -289,7 +289,11 @@ export const combatPlugin: EnginePlugin = {
       if (!loadedCharacter || loadedCharacter.archived) throw new RuleViolationError('That character is no longer available.');
       assertCharacterAlive(loadedCharacter);
       assertCharacterStanding(loadedCharacter);
-      const recoveryEvent = staminaRecoveryEvent(loadedCharacter, context.now());
+      const recoveryEvent = staminaRecoveryEventForCommand(
+        loadedCharacter,
+        context.now(),
+        context.presenceAnchorAt,
+      );
       const character: CharacterProjection = {
         ...loadedCharacter,
         health: recoveryEvent.payload.health,

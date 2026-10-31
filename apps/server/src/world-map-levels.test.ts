@@ -31,6 +31,7 @@ const testCombatPresencePlugin: EnginePlugin = {
   register({ provideCapability }) {
     provideCapability(combatRoomPresenceCapability, {
       listActiveCharacters: async () => [],
+      getPresenceAnchors: async () => new Map(),
     });
   },
 };

@@ -8,6 +8,7 @@ import {
   characterPlugin,
   isInSharedCombat,
   staminaRecoveryEvent,
+  staminaRecoveryEventForCommand,
   teamFleeStaminaEffect,
   type CharacterStateCapability,
 } from './character.js';
@@ -76,8 +77,9 @@ function captureCommands(
     registerCommand: (name: string, _schema: unknown, handler: unknown) => {
       commands.set(name, handler as (command: any, context: any) => Promise<unknown>);
     },
-    registerSystemCommand: (name: string, _schema: unknown, handler: unknown) => {
-      systemCommands.set(name, handler as (command: any, context: any) => Promise<unknown>);
+    registerSystemCommand: (name: string, _schema: unknown, handler: unknown, version = 1) => {
+      systemCommands.set(version === 1 ? name : `${name}@${version}`,
+        handler as (command: any, context: any) => Promise<unknown>);
     },
     registerQuery: (name: string, _schema: unknown, handler: unknown) => {
       queries.set(name, handler as (query: any, context: any) => Promise<unknown>);
@@ -198,6 +200,107 @@ describe('character state guards and recovery', () => {
     expect(staminaRecoveryEvent(withoutHealth, now).payload.health).toMatchObject({
       current: 6,
       maximum: 6,
+    });
+  });
+
+  it('currently settles the entire offline gap when a command arrives before a heartbeat', () => {
+    const lastHeartbeat = new Date(now.getTime() - 60_000);
+    const player = character({
+      health: { current: 1, maximum: 6 },
+      resources: {
+        stamina: { current: 0, maximum: 100 },
+        mana: { current: 0, maximum: 100 },
+      },
+      staminaRecovery: {
+        posture: 'standing',
+        lastSettledAt: lastHeartbeat.toISOString(),
+        fractionalCarry: 0,
+        healthFractionalCarry: 0,
+        manaFractionalCarry: 0,
+      },
+    });
+
+    const settled = staminaRecoveryEvent(player, now);
+    expect(settled.payload).toMatchObject({
+      health: { current: 4, maximum: 6 },
+      resources: {
+        stamina: { current: 60, maximum: 100 },
+        mana: { current: 60, maximum: 100 },
+      },
+      recovery: { lastSettledAt: now.toISOString() },
+    });
+  });
+
+  it('settles fresh sessions to command time and stale sessions only to their last heartbeat', () => {
+    const previousSettlement = new Date(now.getTime() - 90_000);
+    const freshHeartbeat = new Date(now.getTime() - 30_000);
+    const staleHeartbeat = new Date(now.getTime() - 60_000);
+    const player = character({
+      health: { current: 1, maximum: 6 },
+      resources: {
+        stamina: { current: 0, maximum: 100 },
+        mana: { current: 0, maximum: 100 },
+      },
+      staminaRecovery: {
+        posture: 'standing',
+        lastSettledAt: previousSettlement.toISOString(),
+        fractionalCarry: 20_000,
+        healthFractionalCarry: 40_000,
+        manaFractionalCarry: 70_000,
+      },
+    });
+
+    const fresh = staminaRecoveryEventForCommand(player, now, freshHeartbeat);
+    expect(fresh.payload).toMatchObject({
+      resources: {
+        stamina: { current: 90 },
+        mana: { current: 90 },
+      },
+      recovery: { lastSettledAt: now.toISOString() },
+    });
+
+    const stale = staminaRecoveryEventForCommand(player, now, staleHeartbeat);
+    expect(stale.payload).toMatchObject({
+      health: { current: 3 },
+      resources: {
+        stamina: { current: 30 },
+        mana: { current: 30 },
+      },
+      settledAt: staleHeartbeat.toISOString(),
+      resetAnchor: true,
+      recovery: {
+        lastSettledAt: now.toISOString(),
+        fractionalCarry: 20_000,
+        manaFractionalCarry: 70_000,
+      },
+    });
+  });
+
+  it('does not accrue recovery when a command has no confirmed presence anchor', () => {
+    const player = character({
+      health: { current: 1, maximum: 6 },
+      resources: {
+        stamina: { current: 0, maximum: 100 },
+        mana: { current: 0, maximum: 100 },
+      },
+      staminaRecovery: {
+        posture: 'standing',
+        lastSettledAt: new Date(now.getTime() - 60_000).toISOString(),
+        fractionalCarry: 20_000,
+        healthFractionalCarry: 40_000,
+        manaFractionalCarry: 70_000,
+      },
+    });
+
+    expect(staminaRecoveryEventForCommand(player, now).payload).toMatchObject({
+      health: { current: 1 },
+      resources: {
+        stamina: { current: 0 },
+        mana: { current: 0 },
+      },
+      settledAt: new Date(now.getTime() - 60_000).toISOString(),
+      resetAnchor: true,
+      recovery: { lastSettledAt: now.toISOString() },
     });
   });
 });
@@ -520,6 +623,53 @@ describe('character creation and recovery system commands', () => {
       command,
       commandContext(deadCharacter),
     )).rejects.toThrow('Your character has died');
+  });
+
+  it('v2 settles through the reconnect anchor before resetting it in the same event', async () => {
+    const player = character({
+      health: { current: 1, maximum: 6 },
+      resources: {
+        stamina: { current: 0, maximum: 100 },
+        mana: { current: 0, maximum: 100 },
+      },
+      staminaRecovery: {
+        posture: 'resting',
+        lastSettledAt: new Date(now.getTime() - 20_000).toISOString(),
+        fractionalCarry: 0,
+        healthFractionalCarry: 0,
+        manaFractionalCarry: 0,
+      },
+    });
+    const handler = captureCommands(player).systemCommands.get('character.stamina.recover@2')!;
+    const settleAt = new Date(now.getTime() - 10_000);
+    const result = await handler({
+      type: 'character.stamina.recover',
+      version: 2,
+      commandId: 'recovery-reconnect-v2',
+      worldInstanceId: worldId,
+      characterId: player.characterId,
+      expectedVersion: player.revision,
+      payload: {
+        settleAt: settleAt.toISOString(),
+        resetAnchorAt: now.toISOString(),
+      },
+    }, commandContext(player)) as any;
+
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({
+      type: 'character.vital_recovery_settled',
+      version: 1,
+      payload: {
+        settledAt: settleAt.toISOString(),
+        resetAnchor: true,
+        health: { current: 2, maximum: 6 },
+        resources: {
+          stamina: { current: 30, maximum: 100 },
+          mana: { current: 30, maximum: 100 },
+        },
+        recovery: { lastSettledAt: now.toISOString() },
+      },
+    });
   });
 });
 

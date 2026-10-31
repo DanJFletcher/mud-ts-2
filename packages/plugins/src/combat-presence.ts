@@ -15,6 +15,10 @@ export interface CombatRoomPresenceCapability {
     }>,
     locationId: string,
   ): Promise<readonly ActiveRoomCharacter[]>;
+  getPresenceAnchors(
+    worldInstanceId: string,
+    characterIds: readonly string[],
+  ): Promise<ReadonlyMap<string, Date>>;
 }
 
 export const combatRoomPresenceCapability = Object.freeze({

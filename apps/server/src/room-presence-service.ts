@@ -1,9 +1,10 @@
-import { and, desc, eq, gte, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, ne, sql } from 'drizzle-orm';
 import type { EventStorePort } from '@mudd/engine-core';
 import { db } from './db/client.js';
 import { worldSessions, roomCharacterStates } from './db/schema.js';
 import { projectRoomOccupants, ROOM_PRESENCE_TTL_MS } from './room-presence-projection.js';
 import { measureDatabaseOperation } from './performance.js';
+import { updateCachedWorldSessionPresence } from './request-identity-cache.js';
 
 // Fail closed during mixed-version rollout if an older writer bypassed the
 // read model. The covering stream index makes this a bounded head check.
@@ -29,6 +30,7 @@ export async function touchWorldSessionPresence(
         eq(worldSessions.worldInstanceId, worldInstanceId),
       ))
       .returning({ id: worldSessions.id }));
+  if (updated) updateCachedWorldSessionPresence(playerId, worldInstanceId, sessionId, lastSeenAt);
   return Boolean(updated);
 }
 
@@ -119,4 +121,32 @@ export async function listActiveRoomCharacters(
     });
   }
   return [...activeByPlayer.values()];
+}
+
+export async function getCharacterPresenceAnchors(
+  worldInstanceId: string,
+  characterIds: readonly string[],
+) {
+  const requestedCharacterIds = [...new Set(characterIds)];
+  if (requestedCharacterIds.length === 0) return new Map<string, Date>();
+
+  const sessions = await measureDatabaseOperation('room_presence.anchors_lookup', () =>
+    db.select({
+      characterId: worldSessions.characterId,
+      lastSeenAt: worldSessions.lastSeenAt,
+    }).from(worldSessions).where(and(
+      eq(worldSessions.worldInstanceId, worldInstanceId),
+      inArray(worldSessions.characterId, requestedCharacterIds),
+    )));
+  const anchors = new Map<string, Date>();
+  for (const session of sessions) {
+    if (
+      session.characterId &&
+      (!anchors.has(session.characterId) ||
+        session.lastSeenAt.getTime() > anchors.get(session.characterId)!.getTime())
+    ) {
+      anchors.set(session.characterId, session.lastSeenAt);
+    }
+  }
+  return anchors;
 }

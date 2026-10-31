@@ -10,7 +10,7 @@ import type { EngineCommandContext, ProposedEventEffect } from '@mudd/engine-cor
 import { RuleViolationError } from '@mudd/engine-core';
 import { MOVEMENT_STAMINA_COST } from '@mudd/contracts';
 import {
-  assertCharacterAlive, characterStateCapability, staminaRecoveryEvent,
+  assertCharacterAlive, characterStateCapability, staminaRecoveryEventForCommand,
 } from './character.js';
 import { exitsForLocationState, resolveLocationState } from './location-state.js';
 import { interruptActiveTimedActions } from './timed-action-interruption.js';
@@ -32,6 +32,7 @@ export interface MovementPolicyCapability {
     exitId: string,
     allowRoad?: boolean,
     now?: Date,
+    presenceAnchorAt?: Date,
   ): MovementPlan;
 }
 
@@ -46,6 +47,7 @@ export function createMovementPlan(
   exitId: string,
   allowRoad = false,
   now = new Date(),
+  presenceAnchorAt?: Date,
 ): MovementPlan {
   assertCharacterAlive(character);
   if (character.staminaRecovery.posture === 'resting') {
@@ -85,7 +87,7 @@ export function createMovementPlan(
   ) {
     throw new RuleViolationError('That passage is still sealed.');
   }
-  const recoveryEvent = staminaRecoveryEvent(character, now);
+  const recoveryEvent = staminaRecoveryEventForCommand(character, now, presenceAnchorAt);
   const recoveredResources = recoveryEvent.payload.resources as CharacterProjection['resources'];
   if (recoveredResources.stamina.current < MOVEMENT_STAMINA_COST) {
     throw new RuleViolationError(
@@ -150,7 +152,14 @@ export const movementPlugin: EnginePlugin = {
     registerCommand('character.move', MoveCharacterCommandSchema, async (command, context) => {
       const character = await characterState.load(context, command.characterId);
       if (!character || character.archived) throw new RuleViolationError('That character is no longer available.');
-      const plan = createMovementPlan(context.world, character, command.payload.exitId, false, context.now());
+      const plan = createMovementPlan(
+        context.world,
+        character,
+        command.payload.exitId,
+        false,
+        context.now(),
+        context.presenceAnchorAt,
+      );
       return {
         streamId: command.characterId,
         expectedVersion: command.expectedVersion,

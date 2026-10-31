@@ -12,11 +12,13 @@ export function createStaminaRecoveryScheduler(input: Readonly<{
   worldInstanceId: string;
   listSessions: (activeSince?: Date) => Promise<readonly StaminaRecoverySession[]>;
   now?: () => Date;
+  enabled?: boolean;
   intervalMs?: number;
   onlineWindowMs?: number;
   onError?: (error: unknown, characterId: string) => void;
 }>) {
   const now = input.now ?? (() => new Date());
+  const enabled = input.enabled ?? true;
   const intervalMs = input.intervalMs ?? 1_000;
   const onlineWindowMs = input.onlineWindowMs ?? 45_000;
   let timer: ReturnType<typeof setInterval> | undefined;
@@ -27,6 +29,7 @@ export function createStaminaRecoveryScheduler(input: Readonly<{
   const tracked = new Map<string, StaminaRecoverySession>();
 
   const tick = async (): Promise<number> => {
+    if (!enabled) return 0;
     if (running) return 0;
     running = true;
     let attempted = 0;
@@ -97,6 +100,7 @@ export function createStaminaRecoveryScheduler(input: Readonly<{
   return {
     tick,
     start() {
+      if (!enabled) return;
       if (timer) return;
       void tick();
       timer = setInterval(() => void tick(), intervalMs);

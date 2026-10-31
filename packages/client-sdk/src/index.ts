@@ -50,6 +50,8 @@ import {
   CharacterRestCommandSchema,
   CharacterStandCommandSchema,
   CombatActionCommandSchema,
+  IsoDateTimeSchema,
+  resolveVitalRecovery,
   InteractionInboxSchema,
   InteractionRequestCommandSchema,
   InteractionRespondCommandSchema,
@@ -98,6 +100,7 @@ export {
 } from './pending-actions.js';
 
 export const GameSnapshotSchema = z.object({
+  serverTime: IsoDateTimeSchema.optional(),
   availableFishingSpots: z.array(z.object({
     id: IdSchema,
     label: z.string().trim().min(1).max(120),
@@ -221,6 +224,7 @@ export class MuddCommandError extends Error {
 export class MuddHttpClient {
   private readonly fetcher: typeof fetch;
   private realtime: MuddRealtimeTransport;
+  private serverClockOffsetMs: number | undefined;
   readonly pendingActions = new PendingActionCoordinator();
 
   constructor(private readonly options: ClientOptions) {
@@ -250,8 +254,32 @@ export class MuddHttpClient {
   }
 
   async getGame(traceId?: string): Promise<GameSnapshot> {
-    return this.request('/api/game', {}, GameSnapshotSchema,
+    const snapshot = await this.request('/api/game', {}, GameSnapshotSchema,
       traceId ? { id: traceId, phase: 'snapshot' } : undefined);
+    this.rememberServerTime(snapshot.serverTime);
+    return snapshot;
+  }
+
+  projectVitals(snapshot: GameSnapshot, clientNow = new Date()) {
+    const character = snapshot.character;
+    if (
+      !character?.health ||
+      character.health.current === 0 ||
+      character.combat?.status === 'defeat'
+    ) return undefined;
+    const projectedAt = new Date(clientNow.getTime() +
+      (snapshot.serverTime && this.serverClockOffsetMs !== undefined ? this.serverClockOffsetMs : 0));
+    return resolveVitalRecovery({
+      health: character.health,
+      stamina: character.resources.stamina,
+      mana: character.resources.mana,
+    }, character.staminaRecovery, projectedAt);
+  }
+
+  private rememberServerTime(serverTime: string | undefined): void {
+    this.serverClockOffsetMs = serverTime
+      ? Date.parse(serverTime) - Date.now()
+      : undefined;
   }
 
   async heartbeatWorldSession(): Promise<RoomPresenceProjection> {
@@ -1137,7 +1165,7 @@ export class MuddHttpClient {
   private async postCommand(command: unknown, traceId?: string): Promise<CommandResponse> {
     const commandType = command && typeof command === 'object' && 'type' in command &&
       typeof command.type === 'string' ? command.type : undefined;
-    return this.request('/api/commands', {
+    const response = await this.request('/api/commands', {
       method: 'POST',
       body: JSON.stringify(command),
       ...(this.options.commandProjection
@@ -1145,6 +1173,8 @@ export class MuddHttpClient {
         : {}),
     }, CommandResponseSchema,
     traceId ? { id: traceId, phase: 'command', commandType } : undefined);
+    this.rememberServerTime(response.gameProjection?.serverTime ?? response.movementProjection?.serverTime);
+    return response;
   }
 
   private async request<Schema extends z.ZodTypeAny>(

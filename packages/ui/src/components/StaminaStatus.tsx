@@ -23,10 +23,11 @@ export function StaminaStatus({
     <section className="mudd-stamina-status" aria-labelledby="mudd-stamina-title">
       <div className="mudd-stamina-status__heading">
         <h2 id="mudd-stamina-title">Stamina</h2>
-        <strong>{current} / {maximum}</strong>
+        <strong aria-live="off">{current} / {maximum}</strong>
       </div>
       <progress
         aria-label={`Stamina ${current} of ${maximum}`}
+        aria-live="off"
         max={maximum}
         value={current}
       />

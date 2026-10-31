@@ -6,7 +6,8 @@ import {
 } from '@mudd/engine-core';
 import {
   characterPlugin, combatPlugin, createClassRulesetPlugin, interactionPlugin,
-  teamCombatPlugin, teamCombatRosterPolicyCapability, worldItemsPlugin, interactionStreamId,
+  combatRoomPresenceCapability, teamCombatPlugin, teamCombatRosterPolicyCapability,
+  worldItemsPlugin, interactionStreamId,
 } from '@mudd/core-plugins';
 import { orravethClassCatalog, orravethWorld } from '@mudd/world-orraveth';
 
@@ -39,7 +40,7 @@ async function harness(options: { catalog?: typeof orravethClassCatalog; armor?:
   });
   const roster: EnginePlugin = {
     manifest: { id: 'fixture.roster', version: '1.0.0', apiVersion: '1.0', category: 'ruleset',
-      provides: [teamCombatRosterPolicyCapability.id] },
+      provides: [teamCombatRosterPolicyCapability.id, combatRoomPresenceCapability.id] },
     register({ provideCapability }) {
       provideCapability(teamCombatRosterPolicyCapability, {
         resolve: async (_context, characterId) => ({
@@ -47,6 +48,10 @@ async function harness(options: { catalog?: typeof orravethClassCatalog; armor?:
           players: [{ characterId, playerId: owners.get(characterId)! }],
         }),
         resolveIfPartyPresent: async () => undefined,
+      });
+      provideCapability(combatRoomPresenceCapability, {
+        listActiveCharacters: async () => [],
+        getPresenceAnchors: async () => new Map(),
       });
     },
   };

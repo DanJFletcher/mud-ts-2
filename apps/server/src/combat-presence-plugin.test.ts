@@ -1,12 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 
-const { listActiveRoomCharacters } = vi.hoisted(() => ({
+const { getCharacterPresenceAnchors, listActiveRoomCharacters } = vi.hoisted(() => ({
+  getCharacterPresenceAnchors: vi.fn(),
   listActiveRoomCharacters: vi.fn(),
 }));
 
-vi.mock('./room-presence-service.js', () => ({ listActiveRoomCharacters }));
+vi.mock('./room-presence-service.js', () => ({
+  getCharacterPresenceAnchors,
+  listActiveRoomCharacters,
+}));
 
-import { combatRoomPresenceCapability } from '@mudd/core-plugins';
+import {
+  combatRoomPresenceCapability,
+  type CombatRoomPresenceCapability,
+} from '@mudd/core-plugins';
 import { combatPresencePlugin } from './combat-presence-plugin.js';
 
 describe('combat room presence capability', () => {
@@ -15,7 +22,7 @@ describe('combat room presence capability', () => {
     const rows = [{ characterId: 'character-1', displayName: 'Traveler' }];
     listActiveRoomCharacters.mockResolvedValue(rows);
     let registered: unknown;
-    let implementation: { listActiveCharacters: (context: any, locationId: string) => Promise<unknown> } | undefined;
+    let implementation: CombatRoomPresenceCapability | undefined;
 
     combatPresencePlugin.register({
       provideCapability: (capability: unknown, value: typeof implementation) => {
@@ -31,5 +38,9 @@ describe('combat room presence capability', () => {
       worldInstanceId: 'world-1',
     }, 'market-square')).resolves.toBe(rows);
     expect(listActiveRoomCharacters).toHaveBeenCalledWith(store, 'world-1', 'market-square');
+    const anchors = new Map([['character-1', new Date('2026-10-23T12:00:00.000Z')]]);
+    getCharacterPresenceAnchors.mockResolvedValue(anchors);
+    await expect(implementation!.getPresenceAnchors('world-1', ['character-1'])).resolves.toBe(anchors);
+    expect(getCharacterPresenceAnchors).toHaveBeenCalledWith('world-1', ['character-1']);
   });
 });

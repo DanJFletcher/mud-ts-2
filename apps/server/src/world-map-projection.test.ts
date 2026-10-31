@@ -47,6 +47,7 @@ const testCombatPresencePlugin: EnginePlugin = {
   register({ provideCapability }) {
     provideCapability(combatRoomPresenceCapability, {
       listActiveCharacters: async () => [],
+      getPresenceAnchors: async () => new Map(),
     });
   },
 };
@@ -590,6 +591,7 @@ describe('Orraveth Bellwold road travel', () => {
     const testWorld = structuredClone(orravethWorld);
     for (const road of testWorld.roads ?? []) road.encounterChancePercent = 0;
     let simulatedNow = new Date('2026-10-23T12:00:00.000Z');
+    let presenceAnchorAt = simulatedNow;
     const session = {
       sessionId: 'orraveth-south-road-session',
       playerId: 'orraveth-south-road-player',
@@ -631,9 +633,12 @@ describe('Orraveth Bellwold road travel', () => {
       await ready;
       const body = JSON.parse(String(init.body ?? '{}')) as unknown;
       const path = String(input);
-      return Response.json(path.endsWith('/commands')
-        ? await engine.dispatch(body, session)
-        : await engine.query(body, session));
+      if (path.endsWith('/commands')) {
+        const result = await engine.dispatch(body, session, undefined, presenceAnchorAt);
+        presenceAnchorAt = new Date(simulatedNow);
+        return Response.json(result);
+      }
+      return Response.json(await engine.query(body, session));
     };
     const client = new MuddHttpClient({ worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID, fetcher });
 

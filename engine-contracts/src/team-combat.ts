@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { ClientCommandBaseSchema, ClientQueryBaseSchema, DomainEventBaseSchema } from './protocol.js';
-import { IdSchema } from './ids.js';
+import { IdSchema, IsoDateTimeSchema } from './ids.js';
 
 export const TeamCombatActionSchema = z.enum(['attack', 'defend', 'flee', 'use-item', 'ability']);
 
@@ -150,6 +150,8 @@ export const TeamCombatOutcomeEffectSchema = z.object({
   encounterId: IdSchema,
   locationId: IdSchema,
   result: z.enum(['victory', 'defeat', 'fled']),
+  actorCharacterId: IdSchema.optional(),
+  actorPresenceAnchorAt: IsoDateTimeSchema.optional(),
   roadTravel: TeamRoadTravelSnapshotSchema.optional(),
   players: z.array(z.object({
     characterId: IdSchema,

@@ -27,7 +27,7 @@ import {
   assertCharacterAlive,
   assertCharacterStanding,
   characterStateCapability,
-  staminaRecoveryEvent,
+  staminaRecoveryEventForCommand,
   type CharacterStateCapability,
 } from './character.js';
 import { prepareCharacterRespawn } from './respawn.js';
@@ -38,6 +38,10 @@ import {
   type TeamCombatRosterPolicy,
   type TeamRoadEncounterCapability,
 } from './team-combat-policy.js';
+import {
+  combatRoomPresenceCapability,
+  type CombatRoomPresenceCapability,
+} from './combat-presence.js';
 import { createWorldCorpseEffect } from './world-items.js';
 import { resolveCombatLoot } from './combat-loot.js';
 import { classAdoptionGuards, classCombatPolicyCapability, type ClassCombatPolicy } from './classes.js';
@@ -120,7 +124,14 @@ function findCombatNpc(
 async function applyOutcomes(
   payload: ReturnType<typeof TeamCombatOutcomeEffectSchema.parse>,
   context: EventEffectContext,
+  roomPresence: CombatRoomPresenceCapability,
 ) {
+  const presenceAnchors = payload.actorCharacterId
+    ? await roomPresence.getPresenceAnchors(
+      context.worldInstanceId,
+      payload.players.map((player) => player.characterId),
+    )
+    : new Map<string, Date>();
   for (const player of payload.players) {
     const history = await context.store.readStream(context.worldInstanceId, player.characterId);
     if (history.some((event) =>
@@ -133,7 +144,16 @@ async function applyOutcomes(
     if (character.locationId !== payload.locationId) {
       throw new Error('A team combat participant changed locations before encounter resolution.');
     }
-    const recoveryEvent = staminaRecoveryEvent(character, context.now());
+    const presenceAnchorAt = player.characterId === payload.actorCharacterId
+      ? payload.actorPresenceAnchorAt
+        ? new Date(payload.actorPresenceAnchorAt)
+        : undefined
+      : presenceAnchors.get(player.characterId);
+    const recoveryEvent = staminaRecoveryEventForCommand(
+      character,
+      context.now(),
+      presenceAnchorAt,
+    );
     const settledCharacter: CharacterProjection = {
       ...character,
       health: recoveryEvent.payload.health,
@@ -264,7 +284,11 @@ export const teamCombatPlugin: EnginePlugin = {
     apiVersion: '1.0',
     category: 'core',
     provides: [teamRoadEncounterCapability.id],
-    requires: [characterStateCapability.id, teamCombatRosterPolicyCapability.id],
+    requires: [
+      characterStateCapability.id,
+      teamCombatRosterPolicyCapability.id,
+      combatRoomPresenceCapability.id,
+    ],
     requiredPlugins: {
       'mudd.character': '^1.0.0',
       'mudd.combat': '^1.0.0',
@@ -281,6 +305,7 @@ export const teamCombatPlugin: EnginePlugin = {
   register({ registerCommand, registerQuery, registerEffect, requireCapability, provideCapability, optionalCapability }) {
     const characters = requireCapability<CharacterStateCapability>(characterStateCapability);
     const rosterPolicy = requireCapability<TeamCombatRosterPolicy>(teamCombatRosterPolicyCapability);
+    const roomPresence = requireCapability<CombatRoomPresenceCapability>(combatRoomPresenceCapability);
 
     const roadEncounterCapability: TeamRoadEncounterCapability = {
       async plan(
@@ -299,6 +324,10 @@ export const teamCombatPlugin: EnginePlugin = {
         const orderedPlayers = [...roster.players].sort((a, b) =>
           a.characterId === initiator.characterId ? -1 :
             b.characterId === initiator.characterId ? 1 : a.playerId.localeCompare(b.playerId),
+        );
+        const presenceAnchors = await roomPresence.getPresenceAnchors(
+          context.worldInstanceId,
+          orderedPlayers.map((player) => player.characterId),
         );
         if (
           !Number.isInteger(roster.maxPlayers) ||
@@ -329,7 +358,13 @@ export const teamCombatPlugin: EnginePlugin = {
           }
           assertCharacterAlive(projection);
           assertCharacterStanding(projection);
-          const recovery = staminaRecoveryEvent(projection, context.now());
+          const recovery = staminaRecoveryEventForCommand(
+            projection,
+            context.now(),
+            player.characterId === initiator.characterId
+              ? context.presenceAnchorAt
+              : presenceAnchors.get(player.characterId),
+          );
           const recoveredCharacter: CharacterProjection = {
             ...projection,
             resources: recovery.payload.resources,
@@ -420,7 +455,11 @@ export const teamCombatPlugin: EnginePlugin = {
       if (!loadedCharacter || loadedCharacter.archived) throw new RuleViolationError('That character is no longer available.');
       assertCharacterAlive(loadedCharacter);
       assertCharacterStanding(loadedCharacter);
-      const recoveryEvent = staminaRecoveryEvent(loadedCharacter, context.now());
+      const recoveryEvent = staminaRecoveryEventForCommand(
+        loadedCharacter,
+        context.now(),
+        context.presenceAnchorAt,
+      );
       const character: CharacterProjection = {
         ...loadedCharacter,
         resources: recoveryEvent.payload.resources,
@@ -545,7 +584,11 @@ export const teamCombatPlugin: EnginePlugin = {
       if (!loadedCharacter || loadedCharacter.archived) throw new RuleViolationError('That character is no longer available.');
       assertCharacterAlive(loadedCharacter);
       assertCharacterStanding(loadedCharacter);
-      const recoveryEvent = staminaRecoveryEvent(loadedCharacter, context.now());
+      const recoveryEvent = staminaRecoveryEventForCommand(
+        loadedCharacter,
+        context.now(),
+        context.presenceAnchorAt,
+      );
       const character: CharacterProjection = {
         ...loadedCharacter,
         health: recoveryEvent.payload.health,
@@ -760,6 +803,10 @@ export const teamCombatPlugin: EnginePlugin = {
             encounterId: encounter.encounterId,
             locationId: encounter.locationId,
             result,
+            actorCharacterId: character.characterId,
+            ...(context.presenceAnchorAt
+              ? { actorPresenceAnchorAt: context.presenceAnchorAt.toISOString() }
+              : {}),
             ...(state.roadTravelByEncounter.get(encounter.encounterId)
               ? { roadTravel: state.roadTravelByEncounter.get(encounter.encounterId)! }
               : {}),
@@ -849,8 +896,7 @@ export const teamCombatPlugin: EnginePlugin = {
       'team-combat.apply-outcomes',
       1,
       TeamCombatOutcomeEffectSchema,
-      applyOutcomes,
+      (payload, context) => applyOutcomes(payload, context, roomPresence),
     );
   },
 };
-

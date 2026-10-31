@@ -59,6 +59,11 @@ const testCombatPresencePlugin: EnginePlugin = {
   register({ provideCapability }) {
     provideCapability(combatRoomPresenceCapability, {
       listActiveCharacters: async () => activeTestRoomCharacters,
+      getPresenceAnchors: async (_worldInstanceId, characterIds) =>
+        new Map(characterIds.map((characterId) => [
+          characterId,
+          new Date('2026-10-17T12:00:00.000Z'),
+        ])),
     });
   },
 };
@@ -262,6 +267,7 @@ describe('MUDD engine host', () => {
   });
 
   it('keeps system commands out of player dispatch and deduplicates trusted retries', async () => {
+    const presenceAnchorAt = new Date('2026-10-23T12:00:00.000Z');
     const handler = vi.fn(async (_command, context) => ({
       streamId: 'world-system-stream',
       expectedVersion: 0,
@@ -269,6 +275,15 @@ describe('MUDD engine host', () => {
         type: 'test.system-event',
         version: 1,
         payload: { actorId: context.session.actorId, permissions: context.session.grantedPermissions },
+      }],
+    }));
+    const handlerV2 = vi.fn(async (_command, context) => ({
+      streamId: 'world-system-stream-v2',
+      expectedVersion: 0,
+      events: [{
+        type: 'test.system-event-v2',
+        version: 1,
+        payload: { presenceAnchorAt: context.presenceAnchorAt?.toISOString() },
       }],
     }));
     const plugin: EnginePlugin = {
@@ -285,6 +300,12 @@ describe('MUDD engine host', () => {
           commandId: z.string(),
           worldInstanceId: z.string(),
         }), handler);
+        registerSystemCommand('test.system-command', z.object({
+          type: z.literal('test.system-command'),
+          version: z.literal(2),
+          commandId: z.string(),
+          worldInstanceId: z.string(),
+        }), handlerV2, 2);
       },
     };
     const engine = new EngineHost(
@@ -321,6 +342,16 @@ describe('MUDD engine host', () => {
     });
     expect(retry.commitOutcome).toBe('duplicate');
     expect(handler).toHaveBeenCalledTimes(1);
+    const v2Result = await engine.dispatchSystem({
+      ...command,
+      version: 2,
+      commandId: 'system-command-v2',
+    }, 'trusted-actor', undefined, presenceAnchorAt);
+    expect(v2Result.receipt.ok).toBe(true);
+    expect(v2Result.events[0]?.payload).toEqual({
+      presenceAnchorAt: presenceAnchorAt.toISOString(),
+    });
+    expect(handlerV2).toHaveBeenCalledTimes(1);
     await engine.stop();
   });
 
