@@ -3817,15 +3817,21 @@ describe('single-character world session client', () => {
       expect(screen.queryByRole('button', { name: 'Open terminal full screen' })).not.toBeInTheDocument();
       expect(commandSection).toHaveClass('focused-command--mobile-hidden');
       expect(typeButton).not.toBeNull();
+      expect(screen.getByRole('navigation', { name: 'Quick navigation' })).toBeVisible();
+      expect(screen.getByRole('group', { name: 'Quick commands, page 1' })).toBeVisible();
 
       fireEvent.click(typeButton!);
       expect(commandSection).toHaveClass('focused-command--mobile-open');
       const commandInput = screen.getByRole('textbox', { name: 'Enter a command' });
       expect(commandInput).toHaveFocus();
+      expect(screen.queryByRole('navigation', { name: 'Quick navigation' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('group', { name: 'Quick commands, page 1' })).not.toBeInTheDocument();
 
       fireEvent.click(typeButton!);
       expect(commandSection).toHaveClass('focused-command--mobile-hidden');
       expect(commandInput).not.toHaveFocus();
+      expect(screen.getByRole('navigation', { name: 'Quick navigation' })).toBeVisible();
+      expect(screen.getByRole('group', { name: 'Quick commands, page 1' })).toBeVisible();
 
       fireTouchSwipe(roomHeading, { x: 150, y: 40 }, { x: 152, y: 150 });
       expect(screen.queryByRole('dialog', { name: 'Terminal' })).not.toBeInTheDocument();

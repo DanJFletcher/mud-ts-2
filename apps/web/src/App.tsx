@@ -4631,7 +4631,7 @@ export function WorldClient({
                       </button>
                     </section>
                   )}
-                  {!isAnyCombatActive && !visiblePvp && (
+                  {!mobileCommandInputOpen && !isAnyCombatActive && !visiblePvp && (
                     <NavigationControls
                       exits={exits}
                       onMove={(exitId) => void move(exitId)}
@@ -4642,7 +4642,7 @@ export function WorldClient({
                       disabled={!snapshot.character || pending !== null || snapshot.character.staminaRecovery.posture === "resting"}
                     />
                   )}
-                  {!isAnyCombatActive && !visiblePvp && <section className="focused-quick-commands" aria-label="Quick commands">
+                  {!mobileCommandInputOpen && !isAnyCombatActive && !visiblePvp && <section className="focused-quick-commands" aria-label="Quick commands">
                     {quickCommandMode !== "quick" && (
                       <span className="focused-quick-commands__label" aria-hidden="true">
                         {quickCommandMode === "choose-exit" ? "Choose destination"
