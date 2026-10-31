@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { AppendRequest } from '@mudd/engine-core';
@@ -173,7 +173,13 @@ function historySelect(rows: Array<Parameters<typeof toStoredGameEvent>[0]>) {
 
 describe('PostgresEventStore unit behavior', () => {
   beforeEach(() => {
+    // These mocks exercise the transaction path; the dedicated tests below
+    // opt into the single-call path explicitly.
+    vi.stubEnv('MUDD_SINGLE_CALL_APPEND', '0');
     vi.clearAllMocks();
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it('maps persisted event rows to ordered domain-event envelopes', () => {

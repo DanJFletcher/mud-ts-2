@@ -783,19 +783,24 @@ describe('turn-based PvE combat', () => {
     const characterId = created.streamId!;
     let character = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
     let action = 0;
+    let victoryResult: Awaited<ReturnType<EngineHost['dispatch']>>;
     do {
-      await client.performCombatAction(
+      victoryResult = await engine.dispatch({
+        type: 'combat.action',
+        version: 1,
+        commandId: `combat-corpse-action-${++action}`,
+        worldInstanceId: DEMO_WORLD_INSTANCE_ID,
         characterId,
-        'attack',
-        character.revision,
-        character.combat?.status === 'active'
-          ? { encounterId: character.combat.encounterId }
-          : { targetNpcId: 'mossgate-training-sentinel' },
-        `combat-corpse-action-${++action}`,
-      );
+        expectedVersion: character.revision,
+        payload: character.combat?.status === 'active'
+          ? { action: 'attack', encounterId: character.combat.encounterId }
+          : { action: 'attack', targetNpcId: 'mossgate-training-sentinel' },
+      }, session);
+      expect(victoryResult.receipt.ok).toBe(true);
       character = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
     } while (character.combat?.status !== 'victory');
-    await engine.processPendingEffects();
+    expect(victoryResult.completingEffects).toBe(1);
+    expect(await engine.settleCommandEffects(session, victoryResult)).toBe(true);
 
     const room = await client.look(characterId, 'combat-corpse-look');
     const corpse = room.objects.find((object) => object.containerKind === 'corpse');

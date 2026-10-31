@@ -1893,7 +1893,7 @@ describe('single-character world session client', () => {
       });
       expect(gameSnapshotRequests()).toBe(requestsBeforeAttack);
 
-      fireEvent.click(screen.getByRole('button', { name: 'loot' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Show corpses to loot' }));
       expect(await screen.findByRole('button', { name: /Practice Sentinel’s corpse/i })).toBeVisible();
     });
   });
