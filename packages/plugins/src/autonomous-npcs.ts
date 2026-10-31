@@ -133,6 +133,42 @@ export function projectAutonomousNpcPosition(
   return position;
 }
 
+/**
+ * Position from the stream's latest event alone. Every NPC event records the
+ * complete resulting position (route NPCs record their route index on moves and
+ * waits alike), so this matches a full replay without growing with history.
+ * Returns undefined for an event it can't interpret, so callers fall back to a
+ * full replay.
+ */
+export function projectAutonomousNpcPositionFromHead(
+  head: StoredGameEvent | undefined,
+  npcId: string,
+  initialLocationId: string,
+): AutonomousNpcPosition | undefined {
+  if (!head) return { npcId, locationId: initialLocationId, revision: 0 };
+  let payload: { npcId: string; attemptedAt: string; routeIndex?: number | undefined };
+  let locationId: string;
+  if (head.type === 'world.npc.moved' && head.version === 1) {
+    const moved = WorldNpcMovedEventSchema.parse({ type: head.type, version: head.version, payload: head.payload }).payload;
+    payload = moved;
+    locationId = moved.toLocationId;
+  } else if (head.type === 'world.npc.movement_waited' && head.version === 1) {
+    const waited = WorldNpcMovementWaitedEventSchema.parse({ type: head.type, version: head.version, payload: head.payload }).payload;
+    payload = waited;
+    locationId = waited.locationId;
+  } else {
+    return undefined;
+  }
+  if (payload.npcId !== npcId) throw new Error(`NPC ${npcId} movement history is inconsistent.`);
+  return {
+    npcId,
+    locationId,
+    revision: head.aggregateVersion,
+    lastAttemptAt: payload.attemptedAt,
+    ...(payload.routeIndex === undefined ? {} : { routeIndex: payload.routeIndex }),
+  };
+}
+
 export const autonomousNpcsPlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.autonomous-npcs',
@@ -175,6 +211,14 @@ export const autonomousNpcsPlugin: EnginePlugin = {
       return position;
     };
 
+    const replayedPosition = async (context: NpcLocationContext, npcId: string, initialLocationId: string) => {
+      const events = await context.store.readStream(
+        context.worldInstanceId,
+        autonomousNpcStreamId(npcId),
+      );
+      return projectPosition(context.worldInstanceId, npcId, initialLocationId, events);
+    };
+
     const atLocations = async (
       context: NpcLocationContext,
       locationIds: readonly string[],
@@ -193,6 +237,14 @@ export const autonomousNpcsPlugin: EnginePlugin = {
       let positions: AutonomousNpcPosition[];
       if (!movingDefinitions.length) {
         positions = [];
+      } else if (context.store.readStreamHeads) {
+        const heads = await context.store.readStreamHeads(
+          context.worldInstanceId,
+          movingDefinitions.map(({ npc }) => autonomousNpcStreamId(npc.id)),
+        );
+        positions = await Promise.all(movingDefinitions.map(({ npc, initialLocationId }) =>
+          projectAutonomousNpcPositionFromHead(heads.get(autonomousNpcStreamId(npc.id)), npc.id, initialLocationId)
+            ?? replayedPosition(context, npc.id, initialLocationId)));
       } else if (context.store.readStreams) {
         const histories = await context.store.readStreams(
           context.worldInstanceId,
@@ -221,11 +273,13 @@ export const autonomousNpcsPlugin: EnginePlugin = {
 
     const state: AutonomousNpcStateCapability = {
       async position(context, npcId, initialLocationId) {
-        const events = await context.store.readStream(
-          context.worldInstanceId,
-          autonomousNpcStreamId(npcId),
-        );
-        return projectPosition(context.worldInstanceId, npcId, initialLocationId, events);
+        if (context.store.readStreamHeads) {
+          const streamId = autonomousNpcStreamId(npcId);
+          const heads = await context.store.readStreamHeads(context.worldInstanceId, [streamId]);
+          const position = projectAutonomousNpcPositionFromHead(heads.get(streamId), npcId, initialLocationId);
+          if (position) return position;
+        }
+        return replayedPosition(context, npcId, initialLocationId);
       },
       atLocations,
       async atLocation(context, locationId) {

@@ -6,6 +6,7 @@ import {
   effectiveAutonomousNpcMovementIntervalMs,
   mobileNpcDefinitions,
   projectAutonomousNpcPosition,
+  projectAutonomousNpcPositionFromHead,
   type AutonomousNpcStateCapability,
 } from './autonomous-npcs.js';
 
@@ -93,6 +94,72 @@ function wanderingWorld(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+describe('autonomous NPC head projection', () => {
+  const history = [
+    event('world.npc.moved', {
+      npcId: 'walker', fromLocationId: 'room-a', toLocationId: 'room-b', exitId: 'a-to-b',
+      direction: 'east', attemptedAt, routeIndex: 1,
+    }, 1),
+    event('world.npc.movement_waited', { npcId: 'walker', locationId: 'room-b', attemptedAt, routeIndex: 1 }, 2),
+    event('world.npc.moved', {
+      npcId: 'walker', fromLocationId: 'room-b', toLocationId: 'room-a', exitId: 'b-to-a',
+      direction: 'west', attemptedAt: '2026-10-27T12:01:00.000Z', routeIndex: 0,
+    }, 3),
+    event('world.npc.movement_waited', {
+      npcId: 'walker', locationId: 'room-a', attemptedAt: '2026-10-27T12:02:00.000Z', routeIndex: 0,
+    }, 4),
+  ];
+
+  it('matches a full replay after every event without reading earlier history', () => {
+    expect(projectAutonomousNpcPositionFromHead(undefined, 'walker', 'room-a'))
+      .toEqual(projectAutonomousNpcPosition([], 'walker', 'room-a'));
+    for (let length = 1; length <= history.length; length += 1) {
+      const prefix = history.slice(0, length);
+      expect(projectAutonomousNpcPositionFromHead(prefix.at(-1), 'walker', 'room-a'))
+        .toEqual(projectAutonomousNpcPosition(prefix, 'walker', 'room-a'));
+    }
+  });
+
+  it('defers to a full replay for events it cannot interpret and rejects another NPC', () => {
+    expect(projectAutonomousNpcPositionFromHead(event('world.npc.future', { npcId: 'walker' }), 'walker', 'room-a'))
+      .toBeUndefined();
+    expect(() => projectAutonomousNpcPositionFromHead(
+      event('world.npc.movement_waited', { npcId: 'someone-else', locationId: 'room-a', attemptedAt }),
+      'walker',
+      'room-a',
+    )).toThrow('movement history is inconsistent');
+  });
+
+  it('reads one head per mobile NPC instead of histories when the store supports it', async () => {
+    const readStreamHeads = vi.fn(async () => new Map([[autonomousNpcStreamId('walker'), history[2]!]]));
+    const readStream = vi.fn();
+    const readStreams = vi.fn();
+    const capability = captureNpcStateCapability();
+    const context = {
+      worldInstanceId,
+      world: wanderingWorld(),
+      store: { readStreamHeads, readStream, readStreams },
+    } as never;
+
+    const projected = await capability.atLocations(context, ['room-a', 'room-b']);
+    expect(projected.get('room-a')?.map(({ id }) => id)).toEqual(['walker']);
+    expect(await capability.position(context, 'walker', 'room-a')).toMatchObject({ locationId: 'room-a', revision: 3 });
+    expect(readStreamHeads).toHaveBeenCalledTimes(2);
+    expect(readStream).not.toHaveBeenCalled();
+    expect(readStreams).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the full history when the head is not an NPC position event', async () => {
+    const readStreamHeads = vi.fn(async () => new Map([[autonomousNpcStreamId('walker'), event('world.npc.future', {})]]));
+    const readStream = vi.fn(async () => history.slice(0, 1));
+    const capability = captureNpcStateCapability();
+    const context = { worldInstanceId: 'npc-fallback-test', world: wanderingWorld(), store: { readStreamHeads, readStream } } as never;
+
+    expect(await capability.position(context, 'walker', 'room-a')).toMatchObject({ locationId: 'room-b', revision: 1 });
+    expect(readStream).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('autonomous NPC position projection cache', () => {
   it('projects several rooms from one batched movement-history read', async () => {

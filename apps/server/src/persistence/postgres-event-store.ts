@@ -430,6 +430,23 @@ export class PostgresEventStore implements EventStorePort {
     return result;
   }
 
+  async readStreamHeads(
+    worldInstanceId: string,
+    streamIds: readonly string[],
+  ): Promise<ReadonlyMap<string, StoredGameEvent>> {
+    const uniqueStreamIds = [...new Set(streamIds)];
+    if (uniqueStreamIds.length === 0) return new Map();
+    // One index-ordered row per stream, so the cost doesn't grow with history.
+    const rows = await measureDatabaseOperation('event_store.stream_heads_read', () =>
+      db.selectDistinctOn([gameEvents.streamId]).from(gameEvents)
+        .where(and(
+          eq(gameEvents.worldInstanceId, worldInstanceId),
+          inArray(gameEvents.streamId, uniqueStreamIds),
+        ))
+        .orderBy(asc(gameEvents.streamId), desc(gameEvents.streamVersion)));
+    return new Map(rows.map((row) => [row.streamId, toStoredGameEvent(row)]));
+  }
+
   private touchCachedStream(key: string) {
     const cached = this.streamCache.get(key);
     if (cached) {

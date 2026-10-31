@@ -5,7 +5,9 @@ import type { WorldPackDraft } from '@mudd/contracts';
 import {
   autonomousNpcsPlugin,
   autonomousNpcStreamId,
+  mobileNpcDefinitions,
   projectAutonomousNpcPosition,
+  projectAutonomousNpcPositionFromHead,
 } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID, demoWorld } from '@mudd/world-demo';
 import { ORRAVETH_WORLD_INSTANCE_ID, orravethWorld } from '@mudd/world-orraveth';
@@ -265,6 +267,7 @@ describe('autonomous NPC scheduler and room movement messages', () => {
     );
     await engine.start();
     const readStream = vi.spyOn(store, 'readStream');
+    const readStreamHeads = vi.spyOn(store, 'readStreamHeads');
     const scheduler = createAutonomousNpcScheduler({
       engine,
       store,
@@ -275,14 +278,55 @@ describe('autonomous NPC scheduler and room movement messages', () => {
 
     expect(await scheduler.tick()).toBe(2);
     readStream.mockClear();
+    readStreamHeads.mockClear();
     for (let second = 1; second < 60; second += 1) {
       now = new Date(Date.parse('2026-10-21T12:00:00.000Z') + second * 1_000);
       expect(await scheduler.tick()).toBe(0);
     }
     expect(readStream).not.toHaveBeenCalled();
+    expect(readStreamHeads).not.toHaveBeenCalled();
 
     now = new Date('2026-10-21T12:01:00.000Z');
     expect(await scheduler.tick()).toBe(2);
+    await engine.stop();
+  });
+
+  it('derives the same position from each latest event as from a full replay', async () => {
+    let now = new Date('2026-10-21T12:00:00.000Z');
+    let roll = 0;
+    const store = new InMemoryEventStore();
+    const engine = new EngineHost(
+      [autonomousNpcsPlugin],
+      store,
+      authorization,
+      demoWorld,
+      () => globalThis.crypto.randomUUID(),
+      () => now,
+      // Vary rolls so wanderers both move and wait.
+      { roll: (sides) => (roll++ % sides) + 1 },
+    );
+    await engine.start();
+    const scheduler = createAutonomousNpcScheduler({
+      engine,
+      store,
+      world: demoWorld,
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      now: () => now,
+    });
+    for (let minute = 0; minute < 60; minute += 1) {
+      await scheduler.tick();
+      now = new Date(now.getTime() + 60_000);
+    }
+
+    for (const { npc, initialLocationId } of mobileNpcDefinitions(demoWorld)) {
+      const events = await store.readStream(DEMO_WORLD_INSTANCE_ID, autonomousNpcStreamId(npc.id));
+      expect(events.length).toBeGreaterThan(30);
+      expect(new Set(events.map(({ type }) => type))).toContain('world.npc.moved');
+      for (let length = 1; length <= events.length; length += 1) {
+        expect(projectAutonomousNpcPositionFromHead(events[length - 1], npc.id, initialLocationId))
+          .toEqual(projectAutonomousNpcPosition(events.slice(0, length), npc.id, initialLocationId));
+      }
+    }
     await engine.stop();
   });
 

@@ -87,6 +87,14 @@ export interface EventStorePort {
     worldInstanceId: string,
     streamIds: readonly string[],
   ): Promise<ReadonlyMap<string, readonly StoredGameEvent[]>>;
+  /**
+   * Read only each stream's latest event, for projections that depend on nothing
+   * earlier. Streams without events are absent from the result.
+   */
+  readStreamHeads?(
+    worldInstanceId: string,
+    streamIds: readonly string[],
+  ): Promise<ReadonlyMap<string, StoredGameEvent>>;
   /** Read only the authoritative head revision when callers don't need history payloads. */
   readStreamRevision?(worldInstanceId: string, streamId: string): Promise<number>;
   lookupCommand(
