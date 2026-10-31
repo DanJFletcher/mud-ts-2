@@ -232,8 +232,12 @@ describe('visited world map projection', () => {
     });
   });
 
-  it('shows the full Bellwold river and bridge on the map before they are visited', () => {
+  it('shows the full Lower Rill, its bridge and Rillford’s ferry stage on the map before they are visited', () => {
     const riverLocationIds = [
+      'lower-rill-west-of-rillford',
+      'rillford-crossing',
+      'lower-rill-towpath-reach',
+      'lower-rill-reed-reach',
       'bellwold-river-far-west-reach',
       'bellwold-river-willow-reach',
       'bellwold-river-west-reach',
@@ -250,8 +254,8 @@ describe('visited world map projection', () => {
       revision: 1,
     }), orravethWorld);
 
-    expect(map.locations.filter(({ id }) => riverLocationIds.includes(id))).toHaveLength(6);
-    expect(map.locations.filter(({ terrain }) => terrain === 'river')).toHaveLength(6);
+    expect(map.locations.filter(({ id }) => riverLocationIds.includes(id))).toHaveLength(10);
+    expect(map.locations.filter(({ terrain }) => terrain === 'river')).toHaveLength(10);
     expect(map.locations.find(({ id }) => id === 'bellwold-river-bridge'))
       .toMatchObject({ x: 0, y: -7, terrain: 'land' });
     expect(map.connections.some((connection) =>
