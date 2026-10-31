@@ -15,6 +15,7 @@ import {
   CharacterNpcDialogueRestartedEventSchema,
   QuestAcceptedEventSchema,
   QuestCompletedEventSchema,
+  QuestChoiceSelectedEventSchema,
   CharacterQuestRewardedEventSchema,
   CharacterProjectionSchema,
   CharacterCreatedEventSchema,
@@ -1270,7 +1271,35 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
           questId: accepted.payload.questId,
           definitionVersion: accepted.payload.definitionVersion,
           status: 'active',
+          ...(accepted.payload.branchId ? { branchId: accepted.payload.branchId, choiceIds: [] } : {}),
         }],
+        revision: event.aggregateVersion,
+      });
+    } else if (event.type === 'quest.choice_selected') {
+      if (!state) throw new Error('Quest choice event encountered before character creation.');
+      const selected = QuestChoiceSelectedEventSchema.parse(publicEvent);
+      const progress = state.questProgress.find((entry) => entry.questId === selected.payload.questId);
+      // The stream is the authority: a stale source branch or a repeated choice can never be replayed.
+      if (
+        selected.payload.characterId !== state.characterId ||
+        !progress ||
+        progress.status !== 'active' ||
+        progress.definitionVersion !== selected.payload.definitionVersion ||
+        !progress.branchId ||
+        progress.branchId !== selected.payload.fromBranchId ||
+        (progress.choiceIds ?? []).includes(selected.payload.choiceId)
+      ) {
+        throw new Error(`Invalid quest choice event at revision ${event.aggregateVersion}.`);
+      }
+      state = CharacterProjectionSchema.parse({
+        ...state,
+        questProgress: state.questProgress.map((entry) => entry.questId === selected.payload.questId
+          ? {
+            ...entry,
+            branchId: selected.payload.toBranchId,
+            choiceIds: [...(entry.choiceIds ?? []), selected.payload.choiceId],
+          }
+          : entry),
         revision: event.aggregateVersion,
       });
     } else if (event.type === 'quest.completed') {
@@ -1281,14 +1310,19 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
         completed.payload.characterId !== state.characterId ||
         !progress ||
         progress.status !== 'active' ||
-        progress.definitionVersion !== completed.payload.definitionVersion
+        progress.definitionVersion !== completed.payload.definitionVersion ||
+        Boolean(progress.branchId) !== Boolean(completed.payload.outcomeId)
       ) {
         throw new Error(`Invalid quest completion event at revision ${event.aggregateVersion}.`);
       }
       state = CharacterProjectionSchema.parse({
         ...state,
         questProgress: state.questProgress.map((entry) => entry.questId === completed.payload.questId
-          ? { ...entry, status: 'completed' }
+          ? {
+            ...entry,
+            status: 'completed',
+            ...(completed.payload.outcomeId ? { outcomeId: completed.payload.outcomeId } : {}),
+          }
           : entry),
         revision: event.aggregateVersion,
       });

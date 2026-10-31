@@ -16,6 +16,7 @@ import {
   movementPlugin,
   roadTravelPlugin,
   npcDialoguePlugin,
+  questBranchesPlugin,
   partyPlugin,
   partyQuestPlugin,
   partyCombatPolicyPlugin,
@@ -101,6 +102,8 @@ export function createWorldRuntimes(
       teamCombatPlugin,
       movementPlugin,
       roadTravelPlugin,
+      // Provides shared quest outcomes to dialogue, so it registers first.
+      questBranchesPlugin,
       npcDialoguePlugin,
       merchantPlugin,
       dailyJobsPlugin,

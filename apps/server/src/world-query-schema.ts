@@ -9,6 +9,7 @@ import {
   PartyInfoQuerySchema,
   PartyListQuerySchema,
   PartyQuestJournalQuerySchema,
+  QuestJournalQuerySchema,
   TeamCombatInfoQuerySchema,
 } from '@mudd/contracts';
 import { z } from 'zod';
@@ -22,6 +23,7 @@ export const WorldQuerySchema = z.discriminatedUnion('type', [
   PartyListQuerySchema,
   PartyInfoQuerySchema,
   PartyQuestJournalQuerySchema,
+  QuestJournalQuerySchema,
   TeamCombatInfoQuerySchema,
   LocationGroupsListQuerySchema,
   DailyBoardQuerySchema,

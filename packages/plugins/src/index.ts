@@ -26,6 +26,14 @@ export { movementPolicyCapability } from './movement.js';
 export type { MovementPolicyCapability } from './movement.js';
 export { roadTravelPlugin } from './road-travel.js';
 export { npcDialoguePlugin } from './npc-dialogue.js';
+export {
+  planQuestChoice,
+  projectQuestWorldOutcomes,
+  questBranchesPlugin,
+  questWorldOutcomesCapability,
+  QUEST_WORLD_OUTCOMES_STREAM_ID,
+} from './quest-branches.js';
+export type { QuestWorldOutcomesCapability, QuestWorldOutcomesState } from './quest-branches.js';
 export { merchantPlugin } from './merchant.js';
 export { combatPlugin } from './combat.js';
 export { interactionPlugin, projectCharacterInteractions } from './interactions.js';

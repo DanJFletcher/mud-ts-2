@@ -269,6 +269,9 @@ export const NpcQuestResponseDefinitionSchema = z.object({
   status: z.enum(['active', 'completed']),
   requiresCompletedObjectiveIds: z.array(IdSchema).max(12).default([]),
   requiresIncompleteObjectiveIds: z.array(IdSchema).max(12).default([]),
+  /** Branching quests: match only on this current branch or terminal outcome. */
+  branchId: IdSchema.optional(),
+  outcomeId: IdSchema.optional(),
   response: z.string().min(1).max(2000),
 }).strict().superRefine((questResponse, context) => {
   const completedIds = new Set(questResponse.requiresCompletedObjectiveIds);
@@ -324,6 +327,8 @@ export const NpcQuestStateConditionSchema = z.object({
   status: z.enum(['active', 'completed']).optional(),
   requiresCompletedObjectiveIds: z.array(IdSchema).max(12).default([]),
   requiresIncompleteObjectiveIds: z.array(IdSchema).max(12).default([]),
+  branchId: IdSchema.optional(),
+  outcomeId: IdSchema.optional(),
 }).strict().superRefine((condition, context) => {
   const completedIds = new Set(condition.requiresCompletedObjectiveIds);
   for (const objectiveId of condition.requiresIncompleteObjectiveIds) {
@@ -1163,6 +1168,8 @@ export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
 
   const quests = pack.quests ?? [];
   const questIds = new Set<string>();
+  // A shared world outcome key belongs to exactly one quest, so unrelated quests cannot overwrite it.
+  const worldOutcomeOwners = new Map<string, string>();
   const npcs = pack.locations.flatMap((location) =>
     (location.npcs ?? []).map((npc) => ({ npc, locationId: location.id })),
   );
@@ -1213,7 +1220,56 @@ export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
         }
       }
     }
+    for (const choice of quest.branching?.branches.flatMap((branch) => branch.choices) ?? []) {
+      if (!npcs.some(({ npc }) => npc.id === choice.npcId)) {
+        errors.push(`Quest ${quest.id} choice ${choice.id} is offered by missing NPC ${choice.npcId}`);
+      }
+      if (choice.worldOutcome) {
+        const owner = worldOutcomeOwners.get(choice.worldOutcome.key);
+        if (owner && owner !== quest.id) {
+          errors.push(`Quest ${quest.id} choice ${choice.id} sets world outcome ${choice.worldOutcome.key} owned by quest ${owner}`);
+        }
+        worldOutcomeOwners.set(choice.worldOutcome.key, quest.id);
+      }
+      for (const requirement of choice.requires) {
+        if (requirement.type === 'visited-location' && !ids.has(requirement.locationId)) {
+          errors.push(`Quest ${quest.id} choice ${choice.id} requires missing location ${requirement.locationId}`);
+        } else if (requirement.type === 'possess-item' && !allTakeables.some((item) => item.id === requirement.itemId)) {
+          errors.push(`Quest ${quest.id} choice ${choice.id} requires missing item ${requirement.itemId}`);
+        } else if (requirement.type === 'quest-completed') {
+          const required = quests.find((candidate) => candidate.id === requirement.questId);
+          if (!required || required.id === quest.id || required.scope === 'party') {
+            errors.push(`Quest ${quest.id} choice ${choice.id} requires unavailable quest ${requirement.questId}`);
+          }
+        }
+      }
+    }
   }
+  for (const quest of quests) {
+    for (const choice of quest.branching?.branches.flatMap((branch) => branch.choices) ?? []) {
+      for (const requirement of choice.requires) {
+        if (requirement.type !== 'world-outcome') continue;
+        const declared = quests.some((candidate) => candidate.branching?.branches.some((branch) =>
+          branch.choices.some((other) =>
+            other.worldOutcome?.key === requirement.key && other.worldOutcome.value === requirement.value)));
+        if (!declared) {
+          errors.push(`Quest ${quest.id} choice ${choice.id} requires undeclared world outcome ${requirement.key}=${requirement.value}`);
+        }
+      }
+    }
+  }
+  const questStateReferenceErrors = (
+    owner: string,
+    quest: (typeof quests)[number],
+    condition: { branchId?: string | undefined; outcomeId?: string | undefined },
+  ) => {
+    if (condition.branchId && !quest.branching?.branches.some((branch) => branch.id === condition.branchId)) {
+      errors.push(`${owner} references missing branch ${condition.branchId} in quest ${quest.id}`);
+    }
+    if (condition.outcomeId && !quest.branching?.outcomes.some((outcome) => outcome.id === condition.outcomeId)) {
+      errors.push(`${owner} references missing outcome ${condition.outcomeId} in quest ${quest.id}`);
+    }
+  };
   for (const { npc } of npcs) {
     const dailyJobResponses = [
       ...(npc.dailyJobResponses ?? []),
@@ -1237,6 +1293,7 @@ export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
         errors.push(`NPC ${npc.id} dialogue response references missing quest ${questResponse.questId}`);
         continue;
       }
+      questStateReferenceErrors(`NPC ${npc.id} dialogue response`, quest, questResponse);
       for (const objectiveId of [
         ...questResponse.requiresCompletedObjectiveIds,
         ...questResponse.requiresIncompleteObjectiveIds,
@@ -1254,6 +1311,7 @@ export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
         if (!quest) {
           errors.push(`Dialogue choice ${choice.id} references missing quest ${choice.questCondition.questId}`);
         } else {
+          questStateReferenceErrors(`Dialogue choice ${choice.id}`, quest, choice.questCondition);
           for (const objectiveId of [
             ...choice.questCondition.requiresCompletedObjectiveIds,
             ...choice.questCondition.requiresIncompleteObjectiveIds,
@@ -1270,6 +1328,15 @@ export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
       const quest = quests.find((candidate) => candidate.id === choice.questAction?.questId);
       if (!quest) {
         errors.push(`Dialogue choice ${choice.id} references missing quest ${choice.questAction.questId}`);
+      } else if (choice.questAction.type === 'choose') {
+        const questChoiceId = choice.questAction.choiceId;
+        const questChoice = quest.branching?.branches.flatMap((branch) => branch.choices)
+          .find((candidate) => candidate.id === questChoiceId);
+        if (!questChoice) {
+          errors.push(`Dialogue choice ${choice.id} references missing quest choice ${questChoiceId} in quest ${quest.id}`);
+        } else if (questChoice.npcId !== npc.id) {
+          errors.push(`Dialogue choice ${choice.id} offers quest choice ${questChoiceId} from the wrong NPC`);
+        }
       } else if (
         (choice.questAction.type === 'accept' && quest.giverNpcId !== npc.id) ||
         (choice.questAction.type === 'turn-in' && quest.turnInNpcId !== npc.id)

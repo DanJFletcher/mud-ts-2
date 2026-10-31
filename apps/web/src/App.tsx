@@ -5620,6 +5620,38 @@ export function WorldClient({
                                         </li>
                                       ))}
                                     </ol>
+                                    {quest.branch ? (
+                                      <div className="focused-quest-branch">
+                                        <p className="focused-quest-summary">
+                                          <strong>{quest.outcome ? "Outcome: " : "Current path: "}</strong>
+                                          {quest.outcome ? quest.outcome.label : quest.branch.label}
+                                        </p>
+                                        {quest.outcome ? <p className="focused-quest-summary">{quest.outcome.summary}</p> : null}
+                                        {quest.decisions?.length ? (
+                                          <p className="focused-quest-summary">
+                                            <strong>Your decisions: </strong>
+                                            {quest.decisions.map((decision) => decision.label).join("; ")}
+                                          </p>
+                                        ) : null}
+                                        {quest.availableChoices?.length ? (
+                                          <>
+                                            <p className="focused-quest-summary"><strong>Decisions you can make now:</strong></p>
+                                            <ul className="focused-quest-objectives">
+                                              {quest.availableChoices.map((choice) => (
+                                                <li className="focused-quest-objective" key={choice.choiceId}>
+                                                  <span>{choice.label}{choice.npcName ? ` — speak with ${choice.npcName}` : ""}</span>
+                                                </li>
+                                              ))}
+                                            </ul>
+                                          </>
+                                        ) : null}
+                                        {quest.worldOutcomes?.map((outcome) => (
+                                          <p className="focused-quest-summary" key={outcome.key}>
+                                            <strong>Settled in this world: </strong>{outcome.label}
+                                          </p>
+                                        ))}
+                                      </div>
+                                    ) : null}
                                   </div>
                                 </article>
                               );

@@ -18,6 +18,7 @@ import {
   type NpcDailyJobResponseDefinition,
 } from '@mudd/contracts';
 import type {
+  CommandPlan,
   EngineCommandContext,
   EnginePlugin,
   ProposedDomainEvent,
@@ -26,7 +27,18 @@ import type {
 import { RuleViolationError } from '@mudd/engine-core';
 import type { CharacterStateCapability } from './character.js';
 import { assertCharacterAlive, characterStateCapability } from './character.js';
-import { projectQuestJournal, questObjectivesAreComplete } from '@mudd/engine-core';
+import {
+  checkQuestChoice,
+  projectQuestJournal,
+  questObjectivesAreComplete,
+  questWorldOutcomeKeys,
+} from '@mudd/engine-core';
+import {
+  planQuestChoice,
+  questWorldOutcomesCapability,
+  type QuestWorldOutcomesCapability,
+  type QuestWorldOutcomesState,
+} from './quest-branches.js';
 import {
   autonomousNpcStateCapability,
   type AutonomousNpcStateCapability,
@@ -51,6 +63,8 @@ function questConditionMatches(
 ): boolean {
   const quest = questJournal.find((entry) => entry.questId === condition.questId);
   if (!quest || (condition.status && quest.status !== condition.status)) return false;
+  if (condition.branchId && quest.branch?.id !== condition.branchId) return false;
+  if (condition.outcomeId && quest.outcome?.id !== condition.outcomeId) return false;
   const completedObjectiveIds = new Set(
     quest.objectives.filter((objective) => objective.completed).map((objective) => objective.id),
   );
@@ -62,12 +76,13 @@ function matchingQuestResponse(
   responses: NpcQuestResponseDefinition[] | undefined,
   questJournal: ReturnType<typeof projectQuestJournal>,
 ): NpcQuestResponseDefinition | undefined {
+  // The most specific matching response wins; branch and outcome each count as one condition.
+  const specificity = (response: NpcQuestResponseDefinition) =>
+    response.requiresCompletedObjectiveIds.length + response.requiresIncompleteObjectiveIds.length +
+    Number(Boolean(response.branchId)) + Number(Boolean(response.outcomeId));
   return (responses ?? [])
     .filter((candidate) => questConditionMatches(candidate, questJournal))
-    .sort((left, right) =>
-      right.requiresCompletedObjectiveIds.length + right.requiresIncompleteObjectiveIds.length -
-      left.requiresCompletedObjectiveIds.length - left.requiresIncompleteObjectiveIds.length,
-    )[0];
+    .sort((left, right) => specificity(right) - specificity(left))[0];
 }
 
 function choiceProgressConditionsMet(
@@ -85,6 +100,7 @@ function dialogueProjection(
   character: CharacterProjection,
   world: QueryContext['world'],
   now: Date,
+  worldOutcomes: QuestWorldOutcomesState | undefined,
   topic?: string,
 ) {
   const cycle = dailyCycle(now);
@@ -102,7 +118,7 @@ function dialogueProjection(
     const matchingTopic = npc.topics.find((entry) =>
       entry.keywords.some((keyword) => normalizedTopic.includes(keyword.toLocaleLowerCase())),
     );
-    const questJournal = projectQuestJournal(character, world);
+    const questJournal = projectQuestJournal(character, world, worldOutcomes?.values);
     const questResponse = matchingQuestResponse(matchingTopic?.questResponses, questJournal);
     return NpcDialogueProjectionSchema.parse({
       npcId: npc.id,
@@ -125,7 +141,7 @@ function dialogueProjection(
 
   const progress = character.npcProgress.find((entry) => entry.npcId === npc.id);
   const lastChoice = dialogue.choices.find((choice) => choice.id === progress?.lastChoiceId);
-  const questJournal = projectQuestJournal(character, world);
+  const questJournal = projectQuestJournal(character, world, worldOutcomes?.values);
   const questResponse = matchingQuestResponse(dialogue.questResponses, questJournal);
   const choices = dialogue.choices
     .filter((choice) => {
@@ -142,6 +158,11 @@ function dialogueProjection(
       const questProgress = character.questProgress.find((candidate) => candidate.questId === quest.id);
       if (choice.questAction.type === 'accept') {
         return quest.giverNpcId === npc.id && !questProgress;
+      }
+      if (choice.questAction.type === 'choose') {
+        const questChoiceId = choice.questAction.choiceId;
+        const check = checkQuestChoice(quest, character, questChoiceId, worldOutcomes?.values);
+        return check.ok && check.choice.npcId === npc.id;
       }
       return quest.turnInNpcId === npc.id &&
         questProgress?.status === 'active' &&
@@ -176,9 +197,20 @@ export const npcDialoguePlugin: EnginePlugin = {
       'character.quest_rewarded': 1,
     },
   },
+  validateWorld(world, { optionalCapability }) {
+    if (questWorldOutcomeKeys(world).size > 0 &&
+      !optionalCapability<QuestWorldOutcomesCapability>(questWorldOutcomesCapability)) {
+      throw new Error('Quests with shared world outcomes require the mudd.quest-branches plugin.');
+    }
+  },
   register({ registerQuery, registerCommand, requireCapability, optionalCapability }) {
     const characterState = requireCapability<CharacterStateCapability>(characterStateCapability);
     const autonomousNpcs = optionalCapability<AutonomousNpcStateCapability>(autonomousNpcStateCapability);
+    const questWorldOutcomes = optionalCapability<QuestWorldOutcomesCapability>(questWorldOutcomesCapability);
+    const loadWorldOutcomes = async (context: EngineCommandContext | QueryContext) =>
+      questWorldOutcomes && questWorldOutcomeKeys(context.world).size > 0
+        ? questWorldOutcomes.load(context)
+        : undefined;
 
     registerQuery('npc.talk', NpcTalkQuerySchema, async (query, context) => {
       const character = await characterState.load(context, query.characterId);
@@ -188,7 +220,14 @@ export const npcDialoguePlugin: EnginePlugin = {
           .find((candidate) => candidate.id === query.payload.npcId)
         : currentNpc(context, character, query.payload.npcId);
       if (!npc) throw new RuleViolationError('That person is not here.');
-      return dialogueProjection(npc, character, context.world, context.now(), query.payload.topic);
+      return dialogueProjection(
+        npc,
+        character,
+        context.world,
+        context.now(),
+        await loadWorldOutcomes(context),
+        query.payload.topic,
+      );
     });
 
     registerCommand('npc.dialogue.choose', NpcDialogueChoiceCommandSchema, async (command, context) => {
@@ -212,9 +251,13 @@ export const npcDialoguePlugin: EnginePlugin = {
         throw new RuleViolationError('That choice is not available here.');
       }
 
+      const worldOutcomes = await loadWorldOutcomes(context);
       if (
         choice.questCondition &&
-        !questConditionMatches(choice.questCondition, projectQuestJournal(character, context.world))
+        !questConditionMatches(
+          choice.questCondition,
+          projectQuestJournal(character, context.world, worldOutcomes?.values),
+        )
       ) {
         throw new RuleViolationError('That choice is not available here.');
       }
@@ -255,6 +298,7 @@ export const npcDialoguePlugin: EnginePlugin = {
         CharacterItemGrantedEventSchema.shape.payload.parse(grantPayload);
         events.push({ type: 'character.item_granted', version: 1, payload: grantPayload });
       }
+      let companions: NonNullable<CommandPlan['companions']> | undefined;
       if (choice.questAction) {
         const quest = context.world.quests.find((candidate) => candidate.id === choice.questAction?.questId);
         if (!quest) throw new RuleViolationError('That quest is not available in this world.');
@@ -268,9 +312,19 @@ export const npcDialoguePlugin: EnginePlugin = {
             characterId: character.characterId,
             questId: quest.id,
             definitionVersion: quest.version,
+            ...(quest.branching ? { branchId: quest.branching.startBranchId } : {}),
           };
           QuestAcceptedEventSchema.shape.payload.parse(questPayload);
           events.push({ type: 'quest.accepted', version: 1, payload: questPayload });
+        } else if (choice.questAction.type === 'choose') {
+          const questChoiceId = choice.questAction.choiceId;
+          if (!quest.branching?.branches.some((branch) =>
+            branch.choices.some((candidate) => candidate.id === questChoiceId && candidate.npcId === npc.id))) {
+            throw new RuleViolationError('That choice is not available here.');
+          }
+          const plan = planQuestChoice(character, quest, questChoiceId, worldOutcomes);
+          events.push(...plan.events);
+          companions = plan.companions;
         } else {
           if (
             quest.turnInNpcId !== npc.id ||
@@ -279,10 +333,19 @@ export const npcDialoguePlugin: EnginePlugin = {
           ) {
             throw new RuleViolationError('You have more to do before reporting back.');
           }
+          // Completion records the version the quest was accepted under when it is a declared
+          // compatible earlier version; replay rejects any other mismatch, as before.
+          const definitionVersion = quest.previousVersions?.some((previous) =>
+            previous.version === questProgress.definitionVersion)
+            ? questProgress.definitionVersion
+            : quest.version;
+          const outcomeId = quest.branching?.branches
+            .find((branch) => branch.id === questProgress.branchId)?.outcomeId;
           const questPayload = {
             characterId: character.characterId,
             questId: quest.id,
-            definitionVersion: quest.version,
+            definitionVersion,
+            ...(outcomeId ? { outcomeId } : {}),
           };
           QuestCompletedEventSchema.shape.payload.parse(questPayload);
           events.push({ type: 'quest.completed', version: 1, payload: questPayload });
@@ -311,7 +374,7 @@ export const npcDialoguePlugin: EnginePlugin = {
             const rewardPayload = {
               characterId: character.characterId,
               questId: quest.id,
-              definitionVersion: quest.version,
+              definitionVersion,
               currencyId: currency.id,
               amount: quest.reward.amount,
               ...((quest.reward.itemIds?.length ?? 0) > 0 ? { itemIds: quest.reward.itemIds } : {}),
@@ -325,6 +388,7 @@ export const npcDialoguePlugin: EnginePlugin = {
         streamId: character.characterId,
         expectedVersion: command.expectedVersion,
         events,
+        ...(companions ? { companions } : {}),
       };
     });
 
