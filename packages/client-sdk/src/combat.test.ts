@@ -164,9 +164,11 @@ function makeClient(
     await ready;
     const path = String(input);
     const body = JSON.parse(String(init.body ?? '{}')) as unknown;
-    const result = path.endsWith('/commands')
-      ? await engine.dispatch(body, session, undefined, now())
-      : await engine.query(body, session);
+    if (!path.endsWith('/commands')) return Response.json(await engine.query(body, session));
+    const result = await engine.dispatch(body, session, undefined, now());
+    // Like the server's command route, settle the command's own completing
+    // effects before answering; the background worker leaves fresh ones alone.
+    await engine.settleCommandEffects(session, result);
     return Response.json(result);
   };
   const client = new MuddHttpClient({ worldInstanceId: DEMO_WORLD_INSTANCE_ID, fetcher });
