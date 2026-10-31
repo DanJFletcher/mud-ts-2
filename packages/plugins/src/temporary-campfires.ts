@@ -213,6 +213,25 @@ export const temporaryCampfiresPlugin: EnginePlugin = {
     requireCapability,
   }) {
     const lifecycles = requireCapability<ObjectLifecycleStateCapability>(objectLifecycleStateCapability);
+    // Room views ask on every snapshot and look; replay only when the stream changes.
+    const litCampfiresCache = new Map<string, {
+      readonly revision: number;
+      readonly lastEventId: string | undefined;
+      readonly lit: readonly Campfire[];
+    }>();
+    const litCampfires = (worldInstanceId: string, history: readonly StoredGameEvent[]) => {
+      const revision = history.at(-1)?.aggregateVersion ?? 0;
+      const lastEventId = history.at(-1)?.eventId;
+      const cached = litCampfiresCache.get(worldInstanceId);
+      if (cached?.revision === revision && cached.lastEventId === lastEventId) return cached.lit;
+      const lit = Object.freeze(projectTemporaryCampfires(history)
+        .filter((campfire) => !campfire.extinguished)
+        .map((campfire) => Object.freeze(campfire)));
+      litCampfiresCache.delete(worldInstanceId);
+      litCampfiresCache.set(worldInstanceId, { revision, lastEventId, lit });
+      while (litCampfiresCache.size > 16) litCampfiresCache.delete(litCampfiresCache.keys().next().value!);
+      return lit;
+    };
     const capability: TemporaryCampfiresCapability = {
       async atLocations(context, locationIds) {
         const requested = new Set(locationIds);
@@ -220,8 +239,8 @@ export const temporaryCampfiresPlugin: EnginePlugin = {
         const history = await context.store.readStream(context.worldInstanceId, TEMPORARY_CAMPFIRES_STREAM_ID);
         const cutoff = context.now().getTime();
         const byLocation = new Map<string, TemporaryCampfireRoomObject[]>();
-        const campfires = projectTemporaryCampfires(history).filter((campfire) =>
-          !campfire.extinguished && requested.has(campfire.locationId));
+        const campfires = litCampfires(context.worldInstanceId, history)
+          .filter((campfire) => requested.has(campfire.locationId));
         const lifecycleStates = await Promise.all(campfires.map((campfire) =>
           lifecycles.load(context, campfire.campfireId)));
         for (const [index, campfire] of campfires.entries()) {
