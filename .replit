@@ -55,3 +55,6 @@ MUDD_SINGLE_CALL_APPEND = "1"
 
 [userenv.production]
 MUDD_SINGLE_CALL_APPEND = "1"
+
+[userenv.shared]
+MUDD_TIMER_RECOVERY = "1"
