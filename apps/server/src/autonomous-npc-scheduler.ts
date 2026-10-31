@@ -3,6 +3,7 @@ import {
   effectiveAutonomousNpcMovementIntervalMs,
   mobileNpcDefinitions,
   projectAutonomousNpcPosition,
+  projectAutonomousNpcPositionFromHead,
 } from '@mudd/core-plugins';
 import type { EngineHost, EventStorePort } from '@mudd/engine-core';
 import type { WorldPackDraft } from '@mudd/contracts';
@@ -35,6 +36,19 @@ export function createAutonomousNpcScheduler(input: Readonly<{
   let started = false;
   let running = false;
 
+  // Read only the latest event where the store supports it; NPC streams grow
+  // by one event a minute forever, so a full replay gets slower every day.
+  const currentPosition = async (npcId: string, initialLocationId: string) => {
+    const streamId = autonomousNpcStreamId(npcId);
+    if (input.store.readStreamHeads) {
+      const heads = await input.store.readStreamHeads(input.worldInstanceId, [streamId]);
+      const position = projectAutonomousNpcPositionFromHead(heads.get(streamId), npcId, initialLocationId);
+      if (position) return position;
+    }
+    const events = await input.store.readStream(input.worldInstanceId, streamId);
+    return projectAutonomousNpcPosition(events, npcId, initialLocationId);
+  };
+
   const tick = async (): Promise<number> => {
     if (running) return 0;
     if (input.isActive && !input.isActive()) return 0;
@@ -46,11 +60,7 @@ export function createAutonomousNpcScheduler(input: Readonly<{
         const dueAt = nextDueAt.get(npc.id);
         if (dueAt !== undefined && now().getTime() < dueAt) continue;
         try {
-          const events = await input.store.readStream(
-            input.worldInstanceId,
-            autonomousNpcStreamId(npc.id),
-          );
-          const position = projectAutonomousNpcPosition(events, npc.id, initialLocationId);
+          const position = await currentPosition(npc.id, initialLocationId);
           const currentTime = now().getTime();
           if (position.lastAttemptAt) {
             const positionDueAt = Date.parse(position.lastAttemptAt) + movementIntervalMs;

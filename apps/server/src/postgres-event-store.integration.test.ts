@@ -366,6 +366,42 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     expect(refreshedBatch.get(changedStreamId)?.map((event) => event.payload.index)).toEqual([1, 99]);
   });
 
+  it('reads only the latest event of each stream in one query', async () => {
+    const longStream = `world-npc:${randomUUID()}`;
+    const shortStream = `world-npc:${randomUUID()}`;
+    const emptyStream = `world-npc:${randomUUID()}`;
+    for (let index = 0; index < 5; index += 1) {
+      expect((await store.append({
+        worldInstanceId,
+        streamId: longStream,
+        actorId: playerId,
+        commandId: `head-read-${randomUUID()}`,
+        payloadHash: randomUUID(),
+        expectedVersion: index,
+        events: [{ type: 'head.fixture', version: 1, payload: { index } }],
+      })).kind).toBe('committed');
+    }
+    expect((await store.append({
+      worldInstanceId,
+      streamId: shortStream,
+      actorId: playerId,
+      commandId: `head-read-${randomUUID()}`,
+      payloadHash: randomUUID(),
+      expectedVersion: 0,
+      events: [{ type: 'head.fixture', version: 1, payload: { index: 0 } }],
+    })).kind).toBe('committed');
+    if (!store.readStreamHeads) throw new Error('Event store does not support head reads.');
+
+    const measurements = newMeasurements('stream-heads-read');
+    const heads = await requestMeasurements.run(measurements, () =>
+      store.readStreamHeads!(worldInstanceId, [longStream, shortStream, emptyStream, longStream]));
+    expect(measurements.databaseOperations['event_store.stream_heads_read']?.queries).toBe(1);
+    expect(heads.get(longStream)).toMatchObject({ aggregateVersion: 5, payload: { index: 4 } });
+    expect(heads.get(shortStream)).toMatchObject({ aggregateVersion: 1, payload: { index: 0 } });
+    expect(heads.has(emptyStream)).toBe(false);
+    expect(await store.readStreamHeads(worldInstanceId, [])).toEqual(new Map());
+  });
+
   it('atomically commits shared turns and character debits, including duplicate retries and racing resources', async () => {
     const resourceStream = `resource-${randomUUID()}`;
     const firstTurn = `turn-${randomUUID()}`;

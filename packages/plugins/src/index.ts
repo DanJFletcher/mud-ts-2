@@ -19,6 +19,7 @@ export {
   mobileNpcDefinitions,
   MIN_AUTONOMOUS_NPC_MOVEMENT_INTERVAL_MS,
   projectAutonomousNpcPosition,
+  projectAutonomousNpcPositionFromHead,
 } from './autonomous-npcs.js';
 export type { AutonomousNpcStateCapability, AutonomousNpcPosition } from './autonomous-npcs.js';
 export { movementPolicyCapability } from './movement.js';
