@@ -5,10 +5,14 @@ import {
   NpcDialogueProjectionSchema,
   validateDraftWorldGraph,
 } from '@mudd/contracts';
-import { EngineHost, InMemoryEventStore, replayCharacter, SYSTEM_ACTOR_ID } from '@mudd/engine-core';
+import { EngineHost, InMemoryEventStore, replayCharacter, SYSTEM_ACTOR_ID, type EnginePlugin } from '@mudd/engine-core';
 import {
   autonomousNpcsPlugin,
   combatPlugin,
+  combatRoomPresenceCapability,
+  roadTravelPlugin,
+  teamCombatPlugin,
+  teamCombatRosterPolicyCapability,
   autonomousNpcStreamId,
   characterPlugin,
   createClassRulesetPlugin,
@@ -33,11 +37,27 @@ import { projectWorldMap } from './world-map-projection.js';
 import { MuddHttpClient } from '@mudd/client-sdk';
 import { CharacterStatsQuerySchema } from '@mudd/contracts';
 
+const soloRosterPlugin: EnginePlugin = {
+  manifest: { id: 'fixture.orraveth-solo-roster', version: '1.0.0', apiVersion: '1.0', category: 'first-party',
+    provides: [teamCombatRosterPolicyCapability.id, combatRoomPresenceCapability.id] },
+  register({ provideCapability }) {
+    provideCapability(teamCombatRosterPolicyCapability, {
+      async resolve() { throw new Error('No party.'); },
+      async resolveIfPartyPresent() { return undefined; },
+    });
+    provideCapability(combatRoomPresenceCapability, {
+      listActiveCharacters: async () => [],
+      getPresenceAnchors: async () => new Map(),
+    });
+  },
+};
+
 function makeHarness(options: Readonly<{
   now?: () => Date;
   rng?: Readonly<{ roll: (sides: number) => number }>;
   world?: typeof orravethWorld;
   includeCombat?: boolean;
+  includeRoadTravel?: boolean;
 }> = {}) {
   let id = 0;
   const owners = new Map<string, string>();
@@ -52,7 +72,8 @@ function makeHarness(options: Readonly<{
       movementPlugin,
       merchantPlugin,
       npcDialoguePlugin,
-      ...(options.includeCombat ? [interactionPlugin, combatPlugin] : []),
+      ...(options.includeCombat || options.includeRoadTravel ? [interactionPlugin, combatPlugin] : []),
+      ...(options.includeRoadTravel ? [soloRosterPlugin, teamCombatPlugin, roadTravelPlugin] : []),
       fishingPlugin,
       woodcuttingPlugin,
       craftingPlugin,
@@ -501,9 +522,9 @@ describe('Orraveth Bellwold settlement', () => {
     }
   });
 
-  it('has a valid, fully reachable seventy-two-location region with map directions matching its exits', () => {
+  it('has a valid, fully reachable seventy-nine-location region with map directions matching its exits', () => {
     expect(validateDraftWorldGraph(orravethWorld)).toEqual([]);
-    expect(orravethWorld.locations).toHaveLength(72);
+    expect(orravethWorld.locations).toHaveLength(79);
 
     const worldWithMissingQuestRewardItem = structuredClone(orravethWorld);
     const churchQuest = worldWithMissingQuestRewardItem.quests?.find(
@@ -559,6 +580,145 @@ describe('Orraveth Bellwold settlement', () => {
       }
     }
     expect(reached).toEqual(locationIds);
+  });
+
+  it('gives every room its own map tile within its map area and level', () => {
+    const tiles = new Map<string, string>();
+    for (const location of orravethWorld.locations) {
+      if (!location.mapPosition) continue;
+      const { x, y, z } = location.mapPosition;
+      const key = `${location.mapAreaId ?? 'overworld'}:${z ?? 0}:${x},${y}`;
+      expect(tiles.get(key), `${location.id} shares tile ${key}`).toBeUndefined();
+      tiles.set(key, location.id);
+    }
+  });
+
+  it('keeps concealed canon out of all player-facing world text', () => {
+    // GM-only canon (docs/world-content/orraveth/world-bible.md): the watermill's extraction
+    // apparatus and Severin Vale's agents. Room text also feeds destination previews.
+    const concealedTerms = [/apparatus/i, /\bSeverin\b/i, /\bRefinement\b/];
+    const worldText = JSON.stringify(orravethWorld);
+    for (const term of concealedTerms) {
+      expect(worldText).not.toMatch(term);
+    }
+  });
+
+  it('continues the west road to Harrowfen on its own road without changing the Bellwold West Road', () => {
+    expect(orravethWorld.roads.find(({ id }) => id === 'bellwold-west-road')?.locationIds).toEqual([
+      'bellwold-west-gate',
+      'bellwold-westbound-track',
+      'bellwold-west-road-end',
+    ]);
+    const harrowfenRoad = orravethWorld.roads.find(({ id }) => id === 'harrowfen-road');
+    expect(harrowfenRoad).toMatchObject({
+      name: 'Harrowfen Road',
+      locationIds: ['bellwold-west-road-end', 'harrowfen-road-ditch-verge', 'harrowfen-east-field-gate'],
+      encounterChancePercent: 10,
+    });
+    expect(harrowfenRoad?.encounters.map(({ name }) => name)).toEqual(['Ditch Fox', 'Reedback Boar', 'Stray Hound']);
+
+    const harrowfen = orravethWorld.locationGroups.find(({ id }) => id === 'harrowfen');
+    expect(harrowfen).toMatchObject({
+      type: 'settlement',
+      metadata: { codexId: 'orraveth-harrowfen', politicalStatus: 'crown-of-heskar' },
+    });
+    expect(harrowfen?.memberships.every(({ isPrimary }) => isPrimary)).toBe(true);
+    expect(harrowfen?.memberships.map(({ locationId }) => locationId)).not.toContain('harrowfen-road-ditch-verge');
+
+    const weighHouse = orravethWorld.locations.find(({ id }) => id === 'harrowfen-weigh-house');
+    expect(weighHouse?.npcs?.map(({ id }) => id)).toEqual(['maela-thorn']);
+    expect(weighHouse?.readables?.map(({ id }) => id)).toEqual(['harrowfen-yield-tallies']);
+    expect(weighHouse?.npcs?.[0]?.dialogue?.choices.map(({ label }) => label)).toEqual(
+      expect.arrayContaining(['Who are you?', 'What are you doing?', 'What is Harrowfen like?']),
+    );
+  });
+
+  it('walks the Harrowfen Road step by step, then meets the reeve and reads the yield tallies', async () => {
+    const h = makeHarness({ includeRoadTravel: true, rng: { roll: (sides) => sides } });
+    await h.engine.start();
+    try {
+      const created = await h.dispatch(undefined, {
+        type: 'character.create',
+        version: 1,
+        commandId: 'orraveth-harrowfen-create',
+        payload: { name: 'Harrow Walker', classId: 'orraveth.scout' },
+      });
+      const characterId = (created.events.find((event) => event.type === 'character.created')?.payload as
+        { characterId?: string } | undefined)?.characterId;
+      if (!characterId) throw new Error('Character creation returned no character ID.');
+      h.owners.set(characterId, h.session.playerId);
+
+      const travel = async (type: 'character.move' | 'character.road.step', exitId: string) => {
+        const character = await h.loadCharacter(characterId);
+        return h.dispatch(characterId, {
+          type,
+          version: 1,
+          commandId: `orraveth-harrowfen-${exitId}`,
+          expectedVersion: character.revision,
+          payload: { exitId },
+        });
+      };
+      await travel('character.move', 'square-to-inn');
+      await travel('character.move', 'inn-to-west-gate');
+      await travel('character.road.step', 'west-gate-to-track');
+      await travel('character.road.step', 'westbound-track-to-end');
+      const firstStep = await travel('character.road.step', 'west-road-end-to-harrowfen-ditch');
+      expect(firstStep.events.find(({ type }) => type === 'character.moved')?.payload).toMatchObject({
+        toLocationId: 'harrowfen-road-ditch-verge',
+        roadTravel: { roadId: 'harrowfen-road', encounterOccurred: false },
+      });
+      await travel('character.road.step', 'harrowfen-ditch-to-field-gate');
+      await travel('character.move', 'harrowfen-field-gate-to-green');
+      await travel('character.move', 'harrowfen-green-to-weigh-house');
+
+      const atWeighHouse = await h.loadCharacter(characterId);
+      expect(atWeighHouse.locationId).toBe('harrowfen-weigh-house');
+      const dialogue = await h.engine.query({
+        type: 'npc.talk',
+        version: 1,
+        queryId: 'orraveth-harrowfen-maela-talk',
+        worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+        characterId,
+        payload: { npcId: 'maela-thorn', topic: 'harvest' },
+      }, h.session, { characterProjection: atWeighHouse });
+      if (!dialogue.ok) throw new Error(dialogue.message);
+      const projection = NpcDialogueProjectionSchema.parse(dialogue.value);
+      expect(projection.npcName).toBe('Reeve Maela Thorn');
+      expect(JSON.stringify(projection)).toContain('I don’t know yet');
+
+      const read = await h.dispatch(characterId, {
+        type: 'character.read',
+        version: 1,
+        commandId: 'orraveth-harrowfen-read-tallies',
+        expectedVersion: atWeighHouse.revision,
+        payload: { objectId: 'harrowfen-yield-tallies' },
+      });
+      expect(JSON.stringify(read.events)).toContain('do not say why the yields have fallen');
+    } finally {
+      await h.engine.stop();
+    }
+  });
+
+  it('groups Bellwold’s village rooms as a settlement without retitling them', () => {
+    const bellwold = orravethWorld.locationGroups.find(({ id }) => id === 'bellwold');
+    expect(bellwold).toMatchObject({
+      name: 'Bellwold',
+      type: 'settlement',
+      metadata: { codexId: 'orraveth-bellwold', politicalStatus: 'unestablished' },
+    });
+    const memberIds = bellwold!.memberships.map(({ locationId }) => locationId);
+    expect(memberIds).toEqual(expect.arrayContaining([
+      'bellwold-market-square',
+      'bellwold-west-gate',
+      'bellwold-south-gate',
+      'old-bell-tower',
+    ]));
+    expect(bellwold!.memberships.every(({ isPrimary }) => !isPrimary)).toBe(true);
+    const roadLocationIds = new Set(orravethWorld.roads.flatMap(({ locationIds }) => locationIds));
+    for (const locationId of memberIds) {
+      if (locationId === 'bellwold-west-gate' || locationId === 'bellwold-south-gate') continue;
+      expect(roadLocationIds.has(locationId), `${locationId} is a road segment`).toBe(false);
+    }
   });
 
   it('connects Bellwold’s alleys, homes, jail, library, upstairs room, and rear museum', () => {
@@ -714,8 +874,9 @@ describe('Orraveth Bellwold settlement', () => {
   });
 
   it('authors bandits on every Bellwold road with chance-based gold and a rare equipable knife', () => {
-    expect(orravethWorld.roads).toHaveLength(5);
-    for (const road of orravethWorld.roads) {
+    const bellwoldRoads = orravethWorld.roads.filter(({ id }) => id.startsWith('bellwold-'));
+    expect(bellwoldRoads).toHaveLength(5);
+    for (const road of bellwoldRoads) {
       const bandit = road.encounters.find(({ name }) => name === 'Bandit');
       expect(bandit).toMatchObject({
         combatProfile: { maxHealth: 6, attackDamage: 1, style: 'steady' },

@@ -7,7 +7,7 @@ summary: A growing trading settlement near Heskar's frontier, serving as a local
 category: geography
 entityType: region
 tags: [Bellwold, village, frontier, trade]
-relatedIds: [orraveth-bellwold-marches, orraveth-crown-of-heskar, orraveth-uncrowned-lands, orraveth-harrowfen, orraveth-ashcombe, orraveth-rillford, orraveth-greywatch, orraveth-thornmere, orraveth-vells-crossing, orraveth-mosswake, orraveth-elderhollow, orraveth-bellwold-market-square, orraveth-kindly-roof-inn, orraveth-blackwater-forge, orraveth-green-mortar, orraveth-bellwold-common-house, orraveth-linnet-reed, orraveth-taren-voss, orraveth-old-bell-tower, orraveth-abandoned-watermill, orraveth-currency-and-commerce, orraveth-bellwold-roadside-wildlife]
+relatedIds: [orraveth-bellwold-marches, orraveth-crown-of-heskar, orraveth-uncrowned-lands, orraveth-harrowfen, orraveth-ashcombe, orraveth-rillford, orraveth-greywatch, orraveth-thornmere, orraveth-vells-crossing, orraveth-mosswake, orraveth-elderhollow, orraveth-bellwold-market-square, orraveth-kindly-roof-inn, orraveth-blackwater-forge, orraveth-green-mortar, orraveth-bellwold-common-house, orraveth-linnet-reed, orraveth-taren-voss, orraveth-old-bell-tower, orraveth-abandoned-watermill, orraveth-currency-and-commerce, orraveth-bellwold-roadside-wildlife, orraveth-lower-rill]
 relationships:
   - type: located-in
     targetId: orraveth-bellwold-marches
@@ -47,7 +47,7 @@ The current Bellwold record uses [[currency-and-commerce|gold]] as Orraveth's pr
 
 Nearby are the [[old-bell-tower|old bell tower]], [[eastern-forest|eastern forest]], and [[abandoned-watermill|abandoned watermill]]. The surrounding roads and field edges are home to animals described in the provisional record of [[bellwold-roadside-wildlife|Bellwold roadside wildlife]].
 
-An unfinished road leaves south from the Common House, crosses an unnamed river by a low stone bridge, and continues for several rooms beyond the far bank. It currently ends at a shallow cut in the ground; no settlement is established beyond it. The river's name and the road's eventual destination remain unrecorded.
+An unfinished road leaves south from the Common House, crosses the [[lower-rill|Lower Rill]] by a low stone bridge, and continues for several rooms beyond the far bank. It currently ends at a shallow cut in the ground; no settlement is established beyond it. The road's eventual destination remains unrecorded.
 
 The west road leaves from the Kindly Roof and reaches an unmarked verge beyond the village fields. The eastbound mill road branches from Old Bell Tower Road, passes through the abandoned watermill, and ends beyond a low rise. Neither road currently establishes a destination beyond its mapped endpoint.
 
