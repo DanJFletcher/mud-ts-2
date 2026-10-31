@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InteractionInbox, TeamCombatEncounter } from '@mudd/contracts';
+import type { GameSnapshot } from '@mudd/client-sdk';
 
 const { apiFetch } = vi.hoisted(() => {
   const apiFetch = vi.fn();
@@ -1774,6 +1775,129 @@ beforeEach(() => {
 });
 
 describe('single-character world session client', () => {
+  it('renders a victory corpse and exposes its loot without fetching another game snapshot', async () => {
+    await withFakeRealtimeSocket(async () => {
+      combatEncounter = {
+        encounterId: 'combat-corpse-projection',
+        locationId: 'mossgate-clearing',
+        opponentNpcId: 'mossgate-training-sentinel',
+        opponentName: 'Practice Sentinel',
+        round: 1,
+        playerHealth: 5,
+        playerMaxHealth: 6,
+        opponentHealth: 2,
+        opponentMaxHealth: 4,
+        status: 'active',
+        lastAction: 'attack',
+        lastNarration: 'You deal 2 damage to Practice Sentinel.',
+      };
+      const original = apiFetch.getMockImplementation()!;
+      let latestSnapshot: GameSnapshot | undefined;
+      apiFetch.mockImplementation(async (path, init) => {
+        if (path === '/api/game') {
+          const response = await original(path, init);
+          latestSnapshot = await response.json() as GameSnapshot;
+          return json(latestSnapshot);
+        }
+        if (path === '/api/commands' && init?.method === 'POST' && init.body) {
+          const command = JSON.parse(String(init.body)) as {
+            type?: string;
+            commandId?: string;
+            payload?: { action?: string };
+          };
+          if (command.type === 'combat.action' && command.payload?.action === 'attack') {
+            if (!latestSnapshot?.character || !latestSnapshot.location) {
+              throw new Error('The initial game snapshot was not loaded before combat.');
+            }
+            const corpseId = 'corpse:practice-sentinel';
+            const corpse = {
+              id: corpseId,
+              label: 'Practice Sentinel’s corpse',
+              description: 'The body of the Practice Sentinel lies here.',
+              readable: false,
+              takeable: false,
+              containerKind: 'corpse' as const,
+              contents: [{
+                id: 'corpse-item:practice-badge',
+                label: 'Practice badge',
+                description: 'A small wooden badge.',
+              }],
+            };
+            const loot = {
+              id: 'corpse-item:practice-badge',
+              label: 'Practice badge',
+              description: 'A small wooden badge.',
+              readable: false,
+              takeable: true,
+              containerId: corpseId,
+            };
+            const victoryEncounter = {
+              ...combatEncounter!,
+              status: 'victory' as const,
+              opponentHealth: 0,
+              round: combatEncounter!.round + 1,
+              lastNarration: 'Practice Sentinel falls, and their body lies here.',
+            };
+            combatEncounter = victoryEncounter;
+            revision += 1;
+            const gameProjection = {
+              serverTime: new Date().toISOString(),
+              character: {
+                ...latestSnapshot.character,
+                revision,
+                combat: victoryEncounter,
+              },
+              stats: latestSnapshot.stats,
+              location: {
+                ...latestSnapshot.location,
+                description: `${latestSnapshot.location.description}\n\nThe body of the Practice Sentinel lies here.`,
+                objects: [...latestSnapshot.location.objects, corpse, loot],
+              },
+              map: latestSnapshot.map,
+              questJournal: latestSnapshot.questJournal ?? [],
+              availableFishingSpots: latestSnapshot.availableFishingSpots ?? [],
+              availableWoodcuttingTrees: latestSnapshot.availableWoodcuttingTrees ?? [],
+              dailyActivities: latestSnapshot.dailyActivities ?? {
+                cycle: '2026-10-31',
+                boards: [],
+                sources: [],
+              },
+            };
+            return json({
+              receipt: {
+                ok: true,
+                commandId: command.commandId ?? 'combat-victory',
+                eventIds: ['combat-victory'],
+                newAggregateVersion: revision,
+              },
+              streamId: characterId,
+              gameProjection,
+            });
+          }
+        }
+        return original(path, init);
+      });
+
+      render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+      await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+      const gameSnapshotRequests = () =>
+        apiFetch.mock.calls.filter(([path]) => path === '/api/game').length;
+      const requestsBeforeAttack = gameSnapshotRequests();
+      const history = screen.getByRole('region', { name: 'Terminal output' });
+
+      fireEvent.click(within(await screen.findByRole('group', { name: 'Combat actions' }))
+        .getByRole('button', { name: 'Attack during active combat' }));
+
+      await waitFor(() => {
+        expect(history).toHaveTextContent('Practice Sentinel falls, and their body lies here.');
+      });
+      expect(gameSnapshotRequests()).toBe(requestsBeforeAttack);
+
+      fireEvent.click(screen.getByRole('button', { name: 'loot' }));
+      expect(await screen.findByRole('button', { name: /Practice Sentinel’s corpse/i })).toBeVisible();
+    });
+  });
+
   it('shows NPC activity on room entry and full descriptions only after look', async () => {
     render(<WorldClient onLeaveWorld={async () => undefined} />);
     const terminal = await screen.findByRole('region', { name: 'Terminal output' });

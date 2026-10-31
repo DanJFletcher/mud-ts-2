@@ -1708,6 +1708,60 @@ describe('NPC room announcements through the server', () => {
     await vi.waitFor(() => expect(state.processPendingEffectsStarted).toBeGreaterThan(effectBatchesBefore));
   });
 
+  it('includes a settled victory corpse and its loot in the same game projection', async () => {
+    await enterWorld('alice', 'character-alice');
+    const corpse = {
+      id: 'corpse:practice-sentinel',
+      label: 'Practice Sentinel’s corpse',
+      description: 'The body of the Practice Sentinel lies here.',
+      readable: false,
+      takeable: false,
+      containerKind: 'corpse',
+      contents: [{
+        id: 'corpse-item:practice-badge',
+        label: 'Practice badge',
+        description: 'A small wooden badge.',
+      }],
+    };
+    state.queryOverrides.set('location.describe', () => ({
+      ok: true,
+      value: {
+        worldInstanceId: instanceId,
+        locationId: 'npc-room',
+        revision: 0,
+        title: 'NPC Room',
+        shortName: 'NPC Room',
+        qualifiedName: 'NPC Room',
+        locationGroups: [],
+        description: 'A quiet test room.',
+        exits: [],
+        objects: state.settledCommands.length > 0 ? [corpse] : [],
+        occupants: [],
+        safeResting: false,
+      },
+    }));
+    state.nextCommandResult = {
+      receipt: { ok: true, commandId: 'victory-with-corpse-projection' },
+      commitOutcome: 'committed',
+      completingEffects: 1,
+    };
+
+    const response = await sendWorldCommand('alice', {
+      type: 'combat.action',
+      commandId: 'victory-with-corpse-projection',
+      characterId: 'character-alice',
+      payload: { action: 'attack', targetNpcId: 'mara' },
+    }, { projection: true });
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      gameProjection?: { location?: { objects?: Array<Record<string, unknown>> } };
+    };
+    expect(body.gameProjection?.location?.objects).toEqual([corpse]);
+    expect(state.settledCommands).toHaveLength(1);
+    expect(state.settledCommands[0]?.result).toMatchObject({ completingEffects: 1 });
+  });
+
   it('withholds the projection when a command’s own effects cannot be settled', async () => {
     await enterWorld('alice', 'character-alice');
     const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);

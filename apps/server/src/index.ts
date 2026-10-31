@@ -55,6 +55,7 @@ import {
   updateInteractionRequestStatus,
   WOODCUTTING_TREES_STREAM_ID,
   projectWoodcuttingTreePresence,
+  worldItemsStreamId,
 } from '@mudd/core-plugins';
 import { DEMO_WORLD_INSTANCE_ID } from '@mudd/world-demo';
 import { db, pool, warmDatabasePool } from './db/client.js';
@@ -739,9 +740,13 @@ async function settleCommandOutcome(
     }));
     return false;
   } finally {
-    // Their appends could not invalidate that cache, so drop its snapshot of the
-    // actor's stream before the projection reads it.
+    // These appends run outside the request cache, so discard the actor and
+    // shared-world snapshots before the response projection reads them.
     store.invalidateCommandReadCache(runtime.worldInstanceId, characterId);
+    store.invalidateCommandReadCache(
+      runtime.worldInstanceId,
+      worldItemsStreamId(runtime.worldInstanceId),
+    );
   }
 }
 

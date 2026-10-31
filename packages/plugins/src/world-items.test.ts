@@ -224,7 +224,7 @@ describe('world item event projection', () => {
     description: 'A bundle of pine logs.',
   };
 
-  it('marks only the effects that finish a take or drop as completing their command', () => {
+  it('marks shared item transfers and corpse creation as command-completing effects', () => {
     const options = new Map<string, unknown>();
     worldItemsPlugin.register({
       provideCapability: () => undefined,
@@ -235,7 +235,7 @@ describe('world item event projection', () => {
     expect(Object.fromEntries(options)).toEqual({
       [WORLD_ITEM_DROP_EFFECT]: { completesCommand: true },
       [WORLD_ITEM_CLAIM_EFFECT]: { completesCommand: true },
-      [WORLD_CORPSE_CREATE_EFFECT]: undefined,
+      [WORLD_CORPSE_CREATE_EFFECT]: { completesCommand: true },
       'world-corpse.gold-credit': { completesCommand: true },
     });
   });
