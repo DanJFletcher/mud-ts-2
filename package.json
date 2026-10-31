@@ -10,7 +10,7 @@
   ],
   "scripts": {
     "dev": "npm run build && concurrently -k -n server,web \"npm run dev --workspace @mudd/server\" \"npm run dev --workspace @mudd/web\"",
-    "start": "npm run db:guest-cleanup:runtime --workspace @mudd/server && npm run start --workspace @mudd/server",
+    "start": "npm run db:guest-cleanup:runtime --workspace @mudd/server && NODE_ENV=production MUDD_LEGACY_CORPSE_CLEANUP_TARGET=production npm run db:legacy-corpse-cleanup:runtime --workspace @mudd/server && npm run start --workspace @mudd/server",
     "build": "npm run build --workspace @mudd/contracts && npm run build --workspace @mudd/world-demo && npm run build --workspace @mudd/world-orraveth && npm run build --workspace @mudd/engine-core && npm run build --workspace @mudd/core-plugins && npm run build --workspace @mudd/client-sdk && npm run build --workspace @mudd/ui && npm run build --workspace @mudd/server && npm run build --workspace @mudd/web",
     "typecheck": "npm run typecheck --workspace @mudd/contracts && npm run typecheck --workspace @mudd/world-demo && npm run typecheck --workspace @mudd/world-orraveth && npm run typecheck --workspace @mudd/engine-core && npm run typecheck --workspace @mudd/core-plugins && npm run typecheck --workspace @mudd/client-sdk && npm run typecheck --workspace @mudd/ui && npm run typecheck --workspace @mudd/server && npm run typecheck --workspace @mudd/web",
     "lint": "eslint apps packages engine-contracts eslint.config.mjs",
