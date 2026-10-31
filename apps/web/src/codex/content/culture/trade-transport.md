@@ -43,7 +43,7 @@ No complete route map or universal schedule is established. Distance, tolls, and
 
 A provisional south road leaves Bellwold, crosses the [[lower-rill|Lower Rill]] by a stone bridge, and ends beyond the far bank where the roadwork stops. No settlement has been established at its end, and the route gives no basis for assuming a destination or travel time.
 
-Two other local routes are mapped provisionally: the west road runs from the Kindly Roof to an unmarked verge, while the eastbound mill road passes through the abandoned watermill before ending beyond a low rise. Their onward destinations and travel times are not established.
+The west road runs from the Kindly Roof to a verge beyond the village fields, where the Harrowfen Road continues beside a drainage ditch to [[harrowfen|Harrowfen]]'s field gate, about half a day from Bellwold. The eastbound mill road is mapped provisionally: it passes through the abandoned watermill before ending beyond a low rise, and its onward destination and travel time are not established.
 
 ## The Bellwold Marches trade network
 

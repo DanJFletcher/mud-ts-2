@@ -1,7 +1,7 @@
 # Bellwold Region Expansion
 
-**Status:** Proposal for review. Q1 (river identity) and Q5 (travel scale) were decided on 2026-10-31. No world data or game code has changed.
-**Pack:** `orraveth.bellwold` (`packages/world-orraveth/src/index.ts`), currently `packVersion` 1.17.0 with 72 locations.
+**Status:** In delivery. Q1 (river identity) and Q5 (travel scale) were decided on 2026-10-31. Phases 0 and 1 are in the world data on `main`; Phases 2–5 remain proposals for review.
+**Pack:** `orraveth.bellwold` (`packages/world-orraveth/src/index.ts`), currently `packVersion` 1.19.0 with 79 locations (after Phase 1). Sections 1 and 2 describe the Codex and world data as they stood before Phase 1.
 **Scope:** New roads, new towns, extending the existing river, and connecting Bellwold to the communities of the Bellwold Marches.
 
 ## How to read this document
@@ -455,11 +455,11 @@ Each phase stands on its own: a valid graph, every room reachable, a `packVersio
 | **4. Far settlements** | Vell's Crossing (east road, Jarek Vell, apothecary row); Greywatch (via Rillford, Edric Vaul); Elderhollow (via Mosswake, Caeren Moss) | 35 | Two-day destinations and the most sensitive canon (Hollow Trade, surveys, Elira Venn) | Each route; survey notice wording |
 | **5. Regional stories** (optional) | Investigations built on existing quest objectives (read-object, visit, possess-item), for example comparing Harrowfen tallies with Bellwold's Old Grain House, or documenting Rillford cargoes for Selda Rook. All stay unresolved. | — | Matches roadmap Phase 3 / 4 | Story proposals go to Codex review first |
 
-**Progress (2026-10-31, branch `content/bellwold-region-expansion`):**
+**Progress (2026-10-31, merged to `main`):**
 
 - **Phase 0 is done**, with one revision: the `bellwold` group is non-primary (§5.2).
 - **Phase 1 is done.** It added `harrowfen-road`, 7 rooms, Reeve Maela Thorn and the yield tallies, at `packVersion` 1.19.0 with 79 locations.
-- **The Phase 1 codex follow-up is still pending review.** `regions/bellwold.md` and `culture/trade-transport.md` still describe the west road as ending at an unmarked verge.
+- **The Phase 1 codex follow-up is written and awaiting Codex review.** `regions/bellwold.md` and `culture/trade-transport.md` now record the Harrowfen Road continuing from the west road's verge to Harrowfen's field gate, about half a day from Bellwold. The mill road and the south road are unchanged.
 
 The Road Through Old Ground and the south road's destination aren't scheduled. They wait on Q4 and Q10.
 
