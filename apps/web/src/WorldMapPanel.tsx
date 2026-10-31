@@ -697,12 +697,14 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
                 );
               })}
             </svg>
-            <p className="focused-world-map__current-name">{focusedLocation?.name ?? 'Map'}</p>
-            <div className="focused-world-map__legend" aria-label="Map legend">
-              <span><i className="focused-world-map__legend-tile focused-world-map__legend-tile--river" /> Water</span>
-              <span><i className="focused-world-map__legend-tile focused-world-map__legend-tile--building" /> Building</span>
-              <span><i className="focused-world-map__legend-line" /> Exit</span>
-              <span><i className="focused-world-map__legend-arrow" /> One-way</span>
+            <div className="focused-world-map__caption">
+              <p className="focused-world-map__current-name">{focusedLocation?.name ?? 'Map'}</p>
+              <div className="focused-world-map__legend" aria-label="Map legend">
+                <span><i className="focused-world-map__legend-tile focused-world-map__legend-tile--river" /> Water</span>
+                <span><i className="focused-world-map__legend-tile focused-world-map__legend-tile--building" /> Building</span>
+                <span><i className="focused-world-map__legend-line" /> Exit</span>
+                <span><i className="focused-world-map__legend-arrow" /> One-way</span>
+              </div>
             </div>
           </>
         ) : (
