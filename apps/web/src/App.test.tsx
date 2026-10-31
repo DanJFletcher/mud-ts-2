@@ -859,7 +859,9 @@ beforeEach(() => {
           },
           staminaRecovery: {
             posture: staminaPosture,
-            lastSettledAt: '2026-10-23T12:00:00.000Z',
+            // Settled as the snapshot is served, so the client's wall-clock projection
+            // shows the fixture's vitals instead of days of recovery since a fixed date.
+            lastSettledAt: new Date().toISOString(),
             fractionalCarry: 0,
           },
           ...(combatEncounter ? { combat: combatEncounter } : {}),
