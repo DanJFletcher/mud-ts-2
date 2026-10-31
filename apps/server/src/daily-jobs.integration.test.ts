@@ -465,21 +465,24 @@ describe('daily town jobs through an authorized engine', () => {
       const payload = { boardId: 'board', cycle: board.cycle, jobId: job.id };
       expect((await h.command(id, 'daily.job', { ...payload, action: 'accept' })).receipt.ok).toBe(true);
       await h.move(id, 'out');
+      // Each request settles its own completing effects, as the server does.
+      const settled = async (result: Awaited<ReturnType<typeof h.command>>) => {
+        expect(result.receipt.ok).toBe(true);
+        expect(await h.engine.settleCommandEffects(h.session(), result)).toBe(true);
+        await h.engine.processPendingEffects(100);
+      };
       const fight = (await h.load(id)).combat!;
-      expect((await h.command(id, 'combat.action', { action: 'attack', encounterId: fight.encounterId })).receipt.ok).toBe(true);
-      await h.engine.processPendingEffects(100);
+      await settled(await h.command(id, 'combat.action', { action: 'attack', encounterId: fight.encounterId }));
       const shared = await h.store.readStream('daily-world', 'world-items');
       const created = shared.find((event) => event.type === 'world.corpse_created')!;
       expect(created).toBeDefined();
       const corpse = created.payload as { corpse: { corpseId: string }; items: { worldItemId: string }[] };
       const itemId = corpse.items[0]!.worldItemId;
-      expect((await h.command(id, 'character.take', { itemId })).receipt.ok).toBe(true);
-      await h.engine.processPendingEffects(100);
+      await settled(await h.command(id, 'character.take', { itemId }));
       expect((await h.load(id)).inventory[0]).toMatchObject({ id: itemId, typeId: 'deer-hide' });
       await h.move(id, 'back');
       const secondFight = (await h.load(id)).combat!;
-      expect((await h.command(id, 'combat.action', { action: 'attack', encounterId: secondFight.encounterId })).receipt.ok).toBe(true);
-      await h.engine.processPendingEffects(100);
+      await settled(await h.command(id, 'combat.action', { action: 'attack', encounterId: secondFight.encounterId }));
       expect((await h.command(id, 'daily.job', { ...payload, action: 'deliver' })).receipt.ok).toBe(true);
       expect((await h.load(id)).inventory).toHaveLength(0);
       expect((await h.store.readStream('daily-world', 'world-items')).at(-1)).toMatchObject({

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { InMemoryEventStore } from './memory-event-store.js';
 
 describe('InMemoryEventStore stream revisions', () => {
@@ -175,5 +175,34 @@ describe('InMemoryEventStore stream revisions', () => {
       await store.claimNextEffect(60_000),
     ];
     expect(worker.map((effect) => effect?.payload)).toEqual([{ order: 1 }, { order: 3 }, { order: 4 }]);
+  });
+
+  it('keeps untried reserved effects from the worker until their grace period passes', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-31T12:00:00.000Z'));
+    try {
+      const store = new InMemoryEventStore();
+      await store.append({
+        worldInstanceId: 'world-1',
+        streamId: 'stream-1',
+        actorId: 'actor-1',
+        commandId: 'command-1',
+        payloadHash: 'hash',
+        expectedVersion: 0,
+        events: [{ type: 'test.happened', version: 1, payload: {} }],
+        effects: [
+          { type: 'test.completing', version: 1, payload: { order: 1 } },
+          { type: 'test.background', version: 1, payload: { order: 2 } },
+        ],
+      });
+      const reservation = { types: ['test.completing'], graceMs: 5_000 };
+
+      expect((await store.claimNextEffect(60_000, undefined, reservation))?.payload).toEqual({ order: 2 });
+      expect(await store.claimNextEffect(60_000, undefined, reservation)).toBeUndefined();
+      vi.advanceTimersByTime(5_000);
+      expect((await store.claimNextEffect(60_000, undefined, reservation))?.payload).toEqual({ order: 1 });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

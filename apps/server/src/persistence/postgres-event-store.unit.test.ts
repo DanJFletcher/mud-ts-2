@@ -1399,6 +1399,25 @@ describe('PostgresEventStore unit behavior', () => {
     expect(statement!.params).toEqual(expect.arrayContaining(['processing', 'pending', 'world-1', effect!.leaseToken]));
   });
 
+  it('leaves untried reserved effect types to their command within the grace period', async () => {
+    const claim = mockEffectClaim([]);
+    const store = new PostgresEventStore();
+
+    await expect(store.claimNextEffect(30_000, 'world-1', {
+      types: ['world-corpse.create'],
+      graceMs: 5_000,
+    })).resolves.toBeUndefined();
+
+    const [statement] = claim.statements;
+    expect(statement!.sql).toContain('"durable_effects"."effect_type" not in ($');
+    expect(statement!.sql).toContain('"durable_effects"."attempts" > $');
+    expect(statement!.sql).toContain('"durable_effects"."created_at" <= now() - (');
+    expect(statement!.params).toEqual(expect.arrayContaining(['world-1', 'world-corpse.create', 0, 5_000]));
+
+    await expect(store.claimNextEffect(30_000, undefined, { types: ['world-corpse.create'], graceMs: -1 }))
+      .rejects.toThrow('Effect reservation grace must be a non-negative integer.');
+  });
+
   it('validates effect lease durations and returns no claim when nothing is due', async () => {
     const store = new PostgresEventStore();
     for (const leaseMs of [0, -1, 1.5]) {

@@ -2,6 +2,7 @@ import type { CommandReceipt } from '@mudd/contracts';
 import type {
   AppendOutcome,
   AppendRequest,
+  CommandEffectReservation,
   CommandEffectScope,
   EventStorePort,
   StoredEventEffect,
@@ -23,6 +24,7 @@ export class InMemoryEventStore implements EventStorePort {
   private readonly effects = new Map<string, {
     effect: StoredEventEffect;
     status: 'pending' | 'processing' | 'completed' | 'dead';
+    createdAt: number;
     availableAt: number;
     leaseExpiresAt: number | null;
   }>();
@@ -162,6 +164,7 @@ export class InMemoryEventStore implements EventStorePort {
       this.effects.set(`${request.worldInstanceId}:${request.actorId}:${request.commandId}:${index}`, {
         effect: storedEffect,
         status: 'pending',
+        createdAt: Date.now(),
         availableAt: Date.now(),
         leaseExpiresAt: null,
       });
@@ -171,9 +174,19 @@ export class InMemoryEventStore implements EventStorePort {
     return outcome;
   }
 
-  async claimNextEffect(leaseMs: number, worldInstanceId?: string): Promise<StoredEventEffect | undefined> {
-    return this.claimFirstDue(leaseMs, (_key, effect) =>
-      worldInstanceId === undefined || effect.worldInstanceId === worldInstanceId);
+  async claimNextEffect(
+    leaseMs: number,
+    worldInstanceId?: string,
+    reservation?: CommandEffectReservation,
+  ): Promise<StoredEventEffect | undefined> {
+    const reservedSince = Date.now() - (reservation?.graceMs ?? 0);
+    return this.claimFirstDue(leaseMs, (_key, effect, createdAt) =>
+      (worldInstanceId === undefined || effect.worldInstanceId === worldInstanceId) &&
+      !(
+        reservation?.types.includes(effect.type) &&
+        effect.attempts === 0 &&
+        createdAt > reservedSince
+      ));
   }
 
   async claimCommandEffect(leaseMs: number, scope: CommandEffectScope): Promise<StoredEventEffect | undefined> {
@@ -187,7 +200,7 @@ export class InMemoryEventStore implements EventStorePort {
 
   private claimFirstDue(
     leaseMs: number,
-    matches: (key: string, effect: StoredEventEffect) => boolean,
+    matches: (key: string, effect: StoredEventEffect, createdAt: number) => boolean,
   ): StoredEventEffect | undefined {
     const now = Date.now();
     for (const [key, record] of this.effects) {
@@ -196,7 +209,7 @@ export class InMemoryEventStore implements EventStorePort {
       if (
         !isAvailable ||
         record.availableAt > now ||
-        !matches(key, record.effect)
+        !matches(key, record.effect, record.createdAt)
       ) continue;
       const leaseToken = globalThis.crypto.randomUUID();
       const effect = {
