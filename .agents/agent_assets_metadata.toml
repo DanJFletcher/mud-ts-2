@@ -1,0 +1,16 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "B1oSNx616Gn6tT8c-pYLl"
+uri = "file://attached_assets/MUDD_Production_Performance_Benchmark_2026-10-31.md"
+type = "text"
+title = "MUDD production benchmark report — raw Markdown"
+description = "Corrected raw Markdown report with the full measurements, server-stage breakdowns, and request/trace ID appendix."
+logical_id = "f8ac70f7-6d85-4eb5-ab9d-c782ea99ef72"
+content_hash = "sha256:9c6fd8a5cfe3453a4c7b7a8ef22581287e6280242ede7d87042bdd55dc68eca5"
+size = 23891
+mtime_ms = 1793447838626
+storage_uri = "gcs://replit-rams-assets-worf/rams/assets/repl:b23605d5-b209-40a9-b096-ab2a2d8b0e3c/f8ac70f7-6d85-4eb5-ab9d-c782ea99ef72/3a8a4d71-47a2-483d-aacf-55fc836fe608"
+storage_version_token = "1793447841429527"
+content_type = "text/markdown"
