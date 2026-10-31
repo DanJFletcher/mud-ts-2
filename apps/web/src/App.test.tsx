@@ -14,6 +14,38 @@ vi.mock('./codex/CodexScreen.js', () => ({
 
 import { WorldClient } from './App.js';
 
+/**
+ * Stays connecting until a test drives it. jsdom's own socket fails to connect
+ * and retries, and each close marks every realtime watcher dirty, so tests that
+ * count snapshot requests would see refreshes that depend on retry timing.
+ */
+class FakeRealtimeSocket {
+  static sockets: FakeRealtimeSocket[] = [];
+  readyState = 0;
+  bufferedAmount = 0;
+  onopen: (() => void) | null = null;
+  onmessage: ((event: { data: string }) => void) | null = null;
+  onclose: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  constructor(readonly url: string) { FakeRealtimeSocket.sockets.push(this); }
+  send() {}
+  close() {
+    this.readyState = 3;
+    this.onclose?.();
+  }
+}
+
+async function withFakeRealtimeSocket(run: (sockets: FakeRealtimeSocket[]) => Promise<void>) {
+  const NativeWebSocket = globalThis.WebSocket;
+  FakeRealtimeSocket.sockets = [];
+  globalThis.WebSocket = FakeRealtimeSocket as unknown as typeof WebSocket;
+  try {
+    await run(FakeRealtimeSocket.sockets);
+  } finally {
+    globalThis.WebSocket = NativeWebSocket;
+  }
+}
+
 const classDefinition = {
   id: 'fixture.vanguard', revision: 1, label: 'Vanguard',
   description: 'Strength-led martial combatant.', primaryAttribute: 'strength' as const,
@@ -859,9 +891,10 @@ beforeEach(() => {
           },
           staminaRecovery: {
             posture: staminaPosture,
-            // Settled as the snapshot is served, so the client's wall-clock projection
-            // shows the fixture's vitals instead of days of recovery since a fixed date.
-            lastSettledAt: new Date().toISOString(),
+            // The client projects recovery up to its wall clock, and elapsed time
+            // never goes negative, so a settlement in the future keeps the fixture's
+            // vitals exact however long a test runs.
+            lastSettledAt: '2999-01-01T00:00:00.000Z',
             fractionalCarry: 0,
           },
           ...(combatEncounter ? { combat: combatEncounter } : {}),
@@ -2043,19 +2076,22 @@ describe('single-character world session client', () => {
       return Response.json({ ...commandResult, movementProjection: projection });
     });
 
-    render(<WorldClient onLeaveWorld={async () => undefined} />);
-    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
-    const gameRequestCountBeforeMove = apiFetch.mock.calls.filter(([path]) => path === '/api/game').length;
+    await withFakeRealtimeSocket(async (sockets) => {
+      render(<WorldClient onLeaveWorld={async () => undefined} />);
+      await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+      await waitFor(() => expect(sockets).not.toHaveLength(0));
+      const gameRequestCountBeforeMove = apiFetch.mock.calls.filter(([path]) => path === '/api/game').length;
 
-    quickGo('north');
+      quickGo('north');
 
-    expect(await screen.findByRole('heading', { name: 'Glasswater Bridge' })).toBeVisible();
-    expect(screen.queryByText('Bridge Watcher leaves the room.')).not.toBeInTheDocument();
-    await waitFor(() => expect(apiFetch.mock.calls.some(([path, init]) =>
-      path === '/api/commands' &&
-      JSON.parse(String(init?.body ?? '{}')).type === 'character.move'
-    )).toBe(true));
-    expect(apiFetch.mock.calls.filter(([path]) => path === '/api/game')).toHaveLength(gameRequestCountBeforeMove);
+      expect(await screen.findByRole('heading', { name: 'Glasswater Bridge' })).toBeVisible();
+      expect(screen.queryByText('Bridge Watcher leaves the room.')).not.toBeInTheDocument();
+      await waitFor(() => expect(apiFetch.mock.calls.some(([path, init]) =>
+        path === '/api/commands' &&
+        JSON.parse(String(init?.body ?? '{}')).type === 'character.move'
+      )).toBe(true));
+      expect(apiFetch.mock.calls.filter(([path]) => path === '/api/game')).toHaveLength(gameRequestCountBeforeMove);
+    });
   });
 
   it('applies the projection returned with take, drop and equipment actions without a snapshot', async () => {
@@ -2066,45 +2102,31 @@ describe('single-character world session client', () => {
       'character.drop',
       'character.equip',
     ]);
-    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
-    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
-    const history = screen.getByRole('region', { name: 'Terminal output' });
-    const snapshotRequests = () => apiFetch.mock.calls.filter(([path]) => path === '/api/game').length;
-    const snapshotsBeforeActions = snapshotRequests();
+    await withFakeRealtimeSocket(async (sockets) => {
+      render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+      await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+      const history = screen.getByRole('region', { name: 'Terminal output' });
+      const snapshotRequests = () => apiFetch.mock.calls.filter(([path]) => path === '/api/game').length;
+      await waitFor(() => expect(sockets).not.toHaveLength(0));
+      const snapshotsBeforeActions = snapshotRequests();
 
-    submitWorldCommand('take lost feather');
-    await waitFor(() => expect(history).toHaveTextContent('You pick up the lost feather.'));
-    // The projection put the feather in the pack, so it can be dropped at once.
-    submitWorldCommand('drop lost feather');
-    await waitFor(() => expect(history).toHaveTextContent('You put down the lost feather.'));
-    submitWorldCommand('equip test shield');
-    await waitFor(() => expect(history).toHaveTextContent('You equip the test shield as your armor.'));
+      submitWorldCommand('take lost feather');
+      await waitFor(() => expect(history).toHaveTextContent('You pick up the lost feather.'));
+      // The projection put the feather in the pack, so it can be dropped at once.
+      submitWorldCommand('drop lost feather');
+      await waitFor(() => expect(history).toHaveTextContent('You put down the lost feather.'));
+      submitWorldCommand('equip test shield');
+      await waitFor(() => expect(history).toHaveTextContent('You equip the test shield as your armor.'));
 
-    expect(secondItemTaken).toBe(false);
-    expect(equipmentSnapshot).toEqual({ weaponItemId: 'test-sword', armorItemId: 'test-shield' });
-    expect(projectionHeaders).toEqual(['game', 'game', 'game']);
-    expect(snapshotRequests()).toBe(snapshotsBeforeActions);
+      expect(secondItemTaken).toBe(false);
+      expect(equipmentSnapshot).toEqual({ weaponItemId: 'test-sword', armorItemId: 'test-shield' });
+      expect(projectionHeaders).toEqual(['game', 'game', 'game']);
+      expect(snapshotRequests()).toBe(snapshotsBeforeActions);
+    });
   });
 
   it('fetches a snapshot when the socket reports a newer character revision than the projection', async () => {
-    const sockets: FakeRealtimeSocket[] = [];
-    class FakeRealtimeSocket {
-      readyState = 0;
-      bufferedAmount = 0;
-      onopen: (() => void) | null = null;
-      onmessage: ((event: { data: string }) => void) | null = null;
-      onclose: (() => void) | null = null;
-      onerror: (() => void) | null = null;
-      constructor(readonly url: string) { sockets.push(this); }
-      send() {}
-      close() {
-        this.readyState = 3;
-        this.onclose?.();
-      }
-    }
-    const NativeWebSocket = globalThis.WebSocket;
-    globalThis.WebSocket = FakeRealtimeSocket as unknown as typeof WebSocket;
-    try {
+    await withFakeRealtimeSocket(async (sockets) => {
       returnGameProjectionsWithCommands(['character.take']);
       render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
       await screen.findByRole('heading', { name: 'Mossgate Clearing' });
@@ -2139,9 +2161,7 @@ describe('single-character world session client', () => {
       const takeRequest = apiFetch.mock.calls.findIndex(([path, init]) =>
         path === '/api/commands' && JSON.parse(String(init?.body ?? '{}')).type === 'character.take');
       expect(apiFetch.mock.calls.slice(takeRequest + 1).filter(([path]) => path === '/api/game')).toHaveLength(1);
-    } finally {
-      globalThis.WebSocket = NativeWebSocket;
-    }
+    });
   });
 
   it('rolls back optimistic travel when the authoritative projection reports another room', async () => {
