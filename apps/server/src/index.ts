@@ -62,6 +62,7 @@ import { characters, worldSessions, roomChatMessages } from './db/schema.js';
 import { PostgresEventStore } from './persistence/postgres-event-store.js';
 import { projectLocationWithGroups } from './location-group-projection.js';
 import { listRoomOccupants, touchWorldSessionPresence } from './room-presence-service.js';
+import { WORLD_ACTIVITY_WINDOW_MS, worldActivity } from './world-activity.js';
 import { createAutonomousNpcScheduler } from './autonomous-npc-scheduler.js';
 import { createStaminaRecoveryScheduler } from './stamina-recovery-scheduler.js';
 import { createObjectLifecycleScheduler } from './object-lifecycle-scheduler.js';
@@ -143,21 +144,32 @@ function runtimeFor(worldInstanceId: string): WorldRuntime {
   return runtime;
 }
 
-const autonomousNpcSchedulers = [...worldRuntimes.values()]
+const autonomousNpcSchedulers = new Map([...worldRuntimes.values()]
   .filter((runtime) => mobileNpcDefinitions(runtime.world).length > 0)
-  .map((runtime) => createAutonomousNpcScheduler({
+  .map((runtime) => [runtime.worldInstanceId, createAutonomousNpcScheduler({
     engine: runtime.engine,
     store,
     world: runtime.world,
     worldInstanceId: runtime.worldInstanceId,
+    // NPC wandering is only observable with someone online, so the scheduler
+    // sleeps while the world is idle instead of replaying NPC streams.
+    isActive: () => worldActivity.isActive(runtime.worldInstanceId),
     onError(error, npcId) {
       console.error(
         `Could not run autonomous movement for NPC ${npcId} in world ${runtime.worldInstanceId}.`,
         error,
       );
     },
-  }));
-for (const scheduler of autonomousNpcSchedulers) scheduler.start();
+  })]));
+worldActivity.onActivity((worldInstanceId) => autonomousNpcSchedulers.get(worldInstanceId)?.wake());
+// A restart forgets in-memory presence; reseed it from sessions that are still fresh.
+for (const session of await db.select({
+  worldInstanceId: worldSessions.worldInstanceId,
+  lastSeenAt: worldSessions.lastSeenAt,
+}).from(worldSessions).where(gte(worldSessions.lastSeenAt, new Date(Date.now() - WORLD_ACTIVITY_WINDOW_MS)))) {
+  worldActivity.record(session.worldInstanceId, session.lastSeenAt);
+}
+for (const scheduler of autonomousNpcSchedulers.values()) scheduler.start();
 
 const staminaRecoverySchedulers = [...worldRuntimes.values()].map((runtime) =>
   createStaminaRecoveryScheduler({
@@ -277,12 +289,17 @@ effectPoller.unref();
 
 let interactionMaintenanceRunning = false;
 const INTERACTION_HEARTBEAT_FRESH_MS = 45_000;
-async function runInteractionMaintenance() {
+// Pending requests need two online players. Keep maintaining a world until a
+// few passes after its last presence, so requests left by departing players
+// are cancelled, then skip it until someone returns.
+const INTERACTION_IDLE_GRACE_MS = INTERACTION_HEARTBEAT_FRESH_MS + 10_000;
+async function runInteractionMaintenance(includeIdleWorlds = false) {
   if (interactionMaintenanceRunning) return;
   interactionMaintenanceRunning = true;
   try {
     for (const runtime of worldRuntimes.values()) {
       const worldInstanceId = runtime.worldInstanceId;
+      if (!includeIdleWorlds && !worldActivity.isActive(worldInstanceId, INTERACTION_IDLE_GRACE_MS)) continue;
       const events = await store.readStream(worldInstanceId, interactionStreamId(worldInstanceId));
       const { requests } = projectInteractionEvents(events);
       const sessions = await db.select({
@@ -311,7 +328,8 @@ async function runInteractionMaintenance() {
     interactionMaintenanceRunning = false;
   }
 }
-void runInteractionMaintenance();
+// The startup pass covers every world, clearing requests left before a restart.
+void runInteractionMaintenance(true);
 const interactionPoller = setInterval(() => void runInteractionMaintenance(), 2_000);
 interactionPoller.unref();
 
@@ -868,6 +886,7 @@ app.post('/api/world-session', async (req, res, next) => {
     if (result.kind === 'missing') return res.status(404).json({ message: 'That character is unavailable.' });
     if (result.kind === 'occupied') return res.status(409).json({ message: 'Leave the current world session before switching characters.' });
     invalidateCachedWorldSession(identity.playerId, result.session.worldInstanceId);
+    worldActivity.record(result.session.worldInstanceId);
     const lastSeenAt = result.session.lastSeenAt instanceof Date
       ? result.session.lastSeenAt.getTime()
       : undefined;
@@ -1428,7 +1447,7 @@ async function shutdown() {
   stopRealtimeNotifications();
   realtimeGateway.close();
   server.close();
-  for (const scheduler of autonomousNpcSchedulers) scheduler.stop();
+  for (const scheduler of autonomousNpcSchedulers.values()) scheduler.stop();
   for (const scheduler of staminaRecoverySchedulers) scheduler.stop();
   objectLifecycleScheduler.stop();
   await stopWorldRuntimes(worldRuntimes);

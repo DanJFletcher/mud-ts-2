@@ -432,7 +432,7 @@ vi.mock('./autonomous-npc-scheduler.js', () => ({
     const start = vi.fn();
     const stop = vi.fn();
     state.autonomousSchedulers.push({ options, start, stop });
-    return { start, stop, tick: vi.fn() };
+    return { start, stop, wake: vi.fn(), tick: vi.fn() };
   },
 }));
 
