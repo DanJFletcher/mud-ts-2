@@ -12,6 +12,7 @@
 - [World-pack authoring types](world-pack-authoring-types.md) — Author against Zod input types when defaults normalize content; keep runtime pack types fully parsed.
 - [Orraveth Codex separation](orraveth-codex.md) — Keep Orraveth separate from the MUDD demo; Bellwold is expanding and gold remains provisional.
 - [Engine integration tests](engine-integration-tests.md) — Exercise content through a complete, authorized engine host; schema-only tests miss runtime plugin dependencies.
+- [MUDD product vision](mudd-product-vision.md) — MUDD is intended as a modular, client-independent multiplayer engine and framework for persistent, extensible worlds.
 - [World runtime capabilities](world-runtime-capabilities.md) — Treat currency as optional per world, and register shared effect handlers in every runtime that emits those effects.
 - [Shared corpses and loot](shared-corpses.md) — Dynamic PvE corpses and their unclaimed loot belong to the shared world-item stream.
 - [Room narration](room-narration.md) — Look descriptions use one or two senses; background knowledge belongs in readable sources and NPC dialogue.
