@@ -51,8 +51,8 @@ build = ["npm", "run", "build"]
 [userenv]
 
 [userenv.development]
-MUDD_SINGLE_CALL_APPEND = "1"
 
 [userenv.shared]
 MUDD_TIMER_RECOVERY = "1"
 MUDD_IDENTITY_CACHE = "1"
+MUDD_SINGLE_CALL_APPEND = "1"
