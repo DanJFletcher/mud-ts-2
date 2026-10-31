@@ -680,6 +680,18 @@ describe('map switching between floors', () => {
     expect(onFullscreenChange).not.toHaveBeenCalled();
 
     touch(dialog, 'touchstart');
+    fireEvent.keyDown(document, { key: ' ', code: 'Space' });
+    touch(dialog, 'touchend', 300);
+    fireEvent.keyUp(document, { key: ' ', code: 'Space' });
+    expect(onFullscreenChange).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(document, { key: ' ', code: 'Space' });
+    touch(dialog, 'touchstart');
+    fireEvent.keyUp(document, { key: ' ', code: 'Space' });
+    touch(dialog, 'touchend', 300);
+    expect(onFullscreenChange).not.toHaveBeenCalled();
+
+    touch(dialog, 'touchstart');
     touch(dialog, 'touchcancel');
     touch(dialog, 'touchend', 300);
     expect(onFullscreenChange).not.toHaveBeenCalled();

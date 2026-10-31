@@ -485,6 +485,7 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
       const isEditable = target instanceof Element
         && target.closest('input, textarea, select, [contenteditable="true"]');
       if (isSpaceKey && !isEditable) {
+        touchStartRef.current = null;
         spaceHeldRef.current = true;
         setSpaceHeld(true);
         event.preventDefault();
@@ -523,6 +524,10 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
 
   const handleTouchStart = (event: TouchEvent<HTMLElement>) => {
     if (!fullscreenPresent) return;
+    if (spaceHeldRef.current) {
+      touchStartRef.current = null;
+      return;
+    }
     const touch = event.touches[0];
     const target = event.target;
     if (mapZoom > 1 && target instanceof Element && target.closest('.focused-world-map__svg')) {
@@ -541,7 +546,7 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
     const start = touchStartRef.current;
     const touch = event.changedTouches[0];
     touchStartRef.current = null;
-    if (!start || !touch) return;
+    if (!start || !touch || spaceHeldRef.current) return;
     const deltaX = touch.clientX - start.x;
     const deltaY = touch.clientY - start.y;
     if (deltaX > 80 && Math.abs(deltaY) <= 60) onFullscreenChange(false);
