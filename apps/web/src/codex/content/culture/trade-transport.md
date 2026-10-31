@@ -7,10 +7,30 @@ summary: The routes and relationships that connect settlements, markets, and mob
 category: economy-trade
 entityType: concept
 tags: [trade, roads, rivers, travel]
-relatedIds: [orraveth-currency-and-commerce, orraveth-merefall-league, orraveth-rillward-freeholds, orraveth-jorek-vass, orraveth-bellwold]
+relatedIds: [orraveth-currency-and-commerce, orraveth-merefall-league, orraveth-rillward-freeholds, orraveth-jorek-vass, orraveth-bellwold, orraveth-bellwold-marches, orraveth-harrowfen, orraveth-ashcombe, orraveth-rillford, orraveth-greywatch, orraveth-thornmere, orraveth-vells-crossing, orraveth-mosswake, orraveth-elderhollow]
+relationships:
+  - type: related-to
+    targetId: orraveth-bellwold-marches
+  - type: trades-with
+    targetId: orraveth-harrowfen
+  - type: trades-with
+    targetId: orraveth-ashcombe
+  - type: trades-with
+    targetId: orraveth-rillford
+  - type: trades-with
+    targetId: orraveth-greywatch
+  - type: trades-with
+    targetId: orraveth-thornmere
+  - type: trades-with
+    targetId: orraveth-vells-crossing
+  - type: trades-with
+    targetId: orraveth-mosswake
+  - type: trades-with
+    targetId: orraveth-elderhollow
 canonStatus: Provisional Canon
-sourceRefs: []
-lastUpdated: "2026-10-22"
+sourceRefs:
+  - "attached_assets/Pasted--Replit-Agent-Task-Expand-the-Orraveth-Codex-The-Bellwo_1793467966232.txt"
+lastUpdated: "2026-10-31"
 ---
 
 Orraveth's trade moves through roads, rivers, local markets, and the knowledge of travelers. Routes are shaped by weather, terrain, safety, tolls, and the agreements of communities along the way.
@@ -24,3 +44,21 @@ No complete route map or universal schedule is established. Distance, tolls, and
 A provisional south road leaves Bellwold, crosses an unnamed river by a stone bridge, and ends beyond the far bank where the roadwork stops. No settlement has been established at its end, and the route gives no basis for assuming a destination or travel time.
 
 Two other local routes are mapped provisionally: the west road runs from the Kindly Roof to an unmarked verge, while the eastbound mill road passes through the abandoned watermill before ending beyond a low rise. Their onward destinations and travel times are not established.
+
+## The Bellwold Marches trade network
+
+The regional relationships below describe provisional exports and services, not a live economy or confirmed direct route between every pair of communities.
+
+| Community | Major exports or services |
+|---|---|
+| [[harrowfen|Harrowfen]] | Grain, root vegetables, flax |
+| [[ashcombe|Ashcombe]] | Timber, charcoal, wooden goods |
+| [[rillford|Rillford]] | Transport services, traded merchandise |
+| [[greywatch|Greywatch]] | Military contracts, security services |
+| [[thornmere|Thornmere]] | Herbs, specialized knowledge, cooperative sprite services |
+| [[vells-crossing|Vell's Crossing]] | Imported goods, alchemical products |
+| [[mosswake|Mosswake]] | Fish, reeds, medicinal plants |
+| [[elderhollow|Elderhollow]] | Specialized crafts, historical knowledge |
+| [[bellwold|Bellwold]] | Milling services, local crafts, market trade |
+
+These relationships depend on season, access, local agreements, and the willingness of communities to trade. They do not establish prices, quantities, ownership, or a single regional authority.

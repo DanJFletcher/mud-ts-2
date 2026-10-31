@@ -3,14 +3,34 @@ id: orraveth-bellwold
 slug: bellwold
 worldId: orraveth
 title: Bellwold
-summary: A growing frontier settlement near the Heskar border, with a market, workshops, residential lanes, and unfinished roads leaving in three directions.
+summary: A growing trading settlement near Heskar's frontier, serving as a local market between the Crown's settled territory and the Uncrowned Lands.
 category: geography
 entityType: region
 tags: [Bellwold, village, frontier, trade]
-relatedIds: [orraveth-crown-of-heskar, orraveth-bellwold-market-square, orraveth-kindly-roof-inn, orraveth-blackwater-forge, orraveth-green-mortar, orraveth-bellwold-common-house, orraveth-linnet-reed, orraveth-taren-voss, orraveth-old-bell-tower, orraveth-abandoned-watermill, orraveth-currency-and-commerce, orraveth-bellwold-roadside-wildlife]
+relatedIds: [orraveth-bellwold-marches, orraveth-crown-of-heskar, orraveth-uncrowned-lands, orraveth-harrowfen, orraveth-ashcombe, orraveth-rillford, orraveth-greywatch, orraveth-thornmere, orraveth-vells-crossing, orraveth-mosswake, orraveth-elderhollow, orraveth-bellwold-market-square, orraveth-kindly-roof-inn, orraveth-blackwater-forge, orraveth-green-mortar, orraveth-bellwold-common-house, orraveth-linnet-reed, orraveth-taren-voss, orraveth-old-bell-tower, orraveth-abandoned-watermill, orraveth-currency-and-commerce, orraveth-bellwold-roadside-wildlife]
+relationships:
+  - type: located-in
+    targetId: orraveth-bellwold-marches
+    label: central trading settlement
+  - type: trades-with
+    targetId: orraveth-harrowfen
+    label: food and flax
+  - type: trades-with
+    targetId: orraveth-ashcombe
+    label: timber and charcoal
+  - type: trades-with
+    targetId: orraveth-rillford
+    label: river commerce
 canonStatus: Established Canon
-sourceRefs: [attached_assets/Pasted-Replit-Agent-Task-Build-the-Orraveth-Codex-Project-Over_1792634102724.txt]
-lastUpdated: "2026-10-22"
+sourceRefs:
+  - "attached_assets/Pasted-Replit-Agent-Task-Build-the-Orraveth-Codex-Project-Over_1792634102724.txt"
+  - "attached_assets/Pasted--Replit-Agent-Task-Expand-the-Orraveth-Codex-The-Bellwo_1793467966232.txt"
+lastUpdated: "2026-10-31"
+claims:
+  - text: Bellwold is a local trading village between Heskar's settled territory and the Uncrowned Lands.
+    epistemicStatus: objective fact
+  - text: Bellwold's precise legal status and the region's borders are established.
+    epistemicStatus: unresolved
 ---
 
 Bellwold is a growing trading settlement near the frontier of the [[crown-of-heskar|Crown of Heskar]]. Farming, milling, blacksmithing, trade, lodging, and small-scale craft support its residents and the travelers who pass through.
@@ -32,3 +52,9 @@ An unfinished road leaves south from the Common House, crosses an unnamed river 
 The west road leaves from the Kindly Roof and reaches an unmarked verge beyond the village fields. The eastbound mill road branches from Old Bell Tower Road, passes through the abandoned watermill, and ends beyond a low rise. Neither road currently establishes a destination beyond its mapped endpoint.
 
 Bellwold's records are incomplete. The old bell, the disappearance of [[elira-venn|Professor Elira Venn]], and the [[mill-that-never-sleeps|watermill's continued operation]] have made it a place of scholarly attention and local unease.
+
+## The surrounding region
+
+Bellwold is an important local market within the provisional [[bellwold-marches|Bellwold Marches]], also called the Lower Rill by some. It is not the region's largest settlement: [[rillford|Rillford]] and [[vells-crossing|Vell's Crossing]] are larger trading centers. Bellwold sits between Heskar's settled territory and the [[uncrowned-lands|Uncrowned Lands]], but its exact legal status is not established.
+
+The village's regional ties are practical rather than a single political alliance. [[harrowfen|Harrowfen]] supplies food and flax; [[ashcombe|Ashcombe]] produces timber and charcoal; Rillford connects river trade; and [[greywatch|Greywatch]] represents Heskar's military administration. [[thornmere|Thornmere]] shares woodland goods and sprite-related knowledge; Vell's Crossing distributes imported goods and alchemical products; [[mosswake|Mosswake]] trades fish, reeds, and medicinal plants; and [[elderhollow|Elderhollow]] is associated with specialized crafts and historical knowledge. These relationships and the regional geography remain provisional.
