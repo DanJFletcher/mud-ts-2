@@ -133,10 +133,49 @@ function banditEncounter(id: string) {
   };
 }
 
+const lowerRillFishSpecies = [
+  {
+    id: 'smallmouth-bass',
+    name: 'Smallmouth bass',
+    itemTypeId: 'river-fish',
+    weightPercent: 50,
+    sizeBands: [
+      { rarity: 'common', weightPercent: 35, minLengthCm: 15, maxLengthCm: 25, minWeightGrams: 100, maxWeightGrams: 300 },
+      { rarity: 'uncommon', weightPercent: 59, minLengthCm: 25, maxLengthCm: 40, minWeightGrams: 300, maxWeightGrams: 1200 },
+      { rarity: 'rare', weightPercent: 5, minLengthCm: 45, maxLengthCm: 55, minWeightGrams: 1800, maxWeightGrams: 3000 },
+      { rarity: 'trophy', weightPercent: 1, minLengthCm: 56, maxLengthCm: 69, minWeightGrams: 3001, maxWeightGrams: 5410 },
+    ],
+  },
+  {
+    id: 'common-carp',
+    name: 'Common carp',
+    itemTypeId: 'river-fish',
+    weightPercent: 45,
+    sizeBands: [
+      { rarity: 'common', weightPercent: 35, minLengthCm: 25, maxLengthCm: 40, minWeightGrams: 500, maxWeightGrams: 2000 },
+      { rarity: 'uncommon', weightPercent: 59, minLengthCm: 45, maxLengthCm: 75, minWeightGrams: 2000, maxWeightGrams: 7000 },
+      { rarity: 'rare', weightPercent: 5, minLengthCm: 90, maxLengthCm: 110, minWeightGrams: 15000, maxWeightGrams: 25000 },
+      { rarity: 'trophy', weightPercent: 1, minLengthCm: 111, maxLengthCm: 129, minWeightGrams: 40000, maxWeightGrams: 50000 },
+    ],
+  },
+  {
+    id: 'rainbow-trout',
+    name: 'Rainbow trout',
+    itemTypeId: 'river-fish',
+    weightPercent: 5,
+    sizeBands: [
+      { rarity: 'common', weightPercent: 35, minLengthCm: 20, maxLengthCm: 30, minWeightGrams: 100, maxWeightGrams: 300 },
+      { rarity: 'uncommon', weightPercent: 59, minLengthCm: 30, maxLengthCm: 50, minWeightGrams: 300, maxWeightGrams: 1500 },
+      { rarity: 'rare', weightPercent: 5, minLengthCm: 60, maxLengthCm: 85, minWeightGrams: 3000, maxWeightGrams: 8000 },
+      { rarity: 'trophy', weightPercent: 1, minLengthCm: 86, maxLengthCm: 107, minWeightGrams: 8001, maxWeightGrams: 21770 },
+    ],
+  },
+] as const;
+
 const draft = {
   formatVersion: 1,
   packId: 'orraveth.bellwold',
-  packVersion: '1.19.0',
+  packVersion: '1.20.0',
   displayName: 'Orraveth: Bellwold',
   dailyBoards: [{
     id: 'bellwold-notice-board', locationId: 'bellwold-south-common', name: 'South Common bulletin board',
@@ -184,46 +223,15 @@ const draft = {
     id: 'bellwold-south-bridge-fishing',
     locationId: 'bellwold-river-bridge',
     stateId: 'on',
-    label: 'Bellwold River Bridge',
+    label: 'Lower Rill Bridge',
     tickSeconds: 1,
-    species: [
-      {
-        id: 'smallmouth-bass',
-        name: 'Smallmouth bass',
-        itemTypeId: 'river-fish',
-        weightPercent: 50,
-        sizeBands: [
-          { rarity: 'common', weightPercent: 35, minLengthCm: 15, maxLengthCm: 25, minWeightGrams: 100, maxWeightGrams: 300 },
-          { rarity: 'uncommon', weightPercent: 59, minLengthCm: 25, maxLengthCm: 40, minWeightGrams: 300, maxWeightGrams: 1200 },
-          { rarity: 'rare', weightPercent: 5, minLengthCm: 45, maxLengthCm: 55, minWeightGrams: 1800, maxWeightGrams: 3000 },
-          { rarity: 'trophy', weightPercent: 1, minLengthCm: 56, maxLengthCm: 69, minWeightGrams: 3001, maxWeightGrams: 5410 },
-        ],
-      },
-      {
-        id: 'common-carp',
-        name: 'Common carp',
-        itemTypeId: 'river-fish',
-        weightPercent: 45,
-        sizeBands: [
-          { rarity: 'common', weightPercent: 35, minLengthCm: 25, maxLengthCm: 40, minWeightGrams: 500, maxWeightGrams: 2000 },
-          { rarity: 'uncommon', weightPercent: 59, minLengthCm: 45, maxLengthCm: 75, minWeightGrams: 2000, maxWeightGrams: 7000 },
-          { rarity: 'rare', weightPercent: 5, minLengthCm: 90, maxLengthCm: 110, minWeightGrams: 15000, maxWeightGrams: 25000 },
-          { rarity: 'trophy', weightPercent: 1, minLengthCm: 111, maxLengthCm: 129, minWeightGrams: 40000, maxWeightGrams: 50000 },
-        ],
-      },
-      {
-        id: 'rainbow-trout',
-        name: 'Rainbow trout',
-        itemTypeId: 'river-fish',
-        weightPercent: 5,
-        sizeBands: [
-          { rarity: 'common', weightPercent: 35, minLengthCm: 20, maxLengthCm: 30, minWeightGrams: 100, maxWeightGrams: 300 },
-          { rarity: 'uncommon', weightPercent: 59, minLengthCm: 30, maxLengthCm: 50, minWeightGrams: 300, maxWeightGrams: 1500 },
-          { rarity: 'rare', weightPercent: 5, minLengthCm: 60, maxLengthCm: 85, minWeightGrams: 3000, maxWeightGrams: 8000 },
-          { rarity: 'trophy', weightPercent: 1, minLengthCm: 86, maxLengthCm: 107, minWeightGrams: 8001, maxWeightGrams: 21770 },
-        ],
-      },
-    ],
+    species: lowerRillFishSpecies,
+  }, {
+    id: 'rill-towpath-mooring-fishing',
+    locationId: 'rill-towpath-mooring-posts',
+    label: 'Towpath mooring posts',
+    tickSeconds: 1,
+    species: lowerRillFishSpecies,
   }],
   classCatalog: orravethClassCatalog,
   currency: {
@@ -1626,24 +1634,25 @@ const draft = {
     {
       id: 'bellwold-reedbed-approach',
       name: 'Reedbed Approach',
-      description: 'Damp grass brushes the road’s edges, and reeds rustle along the riverbanks. The current deepens toward the stone bridge to the south.\n\nThe Southbound Track is north; Bellwold River Bridge is south.',
+      description: 'Damp grass brushes the road’s edges, and reeds rustle along the riverbanks. The current deepens toward the stone bridge to the south, and a towpath follows the north bank west toward Rillford.\n\nThe Southbound Track is north; Lower Rill Bridge is south.',
       mapPosition: { x: 0, y: -6, terrain: 'land' },
       exits: [
         { id: 'reedbed-approach-to-track', fromLocationId: 'bellwold-reedbed-approach', toLocationId: 'bellwold-southbound-track', label: 'north', direction: 'north', roadId: 'bellwold-south-road' },
         { id: 'reedbed-approach-to-bridge', fromLocationId: 'bellwold-reedbed-approach', toLocationId: 'bellwold-river-bridge', label: 'south', direction: 'south', roadId: 'bellwold-south-road' },
+        { id: 'reedbed-approach-to-towpath', fromLocationId: 'bellwold-reedbed-approach', toLocationId: 'rill-towpath-willow-bank', label: 'west', direction: 'west', roadId: 'rill-towpath' },
       ],
     },
     {
       id: 'bellwold-river-bridge',
-      name: 'Bellwold River Bridge',
-      description: 'A low stone bridge carries the south road over a broad river. The current runs east and west beneath its arches. Reedbed Approach is north; Far Bank Track is south.',
+      name: 'Lower Rill Bridge',
+      description: 'A low stone bridge carries the south road over the Lower Rill. The current runs east and west beneath its arches. Reedbed Approach is north; Far Bank Track is south.',
       mapPosition: { x: 0, y: -7, terrain: 'land', visibleWhenUnvisited: true },
       defaultStateId: 'on',
       states: [
         { id: 'on' },
         {
           id: 'under',
-          name: 'Under Bellwold River Bridge',
+          name: 'Under Lower Rill Bridge',
           description: 'The river moves beneath the stone arches. The road bridge rumbles overhead as the current passes east and west.',
         },
       ],
@@ -1656,17 +1665,17 @@ const draft = {
     },
     {
       id: 'bellwold-river-west-reach',
-      name: 'River West Reach',
+      name: 'West Reach',
       description: 'The current passes the bridge piers and slides west beneath the reeds. The bridge lies east; Willow Reach is west.',
       mapPosition: { x: -1, y: -7, terrain: 'river', visibleWhenUnvisited: true },
       exits: [
-        { id: 'west-reach-to-bridge-under', fromLocationId: 'bellwold-river-west-reach', toLocationId: 'bellwold-river-bridge', label: 'east beneath Bellwold River Bridge', direction: 'east', toStateId: 'under', mapLineGapAtLocationId: 'bellwold-river-bridge' },
+        { id: 'west-reach-to-bridge-under', fromLocationId: 'bellwold-river-west-reach', toLocationId: 'bellwold-river-bridge', label: 'east beneath Lower Rill Bridge', direction: 'east', toStateId: 'under', mapLineGapAtLocationId: 'bellwold-river-bridge' },
         { id: 'west-reach-to-willow-reach', fromLocationId: 'bellwold-river-west-reach', toLocationId: 'bellwold-river-willow-reach', label: 'west along the river', direction: 'west' },
       ],
     },
     {
       id: 'bellwold-river-willow-reach',
-      name: 'River Willow Reach',
+      name: 'Willow Reach',
       description: 'Willow roots trail into the slow water along this stretch. West Reach is east; Far West Reach is west.',
       mapPosition: { x: -2, y: -7, terrain: 'river', visibleWhenUnvisited: true },
       exits: [
@@ -1676,26 +1685,27 @@ const draft = {
     },
     {
       id: 'bellwold-river-far-west-reach',
-      name: 'River Far West Reach',
-      description: 'The river broadens beyond the western reedbeds and bends out of sight. Willow Reach is east.',
+      name: 'Far West Reach',
+      description: 'The river broadens beyond the western reedbeds. Willow Reach is east; Reed Reach is west.',
       mapPosition: { x: -3, y: -7, terrain: 'river', visibleWhenUnvisited: true },
       exits: [
         { id: 'far-west-reach-to-willow-reach', fromLocationId: 'bellwold-river-far-west-reach', toLocationId: 'bellwold-river-willow-reach', label: 'east along the river', direction: 'east' },
+        { id: 'far-west-reach-to-reed-reach', fromLocationId: 'bellwold-river-far-west-reach', toLocationId: 'lower-rill-reed-reach', label: 'west along the river', direction: 'west' },
       ],
     },
     {
       id: 'bellwold-river-east-reach',
-      name: 'River East Reach',
+      name: 'East Reach',
       description: 'The current emerges from beneath the bridge and runs east through reeds and shallow stones. The bridge lies west; Alder Reach is east.',
       mapPosition: { x: 1, y: -7, terrain: 'river', visibleWhenUnvisited: true },
       exits: [
-        { id: 'east-reach-to-bridge-under', fromLocationId: 'bellwold-river-east-reach', toLocationId: 'bellwold-river-bridge', label: 'west beneath Bellwold River Bridge', direction: 'west', toStateId: 'under', mapLineGapAtLocationId: 'bellwold-river-bridge' },
+        { id: 'east-reach-to-bridge-under', fromLocationId: 'bellwold-river-east-reach', toLocationId: 'bellwold-river-bridge', label: 'west beneath Lower Rill Bridge', direction: 'west', toStateId: 'under', mapLineGapAtLocationId: 'bellwold-river-bridge' },
         { id: 'east-reach-to-alder-reach', fromLocationId: 'bellwold-river-east-reach', toLocationId: 'bellwold-river-alder-reach', label: 'east along the river', direction: 'east' },
       ],
     },
     {
       id: 'bellwold-river-alder-reach',
-      name: 'River Alder Reach',
+      name: 'Alder Reach',
       description: 'A line of alder trees shadows this stretch of water. East Reach is west; Far East Reach is east.',
       mapPosition: { x: 2, y: -7, terrain: 'river', visibleWhenUnvisited: true },
       exits: [
@@ -1705,7 +1715,7 @@ const draft = {
     },
     {
       id: 'bellwold-river-far-east-reach',
-      name: 'River Far East Reach',
+      name: 'Far East Reach',
       description: 'The eastern current continues past the last visible bank and around a long bend. Alder Reach is west.',
       mapPosition: { x: 3, y: -7, terrain: 'river', visibleWhenUnvisited: true },
       exits: [
@@ -1713,9 +1723,340 @@ const draft = {
       ],
     },
     {
+      id: 'lower-rill-reed-reach',
+      name: 'Reed Reach',
+      description: 'Tall reeds crowd both banks and lean over the slow water. A towpath shows along the north bank. Far West Reach is east; Towpath Reach is west.',
+      mapPosition: { x: -4, y: -7, terrain: 'river', visibleWhenUnvisited: true },
+      exits: [
+        { id: 'reed-reach-to-far-west-reach', fromLocationId: 'lower-rill-reed-reach', toLocationId: 'bellwold-river-far-west-reach', label: 'east along the river', direction: 'east' },
+        { id: 'reed-reach-to-towpath-reach', fromLocationId: 'lower-rill-reed-reach', toLocationId: 'lower-rill-towpath-reach', label: 'west along the river', direction: 'west' },
+      ],
+    },
+    {
+      id: 'lower-rill-towpath-reach',
+      name: 'Towpath Reach',
+      description: 'The river runs close beside the towpath here, and rope-worn posts stand along the north bank. Reed Reach is east; Rillford’s ferry stage lies west.',
+      mapPosition: { x: -5, y: -7, terrain: 'river', visibleWhenUnvisited: true },
+      exits: [
+        { id: 'towpath-reach-to-reed-reach', fromLocationId: 'lower-rill-towpath-reach', toLocationId: 'lower-rill-reed-reach', label: 'east along the river', direction: 'east' },
+        { id: 'towpath-reach-to-ferry-stage', fromLocationId: 'lower-rill-towpath-reach', toLocationId: 'rillford-crossing', label: 'west past the ferry stage', direction: 'west', toStateId: 'water' },
+      ],
+    },
+    {
+      // The Codex describes a ferry crossing with a contested ferry trade and no settled right of
+      // passage, so the stage links the north quay to the river but not to the south landing.
+      id: 'rillford-crossing',
+      name: 'Ferry Stage',
+      description: 'A timber stage reaches out over the Lower Rill on tarred piles. Boats tie up along its edge to load and unload, and crews keep an eye on the current while they work. Rillford’s south landing lies across the water; passage over is arranged with the boat crews, and none is taking passengers now. The north quay is north.',
+      mapPosition: { x: -6, y: -7, terrain: 'river', visibleWhenUnvisited: true },
+      defaultStateId: 'stage',
+      states: [
+        { id: 'stage' },
+        {
+          id: 'water',
+          name: 'Beside the Ferry Stage',
+          description: 'The current pulls past the tarred piles of Rillford’s ferry stage. Towpath Reach is east; the river runs on west.',
+        },
+      ],
+      exits: [
+        { id: 'ferry-stage-to-north-quay', fromLocationId: 'rillford-crossing', toLocationId: 'rillford-north-quay', label: 'north', direction: 'north', fromStateId: 'stage' },
+        { id: 'ferry-stage-water-to-towpath-reach', fromLocationId: 'rillford-crossing', toLocationId: 'lower-rill-towpath-reach', label: 'east along the river', direction: 'east', fromStateId: 'water' },
+        { id: 'ferry-stage-water-to-west-reach', fromLocationId: 'rillford-crossing', toLocationId: 'lower-rill-west-of-rillford', label: 'west along the river', direction: 'west', fromStateId: 'water' },
+      ],
+      readables: [
+        {
+          id: 'rillford-crew-slate',
+          label: 'Crew slate',
+          description: 'A slate nailed to one of the piles, chalked over in several hands.',
+          text: 'Crews leave notices for one another here: a loose mooring ring, a snag below the stage, a boat wanted for hire. Beneath them, three entries in different hands each record a boat overturned near the crossing. One lists grain, one lists hides and one names no cargo at all. Someone has chalked “Silverfin?” beside the last, and someone else has rubbed it out.',
+        },
+      ],
+    },
+    {
+      id: 'lower-rill-west-of-rillford',
+      name: 'West of Rillford',
+      description: 'Beyond Rillford’s ferry stage the river widens and runs on out of sight. Nobody here has marked where it goes. The ferry stage lies east.',
+      mapPosition: { x: -7, y: -7, terrain: 'river', visibleWhenUnvisited: true },
+      exits: [
+        { id: 'west-of-rillford-to-ferry-stage', fromLocationId: 'lower-rill-west-of-rillford', toLocationId: 'rillford-crossing', label: 'east past the ferry stage', direction: 'east', toStateId: 'water' },
+      ],
+    },
+    {
+      id: 'rill-towpath-willow-bank',
+      name: 'Towpath Willow Bank',
+      description: 'A worn towpath leaves the south road and follows the river’s north bank under leaning willows. Reedbed Approach is east; the towpath runs on west.',
+      mapPosition: { x: -1, y: -6, terrain: 'land' },
+      exits: [
+        { id: 'towpath-willow-bank-to-reedbed', fromLocationId: 'rill-towpath-willow-bank', toLocationId: 'bellwold-reedbed-approach', label: 'east', direction: 'east', roadId: 'rill-towpath' },
+        { id: 'towpath-willow-bank-to-mooring-posts', fromLocationId: 'rill-towpath-willow-bank', toLocationId: 'rill-towpath-mooring-posts', label: 'west', direction: 'west', roadId: 'rill-towpath' },
+      ],
+    },
+    {
+      id: 'rill-towpath-mooring-posts',
+      name: 'Towpath Mooring Posts',
+      description: 'Old mooring posts stand along the bank, their tops grooved by rope. The water runs deep enough here to drop a line. The towpath runs east and west.',
+      mapPosition: { x: -2, y: -6, terrain: 'land' },
+      exits: [
+        { id: 'towpath-mooring-posts-to-willow-bank', fromLocationId: 'rill-towpath-mooring-posts', toLocationId: 'rill-towpath-willow-bank', label: 'east', direction: 'east', roadId: 'rill-towpath' },
+        { id: 'towpath-mooring-posts-to-sedge-flats', fromLocationId: 'rill-towpath-mooring-posts', toLocationId: 'rill-towpath-sedge-flats', label: 'west', direction: 'west', roadId: 'rill-towpath' },
+      ],
+    },
+    {
+      id: 'rill-towpath-sedge-flats',
+      name: 'Towpath Sedge Flats',
+      description: 'Sedge flats spread between the towpath and the water, cut by narrow channels. Something heavy has rooted along the margin. The towpath runs east and west.',
+      mapPosition: { x: -3, y: -6, terrain: 'land' },
+      exits: [
+        { id: 'towpath-sedge-flats-to-mooring-posts', fromLocationId: 'rill-towpath-sedge-flats', toLocationId: 'rill-towpath-mooring-posts', label: 'east', direction: 'east', roadId: 'rill-towpath' },
+        { id: 'towpath-sedge-flats-to-culvert', fromLocationId: 'rill-towpath-sedge-flats', toLocationId: 'rill-towpath-culvert', label: 'west', direction: 'west', roadId: 'rill-towpath' },
+      ],
+    },
+    {
+      id: 'rill-towpath-culvert',
+      name: 'Towpath Culvert',
+      description: 'The towpath crosses a stone culvert where a field drain empties into the river. Fox tracks mark the mud at its mouth. The towpath runs east and west.',
+      mapPosition: { x: -4, y: -6, terrain: 'land' },
+      exits: [
+        { id: 'towpath-culvert-to-sedge-flats', fromLocationId: 'rill-towpath-culvert', toLocationId: 'rill-towpath-sedge-flats', label: 'east', direction: 'east', roadId: 'rill-towpath' },
+        { id: 'towpath-culvert-to-quay-lane', fromLocationId: 'rill-towpath-culvert', toLocationId: 'rill-towpath-quay-lane', label: 'west', direction: 'west', roadId: 'rill-towpath' },
+      ],
+    },
+    {
+      id: 'rill-towpath-quay-lane',
+      name: 'Quay Lane',
+      description: 'The towpath widens into a cart lane between stacked crates and coiled rope. Voices and the knock of loading carry from the quay to the west. The towpath back toward Bellwold runs east.',
+      mapPosition: { x: -5, y: -6, terrain: 'dirt' },
+      exits: [
+        { id: 'quay-lane-to-culvert', fromLocationId: 'rill-towpath-quay-lane', toLocationId: 'rill-towpath-culvert', label: 'east', direction: 'east', roadId: 'rill-towpath' },
+        { id: 'quay-lane-to-north-quay', fromLocationId: 'rill-towpath-quay-lane', toLocationId: 'rillford-north-quay', label: 'west', direction: 'west', roadId: 'rill-towpath' },
+      ],
+    },
+    {
+      id: 'rillford-north-quay',
+      name: 'North Quay',
+      description: 'Boats nose against the stone quay while crews load, mend and argue over the current. The ferry stage reaches into the river to the south. The customs house is west, the guild hall is north, and the towpath to Bellwold runs east.',
+      mapPosition: { x: -6, y: -6, terrain: 'cobblestone' },
+      exits: [
+        { id: 'north-quay-to-quay-lane', fromLocationId: 'rillford-north-quay', toLocationId: 'rill-towpath-quay-lane', label: 'east', direction: 'east', roadId: 'rill-towpath' },
+        { id: 'north-quay-to-customs-house', fromLocationId: 'rillford-north-quay', toLocationId: 'rillford-customs-house', label: 'west', direction: 'west' },
+        { id: 'north-quay-to-guild-hall', fromLocationId: 'rillford-north-quay', toLocationId: 'rillford-guild-hall', label: 'north', direction: 'north' },
+        { id: 'north-quay-to-ferry-stage', fromLocationId: 'rillford-north-quay', toLocationId: 'rillford-crossing', label: 'south', direction: 'south', toStateId: 'stage' },
+      ],
+    },
+    {
+      id: 'rillford-customs-house',
+      name: 'Customs House',
+      description: 'Ledgers fill the shelves of a narrow stone office, and a counter faces the quay door. A notice is pinned beside the door. The quay is east; Warehouse Row lies west.',
+      mapPosition: { x: -7, y: -6, terrain: 'building' },
+      exits: [
+        { id: 'customs-house-to-north-quay', fromLocationId: 'rillford-customs-house', toLocationId: 'rillford-north-quay', label: 'east', direction: 'east' },
+        { id: 'customs-house-to-warehouse-row', fromLocationId: 'rillford-customs-house', toLocationId: 'rillford-warehouse-row', label: 'west', direction: 'west' },
+      ],
+      readables: [
+        {
+          id: 'rillford-cargo-notice',
+          label: 'Cargo notice',
+          description: 'A notice pinned beside the customs-house door.',
+          text: 'Cargo landed or loaded at the Rillford quay is to be declared at this house before it moves on. A declaration names the goods, their quantity, their owner and the boat or cart that carries them. The notice sets out no rates and says nothing about who may carry passengers.',
+        },
+      ],
+      npcs: [
+        {
+          id: 'rillford-customs-clerk',
+          name: 'Customs Clerk',
+          description: 'A customs clerk copies a cargo declaration into a ledger, checking each line against the bill beside it.',
+          activityDescription: 'copying cargo declarations into a ledger',
+          greeting: '“Declaring cargo? The notice by the door says what I need. Otherwise, mind the ledgers.”',
+          topics: [
+            { id: 'declarations', keywords: ['cargo', 'declare', 'declaration', 'declarations', 'ledger'], response: '“Whatever comes off a boat or goes onto one gets written here: goods, quantity, owner, boat. That’s the job.”' },
+            { id: 'crown', keywords: ['Crown', 'Heskar', 'customs'], response: '“The Crown wants to know what moves through the crossing. Some merchants think that keeps things fair. Others think it’s our business only when it suits us.”' },
+            { id: 'fees', keywords: ['fee', 'fees', 'toll', 'tolls', 'tax', 'duty', 'rate', 'rates'], response: '“I record cargo. If you want to talk money, talk to someone who can set it. I won’t quote you a number.”' },
+            { id: 'silverfin', keywords: ['Silverfin', 'Old Silverfin', 'sprite', 'overturned'], response: '“I record what boats declare. I’ve heard the crews’ stories like everyone else. None of them is in my ledger.”' },
+          ],
+          unknownTopicResponse: '“I keep the declarations. Ask the guild or the crews about the rest.”',
+          dialogue: {
+            prompt: '“Declaring cargo? The notice by the door says what I need. Otherwise, mind the ledgers.”',
+            choices: bellwoldSmallTalkChoices(
+              'rillford-customs-clerk',
+              '“A clerk of the customs house. I write down what crosses the quay.”',
+              '“Copying today’s declarations. Every line has to match the bill.”',
+              '“Busy. Boats in, boats out, and everyone sure their cargo is the one that matters.”',
+              [
+                {
+                  id: 'cargo-notice',
+                  label: 'What does the cargo notice ask for?',
+                  response: '“Goods, quantity, owner, and the boat or cart carrying them. Bring me those and you’re done here.”',
+                },
+              ],
+              [],
+              [],
+              'Rillford',
+            ),
+          },
+        },
+      ],
+    },
+    {
+      id: 'rillford-guild-hall',
+      name: 'Guild Hall',
+      description: 'Long tables hold bills of lading and a chalked board of boats due and boats gone. Merchants talk in low, quick voices. The quay is south; the inn is west.',
+      mapPosition: { x: -6, y: -5, terrain: 'building' },
+      exits: [
+        { id: 'guild-hall-to-north-quay', fromLocationId: 'rillford-guild-hall', toLocationId: 'rillford-north-quay', label: 'south', direction: 'south' },
+        { id: 'guild-hall-to-inn', fromLocationId: 'rillford-guild-hall', toLocationId: 'rillford-inn', label: 'west', direction: 'west' },
+      ],
+      npcs: [
+        {
+          id: 'selda-rook',
+          name: 'Guildmistress Selda Rook',
+          description: 'Selda Rook stands over a bill of lading at the long table, marking each cargo line before she signs.',
+          activityDescription: 'checking bills of lading',
+          greeting: '“If you’ve business on the river, it starts with a record. What are you carrying?”',
+          topics: [
+            { id: 'regulation', keywords: ['rules', 'regulation', 'guild', 'commerce', 'procedures'], response: '“Agreed rules for loading, passage and disputes protect the small trader as much as the big house. Without them, whoever shouts loudest sets the terms.”' },
+            { id: 'ferry-dispute', keywords: ['ferry', 'boatmen', 'dispute', 'rights', 'passage'], response: '“The ferry guild wants exclusive rights. The independent boatmen say rules will become a fence. I want regulation, but I don’t speak for every merchant on this quay, and I won’t pretend to.”' },
+            { id: 'silverfin', keywords: ['Silverfin', 'Old Silverfin', 'sprite', 'overturned', 'capsized'], response: '“Crews say Old Silverfin has been overturning boats with certain cargoes. Which cargoes? Every account I hear is different. Until we write down what each boat carried and where it went over, I won’t name a cause.”' },
+            { id: 'records', keywords: ['cargo', 'cargoes', 'records', 'bills', 'lading'], response: '“Write down what was loaded, who loaded it and where the boat was bound. Then compare. A pattern you can check is worth more than a story you like.”' },
+            { id: 'customs', keywords: ['customs', 'Crown', 'Heskar'], response: '“The customs house wants the crossing legible to the Crown. Some here welcome that. Others don’t.”' },
+            { id: 'trade', keywords: ['Bellwold', 'Harrowfen', 'trade', 'market'], response: '“Bellwold’s goods come down the towpath and go out on our boats. Harrowfen’s grain moves through here too. When one place is short, the others hear about it.”' },
+          ],
+          unknownTopicResponse: '“Ask me about the river trade, the guild or the crossing.”',
+          dialogue: {
+            prompt: '“If you’ve business on the river, it starts with a record. What are you carrying?”',
+            choices: bellwoldSmallTalkChoices(
+              'selda-rook',
+              '“Selda Rook. I speak for the merchants who want river commerce run by agreed rules. Not all of them, mind.”',
+              '“Checking bills of lading. If a boat goes over, I want to know what it carried before anyone tells me why.”',
+              '“A crossing town. Warehouses, customs, a livestock market each week, and more opinions about the river than boats on it.”',
+              [
+                {
+                  id: 'ferry-dispute',
+                  label: 'What is the ferry dispute?',
+                  response: '“The ferry guild wants exclusive rights to carry across. The independent boatmen think that would shut them out. I support regulation, and I know not everyone trusts the people who’d write it.”',
+                },
+                {
+                  id: 'old-silverfin',
+                  label: 'What about Old Silverfin?',
+                  response: '“Some crews call it a warning. Some blame poor loading, and some think someone wants boats to sink. I want the cargoes written down before anyone decides.”',
+                },
+              ],
+              [],
+              [],
+              'Rillford',
+            ),
+          },
+        },
+      ],
+    },
+    {
+      id: 'rillford-inn',
+      name: 'Quayside Inn',
+      safeResting: true,
+      description: 'Crews and carters share the benches of a low, smoky common room. Wet coats steam by the hearth. The guild hall is east; the livestock market is west.',
+      mapPosition: { x: -7, y: -5, terrain: 'building' },
+      exits: [
+        { id: 'rillford-inn-to-guild-hall', fromLocationId: 'rillford-inn', toLocationId: 'rillford-guild-hall', label: 'east', direction: 'east' },
+        { id: 'rillford-inn-to-livestock-market', fromLocationId: 'rillford-inn', toLocationId: 'rillford-livestock-market', label: 'west', direction: 'west' },
+      ],
+    },
+    {
+      id: 'rillford-warehouse-row',
+      name: 'Warehouse Row',
+      description: 'Timber warehouses stand shoulder to shoulder, their doors open on sacks, bales and barrels. Boat crews mend gear between loads. The customs house is east; the livestock market is north.',
+      mapPosition: { x: -8, y: -6, terrain: 'dirt' },
+      exits: [
+        { id: 'warehouse-row-to-customs-house', fromLocationId: 'rillford-warehouse-row', toLocationId: 'rillford-customs-house', label: 'east', direction: 'east' },
+        { id: 'warehouse-row-to-livestock-market', fromLocationId: 'rillford-warehouse-row', toLocationId: 'rillford-livestock-market', label: 'north', direction: 'north' },
+      ],
+      npcs: [
+        {
+          id: 'rillford-independent-boatman',
+          name: 'Independent Boatman',
+          description: 'A boatman sits on an upturned hull, splicing a rope end and keeping half an eye on the warehouse doors.',
+          activityDescription: 'splicing rope between loads',
+          greeting: '“If you’re from the guild, I’ve said my piece. If not, sit down.”',
+          topics: [
+            { id: 'ferry', keywords: ['ferry', 'guild', 'rights', 'exclusive', 'dispute'], response: '“The guild calls it regulation. To me it looks like a fence round the river with their name on the gate. Rules written by the biggest boats tend to suit the biggest boats.”' },
+            { id: 'silverfin', keywords: ['Silverfin', 'Old Silverfin', 'sprite', 'overturned', 'capsized'], response: '“Some crews say it’s a warning. Some say it’s bad loading. A few reckon someone’s tipping boats on purpose to settle the ferry fight. I’ve not seen it myself, so I won’t tell you which.”' },
+            { id: 'passage', keywords: ['passage', 'crossing', 'boat', 'across', 'ferry stage'], response: '“Crossing’s arranged boat by boat. Nobody’s carrying passengers off this quay just now.”' },
+            { id: 'river', keywords: ['river', 'Rill', 'Lower Rill', 'current'], response: '“Watch the current, not the stories. It changes with the weather, and it doesn’t care who holds the rights.”' },
+          ],
+          unknownTopicResponse: '“I know boats and this stretch of water. Ask about those.”',
+          dialogue: {
+            prompt: '“If you’re from the guild, I’ve said my piece. If not, sit down.”',
+            choices: bellwoldSmallTalkChoices(
+              'rillford-independent-boatman',
+              '“I work my own boat. No guild, no exclusive rights, and I’d like to keep it that way.”',
+              '“Splicing rope. A frayed line costs more than a slow afternoon.”',
+              '“Good water, crowded quay, and everyone arguing over who gets to carry what.”',
+              [
+                {
+                  id: 'crossing',
+                  label: 'Can you take me across?',
+                  response: '“Not from here, not now. Who carries whom across is half of what the guild fight is about.”',
+                },
+              ],
+              [],
+              [],
+              'Rillford',
+            ),
+          },
+        },
+      ],
+    },
+    {
+      id: 'rillford-livestock-market',
+      name: 'Livestock Market',
+      description: 'Hurdle pens fill the open ground. The weekly market leaves trampled straw and the smell of animals long after it ends. The inn is east; Warehouse Row is south.',
+      mapPosition: { x: -8, y: -5, terrain: 'pasture' },
+      exits: [
+        { id: 'livestock-market-to-inn', fromLocationId: 'rillford-livestock-market', toLocationId: 'rillford-inn', label: 'east', direction: 'east' },
+        { id: 'livestock-market-to-warehouse-row', fromLocationId: 'rillford-livestock-market', toLocationId: 'rillford-warehouse-row', label: 'south', direction: 'south' },
+      ],
+    },
+    {
+      id: 'rillford-south-landing',
+      name: 'South Landing',
+      description: 'A muddy landing on the south bank faces the ferry stage across the water. Boats put in here when the crews are carrying, but none waits now. A lane runs south.',
+      mapPosition: { x: -6, y: -8, terrain: 'land' },
+      exits: [
+        { id: 'south-landing-to-south-lane', fromLocationId: 'rillford-south-landing', toLocationId: 'rillford-south-lane', label: 'south', direction: 'south', roadId: 'rillford-south-lane-road' },
+      ],
+    },
+    {
+      id: 'rillford-south-lane',
+      name: 'South Lane',
+      description: 'Low cottages and net sheds line a lane along Rillford’s south bank. The landing is north; a track leads east toward Bellwold’s Milepost Workshop.',
+      mapPosition: { x: -6, y: -9, terrain: 'dirt' },
+      exits: [
+        { id: 'south-lane-to-south-landing', fromLocationId: 'rillford-south-lane', toLocationId: 'rillford-south-landing', label: 'north', direction: 'north', roadId: 'rillford-south-lane-road' },
+        { id: 'south-lane-to-landing-lane', fromLocationId: 'rillford-south-lane', toLocationId: 'mile-road-landing-lane', label: 'east', direction: 'east', roadId: 'rillford-south-lane-road' },
+      ],
+    },
+    {
+      id: 'mile-road-landing-lane',
+      name: 'Landing Lane',
+      description: 'The track firms into a lane as it nears the river. Rillford’s roofs show to the west; the sedge track runs east.',
+      mapPosition: { x: -5, y: -9, terrain: 'dirt' },
+      exits: [
+        { id: 'landing-lane-to-sedge-track', fromLocationId: 'mile-road-landing-lane', toLocationId: 'mile-road-sedge-track', label: 'east', direction: 'east', roadId: 'rillford-south-lane-road' },
+        { id: 'landing-lane-to-south-lane', fromLocationId: 'mile-road-landing-lane', toLocationId: 'rillford-south-lane', label: 'west', direction: 'west', roadId: 'rillford-south-lane-road' },
+      ],
+    },
+    {
+      id: 'mile-road-sedge-track',
+      name: 'Sedge Track',
+      description: 'A narrow track runs through sedge and alder scrub. The Milepost Workshop is east; the track continues west toward Rillford.',
+      mapPosition: { x: -4, y: -9, terrain: 'dirt' },
+      exits: [
+        { id: 'sedge-track-to-workshop', fromLocationId: 'mile-road-sedge-track', toLocationId: 'bellwold-milepost-workshop', label: 'east', direction: 'east', roadId: 'rillford-south-lane-road' },
+        { id: 'sedge-track-to-landing-lane', fromLocationId: 'mile-road-sedge-track', toLocationId: 'mile-road-landing-lane', label: 'west', direction: 'west', roadId: 'rillford-south-lane-road' },
+      ],
+    },
+    {
       id: 'bellwold-far-bank-track',
       name: 'Far Bank Track',
-      description: 'The road climbs away from the bridge onto firmer ground. Bellwold River Bridge is north; the old mile marker is south.',
+      description: 'The road climbs away from the bridge onto firmer ground. Lower Rill Bridge is north; the old mile marker is south.',
       mapPosition: { x: 0, y: -8, terrain: 'land' },
       exits: [
         { id: 'far-bank-track-to-bridge', fromLocationId: 'bellwold-far-bank-track', toLocationId: 'bellwold-river-bridge', label: 'north', direction: 'north', toStateId: 'on', roadId: 'bellwold-south-road' },
@@ -1764,10 +2105,11 @@ const draft = {
     {
       id: 'bellwold-milepost-workshop',
       name: 'Milepost Workshop',
-      description: 'Pale shavings curl across a scarred workbench beside a low, warm stove. A file rasps against metal; the hazel track runs east.',
+      description: 'Pale shavings curl across a scarred workbench beside a low, warm stove. A file rasps against metal; the hazel track runs east, and a sedge-lined track leads west toward Rillford’s south landing.',
       mapPosition: { x: -3, y: -9, terrain: 'building' },
       exits: [
         { id: 'workshop-to-hazel-cut', fromLocationId: 'bellwold-milepost-workshop', toLocationId: 'bellwold-hazel-cut', label: 'east', direction: 'east', roadId: 'bellwold-mile-west-road' },
+        { id: 'workshop-to-mile-road-sedge-track', fromLocationId: 'bellwold-milepost-workshop', toLocationId: 'mile-road-sedge-track', label: 'west', direction: 'west', roadId: 'rillford-south-lane-road' },
       ],
       npcs: [
         {
@@ -2236,6 +2578,46 @@ const draft = {
       ].map((locationId) => ({ locationId, isPrimary: true })),
       metadata: { codexId: 'orraveth-harrowfen', politicalStatus: 'crown-of-heskar' },
     },
+    {
+      id: 'rillford',
+      name: 'Rillford',
+      type: 'settlement',
+      description: 'A river crossing and trading town a day southwest of Bellwold along the Lower Rill, with a contested ferry trade.',
+      memberships: [
+        'rillford-north-quay',
+        'rillford-customs-house',
+        'rillford-guild-hall',
+        'rillford-inn',
+        'rillford-warehouse-row',
+        'rillford-livestock-market',
+        'rillford-crossing',
+        'rillford-south-landing',
+        'rillford-south-lane',
+      ].map((locationId) => ({ locationId, isPrimary: true })),
+      metadata: { codexId: 'orraveth-rillford', politicalStatus: 'crown-of-heskar' },
+    },
+    {
+      // The bridge and Rillford's ferry stage belong to the river without taking its name.
+      id: 'lower-rill',
+      name: 'Lower Rill',
+      type: 'waterway',
+      description: 'A provisional name for the river passing near Bellwold. Its full course is not recorded.',
+      memberships: [
+        ...[
+          'lower-rill-west-of-rillford',
+          'lower-rill-towpath-reach',
+          'lower-rill-reed-reach',
+          'bellwold-river-far-west-reach',
+          'bellwold-river-willow-reach',
+          'bellwold-river-west-reach',
+          'bellwold-river-east-reach',
+          'bellwold-river-alder-reach',
+          'bellwold-river-far-east-reach',
+        ].map((locationId) => ({ locationId, isPrimary: true })),
+        ...['bellwold-river-bridge', 'rillford-crossing'].map((locationId) => ({ locationId, isPrimary: false })),
+      ],
+      metadata: { codexId: 'orraveth-lower-rill' },
+    },
   ],
   roads: [
     {
@@ -2364,6 +2746,61 @@ const draft = {
           id: 'harrowfen-road-stray-hound',
           name: 'Stray Hound',
           combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' },
+        },
+      ],
+    },
+    {
+      id: 'rill-towpath',
+      name: 'Rill Towpath',
+      locationIds: [
+        'bellwold-reedbed-approach',
+        'rill-towpath-willow-bank',
+        'rill-towpath-mooring-posts',
+        'rill-towpath-sedge-flats',
+        'rill-towpath-culvert',
+        'rill-towpath-quay-lane',
+        'rillford-north-quay',
+      ],
+      encounterChancePercent: 10,
+      encounters: [
+        {
+          id: 'rill-towpath-reedback-boar',
+          name: 'Reedback Boar',
+          combatProfile: { maxHealth: 7, attackDamage: 2, style: 'steady' },
+        },
+        {
+          id: 'rill-towpath-ditch-fox',
+          name: 'Ditch Fox',
+          combatProfile: { maxHealth: 3, attackDamage: 1, style: 'steady' },
+        },
+        {
+          id: 'rill-towpath-stray-hound',
+          name: 'Stray Hound',
+          combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' },
+        },
+      ],
+    },
+    {
+      id: 'rillford-south-lane-road',
+      name: 'Rillford South Lane Road',
+      locationIds: [
+        'bellwold-milepost-workshop',
+        'mile-road-sedge-track',
+        'mile-road-landing-lane',
+        'rillford-south-lane',
+        'rillford-south-landing',
+      ],
+      encounterChancePercent: 10,
+      encounters: [
+        {
+          id: 'rillford-south-lane-road-stray-hound',
+          name: 'Stray Hound',
+          combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' },
+        },
+        {
+          id: 'rillford-south-lane-road-ditch-fox',
+          name: 'Ditch Fox',
+          combatProfile: { maxHealth: 3, attackDamage: 1, style: 'steady' },
         },
       ],
     },
