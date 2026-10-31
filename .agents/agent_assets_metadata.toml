@@ -14,3 +14,17 @@ mtime_ms = 1793447838626
 storage_uri = "gcs://replit-rams-assets-worf/rams/assets/repl:b23605d5-b209-40a9-b096-ab2a2d8b0e3c/f8ac70f7-6d85-4eb5-ab9d-c782ea99ef72/3a8a4d71-47a2-483d-aacf-55fc836fe608"
 storage_version_token = "1793447841429527"
 content_type = "text/markdown"
+
+[[outputs]]
+id = "GbEuifiZSRkb_HqGwaHhj"
+uri = "file://generated-artifacts/MUDD_Production_Performance_Benchmark_2026-10-31-1606Z.md"
+type = "text"
+title = "MUDD production performance benchmark"
+description = "Partial single-client production benchmark with client latency, matched server trace findings, comparison to the previous run, and request/trace ID appendices."
+logical_id = "d401b3ed-6204-4282-b160-2f093c97930e"
+content_hash = "sha256:7387473e137c58fe29078572c252dcf0e81abedcf57e826470b9366f3acbf348"
+size = 11080
+mtime_ms = 1793463190650
+storage_uri = "gcs://replit-rams-assets-worf/rams/assets/repl:b23605d5-b209-40a9-b096-ab2a2d8b0e3c/d401b3ed-6204-4282-b160-2f093c97930e/f96d85df-3774-448b-9600-059d545729eb"
+storage_version_token = "1793463191211861"
+content_type = "text/markdown"
