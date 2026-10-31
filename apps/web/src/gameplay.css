@@ -1177,11 +1177,14 @@
 }
 
 .focused-world-map__svg--pannable {
-  cursor: grab;
   touch-action: none;
 }
 
-.focused-world-map__svg--pannable:active {
+.focused-world-map__svg--space-pan-enabled {
+  cursor: grab;
+}
+
+.focused-world-map__svg--space-pan-enabled:active {
   cursor: grabbing;
 }
 

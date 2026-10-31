@@ -12,7 +12,7 @@ description: User direction for MUDD's gameplay UI, navigation, and mobile prior
 - Quest progress belongs to the individual character and is derived from server-recorded actions. Accept and report quests through private NPC dialogue; show active and completed objectives in Field notes. The first quest slice has a narrative-only completion. Play's terminal announces newly completed active objectives once and does not replay old objective notices on load.
 - Private NPC dialogue should reflect the character's quest status and completed objectives; only offer a report choice after all quest objectives are complete.
 - On Play, a horizontal right swipe opens room chat full-screen and a left swipe opens the visited-location map full-screen. A downward swipe on the terminal header opens the terminal full-screen; an upward swipe on its header, close control, or Escape returns to gameplay. In full-screen chat, a left swipe, close control, or Escape returns to gameplay; in the map, a right swipe, close control, or Escape closes the map. Preserve vertical scrolling and do not trigger from form controls.
-- Panning the full-screen map on touch devices requires two fingers; desktop mouse dragging remains available.
+- Pan the full-screen map with two touch points, or with one touch point/mouse while holding Space; Space+Up/Down zooms.
 - Quick commands should stay compact: neither page has a visible category label; the main page offers Look, Read, Drop, and Go, while the second offers Take and Help. Quick Look and Take list only items still in the current room. After a quick action submits, return to the main page.
 - Initial `read` support targets signs and markers in the character’s current room; inventory items are not readable yet.
 - Targeted `look [at] <object>` describes a visible object’s appearance; `read <object>` returns its written text. Both are limited to the current room.
@@ -29,9 +29,9 @@ description: User direction for MUDD's gameplay UI, navigation, and mobile prior
 
 **How to apply:** Announce only when successful reads or movement update server-projected active objectives. Seed known completions from the initial snapshot so reloads do not replay old notices.
 
-**Why:** The user asked to require two fingers for full-screen map panning.
+**Why:** The user asked for Space-modified single-pointer map panning and Space+arrow zoom controls.
 
-**How to apply:** Start touch panning only after two touch pointers are active; keep single-finger location taps working and preserve desktop mouse dragging.
+**How to apply:** In the full-screen map, allow two-finger touch pan normally; require Space for one-finger or mouse pan, and map Space+Up/Down to zoom in/out. Preserve single-finger location taps when Space is not held.
 
 **Why:** The user approved Mara reacting to the player's current quest stage, including recognizing the read marker, inviting a report after the tower visit, and acknowledging the completed report.
 

@@ -480,6 +480,17 @@ describe('map switching between floors', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
     fireEvent.click(screen.getByRole('button', { name: 'Reset map zoom' }));
     expect(readViewBox()).toEqual(initialViewBox);
+
+    fireEvent.keyDown(document, { key: 'ArrowUp' });
+    expect(screen.getByText('100%')).toBeVisible();
+    fireEvent.keyDown(document, { key: ' ', code: 'Space' });
+    fireEvent.keyDown(document, { key: 'ArrowUp' });
+    expect(screen.getByText('125%')).toBeVisible();
+    fireEvent.keyDown(document, { key: 'ArrowDown' });
+    expect(screen.getByText('100%')).toBeVisible();
+    fireEvent.keyUp(document, { key: ' ', code: 'Space' });
+    fireEvent.keyDown(document, { key: 'ArrowUp' });
+    expect(screen.getByText('100%')).toBeVisible();
   });
 
   it('pans the full-screen map by dragging after zooming in', async () => {
@@ -575,6 +586,51 @@ describe('map switching between floors', () => {
       clientY: 150,
     });
     fireEvent.pointerUp(svg, { pointerId: 6, pointerType: 'mouse' });
+    expect(svg.getAttribute('viewBox')).toBe(initialViewBox);
+
+    fireEvent.keyDown(document, { key: ' ', code: 'Space' });
+    fireEvent.pointerDown(svg, {
+      pointerId: 7,
+      pointerType: 'mouse',
+      button: 0,
+      clientX: 200,
+      clientY: 150,
+    });
+    fireEvent.pointerMove(svg, {
+      pointerId: 7,
+      pointerType: 'mouse',
+      clientX: 160,
+      clientY: 150,
+    });
+    fireEvent.pointerUp(svg, { pointerId: 7, pointerType: 'mouse' });
+    fireEvent.keyUp(document, { key: ' ', code: 'Space' });
+
+    expect(svg.getAttribute('viewBox')).not.toBe(initialViewBox);
+  });
+
+  it('allows one-finger touch panning while Space is held', () => {
+    render(<WorldMapPanel map={denseMap} fullscreen onFullscreenChange={vi.fn()} />);
+    const svg = document.querySelector<SVGSVGElement>('.focused-world-map__svg')!;
+    vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 400, 300));
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+    const initialViewBox = svg.getAttribute('viewBox');
+
+    fireEvent.keyDown(document, { key: ' ', code: 'Space' });
+    fireEvent.pointerDown(svg, {
+      pointerId: 8,
+      pointerType: 'touch',
+      button: 0,
+      clientX: 200,
+      clientY: 150,
+    });
+    fireEvent.pointerMove(svg, {
+      pointerId: 8,
+      pointerType: 'touch',
+      clientX: 160,
+      clientY: 150,
+    });
+    fireEvent.pointerUp(svg, { pointerId: 8, pointerType: 'touch' });
+    fireEvent.keyUp(document, { key: ' ', code: 'Space' });
 
     expect(svg.getAttribute('viewBox')).not.toBe(initialViewBox);
   });

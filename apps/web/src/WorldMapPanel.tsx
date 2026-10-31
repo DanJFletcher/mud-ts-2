@@ -239,6 +239,7 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
   const [minimapOffset, setMinimapOffset] = useState(readMinimapOffset);
   const [mapZoom, setMapZoom] = useState(1);
   const [mapPanOffset, setMapPanOffset] = useState<MapPanOffset>({ x: 0, y: 0 });
+  const [spaceHeld, setSpaceHeld] = useState(false);
   const expandButtonRef = useRef<HTMLButtonElement>(null);
   const minimapButtonRef = useRef<HTMLButtonElement>(null);
   const minimapOffsetRef = useRef(minimapOffset);
@@ -248,6 +249,7 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const mapPanDragRef = useRef<MapPanDrag | null>(null);
   const mapTouchPointsRef = useRef(new Map<number, { x: number; y: number }>());
+  const spaceHeldRef = useRef(false);
   const suppressMapClickRef = useRef(false);
   const wasFullscreenRef = useRef(false);
 
@@ -259,7 +261,7 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
     : map?.currentLocationId;
   const focusedLocation = points.find((point) => point.id === focusedLocationId);
   const mapViewBox = fullMapViewBox(layout, focusedLocation, mapZoom, mapPanOffset);
-  const adjustMapZoom = (direction: 1 | -1) => {
+  const adjustMapZoom = useCallback((direction: 1 | -1) => {
     setMapZoom((current) => Math.max(
       MIN_MAP_ZOOM,
       Math.min(
@@ -267,7 +269,7 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
         Number((current * (direction === 1 ? MAP_ZOOM_FACTOR : 1 / MAP_ZOOM_FACTOR)).toFixed(2)),
       ),
     ));
-  };
+  }, []);
   const handleMapPointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (!fullscreenPresent || mapZoom <= 1) return;
     const rect = event.currentTarget.getBoundingClientRect();
@@ -275,31 +277,34 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
 
     if (event.pointerType === 'touch') {
       mapTouchPointsRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-      if (mapTouchPointsRef.current.size < 2 || mapPanDragRef.current) return;
+      if (mapPanDragRef.current) return;
+      const panWithTwoTouches = mapTouchPointsRef.current.size >= 2;
+      if (!panWithTwoTouches && !spaceHeldRef.current) return;
 
-      const touchPoints = [...mapTouchPointsRef.current.entries()].slice(0, 2);
-      const [first, second] = touchPoints;
-      if (!first || !second) return;
-      const pointerIds = [first[0], second[0]];
+      const touchPoints = [...mapTouchPointsRef.current.entries()].slice(0, panWithTwoTouches ? 2 : 1);
+      if (touchPoints.length !== (panWithTwoTouches ? 2 : 1)) return;
+      const pointerIds = touchPoints.map(([pointerId]) => pointerId);
       mapPanDragRef.current = {
         pointerIds,
-        pointerX: (first[1].x + second[1].x) / 2,
-        pointerY: (first[1].y + second[1].y) / 2,
+        pointerX: touchPoints.reduce((sum, [, point]) => sum + point.x, 0) / touchPoints.length,
+        pointerY: touchPoints.reduce((sum, [, point]) => sum + point.y, 0) / touchPoints.length,
         rect,
         viewBox: mapViewBox,
         moved: false,
       };
-      for (const pointerId of pointerIds) {
-        try {
-          event.currentTarget.setPointerCapture?.(pointerId);
-        } catch {
-          // Pointer capture can fail when a touch ended before the second finger arrived.
+      if (panWithTwoTouches) {
+        for (const pointerId of pointerIds) {
+          try {
+            event.currentTarget.setPointerCapture?.(pointerId);
+          } catch {
+            // Pointer capture can fail when a touch ended before the second finger arrived.
+          }
         }
       }
       return;
     }
 
-    if (event.pointerType !== 'mouse' || event.button !== 0) return;
+    if (event.pointerType !== 'mouse' || event.button !== 0 || !spaceHeldRef.current) return;
     mapPanDragRef.current = {
       pointerIds: [event.pointerId],
       pointerX: event.clientX,
@@ -330,6 +335,7 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
     const deltaX = currentX - drag.pointerX;
     const deltaY = currentY - drag.pointerY;
     if (!drag.moved && Math.hypot(deltaX, deltaY) < 4) return;
+    if (!drag.moved) event.currentTarget.setPointerCapture?.(event.pointerId);
     drag.moved = true;
     event.preventDefault();
 
@@ -474,17 +480,46 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
     document.documentElement.style.overflow = 'hidden';
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onFullscreenChange(false);
+      const isSpaceKey = event.key === ' ' || event.code === 'Space';
+      const target = event.target;
+      const isEditable = target instanceof Element
+        && target.closest('input, textarea, select, [contenteditable="true"]');
+      if (isSpaceKey && !isEditable) {
+        spaceHeldRef.current = true;
+        setSpaceHeld(true);
+        event.preventDefault();
+      } else if (spaceHeldRef.current && event.key === 'ArrowUp') {
+        adjustMapZoom(1);
+        event.preventDefault();
+      } else if (spaceHeldRef.current && event.key === 'ArrowDown') {
+        adjustMapZoom(-1);
+        event.preventDefault();
+      }
       trapDialogTab(event, document.querySelector<HTMLElement>('[aria-modal="true"]'));
     };
+    const releaseSpace = (event: KeyboardEvent) => {
+      if (event.key !== ' ' && event.code !== 'Space') return;
+      spaceHeldRef.current = false;
+      setSpaceHeld(false);
+    };
+    const releaseSpaceOnBlur = () => {
+      spaceHeldRef.current = false;
+      setSpaceHeld(false);
+    };
     document.addEventListener('keydown', closeOnEscape);
+    document.addEventListener('keyup', releaseSpace);
+    window.addEventListener('blur', releaseSpaceOnBlur);
     closeButtonRef.current?.focus();
 
     return () => {
+      releaseSpaceOnBlur();
       document.body.style.overflow = previousBodyOverflow;
       document.documentElement.style.overflow = previousDocumentOverflow;
       document.removeEventListener('keydown', closeOnEscape);
+      document.removeEventListener('keyup', releaseSpace);
+      window.removeEventListener('blur', releaseSpaceOnBlur);
     };
-  }, [fullscreenPresent, onFullscreenChange]);
+  }, [adjustMapZoom, fullscreenPresent, onFullscreenChange]);
 
   const handleTouchStart = (event: TouchEvent<HTMLElement>) => {
     if (!fullscreenPresent) return;
@@ -602,6 +637,7 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
               className={[
                 'focused-world-map__svg',
                 fullscreenPresent && mapZoom > 1 ? 'focused-world-map__svg--pannable' : '',
+                fullscreenPresent && mapZoom > 1 && spaceHeld ? 'focused-world-map__svg--space-pan-enabled' : '',
               ].filter(Boolean).join(' ')}
               viewBox={`${mapViewBox.x} ${mapViewBox.y} ${mapViewBox.width} ${mapViewBox.height}`}
               role="group"
@@ -616,6 +652,7 @@ export function WorldMapPanel({ map, fullscreen, onFullscreenChange }: WorldMapP
               <desc>
                 North is up. Water and building tiles have labeled colors; other terrain colors are authored by the world developer.
                 White lines show exits, including stubs for undiscovered destinations; arrows mark one-way exits, and black triangles mark up or down passages.
+                Hold Space and drag to pan, or hold Space and press Up or Down to zoom.
                 {focusedLocation ? ` ${focusedLocation.name} is selected.` : ''}
               </desc>
               <defs>
