@@ -584,27 +584,119 @@ const draft = {
           unknownTopicResponse: '“Ask me about the fields, the harvest or the people who work them.”',
           dialogue: {
             prompt: '“If you’ve come about the fields, tell me what you’ve seen. I’ve heard plenty of guesses already.”',
-            choices: bellwoldSmallTalkChoices(
-              'maela-thorn',
-              '“Maela Thorn, reeve of Harrowfen. I worked these fields before the village chose me to speak for the people who farm them.”',
-              '“I’m checking this season’s sacks against last year’s marks. The numbers keep coming up short.”',
-              '“A hundred fields and a lot of opinions. The land mostly belongs to noble families; the work belongs to everyone else.”',
-              [
-                {
-                  id: 'falling-yields',
-                  label: 'Why are the harvests falling?',
-                  response: '“I don’t know. Tired soil, the drainage, Resonance: I’ve heard them all. Until we keep better field records, they’re guesses.”',
+            choices: [
+              ...bellwoldSmallTalkChoices(
+                'maela-thorn',
+                '“Maela Thorn, reeve of Harrowfen. I worked these fields before the village chose me to speak for the people who farm them.”',
+                '“I’m checking this season’s sacks against last year’s marks. The numbers keep coming up short.”',
+                '“A hundred fields and a lot of opinions. The land mostly belongs to noble families; the work belongs to everyone else.”',
+                [
+                  {
+                    id: 'falling-yields',
+                    label: 'Why are the harvests falling?',
+                    response: '“I don’t know. Tired soil, the drainage, Resonance: I’ve heard them all. Until we keep better field records, they’re guesses.”',
+                  },
+                  {
+                    id: 'grain-bargain',
+                    label: 'What is this offer of cheap grain?',
+                    response: '“Cheap grain in exchange for letting someone set up a Veyl extraction operation. It would feed people this year. Nobody can tell me what it would do after that.”',
+                  },
+                ],
+                [],
+                [],
+                'Harrowfen',
+              ),
+              {
+                id: 'maela-publish-conversion-table',
+                label: 'Publish a conversion table',
+                response: '“A public table would let both towns check the next handoff without pretending the two scales are the same. I’ll try it with the next load.”',
+                progressFlagId: 'maela-thorn-publish-conversion-table',
+                requiresProgressFlagIds: ['maela-thorn-asked-about-town'],
+                questCondition: {
+                  questId: 'orraveth-measure-between-towns',
+                  status: 'active',
+                  branchId: 'compare-records',
+                  requiresCompletedObjectiveIds: ['read-anwen-scale-note', 'read-harrowfen-yield-tallies'],
                 },
-                {
-                  id: 'grain-bargain',
-                  label: 'What is this offer of cheap grain?',
-                  response: '“Cheap grain in exchange for letting someone set up a Veyl extraction operation. It would feed people this year. Nobody can tell me what it would do after that.”',
+                questAction: {
+                  type: 'choose',
+                  questId: 'orraveth-measure-between-towns',
+                  choiceId: 'choose-conversion-table',
                 },
-              ],
-              [],
-              [],
-              'Harrowfen',
-            ),
+              },
+              {
+                id: 'maela-record-both-measures',
+                label: 'Record both measures side by side',
+                response: '“Keeping both marks visible would make the difference plain at each handoff. I’ll use that record for the next load.”',
+                progressFlagId: 'maela-thorn-record-both-measures',
+                requiresProgressFlagIds: ['maela-thorn-asked-about-town'],
+                questCondition: {
+                  questId: 'orraveth-measure-between-towns',
+                  status: 'active',
+                  branchId: 'compare-records',
+                  requiresCompletedObjectiveIds: ['read-anwen-scale-note', 'read-harrowfen-yield-tallies'],
+                },
+                questAction: {
+                  type: 'choose',
+                  questId: 'orraveth-measure-between-towns',
+                  choiceId: 'choose-dual-record',
+                },
+              },
+              {
+                id: 'maela-report-measure-recommendation',
+                label: 'Report the measure recommendation',
+                response: '“I’ve entered the method beside the tallies. You kept the records separate from any guess about the harvest.”',
+                progressFlagId: 'maela-thorn-report-measure-recommendation',
+                requiresProgressFlagIds: ['maela-thorn-asked-about-town'],
+                questCondition: {
+                  questId: 'orraveth-measure-between-towns',
+                  status: 'active',
+                  requiresCompletedObjectiveIds: ['read-anwen-scale-note', 'read-harrowfen-yield-tallies'],
+                },
+                questAction: { type: 'turn-in', questId: 'orraveth-measure-between-towns' },
+              },
+            ],
+            questResponses: [
+              {
+                questId: 'orraveth-measure-between-towns',
+                status: 'active',
+                branchId: 'compare-records',
+                requiresIncompleteObjectiveIds: ['read-anwen-scale-note'],
+                response: '“The tallies are here. Read Anwen Marr’s scale note in Bellwold too; these records do not explain why the yields fell.”',
+              },
+              {
+                questId: 'orraveth-measure-between-towns',
+                status: 'active',
+                branchId: 'compare-records',
+                requiresIncompleteObjectiveIds: ['read-harrowfen-yield-tallies'],
+                response: '“I still need my yield tallies read alongside Anwen’s scale note. Then we can decide how to record a future load.”',
+              },
+              {
+                questId: 'orraveth-measure-between-towns',
+                status: 'active',
+                branchId: 'compare-records',
+                requiresCompletedObjectiveIds: ['read-anwen-scale-note', 'read-harrowfen-yield-tallies'],
+                response: '“We have both records now. Ask what Harrowfen is like, then tell me which method you recommend for the next grain handoff.”',
+              },
+              {
+                questId: 'orraveth-measure-between-towns',
+                status: 'active',
+                outcomeId: 'conversion-table',
+                response: '“The next load will use a public conversion table. That gives both towns a way to check the handoff; it does not explain the falling yields.”',
+              },
+              {
+                questId: 'orraveth-measure-between-towns',
+                status: 'active',
+                outcomeId: 'dual-records',
+                response: '“The next load will record both measures side by side. The difference will stay visible, though its cause remains unknown.”',
+              },
+              {
+                questId: 'orraveth-measure-between-towns',
+                status: 'completed',
+                requiresCompletedObjectiveIds: ['read-anwen-scale-note', 'read-harrowfen-yield-tallies'],
+                response: '“The recommendation is entered with the tallies. We still need more seasons of careful records to understand the harvest.”',
+              },
+            ],
           },
         },
       ],
@@ -1102,24 +1194,42 @@ const draft = {
           unknownTopicResponse: '“Ask about the public notices or the records kept here.”',
           dialogue: {
             prompt: '“The notes are public. If something is missing, tell me what you saw and when.”',
-            choices: bellwoldSmallTalkChoices(
-              'enna-pell',
-              '“Enna Pell. I keep the Common House records and copy notices people bring in.”',
-              '“I’m writing down the wording of a public notice so the next meeting can check it.”',
-              '“Bellwold is held together by small agreements. I try to record what people actually decided, not what I think they meant.”',
-              [
-                {
-                  id: 'common-house-meetings',
-                  label: 'What gets discussed at the Common House?',
-                  response: '“Repairs, water use, and market-day concerns. The notes record what was agreed, not what everyone hoped would be agreed.”',
-                },
-                {
-                  id: 'bell-account',
-                  label: 'What do the records say about the old bell?',
-                  response: '“One account says it rang without stopping while seventeen villagers disappeared. It gives no cause, and I won’t write one into the minutes.”',
-                },
-              ],
-            ),
+            choices: [
+              ...bellwoldSmallTalkChoices(
+                'enna-pell',
+                '“Enna Pell. I keep the Common House records and copy notices people bring in.”',
+                '“I’m writing down the wording of a public notice so the next meeting can check it.”',
+                '“Bellwold is held together by small agreements. I try to record what people actually decided, not what I think they meant.”',
+                [
+                  {
+                    id: 'common-house-meetings',
+                    label: 'What gets discussed at the Common House?',
+                    response: '“Repairs, water use, and market-day concerns. The notes record what was agreed, not what everyone hoped would be agreed.”',
+                  },
+                  {
+                    id: 'bell-account',
+                    label: 'What do the records say about the old bell?',
+                    response: '“One account says it rang without stopping while seventeen villagers disappeared. It gives no cause, and I won’t write one into the minutes.”',
+                  },
+                ],
+              ),
+              {
+                id: 'enna-offer-measure-between-towns',
+                label: 'Ask about the grain records',
+                response: '“Anwen’s scale note is in her Bellwold shop; Maela keeps Harrowfen’s yield tallies. Read both, then ask Maela how she wants the next handoff recorded. The records do not prove why yields have fallen.”',
+                progressFlagId: 'enna-pell-offer-measure-between-towns',
+                requiresProgressFlagIds: ['enna-pell-asked-about-town'],
+                questAction: { type: 'accept', questId: 'orraveth-measure-between-towns' },
+              },
+            ],
+            questResponses: [
+              {
+                questId: 'orraveth-measure-between-towns',
+                status: 'active',
+                branchId: 'compare-records',
+                response: '“Read Anwen’s scale note and Maela’s yield tallies, then keep each record’s limits clear. The notes show what was measured, not why the harvest changed.”',
+              },
+            ],
           },
         },
       ],
@@ -2310,6 +2420,93 @@ const draft = {
           itemId: 'bellwold-reliquary-sword',
         },
       ],
+    },
+    {
+      id: 'orraveth-measure-between-towns',
+      version: '1.0.0',
+      title: 'A Measure Between Towns',
+      summary: 'Read Anwen Marr’s scale note in Bellwold and Harrowfen’s yield tallies, then help Reeve Maela choose how a future grain handoff will be recorded. Neither record establishes why the yields have fallen.',
+      scope: 'character',
+      giverNpcId: 'enna-pell',
+      turnInNpcId: 'maela-thorn',
+      reward: { currencyId: 'gold', amount: 12 },
+      objectives: [
+        {
+          id: 'read-anwen-scale-note',
+          label: 'Read Anwen Marr’s scale note in Bellwold',
+          type: 'read-object',
+          objectId: 'anwen-scale-note',
+          locationId: 'marrs-general-goods',
+        },
+        {
+          id: 'read-harrowfen-yield-tallies',
+          label: 'Read Harrowfen’s yield tallies at the weigh-house',
+          type: 'read-object',
+          objectId: 'harrowfen-yield-tallies',
+          locationId: 'harrowfen-weigh-house',
+        },
+      ],
+      branching: {
+        startBranchId: 'compare-records',
+        branches: [
+          {
+            id: 'compare-records',
+            label: 'Compare the records',
+            summary: 'Read the two records before recommending how future grain handoffs should be recorded.',
+            objectiveIds: ['read-anwen-scale-note', 'read-harrowfen-yield-tallies'],
+            choices: [
+              {
+                id: 'choose-conversion-table',
+                label: 'Publish a conversion table',
+                npcId: 'maela-thorn',
+                toBranchId: 'conversion-table',
+                requires: [{ type: 'visited-location', locationId: 'harrowfen-weigh-house' }],
+                worldOutcome: {
+                  key: 'orraveth-grain-measure-policy',
+                  value: 'published-conversion',
+                  label: 'Publish a conversion table for the next grain handoff.',
+                },
+              },
+              {
+                id: 'choose-dual-record',
+                label: 'Record both measures side by side',
+                npcId: 'maela-thorn',
+                toBranchId: 'dual-records',
+                requires: [{ type: 'visited-location', locationId: 'harrowfen-weigh-house' }],
+                worldOutcome: {
+                  key: 'orraveth-grain-measure-policy',
+                  value: 'dual-recording',
+                  label: 'Record both local measures at each grain handoff.',
+                },
+              },
+            ],
+          },
+          {
+            id: 'conversion-table',
+            label: 'Publish a conversion table',
+            summary: 'The next grain handoff will use a public conversion table shared by Bellwold and Harrowfen.',
+            outcomeId: 'conversion-table',
+          },
+          {
+            id: 'dual-records',
+            label: 'Record both measures',
+            summary: 'The next grain handoff will record each town’s measure side by side.',
+            outcomeId: 'dual-records',
+          },
+        ],
+        outcomes: [
+          {
+            id: 'conversion-table',
+            label: 'Conversion table published',
+            summary: 'Bellwold and Harrowfen will use a shared conversion table for the next grain handoff.',
+          },
+          {
+            id: 'dual-records',
+            label: 'Both measures recorded',
+            summary: 'The next grain handoff will preserve each town’s local measure side by side.',
+          },
+        ],
+      },
     },
   ],
 } as const;

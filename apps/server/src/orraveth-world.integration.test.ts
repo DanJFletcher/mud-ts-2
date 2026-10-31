@@ -17,6 +17,8 @@ import {
   characterPlugin,
   createClassRulesetPlugin,
   craftingPlugin,
+  questBranchesPlugin,
+  QUEST_WORLD_OUTCOMES_STREAM_ID,
   fishingPlugin,
   merchantPlugin,
   woodcuttingPlugin,
@@ -70,6 +72,7 @@ function makeHarness(options: Readonly<{
       autonomousNpcsPlugin,
       characterPlugin,
       movementPlugin,
+      questBranchesPlugin,
       merchantPlugin,
       npcDialoguePlugin,
       ...(options.includeCombat || options.includeRoadTravel ? [interactionPlugin, combatPlugin] : []),
@@ -694,6 +697,161 @@ describe('Orraveth Bellwold settlement', () => {
         payload: { objectId: 'harrowfen-yield-tallies' },
       });
       expect(JSON.stringify(read.events)).toContain('do not say why the yields have fallen');
+    } finally {
+      await h.engine.stop();
+    }
+  });
+
+  it('carries a two-town records quest into one persistent, shared policy', async () => {
+    const h = makeHarness({ includeRoadTravel: true, rng: { roll: (sides) => sides } });
+    await h.engine.start();
+    try {
+      let commandSequence = 0;
+      const createCharacter = async (name: string) => {
+        const created = await h.dispatch(undefined, {
+          type: 'character.create',
+          version: 1,
+          commandId: `measure-quest-create-${++commandSequence}`,
+          payload: { name, classId: 'orraveth.scout' },
+        });
+        const characterId = (created.events.find((event) => event.type === 'character.created')?.payload as
+          { characterId?: string } | undefined)?.characterId;
+        if (!characterId) throw new Error('Character creation returned no character ID.');
+        h.owners.set(characterId, h.session.playerId);
+        return characterId;
+      };
+      const routeBetween = (from: string, to: string) => {
+        const previous = new Map<string, { locationId: string; exitId: string; isRoad: boolean } | null>([[from, null]]);
+        const queue = [from];
+        while (queue.length > 0 && !previous.has(to)) {
+          const locationId = queue.shift()!;
+          const location = orravethWorld.locations.find((candidate) => candidate.id === locationId);
+          if (!location) throw new Error(`Unknown route location ${locationId}.`);
+          for (const exit of location.exits) {
+            if (previous.has(exit.toLocationId)) continue;
+            previous.set(exit.toLocationId, {
+              locationId,
+              exitId: exit.id,
+              isRoad: Boolean(exit.roadId),
+            });
+            queue.push(exit.toLocationId);
+          }
+        }
+        if (!previous.has(to)) throw new Error(`No route from ${from} to ${to}.`);
+        const route: Array<{ exitId: string; isRoad: boolean }> = [];
+        let destination = to;
+        while (destination !== from) {
+          const step = previous.get(destination);
+          if (!step) throw new Error(`Broken route to ${to}.`);
+          route.unshift({ exitId: step.exitId, isRoad: step.isRoad });
+          destination = step.locationId;
+        }
+        return route;
+      };
+      const moveTo = async (characterId: string, destination: string) => {
+        const currentLocation = (await h.loadCharacter(characterId)).locationId;
+        for (const step of routeBetween(currentLocation, destination)) {
+          const character = await h.loadCharacter(characterId);
+          await h.dispatch(characterId, {
+            type: step.isRoad ? 'character.road.step' : 'character.move',
+            version: 1,
+            commandId: `measure-quest-move-${++commandSequence}`,
+            expectedVersion: character.revision,
+            payload: { exitId: step.exitId },
+          });
+        }
+      };
+      const readObject = async (characterId: string, objectId: string) => {
+        const character = await h.loadCharacter(characterId);
+        await h.dispatch(characterId, {
+          type: 'character.read',
+          version: 1,
+          commandId: `measure-quest-read-${++commandSequence}`,
+          expectedVersion: character.revision,
+          payload: { objectId },
+        });
+      };
+      const choose = async (characterId: string, npcId: string, choiceId: string) => {
+        const character = await h.loadCharacter(characterId);
+        return h.dispatch(characterId, {
+          type: 'npc.dialogue.choose',
+          version: 1,
+          commandId: `measure-quest-choice-${++commandSequence}`,
+          expectedVersion: character.revision,
+          payload: { npcId, choiceId },
+        });
+      };
+      const talk = async (characterId: string, npcId: string) => {
+        const character = await h.loadCharacter(characterId);
+        const result = await h.engine.query({
+          type: 'npc.talk',
+          version: 1,
+          queryId: `measure-quest-talk-${++commandSequence}`,
+          worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+          characterId,
+          payload: { npcId },
+        }, h.session, { characterProjection: character });
+        if (!result.ok) throw new Error(result.message);
+        return NpcDialogueProjectionSchema.parse(result.value);
+      };
+      const acceptQuest = async (characterId: string) => {
+        await moveTo(characterId, 'bellwold-common-house');
+        await choose(characterId, 'enna-pell', 'enna-pell-about-bellwold');
+        expect((await talk(characterId, 'enna-pell')).choices.map(({ id }) => id))
+          .toContain('enna-offer-measure-between-towns');
+        await choose(characterId, 'enna-pell', 'enna-offer-measure-between-towns');
+      };
+
+      const firstCharacterId = await createCharacter('Measure Keeper');
+      await acceptQuest(firstCharacterId);
+      await moveTo(firstCharacterId, 'marrs-general-goods');
+      await readObject(firstCharacterId, 'anwen-scale-note');
+      await moveTo(firstCharacterId, 'harrowfen-weigh-house');
+
+      await choose(firstCharacterId, 'maela-thorn', 'maela-thorn-about-harrowfen');
+      expect((await talk(firstCharacterId, 'maela-thorn')).choices.map(({ id }) => id))
+        .not.toContain('maela-publish-conversion-table');
+      await readObject(firstCharacterId, 'harrowfen-yield-tallies');
+      expect((await talk(firstCharacterId, 'maela-thorn')).choices.map(({ id }) => id))
+        .toEqual(expect.arrayContaining(['maela-publish-conversion-table', 'maela-record-both-measures']));
+
+      const selected = await choose(firstCharacterId, 'maela-thorn', 'maela-publish-conversion-table');
+      expect(selected.receipt.ok).toBe(true);
+      expect((await h.loadCharacter(firstCharacterId)).questProgress).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ questId: 'orraveth-measure-between-towns', branchId: 'conversion-table' }),
+        ]),
+      );
+      const outcomeEvents = await h.store.readStream(ORRAVETH_WORLD_INSTANCE_ID, QUEST_WORLD_OUTCOMES_STREAM_ID);
+      expect(outcomeEvents).toHaveLength(1);
+      expect(outcomeEvents[0]?.payload).toMatchObject({
+        key: 'orraveth-grain-measure-policy',
+        value: 'published-conversion',
+      });
+      const readyToReport = await talk(firstCharacterId, 'maela-thorn');
+      expect(readyToReport.text).toContain('public table');
+      expect(readyToReport.choices.map(({ id }) => id)).toContain('maela-report-measure-recommendation');
+      const completed = await choose(firstCharacterId, 'maela-thorn', 'maela-report-measure-recommendation');
+      expect(completed.events.map(({ type }) => type)).toEqual([
+        'character.npc_dialogue_choice_made',
+        'quest.completed',
+        'character.quest_rewarded',
+      ]);
+      expect((await h.loadCharacter(firstCharacterId).then(({ questProgress }) => questProgress))
+        .find(({ questId }) => questId === 'orraveth-measure-between-towns'))
+        .toMatchObject({ status: 'completed', outcomeId: 'conversion-table' });
+
+      const secondCharacterId = await createCharacter('Second Measure Keeper');
+      await acceptQuest(secondCharacterId);
+      await moveTo(secondCharacterId, 'marrs-general-goods');
+      await readObject(secondCharacterId, 'anwen-scale-note');
+      await moveTo(secondCharacterId, 'harrowfen-weigh-house');
+      await choose(secondCharacterId, 'maela-thorn', 'maela-thorn-about-harrowfen');
+      await readObject(secondCharacterId, 'harrowfen-yield-tallies');
+      const sharedPolicyChoices = (await talk(secondCharacterId, 'maela-thorn')).choices
+        .map(({ id }) => id)
+        .filter((id) => ['maela-publish-conversion-table', 'maela-record-both-measures'].includes(id));
+      expect(sharedPolicyChoices).toEqual(['maela-publish-conversion-table']);
     } finally {
       await h.engine.stop();
     }
@@ -1521,7 +1679,10 @@ describe('Orraveth Bellwold settlement', () => {
         requiresProgressFlagIds?.includes(townFlagId),
       )).toBe(true);
       for (const questChoice of choices.filter(({ questAction }) => Boolean(questAction))) {
-        expect(questChoice.hideAfterProgressFlagIds).toContain(townFlagId);
+        expect(
+          questChoice.hideAfterProgressFlagIds?.includes(townFlagId)
+            || questChoice.requiresProgressFlagIds?.includes(townFlagId),
+        ).toBe(true);
       }
     }
     expect(residents.get('orin-vale')?.dialogue?.choices.map(({ id }) => id))
