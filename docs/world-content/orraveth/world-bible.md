@@ -19,19 +19,21 @@ The first session introduces Orraveth through Bellwold, a growing frontier settl
 
 ## Playable content in this slice
 
-The pack (`packVersion` 1.19.0) has 79 connected locations. The market square is the starting room.
+The pack (`packVersion` 1.20.0) has 98 connected locations. The market square is the starting room.
 
 - **The village:** the market square, the Kindly Roof, Marr's General Goods, Old Bell Tower Road and the tower; the southern lanes, with South Common, the Green Mortar, Blackwater Forge, Well Court, Wattle Row, Soven's Wheelwright Yard, Tallow End Cottage, the Old Grain House and the Common House; and the newer rows round Hearth Alley and Lantern Court, the jail, the library and the local museum. These rooms form the `bellwold` settlement location group.
-- **Roads:** five roads with room-by-room travel and encounters (stray hounds, roadside deer, bandits): the West Road to the Western Road Verge (where the Harrowfen Road continues), the South Road over the Lower Rill bridge to the unfinished road end, the Mile Marker West Road to the Milepost Workshop, the East Mill Road past the abandoned watermill, and the North Church Road.
+- **Roads:** five Bellwold roads with room-by-room travel and encounters (stray hounds, roadside deer, bandits): the West Road to the Western Road Verge (where the Harrowfen Road continues), the South Road over Lower Rill Bridge to the unfinished road end, the Mile Marker West Road to the Milepost Workshop (where the Rillford South Lane Road continues), the East Mill Road past the abandoned watermill, and the North Church Road.
 - **Harrowfen** (Phase 1 of the region expansion): the Harrowfen Road runs on from the Western Road Verge to the East Field Gate, half a day's travel at about 8 road steps a day. Ditch foxes, reedback boars and stray hounds use it. The village has the Threshing Green, the Weigh-House, a drainage cut, Tenant Row and the West Fields. Its rooms form the primary `harrowfen` settlement group, so they read as "Harrowfen: Threshing Green" and so on.
-- **The Lower Rill:** seven river tiles at the south bridge, with a fishing spot. The world data still calls it "Bellwold River"; the rename is planned in [bellwold-region-expansion.md](bellwold-region-expansion.md).
+- **Rillford** (Phase 2): the Rill Towpath leaves the Reedbed Approach and follows the north bank to Rillford's North Quay, a day's travel (about 8 road steps from South Gate). The Rillford South Lane Road runs from the Milepost Workshop to the south landing. Reedback boars, ditch foxes and stray hounds use them; there are no bandits. The town has the North Quay, the Ferry Stage, the Customs House, the Guild Hall, the Quayside Inn (a placeholder name), Warehouse Row, the Livestock Market, the South Landing and South Lane, in the primary `rillford` group. No boat carries passengers between the banks: the Codex records a contested ferry trade and no settled right of passage.
+- **The Lower Rill:** ten river tiles from west of Rillford to the Far East Reach, including the Lower Rill Bridge and Rillford's Ferry Stage, in the `lower-rill` waterway group. Players reach the water only from those two crossings' lower states. Fishing is on the bridge and at the towpath mooring posts. The river's course beyond the map is unrecorded.
 - **Separate maps:** the jail cell, the library's upper room, the abandoned church's belfry and annex, and the church undercrypt maze each use their own map area or level.
 
 Every route is reachable in both directions and uses the supported cardinal directions. No two rooms share a map tile within the same map area and level.
 
-Nineteen residents are available to meet:
+Twenty-two residents are available to meet:
 
 - **Reeve Maela Thorn** works at Harrowfen's Weigh-House. She speaks for the farmers on yields, landholders and the offer of cheap grain for extraction rights, and doesn't claim to know why harvests are falling. Her yield tallies record the decline without a cause.
+- **Guildmistress Selda Rook** works at Rillford's Guild Hall. She supports regulated river commerce, admits she doesn't speak for every merchant, and wants cargoes written down before anyone names a cause for the overturned boats. An unnamed **customs clerk** and an **independent boatman** give the customs and anti-guild views.
 - **Anwen Marr**, the practical shopkeeper, distinguishes repeatable observations from unproven causes. She sells tools and offers the Mill Ledger and Church Reliquary quests.
 - **Tomas**, innkeeper of the Kindly Roof, shares road reports while making clear that reports are not guarantees.
 - **Darric Holt** and **Ilya Fen**, established in the Codex as the blacksmith and healer, work at their workplaces.
