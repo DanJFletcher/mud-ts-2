@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EngineHost, InMemoryEventStore } from '@mudd/engine-core';
+import type { EventStorePort } from '@mudd/engine-core';
 import type { WorldPackDraft } from '@mudd/contracts';
 import {
   autonomousNpcsPlugin,
@@ -218,7 +219,7 @@ describe('autonomous NPC scheduler and room movement messages', () => {
 
   it('reports NPC stream and dispatch failures without aborting the rest of a tick', async () => {
     const onError = vi.fn();
-    const now = new Date('2026-10-21T12:00:00.000Z');
+    let now = new Date('2026-10-21T12:00:00.000Z');
     const store = {
       readStream: vi.fn(async () => []),
     } as unknown as EventStorePort;
@@ -241,9 +242,70 @@ describe('autonomous NPC scheduler and room movement messages', () => {
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'Movement rejected.' }), expect.any(String));
 
     vi.mocked(store.readStream).mockRejectedValue(new Error('Stream unavailable.'));
+    // Failed NPCs back off before their streams are read again.
+    expect(await scheduler.tick()).toBe(0);
+    expect(store.readStream).toHaveBeenCalledTimes(2);
+    now = new Date(now.getTime() + 5_000);
     expect(await scheduler.tick()).toBe(0);
     expect(onError).toHaveBeenCalledTimes(4);
     expect(onError).toHaveBeenLastCalledWith(expect.any(Error), expect.any(String));
+  });
+
+  it('skips stream reads for NPCs that are not yet due', async () => {
+    let now = new Date('2026-10-21T12:00:00.000Z');
+    const store = new InMemoryEventStore();
+    const engine = new EngineHost(
+      [autonomousNpcsPlugin],
+      store,
+      authorization,
+      demoWorld,
+      () => globalThis.crypto.randomUUID(),
+      () => now,
+      { roll: (sides) => sides },
+    );
+    await engine.start();
+    const readStream = vi.spyOn(store, 'readStream');
+    const scheduler = createAutonomousNpcScheduler({
+      engine,
+      store,
+      world: demoWorld,
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      now: () => now,
+    });
+
+    expect(await scheduler.tick()).toBe(2);
+    readStream.mockClear();
+    for (let second = 1; second < 60; second += 1) {
+      now = new Date(Date.parse('2026-10-21T12:00:00.000Z') + second * 1_000);
+      expect(await scheduler.tick()).toBe(0);
+    }
+    expect(readStream).not.toHaveBeenCalled();
+
+    now = new Date('2026-10-21T12:01:00.000Z');
+    expect(await scheduler.tick()).toBe(2);
+    await engine.stop();
+  });
+
+  it('does not move NPCs while the world is inactive', async () => {
+    const now = new Date('2026-10-21T12:00:00.000Z');
+    let active = false;
+    const store = { readStream: vi.fn(async () => []) } as unknown as EventStorePort;
+    const engine = {
+      dispatchSystem: vi.fn(async () => ({ receipt: { ok: true } })),
+    } as unknown as EngineHost;
+    const scheduler = createAutonomousNpcScheduler({
+      engine,
+      store,
+      world: demoWorld,
+      worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      now: () => now,
+      isActive: () => active,
+    });
+
+    expect(await scheduler.tick()).toBe(0);
+    expect(store.readStream).not.toHaveBeenCalled();
+    active = true;
+    expect(await scheduler.tick()).toBe(2);
   });
 
   it('uses the default clock and skips NPCs without movement definitions', async () => {
@@ -303,33 +365,80 @@ describe('autonomous NPC scheduler and room movement messages', () => {
     expect(engine.dispatchSystem).toHaveBeenCalledOnce();
   });
 
-  it('starts and stops its polling timer idempotently', async () => {
-    const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
-    const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval');
-    const engine = { dispatchSystem: vi.fn() } as unknown as EngineHost;
-    const store = { readStream: vi.fn() } as unknown as EventStorePort;
+  it('does not start a timer for a world without mobile NPCs', () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
     const scheduler = createAutonomousNpcScheduler({
-      engine,
-      store,
+      engine: { dispatchSystem: vi.fn() } as unknown as EngineHost,
+      store: { readStream: vi.fn() } as unknown as EventStorePort,
       world: { ...demoWorld, locations: [] } as WorldPackDraft,
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
     });
-
     try {
       scheduler.start();
+      expect(setTimeoutSpy).not.toHaveBeenCalled();
+    } finally {
+      scheduler.stop();
+      setTimeoutSpy.mockRestore();
+    }
+  });
+
+  describe('timer', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-10-21T12:00:00.000Z'));
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    function fakeScheduler(isActive: () => boolean) {
+      const store = { readStream: vi.fn(async () => []) } as unknown as EventStorePort;
+      const engine = {
+        dispatchSystem: vi.fn(async () => ({ receipt: { ok: true } })),
+      } as unknown as EngineHost;
+      const scheduler = createAutonomousNpcScheduler({
+        engine,
+        store,
+        world: demoWorld,
+        worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+        isActive,
+      });
+      return { scheduler, engine };
+    }
+
+    it('wakes when the next NPC is due rather than every second', async () => {
+      const { scheduler, engine } = fakeScheduler(() => true);
       scheduler.start();
-      expect(setIntervalSpy).toHaveBeenCalledTimes(1);
-      const intervalCallback = setIntervalSpy.mock.calls[0]?.[0] as () => void;
-      intervalCallback();
-      await Promise.resolve();
+      scheduler.start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(engine.dispatchSystem).toHaveBeenCalledTimes(2);
+
+      await vi.advanceTimersByTimeAsync(59_000);
+      expect(engine.dispatchSystem).toHaveBeenCalledTimes(2);
+      expect(vi.getTimerCount()).toBe(1);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(engine.dispatchSystem).toHaveBeenCalledTimes(4);
 
       scheduler.stop();
       scheduler.stop();
-      expect(clearIntervalSpy).toHaveBeenCalledTimes(1);
-    } finally {
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('sleeps while the world is idle and resumes on wake', async () => {
+      let active = false;
+      const { scheduler, engine } = fakeScheduler(() => active);
+      scheduler.start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(engine.dispatchSystem).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+
+      active = true;
+      scheduler.wake();
+      scheduler.wake();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(engine.dispatchSystem).toHaveBeenCalledTimes(2);
+      expect(vi.getTimerCount()).toBe(1);
       scheduler.stop();
-      setIntervalSpy.mockRestore();
-      clearIntervalSpy.mockRestore();
-    }
+    });
   });
 });
