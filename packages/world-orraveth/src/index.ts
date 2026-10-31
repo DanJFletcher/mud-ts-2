@@ -61,6 +61,7 @@ function bellwoldSmallTalkChoices(
   }> = [],
   hideInitialChoicesAfterProgressFlagIds: string[] = [],
   requireInitialChoicesAfterProgressFlagIds: string[] = [],
+  townName = 'Bellwold',
 ) {
   const initialChoiceVisibility = {
     hideAfterProgressFlagIds: hideInitialChoicesAfterProgressFlagIds.length
@@ -86,8 +87,8 @@ function bellwoldSmallTalkChoices(
       ...initialChoiceVisibility,
     },
     {
-      id: `${npcId}-about-bellwold`,
-      label: 'What is Bellwold like?',
+      id: `${npcId}-about-${townName.toLowerCase()}`,
+      label: `What is ${townName} like?`,
       response: town,
       progressFlagId: `${npcId}-asked-about-town`,
       ...initialChoiceVisibility,
@@ -135,7 +136,7 @@ function banditEncounter(id: string) {
 const draft = {
   formatVersion: 1,
   packId: 'orraveth.bellwold',
-  packVersion: '1.18.0',
+  packVersion: '1.19.0',
   displayName: 'Orraveth: Bellwold',
   dailyBoards: [{
     id: 'bellwold-notice-board', locationId: 'bellwold-south-common', name: 'South Common bulletin board',
@@ -510,10 +511,130 @@ const draft = {
     {
       id: 'bellwold-west-road-end',
       name: 'Western Road Verge',
-      description: 'The packed track narrows between scrub and open ground before ending in rough grass. West Gate lies back to the east.',
+      description: 'The packed track narrows between scrub and open ground. A rutted farm road carries on west beside a drainage ditch toward Harrowfen’s fields; West Gate lies back to the east.',
       mapPosition: { x: -4, y: 0, terrain: 'land' },
       exits: [
         { id: 'west-road-end-to-track', fromLocationId: 'bellwold-west-road-end', toLocationId: 'bellwold-westbound-track', label: 'east', direction: 'east', roadId: 'bellwold-west-road' },
+        { id: 'west-road-end-to-harrowfen-ditch', fromLocationId: 'bellwold-west-road-end', toLocationId: 'harrowfen-road-ditch-verge', label: 'west', direction: 'west', roadId: 'harrowfen-road' },
+      ],
+    },
+    {
+      id: 'harrowfen-road-ditch-verge',
+      name: 'Harrowfen Road Ditch',
+      description: 'The farm road runs beside a straight drainage ditch. Cart wheels have cut the bank, and the mud near the reeds is churned by something heavier. Flat fields open to the west; the Western Road Verge is east.',
+      mapPosition: { x: -5, y: 0, terrain: 'land' },
+      exits: [
+        { id: 'harrowfen-ditch-to-west-road-end', fromLocationId: 'harrowfen-road-ditch-verge', toLocationId: 'bellwold-west-road-end', label: 'east', direction: 'east', roadId: 'harrowfen-road' },
+        { id: 'harrowfen-ditch-to-field-gate', fromLocationId: 'harrowfen-road-ditch-verge', toLocationId: 'harrowfen-east-field-gate', label: 'west', direction: 'west', roadId: 'harrowfen-road' },
+      ],
+    },
+    {
+      id: 'harrowfen-east-field-gate',
+      name: 'East Field Gate',
+      description: 'A field gate stands open where the road meets Harrowfen’s first strips of grain and flax. Low fields stretch away under a wide sky. The threshing green is west; the road back to Bellwold runs east.',
+      mapPosition: { x: -6, y: 0, terrain: 'pasture' },
+      exits: [
+        { id: 'harrowfen-field-gate-to-ditch', fromLocationId: 'harrowfen-east-field-gate', toLocationId: 'harrowfen-road-ditch-verge', label: 'east', direction: 'east', roadId: 'harrowfen-road' },
+        { id: 'harrowfen-field-gate-to-green', fromLocationId: 'harrowfen-east-field-gate', toLocationId: 'harrowfen-threshing-green', label: 'west', direction: 'west' },
+      ],
+    },
+    {
+      id: 'harrowfen-threshing-green',
+      name: 'Threshing Green',
+      description: 'A beaten circle of shared ground is swept clear for threshing, with flails stacked against a post. The weigh-house is north, a drainage cut runs south, and the tenant cottages line the way west. The field gate is east.',
+      mapPosition: { x: -7, y: 0, terrain: 'pasture' },
+      exits: [
+        { id: 'harrowfen-green-to-field-gate', fromLocationId: 'harrowfen-threshing-green', toLocationId: 'harrowfen-east-field-gate', label: 'east', direction: 'east' },
+        { id: 'harrowfen-green-to-weigh-house', fromLocationId: 'harrowfen-threshing-green', toLocationId: 'harrowfen-weigh-house', label: 'north', direction: 'north' },
+        { id: 'harrowfen-green-to-drainage-cut', fromLocationId: 'harrowfen-threshing-green', toLocationId: 'harrowfen-drainage-cut', label: 'south', direction: 'south' },
+        { id: 'harrowfen-green-to-tenant-row', fromLocationId: 'harrowfen-threshing-green', toLocationId: 'harrowfen-tenant-row', label: 'west', direction: 'west' },
+      ],
+    },
+    {
+      id: 'harrowfen-weigh-house',
+      name: 'Weigh-House',
+      description: 'A squat timber house holds a heavy beam scale and a board of chalked tallies. Sacks wait by the door to be weighed. The threshing green is south.',
+      mapPosition: { x: -7, y: 1, terrain: 'building' },
+      exits: [
+        { id: 'harrowfen-weigh-house-to-green', fromLocationId: 'harrowfen-weigh-house', toLocationId: 'harrowfen-threshing-green', label: 'south', direction: 'south' },
+      ],
+      readables: [
+        {
+          id: 'harrowfen-yield-tallies',
+          label: 'Yield tallies',
+          description: 'A board of chalked columns beside the beam scale.',
+          text: 'The columns record seed sown, the weather and the sacks weighed, season by season. The recent columns are shorter than the older ones, though the weather notes for those seasons read “fair” and “good”. A line at the foot asks next season’s tellers to note which field each load came from. The tallies do not say why the yields have fallen.',
+        },
+      ],
+      npcs: [
+        {
+          id: 'maela-thorn',
+          name: 'Reeve Maela Thorn',
+          description: 'Maela Thorn stands by the beam scale with a stub of chalk, comparing this season’s sacks against last year’s marks.',
+          activityDescription: 'checking sacks against the tallies',
+          greeting: '“If you’ve come about the fields, tell me what you’ve seen. I’ve heard plenty of guesses already.”',
+          topics: [
+            { id: 'harvest', keywords: ['harvest', 'harvests', 'yield', 'yields', 'grain', 'crops'], response: '“Yields are down, and the weather’s been fair. Some blame tired soil, some the drainage, some Resonance. I don’t know yet, and I won’t pretend to.”' },
+            { id: 'land', keywords: ['land', 'landholders', 'nobles', 'owners', 'tenants'], response: '“Most of these fields belong to noble families. Tenants, hired hands and smallholders do the work, and they don’t all want the same thing from me.”' },
+            { id: 'reeve', keywords: ['reeve', 'office', 'election'], response: '“The village chose me to speak for the farmers. That gives me a voice with the landholders. It doesn’t give me their deeds.”' },
+            { id: 'grain-offer', keywords: ['offer', 'bargain', 'cheap grain', 'Veyl', 'extraction'], response: '“Someone has offered cheap grain if we let them set up a Veyl extraction operation here. Some want the food and the work. Others ask who would consent, and what it would cost the land. Nobody has shown me what it would really do.”' },
+            { id: 'trade', keywords: ['Bellwold', 'Rillford', 'trade', 'flax'], response: '“Our food and flax go toward Bellwold, and plenty more moves on through Rillford. When a season is short, everyone down the road feels it.”' },
+            { id: 'tools', keywords: ['tools', 'smith', 'forge', 'repairs'], response: '“We’ve no forge here. A broken share goes to whoever can mend it, and the fields wait.”' },
+          ],
+          unknownTopicResponse: '“Ask me about the fields, the harvest or the people who work them.”',
+          dialogue: {
+            prompt: '“If you’ve come about the fields, tell me what you’ve seen. I’ve heard plenty of guesses already.”',
+            choices: bellwoldSmallTalkChoices(
+              'maela-thorn',
+              '“Maela Thorn, reeve of Harrowfen. I worked these fields before the village chose me to speak for the people who farm them.”',
+              '“I’m checking this season’s sacks against last year’s marks. The numbers keep coming up short.”',
+              '“A hundred fields and a lot of opinions. The land mostly belongs to noble families; the work belongs to everyone else.”',
+              [
+                {
+                  id: 'falling-yields',
+                  label: 'Why are the harvests falling?',
+                  response: '“I don’t know. Tired soil, the drainage, Resonance: I’ve heard them all. Until we keep better field records, they’re guesses.”',
+                },
+                {
+                  id: 'grain-bargain',
+                  label: 'What is this offer of cheap grain?',
+                  response: '“Cheap grain in exchange for letting someone set up a Veyl extraction operation. It would feed people this year. Nobody can tell me what it would do after that.”',
+                },
+              ],
+              [],
+              [],
+              'Harrowfen',
+            ),
+          },
+        },
+      ],
+    },
+    {
+      id: 'harrowfen-drainage-cut',
+      name: 'Drainage Cut',
+      description: 'A long channel drains the low fields. Its sides are freshly recut in places and slumped in others, as if no two seasons agreed on how the water should run. The threshing green is north.',
+      mapPosition: { x: -7, y: -1, terrain: 'land' },
+      exits: [
+        { id: 'harrowfen-drainage-cut-to-green', fromLocationId: 'harrowfen-drainage-cut', toLocationId: 'harrowfen-threshing-green', label: 'north', direction: 'north' },
+      ],
+    },
+    {
+      id: 'harrowfen-tenant-row',
+      name: 'Tenant Row',
+      description: 'Small cottages face the lane, each with a patched roof and tools hung by the door. The people who work the fields live here; most of the land beyond belongs to others. The threshing green is east and the west fields lie beyond.',
+      mapPosition: { x: -8, y: 0, terrain: 'dirt' },
+      exits: [
+        { id: 'harrowfen-tenant-row-to-green', fromLocationId: 'harrowfen-tenant-row', toLocationId: 'harrowfen-threshing-green', label: 'east', direction: 'east' },
+        { id: 'harrowfen-tenant-row-to-west-fields', fromLocationId: 'harrowfen-tenant-row', toLocationId: 'harrowfen-west-fields', label: 'west', direction: 'west' },
+      ],
+    },
+    {
+      id: 'harrowfen-west-fields',
+      name: 'West Fields',
+      description: 'Strips of grain, root crops and flax run toward the horizon, divided by ditches and a weathered boundary stone carved with an estate mark. Tenant Row is east.',
+      mapPosition: { x: -9, y: 0, terrain: 'dirt' },
+      exits: [
+        { id: 'harrowfen-west-fields-to-tenant-row', fromLocationId: 'harrowfen-west-fields', toLocationId: 'harrowfen-tenant-row', label: 'east', direction: 'east' },
       ],
     },
     {
@@ -1990,6 +2111,21 @@ const draft = {
       ].map((locationId) => ({ locationId, isPrimary: false })),
       metadata: { codexId: 'orraveth-bellwold', politicalStatus: 'unestablished' },
     },
+    {
+      id: 'harrowfen',
+      name: 'Harrowfen',
+      type: 'settlement',
+      description: 'A farming village of low fields and drainage cuts, half a day west of Bellwold. Much of its land belongs to Heskar noble families.',
+      memberships: [
+        'harrowfen-east-field-gate',
+        'harrowfen-threshing-green',
+        'harrowfen-weigh-house',
+        'harrowfen-drainage-cut',
+        'harrowfen-tenant-row',
+        'harrowfen-west-fields',
+      ].map((locationId) => ({ locationId, isPrimary: true })),
+      metadata: { codexId: 'orraveth-harrowfen', politicalStatus: 'crown-of-heskar' },
+    },
   ],
   roads: [
     {
@@ -2092,6 +2228,33 @@ const draft = {
           combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' },
         },
         banditEncounter('bellwold-west-road-bandit'),
+      ],
+    },
+    {
+      id: 'harrowfen-road',
+      name: 'Harrowfen Road',
+      locationIds: [
+        'bellwold-west-road-end',
+        'harrowfen-road-ditch-verge',
+        'harrowfen-east-field-gate',
+      ],
+      encounterChancePercent: 10,
+      encounters: [
+        {
+          id: 'harrowfen-road-ditch-fox',
+          name: 'Ditch Fox',
+          combatProfile: { maxHealth: 3, attackDamage: 1, style: 'steady' },
+        },
+        {
+          id: 'harrowfen-road-reedback-boar',
+          name: 'Reedback Boar',
+          combatProfile: { maxHealth: 7, attackDamage: 2, style: 'steady' },
+        },
+        {
+          id: 'harrowfen-road-stray-hound',
+          name: 'Stray Hound',
+          combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' },
+        },
       ],
     },
   ],

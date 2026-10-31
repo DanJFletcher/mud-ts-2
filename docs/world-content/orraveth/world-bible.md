@@ -19,17 +19,19 @@ The first session introduces Orraveth through Bellwold, a growing frontier settl
 
 ## Playable content in this slice
 
-The pack (`packVersion` 1.18.0) has 72 connected locations. The market square is the starting room.
+The pack (`packVersion` 1.19.0) has 79 connected locations. The market square is the starting room.
 
 - **The village:** the market square, the Kindly Roof, Marr's General Goods, Old Bell Tower Road and the tower; the southern lanes, with South Common, the Green Mortar, Blackwater Forge, Well Court, Wattle Row, Soven's Wheelwright Yard, Tallow End Cottage, the Old Grain House and the Common House; and the newer rows round Hearth Alley and Lantern Court, the jail, the library and the local museum. These rooms form the `bellwold` settlement location group.
 - **Roads:** five roads with room-by-room travel and encounters (stray hounds, roadside deer, bandits): the West Road to an unmarked verge, the South Road over the Lower Rill bridge to the unfinished road end, the Mile Marker West Road to the Milepost Workshop, the East Mill Road past the abandoned watermill, and the North Church Road.
+- **Harrowfen** (Phase 1 of the region expansion): the Harrowfen Road runs on from the Western Road Verge to the East Field Gate, half a day's travel at about 8 road steps a day. Ditch foxes, reedback boars and stray hounds use it. The village has the Threshing Green, the Weigh-House, a drainage cut, Tenant Row and the West Fields. Its rooms form the primary `harrowfen` settlement group, so they read as "Harrowfen: Threshing Green" and so on.
 - **The Lower Rill:** seven river tiles at the south bridge, with a fishing spot. The world data still calls it "Bellwold River"; the rename is planned in [bellwold-region-expansion.md](bellwold-region-expansion.md).
 - **Separate maps:** the jail cell, the library's upper room, the abandoned church's belfry and annex, and the church undercrypt maze each use their own map area or level.
 
 Every route is reachable in both directions and uses the supported cardinal directions. No two rooms share a map tile within the same map area and level.
 
-Eighteen residents are available to meet:
+Nineteen residents are available to meet:
 
+- **Reeve Maela Thorn** works at Harrowfen's Weigh-House. She speaks for the farmers on yields, landholders and the offer of cheap grain for extraction rights, and doesn't claim to know why harvests are falling. Her yield tallies record the decline without a cause.
 - **Anwen Marr**, the practical shopkeeper, distinguishes repeatable observations from unproven causes. She sells tools and offers the Mill Ledger and Church Reliquary quests.
 - **Tomas**, innkeeper of the Kindly Roof, shares road reports while making clear that reports are not guarantees.
 - **Darric Holt** and **Ilya Fen**, established in the Codex as the blacksmith and healer, work at their workplaces.

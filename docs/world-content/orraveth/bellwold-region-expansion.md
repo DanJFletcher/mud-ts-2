@@ -455,6 +455,12 @@ Each phase stands on its own: a valid graph, every room reachable, a `packVersio
 | **4. Far settlements** | Vell's Crossing (east road, Jarek Vell, apothecary row); Greywatch (via Rillford, Edric Vaul); Elderhollow (via Mosswake, Caeren Moss) | 35 | Two-day destinations and the most sensitive canon (Hollow Trade, surveys, Elira Venn) | Each route; survey notice wording |
 | **5. Regional stories** (optional) | Investigations built on existing quest objectives (read-object, visit, possess-item), for example comparing Harrowfen tallies with Bellwold's Old Grain House, or documenting Rillford cargoes for Selda Rook. All stay unresolved. | — | Matches roadmap Phase 3 / 4 | Story proposals go to Codex review first |
 
+**Progress (2026-10-31, branch `content/bellwold-region-expansion`):**
+
+- **Phase 0 is done**, with one revision: the `bellwold` group is non-primary (§5.2).
+- **Phase 1 is done.** It added `harrowfen-road`, 7 rooms, Reeve Maela Thorn and the yield tallies, at `packVersion` 1.19.0 with 79 locations.
+- **The Phase 1 codex follow-up is still pending review.** `regions/bellwold.md` and `culture/trade-transport.md` still describe the west road as ending at an unmarked verge.
+
 The Road Through Old Ground and the south road's destination aren't scheduled. They wait on Q4 and Q10.
 
 ---
