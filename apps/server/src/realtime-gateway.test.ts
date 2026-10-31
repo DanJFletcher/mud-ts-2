@@ -132,6 +132,105 @@ describe('realtime gateway authorization and recovery', () => {
     gateway.close();
   });
 
+  it('rereads only the channels a wakeup can change', async () => {
+    const view = { worldInstanceId: 'w', characterId: 'a', playerId: 'player-a', roomId: 'room-a',
+      expiresAt: Date.now() + 30_000,
+      values: { chat: null, presence: null, interactions: null, party: null, team: null, character: 1 } };
+    const read = vi.fn(async (_request: Request, _channels: readonly string[]) => view);
+    const gateway = createRealtimeGateway(read);
+    const socket = new FakeSocket();
+    gateway.connect(socket as never, request);
+    socket.message({ type: 'subscribe', version: 1, channels: ['chat', 'presence', 'interactions', 'party', 'team', 'character'] });
+    await flush();
+    expect(read.mock.calls.at(-1)?.[1]).toEqual(['chat', 'presence', 'interactions', 'party', 'team', 'character']);
+    const readsFor = async (change: Parameters<typeof gateway.invalidate>[0]) => {
+      read.mockClear();
+      gateway.invalidate(change);
+      await flush();
+      return read.mock.calls.map(([, channels]) => [...channels].sort());
+    };
+
+    // NPC movement and chat in the room: presence and chat only.
+    expect(await readsFor({ world: 'w', kind: 'room', roomId: 'room-a' })).toEqual([['chat', 'presence']]);
+    // Another character acting in the room: presence only.
+    expect(await readsFor({ world: 'w', kind: 'character', characterId: 'b', roomId: 'room-a' })).toEqual([['presence']]);
+    expect(await readsFor({ world: 'w', kind: 'interaction' })).toEqual([['interactions']]);
+    expect(await readsFor({ world: 'w', kind: 'party' })).toEqual([['party']]);
+    expect(await readsFor({ world: 'w', kind: 'team' })).toEqual([['team']]);
+    // The client's own character: everything, since it may have changed rooms.
+    expect(await readsFor({ world: 'w', kind: 'character', characterId: 'a' }))
+      .toEqual([['character', 'chat', 'interactions', 'party', 'presence', 'team']]);
+    // Elsewhere in the world: no read at all.
+    expect(await readsFor({ world: 'w', kind: 'room', roomId: 'room-b' })).toEqual([]);
+    expect(await readsFor({ world: 'w', kind: 'character', characterId: 'b', roomId: 'room-b' })).toEqual([]);
+    gateway.close();
+  });
+
+  it('skips wakeups for channels the client has not subscribed to', async () => {
+    const view = { worldInstanceId: 'w', characterId: 'a', playerId: 'player-a', roomId: 'room-a',
+      expiresAt: Date.now() + 30_000,
+      values: { chat: null, presence: null, interactions: null, party: null, team: null, character: 1 } };
+    const read = vi.fn(async () => view);
+    const gateway = createRealtimeGateway(read);
+    const socket = new FakeSocket();
+    gateway.connect(socket as never, request);
+    socket.message({ type: 'subscribe', version: 1, channels: ['chat'] });
+    await flush();
+    read.mockClear();
+    gateway.invalidate({ world: 'w', kind: 'interaction' });
+    gateway.invalidate({ world: 'w', kind: 'character', characterId: 'b', roomId: 'room-a' });
+    await flush();
+    expect(read).not.toHaveBeenCalled();
+    gateway.close();
+  });
+
+  it('rereads room channels when a narrower read finds the character in a new room', async () => {
+    const view = { worldInstanceId: 'w', characterId: 'a', playerId: 'player-a', roomId: 'room-a',
+      expiresAt: Date.now() + 30_000,
+      values: { chat: null, presence: null, interactions: null, party: { size: 1 }, team: null, character: 1 } };
+    const read = vi.fn(async (_request: Request, _channels: readonly string[]) => view);
+    const gateway = createRealtimeGateway(read);
+    const socket = new FakeSocket();
+    gateway.connect(socket as never, request);
+    socket.message({ type: 'subscribe', version: 1, channels: ['chat', 'presence', 'party'] });
+    await flush();
+    read.mockClear();
+    view.roomId = 'room-b';
+    view.values.party = { size: 2 };
+    gateway.invalidate({ world: 'w', kind: 'party' });
+    await flush();
+    expect(read.mock.calls.map(([, channels]) => [...channels].sort())).toEqual([['party'], ['chat', 'presence']]);
+    gateway.close();
+  });
+
+  it('merges wakeups that arrive during a read into one follow-up read', async () => {
+    const view = { worldInstanceId: 'w', characterId: 'a', playerId: 'player-a', roomId: 'room-a',
+      expiresAt: Date.now() + 30_000,
+      values: { chat: null, presence: null, interactions: null, party: null, team: null, character: 1 } };
+    let release: (() => void) | undefined;
+    const read = vi.fn(async (_request: Request, _channels: readonly string[]) => view);
+    const gateway = createRealtimeGateway(read);
+    const socket = new FakeSocket();
+    gateway.connect(socket as never, request);
+    socket.message({ type: 'subscribe', version: 1, channels: ['chat', 'presence', 'interactions', 'party'] });
+    await flush();
+    read.mockClear();
+    read.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => { release = resolve; });
+      return view;
+    });
+    gateway.invalidate({ world: 'w', kind: 'party' });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    gateway.invalidate({ world: 'w', kind: 'interaction' });
+    gateway.invalidate({ world: 'w', kind: 'room', roomId: 'room-a' });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    release?.();
+    await flush();
+    expect(read.mock.calls.map(([, channels]) => [...channels].sort()))
+      .toEqual([['party'], ['chat', 'interactions', 'presence']]);
+    gateway.close();
+  });
+
   it('closes a player connection after membership changes and caps concurrent clients', async () => {
     const membershipSocket = new FakeSocket();
     const gateway = createRealtimeGateway(async () => ({
