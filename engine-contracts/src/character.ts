@@ -608,6 +608,10 @@ export const CharacterProjectionSchema = z.object({
     questId: IdSchema,
     definitionVersion: z.string().min(1).max(40),
     status: z.enum(['active', 'completed']),
+    /** Branching quests only: the current branch, choices in order, and the terminal outcome. */
+    branchId: IdSchema.optional(),
+    choiceIds: z.array(IdSchema).max(16).optional(),
+    outcomeId: IdSchema.optional(),
   }).strict()).default([]),
   questRewardedIds: z.array(IdSchema).default([]),
   dailyJobs: z.array(DailyJobStateSchema).default([]),

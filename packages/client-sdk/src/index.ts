@@ -40,6 +40,8 @@ import {
   LocationProjectionSchema,
   RoomPresenceProjectionSchema,
   QuestJournalSchema,
+  QuestJournalQuerySchema,
+  QuestChoiceSelectCommandSchema,
   WorldMapProjectionSchema,
   ObjectInspectionProjectionSchema,
   NpcDialogueProjectionSchema,
@@ -864,6 +866,48 @@ export class MuddHttpClient {
       characterId,
       payload: { questId },
     }));
+  }
+
+  /** The character's quest journal, including branch state and shared world outcomes. */
+  async getQuestJournal(characterId: string): Promise<z.infer<typeof QuestJournalSchema>> {
+    const query = QuestJournalQuerySchema.parse({
+      type: 'quest.journal',
+      version: 1,
+      queryId: crypto.randomUUID(),
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      payload: {},
+    });
+    const result = await this.request('/api/queries', {
+      method: 'POST',
+      body: JSON.stringify(query),
+    }, queryResultSchema(QuestJournalSchema));
+    if (!result.ok || !result.value) throw new Error(result.message ?? 'Unable to view the quest journal.');
+    return result.value;
+  }
+
+  /**
+   * Select a branching-quest choice. Reuse the same commandId when retrying so
+   * the server returns the original receipt instead of applying it again.
+   */
+  async selectQuestChoice(
+    characterId: string,
+    questId: string,
+    choiceId: string,
+    fromBranchId: string,
+    expectedVersion: number,
+    commandId = crypto.randomUUID(),
+  ): Promise<CommandResponse> {
+    const command = QuestChoiceSelectCommandSchema.parse({
+      type: 'quest.choice.select',
+      version: 1,
+      commandId,
+      worldInstanceId: this.options.worldInstanceId,
+      characterId,
+      expectedVersion,
+      payload: { questId, choiceId, fromBranchId },
+    });
+    return this.send(command);
   }
 
   async getPartyQuests(characterId: string): Promise<PartyQuestJournal> {

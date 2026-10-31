@@ -43,6 +43,7 @@ import { WorldQuerySchema } from './world-query-schema.js';
 import { installProductionWebServing } from './web-serving.js';
 import {
   projectQuestJournal,
+  questWorldOutcomeKeys,
   replayCharacter as reconstructCharacter,
   SYSTEM_ACTOR_ID,
   type DispatchResult,
@@ -52,6 +53,8 @@ import {
   mobileNpcDefinitions,
   projectInteractionEvents,
   projectCharacterInteractions,
+  projectQuestWorldOutcomes,
+  QUEST_WORLD_OUTCOMES_STREAM_ID,
   updateInteractionRequestStatus,
   WOODCUTTING_TREES_STREAM_ID,
   projectWoodcuttingTreePresence,
@@ -688,6 +691,10 @@ async function buildGameProjection(
   );
   const woodcuttingRoom = projectWoodcuttingRoom(baseLocation, treePresence);
   const location = woodcuttingRoom.location;
+  // Shared quest outcomes are read only for worlds whose quests can settle them.
+  const questWorldOutcomes = questWorldOutcomeKeys(runtime.world).size > 0
+    ? projectQuestWorldOutcomes(await store.readStream(session.worldInstanceId, QUEST_WORLD_OUTCOMES_STREAM_ID))
+    : undefined;
   const currentWorldLocation = runtime.world.locations.find((entry) => entry.id === character.locationId);
   const currentStateId = character.locationStateId ?? currentWorldLocation?.defaultStateId;
   return {
@@ -698,7 +705,7 @@ async function buildGameProjection(
       stats: statsResult.value,
       location,
       map: projectWorldMap(character, runtime.world, locationGroupCatalog.groups),
-      questJournal: projectQuestJournal(character, runtime.world),
+      questJournal: projectQuestJournal(character, runtime.world, questWorldOutcomes?.values),
       availableFishingSpots: runtime.world.fishingSpots
         .filter((spot) => spot.locationId === character.locationId &&
           (!spot.stateId || spot.stateId === currentStateId))
