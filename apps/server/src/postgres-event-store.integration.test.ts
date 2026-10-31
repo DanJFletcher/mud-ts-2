@@ -402,6 +402,53 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     expect(await store.readStreamHeads(worldInstanceId, [])).toEqual(new Map());
   });
 
+  it('reads stream heads without scanning their history', async () => {
+    const [{ gameEvents }, { streamHeadsQuery }] = await Promise.all([
+      import('./db/schema.js'),
+      import('./persistence/postgres-event-store.js'),
+    ]);
+    const streamIds = [`world-npc:${randomUUID()}`, `world-npc:${randomUUID()}`];
+    const historyLength = 2_000;
+    for (const streamId of streamIds) {
+      await db.insert(gameEvents).values(Array.from({ length: historyLength }, (_, index) => ({
+        eventId: randomUUID(),
+        worldInstanceId,
+        streamId,
+        streamVersion: index + 1,
+        type: 'head.fixture',
+        contractVersion: 1,
+        payload: { index },
+        causationCommandId: `head-history-${randomUUID()}`,
+        actorId: playerId,
+        occurredAt: new Date(),
+        tick: index,
+      })));
+    }
+    await pool.query('ANALYZE game_events');
+
+    const query = streamHeadsQuery(worldInstanceId, streamIds).toSQL();
+    const explained = await pool.query<{ 'QUERY PLAN': [{ Plan: PlanNode }] }>(
+      `EXPLAIN (ANALYZE, FORMAT JSON) ${query.sql}`, query.params);
+    type PlanNode = {
+      'Node Type': string; 'Relation Name'?: string;
+      'Actual Rows': number; 'Actual Loops': number; Plans?: PlanNode[];
+    };
+    const nodes: PlanNode[] = [];
+    const visit = (node: PlanNode) => { nodes.push(node); node.Plans?.forEach(visit); };
+    visit(explained.rows[0]!['QUERY PLAN'][0].Plan);
+    const eventRowsRead = nodes
+      .filter((node) => node['Relation Name'] === 'game_events')
+      .reduce((total, node) => total + node['Actual Rows'] * node['Actual Loops'], 0);
+
+    expect(nodes.map((node) => node['Node Type'])).not.toContain('Sort');
+    expect(nodes.filter((node) => node['Relation Name'] === 'game_events' && node['Node Type'] === 'Seq Scan'))
+      .toEqual([]);
+    // Each stream yields its head once from the index probe and once by primary key.
+    expect(eventRowsRead).toBeLessThanOrEqual(streamIds.length * 2);
+    const heads = await store.readStreamHeads!(worldInstanceId, streamIds);
+    expect([...heads.values()].map((event) => event.aggregateVersion)).toEqual([historyLength, historyLength]);
+  });
+
   it('atomically commits shared turns and character debits, including duplicate retries and racing resources', async () => {
     const resourceStream = `resource-${randomUUID()}`;
     const firstTurn = `turn-${randomUUID()}`;
