@@ -525,9 +525,9 @@ describe('Orraveth Bellwold settlement', () => {
     }
   });
 
-  it('has a valid, fully reachable seventy-nine-location region with map directions matching its exits', () => {
+  it('has a valid, fully reachable ninety-eight-location region with map directions matching its exits', () => {
     expect(validateDraftWorldGraph(orravethWorld)).toEqual([]);
-    expect(orravethWorld.locations).toHaveLength(79);
+    expect(orravethWorld.locations).toHaveLength(98);
 
     const worldWithMissingQuestRewardItem = structuredClone(orravethWorld);
     const churchQuest = worldWithMissingQuestRewardItem.quests?.find(
@@ -697,6 +697,166 @@ describe('Orraveth Bellwold settlement', () => {
         payload: { objectId: 'harrowfen-yield-tallies' },
       });
       expect(JSON.stringify(read.events)).toContain('do not say why the yields have fallen');
+    } finally {
+      await h.engine.stop();
+    }
+  });
+
+  it('names the bridged river the Lower Rill and extends it west to Rillford’s ferry stage', () => {
+    const locations = new Map(orravethWorld.locations.map((location) => [location.id, location]));
+    expect(JSON.stringify(orravethWorld)).not.toContain('Bellwold River');
+    expect(locations.get('bellwold-river-bridge')?.name).toBe('Lower Rill Bridge');
+    expect(locations.get('bellwold-river-far-west-reach')?.name).toBe('Far West Reach');
+    expect(orravethWorld.fishingSpots.map(({ locationId }) => locationId))
+      .toEqual(['bellwold-river-bridge', 'rill-towpath-mooring-posts']);
+
+    const lowerRill = orravethWorld.locationGroups.find(({ id }) => id === 'lower-rill');
+    expect(lowerRill).toMatchObject({ name: 'Lower Rill', type: 'waterway', metadata: { codexId: 'orraveth-lower-rill' } });
+    const primaryReaches = lowerRill?.memberships.filter(({ isPrimary }) => isPrimary).map(({ locationId }) => locationId);
+    expect(primaryReaches).toHaveLength(9);
+    expect(primaryReaches?.every((id) => locations.get(id)?.mapPosition?.terrain === 'river')).toBe(true);
+    expect(lowerRill?.memberships.filter(({ isPrimary }) => !isPrimary).map(({ locationId }) => locationId))
+      .toEqual(['bellwold-river-bridge', 'rillford-crossing']);
+
+    // The Codex records a contested ferry trade and no settled right of passage, so the stage
+    // reaches the north quay on foot and the river only from its water state.
+    const stage = locations.get('rillford-crossing');
+    expect(stage).toMatchObject({ name: 'Ferry Stage', defaultStateId: 'stage', mapPosition: { x: -6, y: -7, terrain: 'river' } });
+    expect(stage?.exits.filter(({ fromStateId }) => fromStateId === 'stage').map(({ toLocationId }) => toLocationId))
+      .toEqual(['rillford-north-quay']);
+    expect(stage?.exits.filter(({ fromStateId }) => fromStateId === 'water').map(({ toLocationId }) => toLocationId))
+      .toEqual(['lower-rill-towpath-reach', 'lower-rill-west-of-rillford']);
+    expect(locations.get('rillford-south-landing')?.exits.map(({ toLocationId }) => toLocationId))
+      .toEqual(['rillford-south-lane']);
+  });
+
+  it('reaches Rillford by the Rill Towpath and the south lane road without changing Bellwold’s roads', () => {
+    expect(orravethWorld.roads.find(({ id }) => id === 'bellwold-south-road')?.locationIds).toContain('bellwold-reedbed-approach');
+    expect(orravethWorld.roads.find(({ id }) => id === 'bellwold-mile-west-road')?.locationIds.at(-1))
+      .toBe('bellwold-milepost-workshop');
+    const towpath = orravethWorld.roads.find(({ id }) => id === 'rill-towpath');
+    expect(towpath).toMatchObject({ name: 'Rill Towpath', encounterChancePercent: 10 });
+    expect(towpath?.locationIds[0]).toBe('bellwold-reedbed-approach');
+    expect(towpath?.locationIds.at(-1)).toBe('rillford-north-quay');
+    // About 8 road steps a day: South Gate → Reedbed Approach is 2 steps, then 6 along the towpath.
+    expect(towpath?.locationIds).toHaveLength(7);
+    expect(towpath?.encounters.map(({ name }) => name)).toEqual(['Reedback Boar', 'Ditch Fox', 'Stray Hound']);
+    const southLaneRoad = orravethWorld.roads.find(({ id }) => id === 'rillford-south-lane-road');
+    expect(southLaneRoad?.locationIds).toEqual([
+      'bellwold-milepost-workshop',
+      'mile-road-sedge-track',
+      'mile-road-landing-lane',
+      'rillford-south-lane',
+      'rillford-south-landing',
+    ]);
+    expect(orravethWorld.roads.flatMap(({ encounters }) => encounters)
+      .filter(({ id }) => id.startsWith('rill')).map(({ name }) => name)).not.toContain('Bandit');
+
+    const rillford = orravethWorld.locationGroups.find(({ id }) => id === 'rillford');
+    expect(rillford).toMatchObject({
+      type: 'settlement',
+      metadata: { codexId: 'orraveth-rillford', politicalStatus: 'crown-of-heskar' },
+    });
+    expect(rillford?.memberships).toHaveLength(9);
+    expect(rillford?.memberships.every(({ isPrimary }) => isPrimary)).toBe(true);
+    const primaryGroupCounts = new Map<string, number>();
+    for (const group of orravethWorld.locationGroups) {
+      for (const { locationId, isPrimary } of group.memberships) {
+        if (isPrimary) primaryGroupCounts.set(locationId, (primaryGroupCounts.get(locationId) ?? 0) + 1);
+      }
+    }
+    expect([...primaryGroupCounts.values()].every((count) => count === 1)).toBe(true);
+
+    const npcs = new Map(orravethWorld.locations.flatMap((location) =>
+      (location.npcs ?? []).map((npc) => [npc.id, { npc, locationId: location.id }] as const)));
+    expect(npcs.get('selda-rook')).toMatchObject({ locationId: 'rillford-guild-hall', npc: { name: 'Guildmistress Selda Rook' } });
+    expect(npcs.get('rillford-customs-clerk')).toMatchObject({ locationId: 'rillford-customs-house', npc: { name: 'Customs Clerk' } });
+    expect(npcs.get('rillford-independent-boatman'))
+      .toMatchObject({ locationId: 'rillford-warehouse-row', npc: { name: 'Independent Boatman' } });
+    for (const npcId of ['selda-rook', 'rillford-customs-clerk', 'rillford-independent-boatman']) {
+      const choices = npcs.get(npcId)?.npc.dialogue?.choices ?? [];
+      expect(choices.map(({ label }) => label))
+        .toEqual(expect.arrayContaining(['Who are you?', 'What are you doing?', 'What is Rillford like?']));
+      expect(choices.some(({ requiresProgressFlagIds }) => requiresProgressFlagIds?.includes(`${npcId}-asked-about-town`)))
+        .toBe(true);
+    }
+    expect(orravethWorld.locations.find(({ id }) => id === 'rillford-inn')).toMatchObject({ name: 'Quayside Inn', safeResting: true });
+  });
+
+  it('walks the Rill Towpath to Rillford, hears Selda Rook and reads the crew slate', async () => {
+    const h = makeHarness({ includeRoadTravel: true, rng: { roll: (sides) => sides } });
+    await h.engine.start();
+    try {
+      const created = await h.dispatch(undefined, {
+        type: 'character.create',
+        version: 1,
+        commandId: 'orraveth-rillford-create',
+        payload: { name: 'Rill Walker', classId: 'orraveth.scout' },
+      });
+      const characterId = (created.events.find((event) => event.type === 'character.created')?.payload as
+        { characterId?: string } | undefined)?.characterId;
+      if (!characterId) throw new Error('Character creation returned no character ID.');
+      h.owners.set(characterId, h.session.playerId);
+
+      const travel = async (type: 'character.move' | 'character.road.step', exitId: string) => {
+        const character = await h.loadCharacter(characterId);
+        return h.dispatch(characterId, {
+          type,
+          version: 1,
+          commandId: `orraveth-rillford-${exitId}`,
+          expectedVersion: character.revision,
+          payload: { exitId },
+        });
+      };
+      for (const exitId of ['square-to-south-common', 'south-common-to-well-court', 'well-court-to-common-house', 'common-house-to-south-gate']) {
+        await travel('character.move', exitId);
+      }
+      await travel('character.road.step', 'south-gate-to-track');
+      await travel('character.road.step', 'southbound-track-to-reedbed');
+      const firstStep = await travel('character.road.step', 'reedbed-approach-to-towpath');
+      expect(firstStep.events.find(({ type }) => type === 'character.moved')?.payload).toMatchObject({
+        toLocationId: 'rill-towpath-willow-bank',
+        roadTravel: { roadId: 'rill-towpath', encounterOccurred: false },
+      });
+      for (const exitId of [
+        'towpath-willow-bank-to-mooring-posts',
+        'towpath-mooring-posts-to-sedge-flats',
+        'towpath-sedge-flats-to-culvert',
+        'towpath-culvert-to-quay-lane',
+        'quay-lane-to-north-quay',
+      ]) {
+        await travel('character.road.step', exitId);
+      }
+      await travel('character.move', 'north-quay-to-guild-hall');
+
+      const atGuildHall = await h.loadCharacter(characterId);
+      expect(atGuildHall.locationId).toBe('rillford-guild-hall');
+      const dialogue = await h.engine.query({
+        type: 'npc.talk',
+        version: 1,
+        queryId: 'orraveth-rillford-selda-talk',
+        worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+        characterId,
+        payload: { npcId: 'selda-rook', topic: 'Silverfin' },
+      }, h.session, { characterProjection: atGuildHall });
+      if (!dialogue.ok) throw new Error(dialogue.message);
+      const projection = NpcDialogueProjectionSchema.parse(dialogue.value);
+      expect(projection.npcName).toBe('Guildmistress Selda Rook');
+      expect(JSON.stringify(projection)).toContain('I won’t name a cause');
+
+      await travel('character.move', 'guild-hall-to-north-quay');
+      await travel('character.move', 'north-quay-to-ferry-stage');
+      const atStage = await h.loadCharacter(characterId);
+      expect(atStage).toMatchObject({ locationId: 'rillford-crossing', locationStateId: 'stage' });
+      const read = await h.dispatch(characterId, {
+        type: 'character.read',
+        version: 1,
+        commandId: 'orraveth-rillford-read-slate',
+        expectedVersion: atStage.revision,
+        payload: { objectId: 'rillford-crew-slate' },
+      });
+      expect(JSON.stringify(read.events)).toContain('someone else has rubbed it out');
+      await expect(travel('character.move', 'ferry-stage-water-to-west-reach')).rejects.toThrow();
     } finally {
       await h.engine.stop();
     }
@@ -944,7 +1104,7 @@ describe('Orraveth Bellwold settlement', () => {
     const riverLocations = orravethWorld.locations.filter(
       ({ mapPosition }) => mapPosition?.terrain === 'river',
     );
-    expect(riverLocations).toHaveLength(6);
+    expect(riverLocations).toHaveLength(10);
     expect(riverLocations.every(({ mapPosition }) => mapPosition?.visibleWhenUnvisited === true)).toBe(true);
     expect(orravethWorld.locations.find(({ id }) => id === 'bellwold-river-bridge'))
       .toMatchObject({ defaultStateId: 'on', mapPosition: { x: 0, y: -7, visibleWhenUnvisited: true } });
@@ -1067,10 +1227,10 @@ describe('Orraveth Bellwold settlement', () => {
     expect(workshop).toMatchObject({
       name: 'Milepost Workshop',
       mapPosition: { x: -3, y: -9, terrain: 'building' },
-      exits: [expect.objectContaining({
-        toLocationId: 'bellwold-hazel-cut',
-        direction: 'east',
-      })],
+      exits: [
+        expect.objectContaining({ toLocationId: 'bellwold-hazel-cut', direction: 'east' }),
+        expect.objectContaining({ toLocationId: 'mile-road-sedge-track', direction: 'west', roadId: 'rillford-south-lane-road' }),
+      ],
     });
     expect(workshop?.description).toMatch(/shavings|file|stove/i);
     expect(resident).toMatchObject({

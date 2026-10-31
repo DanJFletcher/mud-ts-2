@@ -1,7 +1,7 @@
 # Bellwold Region Expansion
 
-**Status:** In delivery. Q1 (river identity) and Q5 (travel scale) were decided on 2026-10-31. Phases 0 and 1 are in the world data on `main`; Phases 2–5 remain proposals for review.
-**Pack:** `orraveth.bellwold` (`packages/world-orraveth/src/index.ts`), currently `packVersion` 1.19.0 with 79 locations (after Phase 1). Sections 1 and 2 describe the Codex and world data as they stood before Phase 1.
+**Status:** In delivery. Q1 (river identity), Q5 (travel scale) and Q7 (the Rillford crossing) were decided on 2026-10-31. Phases 0 and 1 are in the world data on `main`. Phase 2 is implemented on `content/lower-rill-rillford` and awaits review. Phases 3–5 remain proposals.
+**Pack:** `orraveth.bellwold` (`packages/world-orraveth/src/index.ts`), `packVersion` 1.20.0 with 98 locations after Phase 2. Sections 1 and 2 describe the Codex and world data as they stood before Phase 1.
 **Scope:** New roads, new towns, extending the existing river, and connecting Bellwold to the communities of the Bellwold Marches.
 
 ## How to read this document
@@ -132,7 +132,7 @@ y=-10                         unfinished-road-end
 
 ### 2.4 The river today
 
-Seven `river` tiles at `y = −7`, from x −3 to 3: `bellwold-river-far-west-reach`, `-willow-reach`, `-west-reach`, `bellwold-river-bridge`, `-east-reach`, `-alder-reach`, `-far-east-reach`. You reach them only from the bridge's `under` state. The bridge carries a fishing spot (smallmouth bass, common carp, rainbow trout → `river-fish`). The Codex now identifies this river as the Lower Rill (Q1, decided). The world data still calls it "Bellwold River". Renaming it is **pending** and belongs to Phase 2.
+Seven `river` tiles at `y = −7`, from x −3 to 3: `bellwold-river-far-west-reach`, `-willow-reach`, `-west-reach`, `bellwold-river-bridge`, `-east-reach`, `-alder-reach`, `-far-east-reach`. You reach them only from the bridge's `under` state. The bridge carries a fishing spot (smallmouth bass, common carp, rainbow trout → `river-fish`). The Codex now identifies this river as the Lower Rill (Q1, decided). Phase 2 renamed the display names to Lower Rill names; the IDs are unchanged.
 
 ### 2.5 Content not yet in the Codex
 
@@ -208,15 +208,15 @@ Extend the river along the same row (`y = −7`), using the bridge's pattern: `r
 |---|---|---|
 | `lower-rill-reed-reach` | (−4,−7) | Continues west from `bellwold-river-far-west-reach` |
 | `lower-rill-towpath-reach` | (−5,−7) | Towpath visible on the north bank |
-| `rillford-crossing` | (−6,−7) | **States** `ford` (crossing on foot, linking north quay and south landing) and `water` (out on the river, linking the reaches east and west). This mirrors the bridge's `on`/`under` states. Add `mapLineGapAtLocationId` if the crossing should be drawn as a bridge. |
+| `rillford-crossing` | (−6,−7) | "Ferry Stage". **States** `stage` (the timber stage, reached from the north quay) and `water` (out on the river, linking the reaches east and west). This mirrors the bridge's `on`/`under` states. *Revised in Phase 2 (Q7):* the stage doesn't link to the south landing, because the Codex records a ferry crossing with a contested ferry trade and no settled right of passage. |
 | `lower-rill-west-of-rillford` | (−7,−7) | Terminal reach for now (see Q2) |
 | `lower-rill-sedge-reach` | (4,−7) | Continues east from `bellwold-river-far-east-reach` |
 | `mosswake-channel` | (5,−7) | Where the river meets Mosswake's channels; exit south to `mosswake-landing` |
 | `mosswake-open-water` | (6,−7) | Open water by the platforms. Readable: a public dredging-survey notice. |
 
-**River identity (decided, Q1).** The bridged river is the Lower Rill. New river rooms use Lower Rill names, such as "Lower Rill: Reed Reach" and "Lower Rill: Sedge Reach". The existing `bellwold-river-*` rooms keep their IDs. Renaming their display names from "Bellwold River" and "River … Reach" to Lower Rill names is **pending** and happens in Phase 2. The names say nothing about which way the river flows; that is still open (Q2).
+**River identity (decided, Q1).** The bridged river is the Lower Rill. New river rooms use Lower Rill names, such as "Lower Rill: Reed Reach" and "Lower Rill: Sedge Reach". The existing `bellwold-river-*` rooms keep their IDs. Phase 2 renamed their display names: the bridge is "Lower Rill Bridge" and the reaches drop the "River" prefix, taking "Lower Rill" from their primary `lower-rill` group. The names say nothing about which way the river flows; that is still open (Q2).
 
-**Fishing (proposal).** Add `fishingSpots` at `lower-rill-towpath-reach` and `mosswake-open-water`. The Mosswake spot should be noticeably sparser, reflecting the recorded fish decline, without suggesting a cause ([mosswake.md][mosswake]). Don't put a fishing spot on `rillford-crossing`; crews there treat the river's behaviour as unresolved ([old-silverfin.md][silverfin]).
+**Fishing (proposal).** Add `fishingSpots` at `lower-rill-towpath-reach` and `mosswake-open-water`. *Revised in Phase 2:* players can't walk onto river tiles (the reaches open only from a crossing's water state), so the towpath spot sits on the bank at `rill-towpath-mooring-posts`. The Mosswake spot should be noticeably sparser, reflecting the recorded fish decline, without suggesting a cause ([mosswake.md][mosswake]). Don't put a fishing spot on `rillford-crossing`; crews there treat the river's behaviour as unresolved ([old-silverfin.md][silverfin]).
 
 **Boats and ferries are deferred.** River travel stays as walking or wading between reaches, as it is today. A paid ferry, or rules for the guild dispute, would need a new paid-passage capability (compare [ADR 0007](../../adr/0007-character-scoped-paid-inn-rest.md)). The Codex also sets no fares or rights of passage (Q7).
 
@@ -261,11 +261,11 @@ Each town is a small, connected cluster of 5–9 rooms. NPCs listed by name come
 | `rillford-north-quay` | (−6,−6) | cobblestone | Towpath endpoint. Loading, repairs, watching the current. |
 | `rillford-customs-house` | (−7,−6) | building | Customs officials (role NPC). Readable: a public cargo-and-passage notice. |
 | `rillford-guild-hall` | (−6,−5) | building | **Guildmistress Selda Rook.** Topics: regulated commerce, the ferry dispute, why cargoes should be documented. |
-| `rillford-inn` | (−7,−5) | building | `inn` with a placeholder `restPrice`. The Codex mentions inns but doesn't name any (Q8). |
+| `rillford-inn` | (−7,−5) | building | "Quayside Inn", a descriptive placeholder name awaiting Codex review (Q8). Free safe resting, like the Kindly Roof. |
 | `rillford-warehouse-row` | (−8,−6) | dirt | Warehouses. An independent boatman (role NPC) gives the opposing view. |
 | `rillford-livestock-market` | (−8,−5) | pasture | The weekly livestock market |
-| `rillford-crossing` | (−6,−7) | river | See §4.2 |
-| `rillford-south-landing` | (−6,−8) | land | South bank |
+| `rillford-crossing` | (−6,−7) | river | Ferry Stage; see §4.2. Readable: a crew slate recording overturned boats with no common cargo. |
+| `rillford-south-landing` | (−6,−8) | land | South bank. Faces the stage; no boat is carrying. |
 | `rillford-south-lane` | (−6,−9) | dirt | Junction for the Mile road and the Greywatch road |
 | `mile-road-sedge-track`, `mile-road-landing-lane` | (−4,−9), (−5,−9) | dirt | Segments of `rillford-south-lane-road` |
 
@@ -461,6 +461,13 @@ Each phase stands on its own: a valid graph, every room reachable, a `packVersio
 - **Phase 1 is done.** It added `harrowfen-road`, 7 rooms, Reeve Maela Thorn and the yield tallies, at `packVersion` 1.19.0 with 79 locations.
 - **The Phase 1 codex follow-up is written and awaiting Codex review.** `regions/bellwold.md` and `culture/trade-transport.md` now record the Harrowfen Road continuing from the west road's verge to Harrowfen's field gate, about half a day from Bellwold. The mill road and the south road are unchanged.
 
+**Phase 2 (2026-10-31, on `content/lower-rill-rillford`, awaiting review):**
+
+- The existing river rooms now use Lower Rill names, grouped in a `lower-rill` waterway group.
+- It adds the `rill-towpath` (8 steps from South Gate) and `rillford-south-lane-road`, three river reaches, Rillford's 9 rooms in a primary `rillford` group, Guildmistress Selda Rook, an unnamed customs clerk and independent boatman, and fishing at the towpath mooring posts. That brings the pack to `packVersion` 1.20.0 with 98 locations.
+- Q7 is decided: no crossing between Rillford's banks until a paid-passage capability exists.
+- The Codex follow-up (the towpath and the river's course past Rillford) hasn't been written yet.
+
 The Road Through Old Ground and the south road's destination aren't scheduled. They wait on Q4 and Q10.
 
 ---
@@ -469,14 +476,14 @@ The Road Through Old Ground and the south road's destination aren't scheduled. T
 
 Each is a place where the Codex is silent or contradicts itself, or a design call that needs an owner.
 
-1. **Is the bridged river the Lower Rill? Decided 2026-10-31: yes.** `regions/bellwold.md` and `culture/trade-transport.md` used to call it "unnamed", while `regions/lower-rill.md` said the Lower Rill passes near Bellwold. Both entries now name the Lower Rill. Renaming "Bellwold River" in the world data is pending (Phase 2).
+1. **Is the bridged river the Lower Rill? Decided 2026-10-31: yes.** `regions/bellwold.md` and `culture/trade-transport.md` used to call it "unnamed", while `regions/lower-rill.md` said the Lower Rill passes near Bellwold. Both entries now name the Lower Rill, and Phase 2 renamed "Bellwold River" in the world data.
 2. **Which way does the Lower Rill flow, and where does it go?** The Codex doesn't say, and the name "Lower" hints at an upper course. Its link to Mosswake's channels and the Rillward Freeholds is unresolved ([lower-rill.md][lower-rill]). This spec names reaches after landmarks, not as upstream or downstream, and stops the river at `lower-rill-west-of-rillford`.
 3. **What feeds the watermill?** The mill is north of town (1,1); the river is south (y −7). Rell Soven mentions the mill's channel running low ([rell-soven.md][rell]). Don't settle this in an expansion: it touches the Mill That Never Sleeps.
 4. **Where does the unfinished south road go?** The Codex says its end gives "no basis for assuming a destination". One possibility is that it's early work on the Crown's proposed road, but that would turn a proposal into construction and needs Codex approval. *Recommendation:* leave it unfinished.
 5. **Travel scale. Decided 2026-10-31:** one travel day is about 8 road steps (§3.1).
 6. **Do trade links mean roads?** The Codex says no. Every road here is a proposal; a direct Harrowfen–Rillford track (Harrowfen trades through Rillford) is left out.
-7. **Ferry fares and passage rights.** The Codex sets no tolls, schedules or fares, and the engine has no paid-passage capability. Is the crossing free (as proposed), or does it wait for engine work?
-8. **Names for inns and role NPCs.** The Codex mentions Rillford's inns and Vell's Crossing's merchants but names none. Who approves new names?
+7. **Ferry fares and passage rights. Decided 2026-10-31: the crossing waits for engine work.** The Codex sets no tolls, schedules or fares, and the engine has no paid-passage capability. A free ford would undercut Rillford's ferry trade, so the ferry stage reaches only the north quay. The south bank is reached by the mile road.
+8. **Names for inns and role NPCs.** The Codex mentions Rillford's inns and Vell's Crossing's merchants but names none. Who approves new names? *Phase 2 uses a descriptive placeholder, "Quayside Inn", and unnamed role NPCs until this is settled.*
 9. **Thornmere's healer.** The person is unnamed and their case is unresolved. Should they appear in-world at all yet?
 10. **The Road Through Old Ground.** Is showing survey stakes and a notice on the existing east track acceptable, or is even that too strong a claim?
 11. **Rillford's size versus Vell's Crossing.** Rillford is "the largest established civilian settlement in the immediate region" (~620) but Vell's Crossing has ~850, and Bellwold's page calls both larger. This probably means Vell's Crossing (1½ days away) isn't "immediate". Worth clarifying in the Codex.
