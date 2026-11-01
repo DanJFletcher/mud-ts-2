@@ -232,7 +232,7 @@ describe('visited world map projection', () => {
     });
   });
 
-  it('shows the full Lower Rill, its bridge and Rillford’s ferry stage on the map before they are visited', () => {
+  it('shows the full Lower Rill and Thornmere lake before they are visited', () => {
     const riverLocationIds = [
       'lower-rill-west-of-rillford',
       'rillford-crossing',
@@ -244,6 +244,9 @@ describe('visited world map projection', () => {
       'bellwold-river-east-reach',
       'bellwold-river-alder-reach',
       'bellwold-river-far-east-reach',
+      'lower-rill-sedge-reach',
+      'mosswake-channel',
+      'mosswake-open-water',
     ];
     const map = projectWorldMap(CharacterProjectionSchema.parse({
       worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
@@ -254,8 +257,9 @@ describe('visited world map projection', () => {
       revision: 1,
     }), orravethWorld);
 
-    expect(map.locations.filter(({ id }) => riverLocationIds.includes(id))).toHaveLength(10);
-    expect(map.locations.filter(({ terrain }) => terrain === 'river')).toHaveLength(10);
+    expect(map.locations.filter(({ id }) => riverLocationIds.includes(id))).toHaveLength(13);
+    expect(map.locations.filter(({ terrain }) => terrain === 'river')).toHaveLength(14);
+    expect(map.locations.find(({ id }) => id === 'thornmere-lake')).toMatchObject({ x: 8, y: 5, terrain: 'river' });
     expect(map.locations.find(({ id }) => id === 'bellwold-river-bridge'))
       .toMatchObject({ x: 0, y: -7, terrain: 'land' });
     expect(map.connections.some((connection) =>

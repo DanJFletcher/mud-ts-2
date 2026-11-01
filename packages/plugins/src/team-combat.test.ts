@@ -756,14 +756,16 @@ describe('team combat commands and projections', () => {
       .rejects.toThrow('opponent is no longer available');
   });
 
-  it('plans a shared road encounter for present, standing party members', async () => {
+  it.each([5, 2])('plans and completes a shared road encounter using a %i-stamina world cost', async (movementCost) => {
     const test = harness();
+    test.context.world.movementStaminaCost = movementCost;
     test.context.world.classCatalog = {} as any;
     const second = CharacterProjectionSchema.parse({
       ...player(),
       characterId: 'character-two',
       name: 'Briar',
       revision: 7,
+      resources: { ...player().resources, stamina: { ...player().resources.stamina, current: movementCost } },
     });
     test.setProjection(second);
     vi.mocked(test.roster.resolveIfPartyPresent).mockResolvedValue({
@@ -904,6 +906,9 @@ describe('team combat commands and projections', () => {
     }, { ...test.context, effectId: 'road-victory-effect' });
     const moved = (test.context.store.append as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
     expect(moved.events.map((event: any) => event.type)).toContain('character.moved');
+    expect(moved.events).toContainEqual(expect.objectContaining({
+      type: 'character.moved', payload: expect.objectContaining({ movementCost }),
+    }));
     expect(moved.effects.map((effect: any) => effect.type)).toEqual([
       'world.location.entered',
       'engine.domain_event_dispatch',

@@ -546,6 +546,24 @@ describe('character event replay validation', () => {
     });
   });
 
+  it('preserves recorded five- and two-stamina costs in the same character history', () => {
+    const oldMove = event('character.moved', 2, {
+      characterId: 'character-test', fromLocationId: 'mossgate-clearing', toLocationId: 'glasswater-bridge',
+      exitId: 'old-cost-move', movementCost: 5,
+    });
+    const newMove = event('character.moved', 3, {
+      characterId: 'character-test', fromLocationId: 'glasswater-bridge', toLocationId: 'mossgate-clearing',
+      exitId: 'new-cost-move', movementCost: 2,
+    });
+    expect(replayCharacter([created, oldMove])?.resources.stamina.current).toBe(95);
+    expect(replayCharacter([created, oldMove, newMove])?.resources.stamina.current).toBe(93);
+    for (const movementCost of [0, 1.5, 101]) {
+      expect(() => replayCharacter([created, event('character.moved', 2, {
+        ...oldMove.payload, movementCost,
+      })])).toThrow(/invalid movement event/i);
+    }
+  });
+
   it('deduplicates read observations and resets NPC dialogue progress selectively', () => {
     const readBoard = (revision: number, objectId: string) => event('character.object_read', revision, {
       characterId: 'character-test',

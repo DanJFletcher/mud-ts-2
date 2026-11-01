@@ -130,9 +130,60 @@ function makeHarness(options: Readonly<{
 }
 
 describe('Orraveth Bellwold settlement', () => {
+  for (const [fromId, fromState, toId, allowed] of [
+    ['mosswake-landing', undefined, 'mosswake-channel', false],
+    ['mosswake-channel', undefined, 'mosswake-open-water', false],
+    ['thornmere-shared-bridge', undefined, 'thornmere-lake', false],
+    ['bellwold-river-east-reach', undefined, 'bellwold-river-bridge', false],
+    ['lower-rill-towpath-reach', undefined, 'rillford-crossing', false],
+    ['bellwold-river-bridge', 'under', 'bellwold-river-east-reach', false],
+    ['rillford-north-quay', undefined, 'rillford-crossing', true],
+    ['bellwold-river-bridge', 'on', 'bellwold-far-bank-track', true],
+    ['mosswake-channel', undefined, 'mosswake-landing', true],
+  ] as const) {
+    it(`${allowed ? 'allows dry access' : 'rejects water travel'} from ${fromId} to ${toId}`, async () => {
+      const world = structuredClone(orravethWorld);
+      const source = world.locations.find(({ id }) => id === fromId);
+      if (!source) throw new Error(`Missing crossing origin ${fromId}`);
+      if (fromState) source.defaultStateId = fromState;
+      world.locations = [source, ...world.locations.filter(({ id }) => id !== fromId)];
+      const exit = source.exits.find(({ toLocationId, fromStateId }) =>
+        toLocationId === toId && (!fromStateId || fromStateId === source.defaultStateId));
+      if (!exit) throw new Error(`Missing authored crossing exit ${fromId} to ${toId}`);
+      const h = makeHarness({ world, includeRoadTravel: true, rng: { roll: (sides) => sides } });
+      await h.engine.start();
+      try {
+        const created = await h.dispatch(undefined, { type: 'character.create', version: 1,
+          commandId: 'water-crossing-create', payload: { name: 'Crossing Tester', classId: 'orraveth.scout' } });
+        const characterId = created.streamId;
+        if (!characterId) throw new Error('Character creation returned no stream.');
+        h.owners.set(characterId, h.session.playerId);
+        const character = await h.loadCharacter(characterId);
+        const before = await h.store.readStream(ORRAVETH_WORLD_INSTANCE_ID, characterId);
+        const result = await h.engine.dispatch({
+          type: exit.roadId ? 'character.road.step' : 'character.move', version: 1,
+          commandId: 'water-crossing-move', worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+          characterId, expectedVersion: character.revision, payload: { exitId: exit.id },
+        }, h.session);
+        if (allowed) {
+          expect(result.receipt.ok).toBe(true);
+          expect((await h.loadCharacter(characterId)).locationId).toBe(toId);
+        } else {
+          expect(result.receipt).toMatchObject({ ok: false, code: 'RULE_VIOLATION' });
+          expect(result.events).toEqual([]);
+          expect(await h.store.readStream(ORRAVETH_WORLD_INSTANCE_ID, characterId)).toEqual(before);
+        }
+      } finally {
+        await h.engine.stop();
+      }
+    });
+  }
+
+
   for (const [roadId, junctionId, arrivalId, chance, pool] of [
     ['mosswake-causeway', 'bellwold-far-bank-track', 'mosswake-landing', 6, ['Reedback Boar', 'Stray Hound']],
     ['thornmere-path', 'bellwold-church-approach', 'thornmere-lakeshore', 5, ['Bank Badger', 'Roadside Deer']],
+    ['ashcombe-timber-road', 'bellwold-westbound-track', 'ashcombe-timber-yard', 10, ['Bank Badger', 'Stray Hound', 'Roadside Deer']],
   ] as const) {
     it(`travels ${roadId} from junction to arrival and back through committed road-step events`, async () => {
       const junction = orravethWorld.locations.find(({ id }) => id === junctionId);
@@ -145,6 +196,7 @@ describe('Orraveth Bellwold settlement', () => {
       const h = makeHarness({
         world: { ...orravethWorld, locations: [junction, ...orravethWorld.locations.filter(({ id }) => id !== junctionId)] },
         includeRoadTravel: true,
+        now: () => new Date('2026-11-01T12:00:00.000Z'),
         rng: { roll: (sides) => sides },
       });
       await h.engine.start();
@@ -170,9 +222,12 @@ describe('Orraveth Bellwold settlement', () => {
             const payload = CharacterMovedEventSchema.shape.payload.parse(moved?.payload);
             expect(payload).toMatchObject({
               fromLocationId: character.locationId, toLocationId: destinationId,
+              movementCost: 2,
               roadTravel: { roadId, encounterOccurred: false },
             });
-            expect((await h.loadCharacter(characterId)).locationId).toBe(destinationId);
+            const movedCharacter = await h.loadCharacter(characterId);
+            expect(movedCharacter.locationId).toBe(destinationId);
+            expect(movedCharacter.resources.stamina.current).toBe(character.resources.stamina.current - 2);
           }
           expect((await h.loadCharacter(characterId)).locationId).toBe(leg === 'outward' ? arrivalId : junctionId);
         }
@@ -187,6 +242,8 @@ describe('Orraveth Bellwold settlement', () => {
     ['mosswake-boat-sheds', 'tavin-reed', 'dredging', 'Tavin Reed', 'before anyone calls the proposal settled'],
     ['mosswake-herb-platform', 'mosswake-herbalist', 'territories', 'Herbalist', 'not turn a path ending here into permission'],
     ['thornmere-council-house', 'nessa-valeen', 'medicine', 'Nessa Valeen', 'no settled council decision'],
+    ['ashcombe-kest-workshop', 'oren-kest', 'oak', 'Oren Kest', 'I do not know whether a sprite lived there'],
+    ['ashcombe-cart-yard', 'ashcombe-cartwright', 'orders', 'Cartwright', 'does not settle the arguments'],
   ] as const) {
     it(`meets ${npcId} through an authorised dialogue query without resolving the local dispute`, async () => {
       const location = orravethWorld.locations.find(({ id }) => id === locationId);
@@ -613,7 +670,7 @@ describe('Orraveth Bellwold settlement', () => {
       let character = await h.loadCharacter(characterId);
       await client.move(characterId, 'square-to-inn', character.revision, 'orraveth-stamina-to-inn');
       character = await h.loadCharacter(characterId);
-      expect(character.resources.stamina.current).toBe(95);
+      expect(character.resources.stamina.current).toBe(98);
       const room = await client.look(characterId, 'orraveth-stamina-look-safe-place');
       expect(room.safeResting).toBe(true);
       expect(room.inn).toBeUndefined();
@@ -640,16 +697,16 @@ describe('Orraveth Bellwold settlement', () => {
       await client.move(characterId, 'inn-to-square', character.revision, 'orraveth-stamina-back-to-square');
       character = await h.loadCharacter(characterId);
       expect(character.locationId).toBe('bellwold-market-square');
-      expect(character.resources.stamina.current).toBe(95);
+      expect(character.resources.stamina.current).toBe(98);
       expect(character.staminaRecovery.posture).toBe('standing');
     } finally {
       await h.engine.stop();
     }
   });
 
-  it('has a valid, fully reachable region with map directions matching its exits', () => {
+  it('has a valid, fully connected region with map directions matching its exits', () => {
     expect(validateDraftWorldGraph(orravethWorld)).toEqual([]);
-    expect(orravethWorld.locations).toHaveLength(119);
+    expect(orravethWorld.locations).toHaveLength(130);
 
     const worldWithMissingQuestRewardItem = structuredClone(orravethWorld);
     const churchQuest = worldWithMissingQuestRewardItem.quests?.find(

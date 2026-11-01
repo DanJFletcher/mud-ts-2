@@ -98,7 +98,7 @@
     {
       "id": "bellwold-westbound-track",
       "name": "Westbound Track",
-      "description": "The packed-earth road follows low hedgerows beyond Bellwold’s western fields. The West Gate is east; the rough road end is west.",
+      "description": "The packed-earth road follows low hedgerows beyond Bellwold’s western fields. The West Gate is east and the rough road verge west. Deep wheel ruts turn north between cut banks.",
       "mapPosition": {
         "x": -3,
         "y": 0,
@@ -120,6 +120,14 @@
           "label": "west",
           "direction": "west",
           "roadId": "bellwold-west-road"
+        },
+        {
+          "id": "bellwold-westbound-track-to-timber-road-cutbank",
+          "fromLocationId": "bellwold-westbound-track",
+          "toLocationId": "timber-road-cutbank",
+          "label": "north to Timber Road Cut Bank",
+          "direction": "north",
+          "roadId": "ashcombe-timber-road"
         }
       ]
     },
@@ -3391,6 +3399,312 @@
           "toLocationId": "thornmere-shared-bridge",
           "label": "west to Shared Bridge",
           "direction": "west"
+        }
+      ]
+    },
+    {
+      "id": "timber-road-cutbank",
+      "name": "Timber Road Cut Bank",
+      "description": "The track rises between cut banks. Heavy foreprints and pale claw scores mark a dry burrow mouth beside the northern bend; the westbound track is south.",
+      "mapPosition": {
+        "x": -3,
+        "y": 1,
+        "terrain": "land"
+      },
+      "exits": [
+        {
+          "id": "timber-road-cutbank-to-bellwold-westbound-track",
+          "fromLocationId": "timber-road-cutbank",
+          "toLocationId": "bellwold-westbound-track",
+          "label": "south to Westbound Track",
+          "direction": "south",
+          "roadId": "ashcombe-timber-road"
+        },
+        {
+          "id": "timber-road-cutbank-to-timber-road-hauling-track",
+          "fromLocationId": "timber-road-cutbank",
+          "toLocationId": "timber-road-hauling-track",
+          "label": "north to Hauling Track",
+          "direction": "north",
+          "roadId": "ashcombe-timber-road"
+        }
+      ]
+    },
+    {
+      "id": "timber-road-hauling-track",
+      "name": "Hauling Track",
+      "description": "Deep wheel ruts run beside a strip of trampled grass. The hauling track turns west; the cut bank drops away to the south.",
+      "mapPosition": {
+        "x": -3,
+        "y": 2,
+        "terrain": "dirt"
+      },
+      "exits": [
+        {
+          "id": "timber-road-hauling-track-to-timber-road-cutbank",
+          "fromLocationId": "timber-road-hauling-track",
+          "toLocationId": "timber-road-cutbank",
+          "label": "south to Timber Road Cut Bank",
+          "direction": "south",
+          "roadId": "ashcombe-timber-road"
+        },
+        {
+          "id": "timber-road-hauling-track-to-timber-road-rise",
+          "fromLocationId": "timber-road-hauling-track",
+          "toLocationId": "timber-road-rise",
+          "label": "west to Timber Road Rise",
+          "direction": "west",
+          "roadId": "ashcombe-timber-road"
+        }
+      ]
+    },
+    {
+      "id": "timber-road-rise",
+      "name": "Timber Road Rise",
+      "description": "A low rise lifts the track above the field edge. Scraps of bark lie caught in its ruts, which continue east and west.",
+      "mapPosition": {
+        "x": -4,
+        "y": 2,
+        "terrain": "land"
+      },
+      "exits": [
+        {
+          "id": "timber-road-rise-to-timber-road-hauling-track",
+          "fromLocationId": "timber-road-rise",
+          "toLocationId": "timber-road-hauling-track",
+          "label": "east to Hauling Track",
+          "direction": "east",
+          "roadId": "ashcombe-timber-road"
+        },
+        {
+          "id": "timber-road-rise-to-timber-road-kiln-wind",
+          "fromLocationId": "timber-road-rise",
+          "toLocationId": "timber-road-kiln-wind",
+          "label": "west to Kiln Wind Track",
+          "direction": "west",
+          "roadId": "ashcombe-timber-road"
+        }
+      ]
+    },
+    {
+      "id": "timber-road-kiln-wind",
+      "name": "Kiln Wind Track",
+      "description": "A thin smell of charcoal smoke carries between the trunks. The ruts turn north toward the trees and east toward open ground.",
+      "mapPosition": {
+        "x": -5,
+        "y": 2,
+        "terrain": "dirt"
+      },
+      "exits": [
+        {
+          "id": "timber-road-kiln-wind-to-timber-road-rise",
+          "fromLocationId": "timber-road-kiln-wind",
+          "toLocationId": "timber-road-rise",
+          "label": "east to Timber Road Rise",
+          "direction": "east",
+          "roadId": "ashcombe-timber-road"
+        },
+        {
+          "id": "timber-road-kiln-wind-to-timber-road-stand-edge",
+          "fromLocationId": "timber-road-kiln-wind",
+          "toLocationId": "timber-road-stand-edge",
+          "label": "north to Stand Edge Track",
+          "direction": "north",
+          "roadId": "ashcombe-timber-road"
+        }
+      ]
+    },
+    {
+      "id": "timber-road-stand-edge",
+      "name": "Stand Edge Track",
+      "description": "Tall trunks stand close to the northern verge. The track follows their edge west and bends south beside a shallow ditch.",
+      "mapPosition": {
+        "x": -5,
+        "y": 3,
+        "terrain": "land"
+      },
+      "exits": [
+        {
+          "id": "timber-road-stand-edge-to-timber-road-kiln-wind",
+          "fromLocationId": "timber-road-stand-edge",
+          "toLocationId": "timber-road-kiln-wind",
+          "label": "south to Kiln Wind Track",
+          "direction": "south",
+          "roadId": "ashcombe-timber-road"
+        },
+        {
+          "id": "timber-road-stand-edge-to-timber-road-skid-trail",
+          "fromLocationId": "timber-road-stand-edge",
+          "toLocationId": "timber-road-skid-trail",
+          "label": "west to Skid Trail",
+          "direction": "west",
+          "roadId": "ashcombe-timber-road"
+        }
+      ]
+    },
+    {
+      "id": "timber-road-skid-trail",
+      "name": "Skid Trail",
+      "description": "Long scrape marks score the earth between wheel ruts. Timber stacks rise to the west; the track returns east along the trees.",
+      "mapPosition": {
+        "x": -6,
+        "y": 3,
+        "terrain": "dirt"
+      },
+      "exits": [
+        {
+          "id": "timber-road-skid-trail-to-timber-road-stand-edge",
+          "fromLocationId": "timber-road-skid-trail",
+          "toLocationId": "timber-road-stand-edge",
+          "label": "east to Stand Edge Track",
+          "direction": "east",
+          "roadId": "ashcombe-timber-road"
+        },
+        {
+          "id": "timber-road-skid-trail-to-ashcombe-timber-yard",
+          "fromLocationId": "timber-road-skid-trail",
+          "toLocationId": "ashcombe-timber-yard",
+          "label": "west to Timber Yard",
+          "direction": "west",
+          "roadId": "ashcombe-timber-road"
+        }
+      ]
+    },
+    {
+      "id": "ashcombe-timber-yard",
+      "name": "Timber Yard",
+      "description": "Timber lies stacked with gaps between the boards. The scent of fresh wood hangs over the yard. The road leaves east, a workshop opens west, and dark kiln mounds stand north.",
+      "mapPosition": {
+        "x": -7,
+        "y": 3,
+        "terrain": "dirt"
+      },
+      "exits": [
+        {
+          "id": "ashcombe-timber-yard-to-timber-road-skid-trail",
+          "fromLocationId": "ashcombe-timber-yard",
+          "toLocationId": "timber-road-skid-trail",
+          "label": "east to Skid Trail",
+          "direction": "east",
+          "roadId": "ashcombe-timber-road"
+        },
+        {
+          "id": "ashcombe-timber-yard-to-ashcombe-charcoal-kilns",
+          "fromLocationId": "ashcombe-timber-yard",
+          "toLocationId": "ashcombe-charcoal-kilns",
+          "label": "north to Charcoal Kilns",
+          "direction": "north"
+        },
+        {
+          "id": "ashcombe-timber-yard-to-ashcombe-kest-workshop",
+          "fromLocationId": "ashcombe-timber-yard",
+          "toLocationId": "ashcombe-kest-workshop",
+          "label": "west to Kest Workshop",
+          "direction": "west"
+        }
+      ]
+    },
+    {
+      "id": "ashcombe-charcoal-kilns",
+      "name": "Charcoal Kilns",
+      "description": "Thin smoke seeps through small openings in earth-covered mounds. A cart yard lies west, timber stacks south, and a broad stump shows beyond the grass to the north.",
+      "mapPosition": {
+        "x": -7,
+        "y": 4,
+        "terrain": "land"
+      },
+      "exits": [
+        {
+          "id": "ashcombe-charcoal-kilns-to-ashcombe-timber-yard",
+          "fromLocationId": "ashcombe-charcoal-kilns",
+          "toLocationId": "ashcombe-timber-yard",
+          "label": "south to Timber Yard",
+          "direction": "south"
+        },
+        {
+          "id": "ashcombe-charcoal-kilns-to-ashcombe-cart-yard",
+          "fromLocationId": "ashcombe-charcoal-kilns",
+          "toLocationId": "ashcombe-cart-yard",
+          "label": "west to Cart Yard",
+          "direction": "west"
+        },
+        {
+          "id": "ashcombe-charcoal-kilns-to-ashcombe-felled-oak-clearing",
+          "fromLocationId": "ashcombe-charcoal-kilns",
+          "toLocationId": "ashcombe-felled-oak-clearing",
+          "label": "north to Felled Oak Clearing",
+          "direction": "north"
+        }
+      ]
+    },
+    {
+      "id": "ashcombe-kest-workshop",
+      "name": "Kest Workshop",
+      "description": "Wooden joints and half-shaped boards cover a low bench. Shavings crunch underfoot beside the doorway; the timber yard is east and the cart yard north.",
+      "mapPosition": {
+        "x": -8,
+        "y": 3,
+        "terrain": "building"
+      },
+      "exits": [
+        {
+          "id": "ashcombe-kest-workshop-to-ashcombe-timber-yard",
+          "fromLocationId": "ashcombe-kest-workshop",
+          "toLocationId": "ashcombe-timber-yard",
+          "label": "east to Timber Yard",
+          "direction": "east"
+        },
+        {
+          "id": "ashcombe-kest-workshop-to-ashcombe-cart-yard",
+          "fromLocationId": "ashcombe-kest-workshop",
+          "toLocationId": "ashcombe-cart-yard",
+          "label": "north to Cart Yard",
+          "direction": "north"
+        }
+      ]
+    },
+    {
+      "id": "ashcombe-cart-yard",
+      "name": "Cart Yard",
+      "description": "Axles rest across trestles beside a row of wheels. A wooden mallet knocks against a rim. The workshop lies south and the kilns east.",
+      "mapPosition": {
+        "x": -8,
+        "y": 4,
+        "terrain": "dirt"
+      },
+      "exits": [
+        {
+          "id": "ashcombe-cart-yard-to-ashcombe-kest-workshop",
+          "fromLocationId": "ashcombe-cart-yard",
+          "toLocationId": "ashcombe-kest-workshop",
+          "label": "south to Kest Workshop",
+          "direction": "south"
+        },
+        {
+          "id": "ashcombe-cart-yard-to-ashcombe-charcoal-kilns",
+          "fromLocationId": "ashcombe-cart-yard",
+          "toLocationId": "ashcombe-charcoal-kilns",
+          "label": "east to Charcoal Kilns",
+          "direction": "east"
+        }
+      ]
+    },
+    {
+      "id": "ashcombe-felled-oak-clearing",
+      "name": "Felled Oak Clearing",
+      "description": "A broad oak stump fills a gap between the standing trees. Splinters fringe the pale cut face; the kiln mounds lie south beyond a strip of grass.",
+      "mapPosition": {
+        "x": -7,
+        "y": 5,
+        "terrain": "land"
+      },
+      "exits": [
+        {
+          "id": "ashcombe-felled-oak-clearing-to-ashcombe-charcoal-kilns",
+          "fromLocationId": "ashcombe-felled-oak-clearing",
+          "toLocationId": "ashcombe-charcoal-kilns",
+          "label": "south to Charcoal Kilns",
+          "direction": "south"
         }
       ]
     }

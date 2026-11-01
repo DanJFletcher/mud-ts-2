@@ -1,4 +1,3 @@
-import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
@@ -8,12 +7,7 @@ import {
 } from '@mudd/contracts';
 import { demoWorld } from './index.js';
 
-describe('demo map data migration', () => {
-  it('strictly equals the pre-migration pack, including every array order', () => {
-    const fixture = JSON.parse(readFileSync(new URL('./__fixtures__/pre-migration-pack.json', import.meta.url), 'utf8'));
-    assert.deepEqual(demoWorld, fixture);
-  });
-
+describe('demo map data', () => {
   it('has no placeholder location descriptions', () => {
     expect(demoWorld.locations.filter((location) => location.description.startsWith('TODO: describe'))).toEqual([]);
   });

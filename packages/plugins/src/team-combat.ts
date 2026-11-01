@@ -4,7 +4,7 @@ import {
   CharacterTeamCombatOutcomeAppliedEventSchema,
   CharacterStaminaSpentEventSchema,
   CharacterPostureChangedEventSchema,
-  MOVEMENT_STAMINA_COST,
+  movementStaminaCostForWorld,
   TeamCombatActionCommandSchema,
   TeamCombatActionResolvedEventSchema,
   TeamCombatEndedEventSchema,
@@ -126,6 +126,7 @@ async function applyOutcomes(
   context: EventEffectContext,
   roomPresence: CombatRoomPresenceCapability,
 ) {
+  const movementCost = movementStaminaCostForWorld(context.world);
   const presenceAnchors = payload.actorCharacterId
     ? await roomPresence.getPresenceAnchors(
       context.worldInstanceId,
@@ -222,13 +223,13 @@ async function applyOutcomes(
       }
     }
     if (payload.result === 'victory' && payload.roadTravel && health.current > 0 &&
-        settledCharacter.resources.stamina.current >= MOVEMENT_STAMINA_COST) {
+        settledCharacter.resources.stamina.current >= movementCost) {
       const movementPayload = CharacterMovedEventSchema.shape.payload.parse({
         characterId: player.characterId,
         fromLocationId: payload.roadTravel.fromLocationId,
         toLocationId: payload.roadTravel.toLocationId,
         exitId: payload.roadTravel.exitId,
-        movementCost: MOVEMENT_STAMINA_COST,
+        movementCost,
         roadTravel: {
           roadId: payload.roadTravel.roadId,
           segmentIndex: payload.roadTravel.segmentIndex,
@@ -370,9 +371,10 @@ export const teamCombatPlugin: EnginePlugin = {
             resources: recovery.payload.resources,
             staminaRecovery: recovery.payload.recovery,
           };
-          if (recoveredCharacter.resources.stamina.current < MOVEMENT_STAMINA_COST) {
+          const movementCost = movementStaminaCostForWorld(context.world);
+          if (recoveredCharacter.resources.stamina.current < movementCost) {
             throw new RuleViolationError(
-              `Every party member needs ${MOVEMENT_STAMINA_COST} stamina to take this road step.`,
+              `Every party member needs ${movementCost} stamina to take this road step.`,
             );
           }
           companions.push({

@@ -109,6 +109,20 @@
         "thornmere-path-lake-glimpse",
         "thornmere-lakeshore"
       ]
+    },
+    {
+      "id": "ashcombe-timber-road",
+      "name": "Ashcombe Timber Road",
+      "locationIds": [
+        "bellwold-westbound-track",
+        "timber-road-cutbank",
+        "timber-road-hauling-track",
+        "timber-road-rise",
+        "timber-road-kiln-wind",
+        "timber-road-stand-edge",
+        "timber-road-skid-trail",
+        "ashcombe-timber-yard"
+      ]
     }
   ]
 }

@@ -408,6 +408,78 @@
         "codexId": "orraveth-thornmere",
         "politicalStatus": "independent"
       }
+    },
+    {
+      "id": "ashcombe-timber-road-route",
+      "name": "Ashcombe Timber Road",
+      "type": "route",
+      "description": "The ordered locations along Ashcombe Timber Road.",
+      "memberships": [
+        {
+          "locationId": "bellwold-westbound-track",
+          "isPrimary": false
+        },
+        {
+          "locationId": "timber-road-cutbank",
+          "isPrimary": false
+        },
+        {
+          "locationId": "timber-road-hauling-track",
+          "isPrimary": false
+        },
+        {
+          "locationId": "timber-road-rise",
+          "isPrimary": false
+        },
+        {
+          "locationId": "timber-road-kiln-wind",
+          "isPrimary": false
+        },
+        {
+          "locationId": "timber-road-stand-edge",
+          "isPrimary": false
+        },
+        {
+          "locationId": "timber-road-skid-trail",
+          "isPrimary": false
+        },
+        {
+          "locationId": "ashcombe-timber-yard",
+          "isPrimary": false
+        }
+      ]
+    },
+    {
+      "id": "ashcombe",
+      "name": "Ashcombe",
+      "type": "settlement",
+      "description": "A Heskar timber settlement of yards, kilns and workshops, with disputed concessions beyond them.",
+      "memberships": [
+        {
+          "locationId": "ashcombe-timber-yard",
+          "isPrimary": true
+        },
+        {
+          "locationId": "ashcombe-charcoal-kilns",
+          "isPrimary": true
+        },
+        {
+          "locationId": "ashcombe-kest-workshop",
+          "isPrimary": true
+        },
+        {
+          "locationId": "ashcombe-cart-yard",
+          "isPrimary": true
+        },
+        {
+          "locationId": "ashcombe-felled-oak-clearing",
+          "isPrimary": true
+        }
+      ],
+      "metadata": {
+        "codexId": "orraveth-ashcombe",
+        "politicalStatus": "crown-of-heskar"
+      }
     }
   ]
 }

@@ -4,6 +4,33 @@ import { orravethWorld } from './index.js';
 const locations = new Map(orravethWorld.locations.map((location) => [location.id, location]));
 
 describe('Bellwold Phase 3', () => {
+  it('adds Ashcombe without granting disputed harvesting rights or explaining the oak', () => {
+    const settlement = orravethWorld.locationGroups.find(({ id }) => id === 'ashcombe');
+    expect(settlement).toMatchObject({ type: 'settlement', metadata: { codexId: 'orraveth-ashcombe', politicalStatus: 'crown-of-heskar' } });
+    expect(settlement?.memberships).toHaveLength(5);
+    expect(settlement?.memberships.every(({ isPrimary }) => isPrimary)).toBe(true);
+    const route = orravethWorld.locationGroups.find(({ id }) => id === 'ashcombe-timber-road-route');
+    expect(route?.type).toBe('route');
+    expect(route?.memberships.map(({ locationId }) => locationId)).toEqual(orravethWorld.roads.find(({ id }) => id === 'ashcombe-timber-road')?.locationIds);
+    expect(route?.memberships.every(({ isPrimary }) => !isPrimary)).toBe(true);
+    expect(orravethWorld.woodcuttingTrees.map(({ id }) => id)).toEqual(['bellwold-southbound-pine']);
+    const oak = locations.get('ashcombe-felled-oak-clearing');
+    expect(oak?.takeables).toBeUndefined();
+    expect(oak?.interactables).toBeUndefined();
+    expect(oak?.itemUses).toBeUndefined();
+    expect(oak?.npcs).toBeUndefined();
+    expect(locations.get('ashcombe-kest-workshop')?.npcs?.[0]).toMatchObject({ id: 'oren-kest', name: 'Oren Kest' });
+    expect(locations.get('ashcombe-cart-yard')?.npcs?.[0]).toMatchObject({ id: 'ashcombe-cartwright', name: 'Cartwright' });
+  });
+
+  it('has only the three Codex-named people and two unnamed roles in the new settlements', () => {
+    const npcs = orravethWorld.locations.filter(({ id }) => /^(mosswake-|thornmere-|ashcombe-)/.test(id))
+      .flatMap((location) => location.npcs ?? []);
+    expect(npcs.map(({ name }) => name)).toEqual(['Tavin Reed', 'Herbalist', 'Nessa Valeen', 'Oren Kest', 'Cartwright']);
+    expect(orravethWorld.packVersion).toBe('1.21.0');
+    expect(orravethWorld.locations[0]?.id).toBe('bellwold-market-square');
+  });
+
   it('keeps Thornmere independent, its bridge descriptive, and the healer offstage', () => {
     const settlement = orravethWorld.locationGroups.find(({ id }) => id === 'thornmere');
     expect(settlement).toMatchObject({ type: 'settlement', metadata: { codexId: 'orraveth-thornmere', politicalStatus: 'independent' } });

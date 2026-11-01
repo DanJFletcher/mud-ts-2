@@ -36,7 +36,6 @@ import {
   DEFAULT_CHARACTER_RESOURCES,
   resolveStaminaRecovery,
   resolveVitalRecovery,
-  MOVEMENT_STAMINA_COST,
   CharacterMovedEventSchema,
   CharacterRenamedEventSchema,
   CharacterArchivedEventSchema,
@@ -996,13 +995,14 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
     } else if (event.type === 'character.moved') {
       if (!state) throw new Error('Movement event encountered before character creation.');
       const moved = CharacterMovedEventSchema.parse(publicEvent);
+      const movementCost = moved.payload.movementCost;
       if (
         moved.payload.characterId !== state.characterId ||
         moved.payload.fromLocationId !== state.locationId ||
         state.staminaRecovery.posture === 'resting' ||
-        (moved.payload.movementCost !== undefined &&
-          (moved.payload.movementCost !== MOVEMENT_STAMINA_COST ||
-            state.resources.stamina.current < MOVEMENT_STAMINA_COST)) ||
+        (movementCost !== undefined &&
+          (!Number.isSafeInteger(movementCost) || movementCost <= 0 ||
+            state.resources.stamina.current < movementCost)) ||
         (
           moved.payload.fromStateId !== undefined &&
           state.locationStateId !== undefined &&
@@ -1013,12 +1013,12 @@ function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: Repla
       }
       state = CharacterProjectionSchema.parse({
         ...state,
-        ...(moved.payload.movementCost !== undefined ? {
+        ...(movementCost !== undefined ? {
           resources: {
             ...state.resources,
             stamina: {
               ...state.resources.stamina,
-              current: state.resources.stamina.current - MOVEMENT_STAMINA_COST,
+              current: state.resources.stamina.current - movementCost,
             },
           },
         } : {}),

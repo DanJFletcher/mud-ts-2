@@ -11,7 +11,7 @@ ADR 0027 established persistent character-owned stamina and deferred timed recov
 
 ## Decision
 
-- Each successfully completed ordinary move or road segment costs 5 stamina. The cost is part of the same character movement event as the location change; a failed move has no debit. A solo road encounter starts in that same atomic character stream after movement and payment.
+- Each successfully completed ordinary move or road segment costs 5 stamina by default. Worlds may override this through `movementStaminaCost` ([ADR 0044](0044-world-specific-movement-stamina-costs.md)); Orraveth uses 2. The cost is recorded in the same character movement event as the location change; replay deducts that recorded value and a failed move has no debit. A solo road encounter starts in that same atomic character stream after movement and payment.
 - While an authenticated character has a live world session, standing restores 1% of maximum stamina per elapsed second. Resting restores 3% per second. Recovery is capped at maximum. The calculation uses integer hundred-thousandths and a persisted fractional carry so short settlements do not lose or create stamina through rounding.
 - The server's trusted clock is the only timing authority. A character recovery event records the settled time, posture, exact carry, and resulting resource projection. Settlement uses elapsed time between persisted anchors; aggregate revision ticks are not clocks.
 - Only live world sessions recover. Server settlement is driven from fresh world-session presence and stops at the last confirmed heartbeat. On reconnect after a stale session, the recovery anchor is reset to the current server time, so time spent offline does not accrue. Queries never mutate character state.

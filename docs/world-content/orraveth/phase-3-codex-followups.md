@@ -47,3 +47,23 @@ are gameplay proposals. Keep Thornmere independent and avoid implying that
 Heskar constructed the path. Do not identify the offstage healer, announce a
 medical-exception ruling, invent religious commitments for Nessa, or turn an
 account of shared space into a new sprite-consent mechanic.
+
+## Ashcombe timber road and concession boundaries
+
+**Status: draft — awaiting Codex review.** Sources:
+[Ashcombe](../../../apps/web/src/codex/content/regions/ashcombe.md),
+[Oren Kest](../../../apps/web/src/codex/content/people/oren-kest.md), and the
+expansion spec, §§3.2 and 4.1–4.3. Suggested article targets: Ashcombe; the
+regional travel account.
+
+> A hauling track leaves the Westbound Track near Bellwold, climbs through cut
+> banks and follows the stand edge to Ashcombe's timber yard. The route carries
+> timber and charcoal loads between workshops and regional markets. Its presence
+> does not settle who can grant access to each stand beside it, or resolve the
+> dispute over the new concessions.
+
+The seven new-road steps (about eight from West Gate), track bends and workshop
+arrangement are gameplay proposals. Keep the felled oak's nature and reported
+voices unresolved. There is no harvesting permission or new woodcutting target
+at Ashcombe. The Road Through Old Ground and unfinished south road are unchanged.
+No new named worker, concession holder, price or denomination is proposed.

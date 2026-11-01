@@ -1,8 +1,13 @@
 import type { CharacterResourcePool } from './character.js';
 import type { CharacterStaminaRecovery } from './character.js';
+import type { WorldPackDraft } from './world.js';
 
 export const MOVEMENT_STAMINA_COST = 5;
 export const STAMINA_RECOVERY_DENOMINATOR = 100_000;
+
+export function movementStaminaCostForWorld(world: Pick<WorldPackDraft, 'movementStaminaCost'>): number {
+  return world.movementStaminaCost ?? MOVEMENT_STAMINA_COST;
+}
 
 export function resolveStaminaRecovery(
   stamina: CharacterResourcePool,
