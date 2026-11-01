@@ -1,12 +1,19 @@
 import {
   WorldPackDraftSchema,
+  WorldLocationsFileSchema,
+  WorldLocationGroupsFileSchema,
+  WorldRoadsFileSchema,
+  composeWorldPackDraft,
   validateDraftWorldGraph,
   type LocationDefinition,
   type WorldPackDraft,
-  type WorldPackDraftInput,
+  type WorldPackContent,
 } from '@mudd/contracts';
+import locations from './map/locations.json' with { type: 'json' };
+import locationGroups from './map/location-groups.json' with { type: 'json' };
+import roads from './map/roads.json' with { type: 'json' };
 
-const draft = {
+const content = {
   formatVersion: 1,
   packId: 'mudd.first-steps',
   packVersion: '1.1.1',
@@ -117,13 +124,8 @@ const draft = {
       ],
     },
   ],
-  locations: [
-    {
-      id: 'mossgate-clearing',
-      name: 'Mossgate Clearing',
-      mapPosition: { x: 0, y: 0 },
-      description:
-        'A circle of pale stones breaks through the moss. Roads leave north toward Glasswater Bridge and west toward Stillwater Fountain. A weathered marker points east toward the western approach to the Old Bell Tower.',
+  locationContent: {
+    'mossgate-clearing': {
       readables: [
         {
           id: 'mossgate-marker',
@@ -342,29 +344,8 @@ const draft = {
           },
         },
       ],
-      exits: [
-        { id: 'clearing-to-stillwater-path', fromLocationId: 'mossgate-clearing', toLocationId: 'stillwater-path', label: 'West along Willowshade Track', direction: 'west', roadId: 'willowshade-track' },
-        { id: 'clearing-to-glasswater-road', fromLocationId: 'mossgate-clearing', toLocationId: 'glasswater-approach', label: 'North along Glasswater Road', direction: 'north', roadId: 'glasswater-road' },
-        { id: 'clearing-to-bellwarden-track', fromLocationId: 'mossgate-clearing', toLocationId: 'bellwarden-track', label: 'East along Bellwarden Road', direction: 'east', roadId: 'bellwarden-road' },
-        { id: 'clearing-to-bracken-road', fromLocationId: 'mossgate-clearing', toLocationId: 'bracken-road', label: 'South along Bracken Road', direction: 'south', roadId: 'bracken-road' },
-      ],
     },
-    {
-      id: 'bell-tower-west',
-      name: 'West of Old Bell Tower',
-      mapPosition: { x: 2, y: 0 },
-      description:
-        'A worn track meets the western foot of the Old Bell Tower. Its low entrance stands to the east beneath the cracked bell’s frame; Bellwarden Road leads west toward Mossgate Clearing.',
-      exits: [
-        { id: 'bell-tower-west-to-bellwarden-track', fromLocationId: 'bell-tower-west', toLocationId: 'bellwarden-track', label: 'West along Bellwarden Road', direction: 'west', roadId: 'bellwarden-road' },
-        { id: 'bell-tower-west-to-tower', fromLocationId: 'bell-tower-west', toLocationId: 'bell-tower', label: 'East into the Old Bell Tower', direction: 'east' },
-      ],
-    },
-    {
-      id: 'stillwater-fountain',
-      name: 'Stillwater Fountain',
-      mapPosition: { x: -2, y: 0, terrain: 'cobblestone' },
-      description: 'A low stone court opens beneath willow branches. In its middle, a clear fountain spills into a shallow round basin, its steady water carrying the quiet of the grove. A track leads east toward Mossgate Clearing.',
+    'stillwater-fountain': {
       interactables: [
         {
           id: 'stillwater-fountain-basin',
@@ -373,14 +354,8 @@ const draft = {
           roomDescription: 'The fountain stands at the center of the court, its water bright against the dark stone.',
         },
       ],
-      exits: [
-        { id: 'fountain-to-stillwater-path', fromLocationId: 'stillwater-fountain', toLocationId: 'stillwater-path', label: 'East along Willowshade Track', direction: 'east', roadId: 'willowshade-track' },
-      ],
     },
-    {
-      id: 'glasswater-bridge',
-      name: 'Glasswater Bridge',
-      mapPosition: { x: 0, y: 2 },
+    'glasswater-bridge': {
       defaultStateId: 'on',
       states: [
         { id: 'on' },
@@ -390,8 +365,6 @@ const draft = {
           description: 'The Glasswater current passes beneath the stone arches. The bridge deck rumbles overhead as the river runs east and west.',
         },
       ],
-      description:
-        'A low stone bridge crosses clear water. Reeds stir below it. Glasswater Road leads south toward Mossgate Clearing, and Reedbank Road continues north toward the stalls.',
       readables: [
         {
           id: 'glasswater-waterline-gauge',
@@ -570,33 +543,12 @@ const draft = {
           unknownTopicResponse: 'Ask me about the bell, its inscription, or the Underhollow.',
         },
       ],
-      exits: [
-        { id: 'bridge-to-glasswater-road', fromLocationId: 'glasswater-bridge', toLocationId: 'glasswater-approach', label: 'South along Glasswater Road', direction: 'south', fromStateId: 'on', roadId: 'glasswater-road' },
-        { id: 'bridge-to-reedbank-road', fromLocationId: 'glasswater-bridge', toLocationId: 'reedbank-road', label: 'North along Reedbank Road', direction: 'north', fromStateId: 'on', roadId: 'reedbank-road' },
-        { id: 'bridge-under-to-west-reach', fromLocationId: 'glasswater-bridge', toLocationId: 'glasswater-west-reach', label: 'West along Glasswater River', direction: 'west', fromStateId: 'under', mapLineGapAtLocationId: 'glasswater-bridge' },
-        { id: 'bridge-under-to-east-reach', fromLocationId: 'glasswater-bridge', toLocationId: 'glasswater-east-reach', label: 'East along Glasswater River', direction: 'east', fromStateId: 'under', mapLineGapAtLocationId: 'glasswater-bridge' },
-      ],
     },
-    {
-      id: 'bell-tower',
-      name: 'Old Bell Tower',
-      mapPosition: { x: 4, y: 0, terrain: 'building' },
+    'bell-tower': {
       requiredVisitedLocationId: 'bell-tower-west',
-      description:
-        'The tower’s shadowed ground floor is empty except for a narrow stone stair that winds up toward the bell. The western entrance opens onto the tower’s outer approach.',
-      exits: [
-        { id: 'tower-to-west-approach', fromLocationId: 'bell-tower', toLocationId: 'bell-tower-west', label: 'West to West of Old Bell Tower', direction: 'west' },
-        { id: 'tower-to-belfry', fromLocationId: 'bell-tower', toLocationId: 'bell-tower-belfry', label: 'Up to the belfry', direction: 'up' },
-      ],
     },
-    {
-      id: 'bell-tower-belfry',
-      name: 'Old Bell Tower Belfry',
-      mapAreaId: 'bell-tower',
-      mapPosition: { x: 0, y: 0, z: 1, terrain: 'building' },
+    'bell-tower-belfry': {
       requiredVisitedLocationId: 'bell-tower',
-      description:
-        'The stair opens into the belfry. A cracked bronze bell hangs from its weathered frame, its long fracture visible beneath a brass inscription plate.',
       takeables: [
         {
           id: 'bellwright-underhollow-key',
@@ -640,24 +592,8 @@ const draft = {
           requiresInteractionMessage: 'The bell gives a dull click. Its first note is still missing; the inscription says pale first.',
         },
       ],
-      exits: [
-        { id: 'belfry-to-tower', fromLocationId: 'bell-tower-belfry', toLocationId: 'bell-tower', label: 'Down to the tower floor', direction: 'down' },
-        {
-          id: 'tower-to-underhollow',
-          fromLocationId: 'bell-tower-belfry',
-          toLocationId: 'bell-underhollow',
-          label: 'Down into the Underhollow',
-          direction: 'down',
-          requiredInteractionId: 'answer-tower-bell-with-reed',
-        },
-      ],
     },
-    {
-      id: 'bell-underhollow',
-      name: 'The Underhollow',
-      mapAreaId: 'bell-tower',
-      mapPosition: { x: 1, y: 0, z: -1, terrain: 'building' },
-      description: 'A low stone chamber rests beneath the tower. The bell’s second note hums in the walls. A dry stair leads back up to the belfry, and a locked iron door is set into the eastern wall.',
+    'bell-underhollow': {
       readables: [
         {
           id: 'underhollow-bellwright-ledger',
@@ -682,30 +618,8 @@ const draft = {
           repeatResponse: 'The iron door stands open. The key turns freely in its lock.',
         },
       ],
-      exits: [
-        {
-          id: 'underhollow-to-belfry',
-          fromLocationId: 'bell-underhollow',
-          toLocationId: 'bell-tower-belfry',
-          label: 'Up to the belfry',
-          direction: 'up',
-        },
-        {
-          id: 'underhollow-to-service-hall',
-          fromLocationId: 'bell-underhollow',
-          toLocationId: 'bell-tower-service-hall',
-          label: 'East through the iron door',
-          direction: 'east',
-          requiredInteractionId: 'unlock-underhollow-door-with-key',
-        },
-      ],
     },
-    {
-      id: 'bell-tower-service-hall',
-      name: 'Bell Tower Service Hall',
-      mapAreaId: 'bell-tower',
-      mapPosition: { x: 2, y: 0, z: -1, terrain: 'building' },
-      description: 'The opened door reveals a narrow hallway cut through the bedrock beneath the tower. At its far end, an old stone arch is sealed by a bronze lock worked into the lintel. A cold draft slips through the arch, carrying the smell of rain-wet stone and a faint scratching from below.',
+    'bell-tower-service-hall': {
       interactables: [
         {
           id: 'service-hall-sealed-arch',
@@ -722,53 +636,8 @@ const draft = {
           repeatResponse: 'The stone arch stands open. Beyond it, the undercrypt descends into the hill.',
         },
       ],
-      exits: [
-        {
-          id: 'service-hall-to-underhollow',
-          fromLocationId: 'bell-tower-service-hall',
-          toLocationId: 'bell-underhollow',
-          label: 'West back to the Underhollow',
-          direction: 'west',
-        },
-        {
-          id: 'service-hall-to-undercrypt-entry',
-          fromLocationId: 'bell-tower-service-hall',
-          toLocationId: 'undercrypt-entry-passage',
-          label: 'East into the undercrypt',
-          direction: 'east',
-          requiredInteractionId: 'open-service-hall-arch-with-key',
-        },
-      ],
     },
-    {
-      id: 'undercrypt-entry-passage',
-      name: 'Undercrypt Entry Passage',
-      mapAreaId: 'bell-tower-undercrypt',
-      mapPosition: { x: 3, y: 0, z: 0, terrain: 'building' },
-      description: 'The stone arch opens into a low entry passage. Scratches in the dust lead north toward a wider corridor; the service hall waits behind you.',
-      exits: [
-        {
-          id: 'undercrypt-entry-to-service-hall',
-          fromLocationId: 'undercrypt-entry-passage',
-          toLocationId: 'bell-tower-service-hall',
-          label: 'West back to the service hall',
-          direction: 'west',
-        },
-        {
-          id: 'undercrypt-entry-to-rattle-run',
-          fromLocationId: 'undercrypt-entry-passage',
-          toLocationId: 'undercrypt-rattle-run',
-          label: 'North into the maze',
-          direction: 'north',
-        },
-      ],
-    },
-    {
-      id: 'undercrypt-echo-gallery',
-      name: 'Echo Gallery',
-      mapAreaId: 'bell-tower-undercrypt',
-      mapPosition: { x: 2, y: 2, z: 0, terrain: 'building' },
-      description: 'A concealed side gallery branches west from the Crossway. A shallow bowl sits beneath a split bronze pipe, and a barred door blocks the way north. A pale stone and a hollow reed rest in a niche beside the entrance.',
+    'undercrypt-echo-gallery': {
       readables: [
         {
           id: 'echo-gallery-rubbing',
@@ -823,315 +692,8 @@ const draft = {
           requiresInteractionMessage: 'The pipe gives no answer yet. The inscription says the low note must rest first.',
         },
       ],
-      exits: [
-        {
-          id: 'echo-gallery-to-crossway',
-          fromLocationId: 'undercrypt-echo-gallery',
-          toLocationId: 'undercrypt-crossway',
-          label: 'East back to the Crossway',
-          direction: 'east',
-        },
-        {
-          id: 'echo-gallery-to-west-passage',
-          fromLocationId: 'undercrypt-echo-gallery',
-          toLocationId: 'undercrypt-west-passage',
-          label: 'North through the raised bar into a hidden passage',
-          direction: 'north',
-          requiredInteractionId: 'send-first-echo',
-        },
-      ],
     },
-    {
-      id: 'undercrypt-rattle-run',
-      name: 'Rattle Run',
-      mapAreaId: 'bell-tower-undercrypt',
-      mapPosition: { x: 3, y: 1, z: 0, terrain: 'building' },
-      description: 'A long corridor carries the sound of loose chain links along its ceiling. Small, deep tracks cross the dust and vanish toward the junction to the north.',
-      exits: [
-        {
-          id: 'rattle-run-to-entry-passage',
-          fromLocationId: 'undercrypt-rattle-run',
-          toLocationId: 'undercrypt-entry-passage',
-          label: 'South back to the entry passage',
-          direction: 'south',
-        },
-        {
-          id: 'rattle-run-to-crossway',
-          fromLocationId: 'undercrypt-rattle-run',
-          toLocationId: 'undercrypt-crossway',
-          label: 'North to the Crossway',
-          direction: 'north',
-          roadId: 'undercrypt-east-rat-run',
-        },
-      ],
-    },
-    {
-      id: 'undercrypt-crossway',
-      name: 'The Crossway',
-      mapAreaId: 'bell-tower-undercrypt',
-      mapPosition: { x: 3, y: 2, z: 0, terrain: 'building' },
-      description: 'The corridor widens into a junction. A dark passage runs west, while the more heavily tracked route turns east. The rattle from behind you is joined by a slower scrape somewhere ahead.',
-      exits: [
-        {
-          id: 'crossway-to-rattle-run',
-          fromLocationId: 'undercrypt-crossway',
-          toLocationId: 'undercrypt-rattle-run',
-          label: 'South back to Rattle Run',
-          direction: 'south',
-          roadId: 'undercrypt-east-rat-run',
-        },
-        {
-          id: 'crossway-to-echo-gallery',
-          fromLocationId: 'undercrypt-crossway',
-          toLocationId: 'undercrypt-echo-gallery',
-          label: 'West into the concealed Echo Gallery',
-          direction: 'west',
-        },
-        {
-          id: 'crossway-to-east-bend',
-          fromLocationId: 'undercrypt-crossway',
-          toLocationId: 'undercrypt-east-bend',
-          label: 'East into the upper corridors',
-          direction: 'east',
-          roadId: 'undercrypt-east-rat-run',
-        },
-      ],
-    },
-    {
-      id: 'undercrypt-west-bend',
-      name: 'West Bend',
-      mapAreaId: 'bell-tower-undercrypt',
-      mapPosition: { x: 3, y: 3, z: 0, terrain: 'building' },
-      description: 'A narrow corridor bends around a thick stone pier. Claw marks stripe the lower blocks; the route continues north and west.',
-      exits: [
-        {
-          id: 'west-bend-to-west-passage',
-          fromLocationId: 'undercrypt-west-bend',
-          toLocationId: 'undercrypt-west-passage',
-          label: 'West along the hidden passage',
-          direction: 'west',
-          roadId: 'undercrypt-west-rat-run',
-        },
-        {
-          id: 'west-bend-to-west-turn',
-          fromLocationId: 'undercrypt-west-bend',
-          toLocationId: 'undercrypt-west-turn',
-          label: 'North toward the joined corridors',
-          direction: 'north',
-          roadId: 'undercrypt-west-rat-run',
-        },
-      ],
-    },
-    {
-      id: 'undercrypt-west-passage',
-      name: 'West Passage',
-      mapAreaId: 'bell-tower-undercrypt',
-      mapPosition: { x: 2, y: 3, z: 0, terrain: 'building' },
-      description: 'A straight, close-walled corridor runs north before joining the wider route. The same small tracks cross and recross the dust.',
-      exits: [
-        {
-          id: 'west-passage-to-echo-gallery',
-          fromLocationId: 'undercrypt-west-passage',
-          toLocationId: 'undercrypt-echo-gallery',
-          label: 'South back to the Echo Gallery',
-          direction: 'south',
-        },
-        {
-          id: 'west-passage-to-west-bend',
-          fromLocationId: 'undercrypt-west-passage',
-          toLocationId: 'undercrypt-west-bend',
-          label: 'East to West Bend',
-          direction: 'east',
-          roadId: 'undercrypt-west-rat-run',
-        },
-      ],
-    },
-    {
-      id: 'undercrypt-east-bend',
-      name: 'East Bend',
-      mapAreaId: 'bell-tower-undercrypt',
-      mapPosition: { x: 4, y: 2, z: 0, terrain: 'building' },
-      description: 'The eastern corridor turns around a square column. A smear of dark fur catches on one edge, and a narrow passage leads north.',
-      exits: [
-        {
-          id: 'east-bend-to-crossway',
-          fromLocationId: 'undercrypt-east-bend',
-          toLocationId: 'undercrypt-crossway',
-          label: 'West back to the Crossway',
-          direction: 'west',
-          roadId: 'undercrypt-east-rat-run',
-        },
-        {
-          id: 'east-bend-to-east-passage',
-          fromLocationId: 'undercrypt-east-bend',
-          toLocationId: 'undercrypt-east-passage',
-          label: 'North along the east passage',
-          direction: 'north',
-          roadId: 'undercrypt-east-rat-run',
-        },
-        {
-          id: 'east-bend-to-drainage-niche',
-          fromLocationId: 'undercrypt-east-bend',
-          toLocationId: 'undercrypt-drainage-niche',
-          label: 'East into the drainage niche',
-          direction: 'east',
-        },
-      ],
-    },
-    {
-      id: 'undercrypt-drainage-niche',
-      name: 'Drainage Niche',
-      mapAreaId: 'bell-tower-undercrypt',
-      mapPosition: { x: 5, y: 2, z: 0, terrain: 'building' },
-      description: 'The corridor ends at a dry drain carved with a row of shallow circles. Dust has gathered in each one, except for a single smooth groove.',
-      exits: [
-        {
-          id: 'drainage-niche-to-east-bend',
-          fromLocationId: 'undercrypt-drainage-niche',
-          toLocationId: 'undercrypt-east-bend',
-          label: 'West back to East Bend',
-          direction: 'west',
-        },
-      ],
-    },
-    {
-      id: 'undercrypt-east-passage',
-      name: 'East Passage',
-      mapAreaId: 'bell-tower-undercrypt',
-      mapPosition: { x: 4, y: 3, z: 0, terrain: 'building' },
-      description: 'A narrow run continues east toward a close-walled turn. Scratches in the dust overlap until they form a beaten track.',
-      exits: [
-        {
-          id: 'east-passage-to-east-bend',
-          fromLocationId: 'undercrypt-east-passage',
-          toLocationId: 'undercrypt-east-bend',
-          label: 'South back to East Bend',
-          direction: 'south',
-          roadId: 'undercrypt-east-rat-run',
-        },
-        {
-          id: 'east-passage-to-east-crawl',
-          fromLocationId: 'undercrypt-east-passage',
-          toLocationId: 'undercrypt-east-crawl',
-          label: 'East through the low crawl',
-          direction: 'east',
-          roadId: 'undercrypt-east-rat-run',
-        },
-      ],
-    },
-    {
-      id: 'undercrypt-east-crawl',
-      name: 'East Crawl',
-      mapAreaId: 'bell-tower-undercrypt',
-      mapPosition: { x: 5, y: 3, z: 0, terrain: 'building' },
-      description: 'The passage narrows until the stone nearly meets your shoulders. Scraping sounds echo from the short climb north.',
-      exits: [
-        {
-          id: 'east-crawl-to-east-passage',
-          fromLocationId: 'undercrypt-east-crawl',
-          toLocationId: 'undercrypt-east-passage',
-          label: 'West back to East Passage',
-          direction: 'west',
-          roadId: 'undercrypt-east-rat-run',
-        },
-        {
-          id: 'east-crawl-to-east-turn',
-          fromLocationId: 'undercrypt-east-crawl',
-          toLocationId: 'undercrypt-east-turn',
-          label: 'North through the low turn',
-          direction: 'north',
-          roadId: 'undercrypt-east-rat-run',
-        },
-      ],
-    },
-    {
-      id: 'undercrypt-east-turn',
-      name: 'East Turn',
-      mapAreaId: 'bell-tower-undercrypt',
-      mapPosition: { x: 5, y: 4, z: 0, terrain: 'building' },
-      description: 'The low passage opens into a square landing where two stone routes meet. The northern door is still ahead.',
-      exits: [
-        {
-          id: 'east-turn-to-east-crawl',
-          fromLocationId: 'undercrypt-east-turn',
-          toLocationId: 'undercrypt-east-crawl',
-          label: 'South back through the crawl',
-          direction: 'south',
-          roadId: 'undercrypt-east-rat-run',
-        },
-        {
-          id: 'east-turn-to-north-junction',
-          fromLocationId: 'undercrypt-east-turn',
-          toLocationId: 'undercrypt-north-junction',
-          label: 'West to the North Junction',
-          direction: 'west',
-          roadId: 'undercrypt-east-rat-run',
-        },
-      ],
-    },
-    {
-      id: 'undercrypt-west-turn',
-      name: 'West Turn',
-      mapAreaId: 'bell-tower-undercrypt',
-      mapPosition: { x: 3, y: 4, z: 0, terrain: 'building' },
-      description: 'The western passage climbs to a broad stone turning. From here the route joins the northern junction.',
-      exits: [
-        {
-          id: 'west-turn-to-west-bend',
-          fromLocationId: 'undercrypt-west-turn',
-          toLocationId: 'undercrypt-west-bend',
-          label: 'South back to West Bend',
-          direction: 'south',
-          roadId: 'undercrypt-west-rat-run',
-        },
-        {
-          id: 'west-turn-to-north-junction',
-          fromLocationId: 'undercrypt-west-turn',
-          toLocationId: 'undercrypt-north-junction',
-          label: 'East to the North Junction',
-          direction: 'east',
-          roadId: 'undercrypt-west-rat-run',
-        },
-      ],
-    },
-    {
-      id: 'undercrypt-north-junction',
-      name: 'North Junction',
-      mapAreaId: 'bell-tower-undercrypt',
-      mapPosition: { x: 4, y: 4, z: 0, terrain: 'building' },
-      description: 'The two maze routes meet beneath a cracked stone lintel. Beyond it, water laps softly against a door to the north.',
-      exits: [
-        {
-          id: 'north-junction-to-west-turn',
-          fromLocationId: 'undercrypt-north-junction',
-          toLocationId: 'undercrypt-west-turn',
-          label: 'West back through the low corridors',
-          direction: 'west',
-          roadId: 'undercrypt-west-rat-run',
-        },
-        {
-          id: 'north-junction-to-east-turn',
-          fromLocationId: 'undercrypt-north-junction',
-          toLocationId: 'undercrypt-east-turn',
-          label: 'East back through the low crawl',
-          direction: 'east',
-          roadId: 'undercrypt-east-rat-run',
-        },
-        {
-          id: 'north-junction-to-flooded-archive',
-          fromLocationId: 'undercrypt-north-junction',
-          toLocationId: 'undercrypt-flooded-archive',
-          label: 'North into the Flooded Archive',
-          direction: 'north',
-        },
-      ],
-    },
-    {
-      id: 'undercrypt-flooded-archive',
-      name: 'Flooded Archive',
-      mapAreaId: 'bell-tower-undercrypt',
-      mapPosition: { x: 4, y: 5, z: 0, terrain: 'building' },
-      description: 'Ankle-deep water covers the archive floor. A dry balance scale stands beside a water-filled plinth, and a stone door waits to the east. A silver weight and a mirrored shard lie on a shelf above the waterline.',
+    'undercrypt-flooded-archive': {
       readables: [
         {
           id: 'archive-ledger-clue',
@@ -1199,53 +761,8 @@ const draft = {
           requiresInteractionMessage: 'The water plinth remains dark. The ledger says the dry scale must be balanced first.',
         },
       ],
-      exits: [
-        {
-          id: 'flooded-archive-to-north-junction',
-          fromLocationId: 'undercrypt-flooded-archive',
-          toLocationId: 'undercrypt-north-junction',
-          label: 'South back to the North Junction',
-          direction: 'south',
-        },
-        {
-          id: 'flooded-archive-to-reliquary-approach',
-          fromLocationId: 'undercrypt-flooded-archive',
-          toLocationId: 'undercrypt-reliquary-approach',
-          label: 'East through the stone door into the final passage',
-          direction: 'east',
-          requiredInteractionId: 'set-archive-reflection',
-        },
-      ],
     },
-    {
-      id: 'undercrypt-reliquary-approach',
-      name: 'Reliquary Approach',
-      mapAreaId: 'bell-tower-undercrypt',
-      mapPosition: { x: 5, y: 5, z: 0, terrain: 'building' },
-      description: 'The passage beyond the archive door is dry and quiet. A single stone doorway opens east into a small chamber where something metal catches the light.',
-      exits: [
-        {
-          id: 'reliquary-approach-to-archive',
-          fromLocationId: 'undercrypt-reliquary-approach',
-          toLocationId: 'undercrypt-flooded-archive',
-          label: 'West back to the Flooded Archive',
-          direction: 'west',
-        },
-        {
-          id: 'reliquary-approach-to-reliquary',
-          fromLocationId: 'undercrypt-reliquary-approach',
-          toLocationId: 'undercrypt-bellwright-reliquary',
-          label: 'East into the Bellwright Reliquary',
-          direction: 'east',
-        },
-      ],
-    },
-    {
-      id: 'undercrypt-bellwright-reliquary',
-      name: 'Bellwright Reliquary',
-      mapAreaId: 'bell-tower-undercrypt',
-      mapPosition: { x: 6, y: 5, z: 0, terrain: 'building' },
-      description: 'The reliquary is quiet and dry. A black stone plinth stands at its center, holding a finely made sword whose narrow fuller catches the light like a distant bell tone.',
+    'undercrypt-bellwright-reliquary': {
       takeables: [
         {
           id: 'undercrypt-echoedge',
@@ -1255,21 +772,8 @@ const draft = {
           equipment: { slot: 'weapon', attackBonus: 2, defenseBonus: 0 },
         },
       ],
-      exits: [
-        {
-          id: 'reliquary-to-reliquary-approach',
-          fromLocationId: 'undercrypt-bellwright-reliquary',
-          toLocationId: 'undercrypt-reliquary-approach',
-          label: 'West back to the final passage',
-          direction: 'west',
-        },
-      ],
     },
-    {
-      id: 'reedbank-stalls',
-      name: 'Reedbank Stalls',
-      mapPosition: { x: 0, y: 4 },
-      description: 'A row of canvas awnings faces the river. The air smells of waxed rope and lamp oil; Reedbank Road runs south toward Glasswater Bridge, and a lane leads east to Willowrest Inn.',
+    'reedbank-stalls': {
       npcs: [
         {
           id: 'sella-reedbank-merchant',
@@ -1339,36 +843,8 @@ const draft = {
           },
         },
       ],
-      exits: [
-        { id: 'reedbank-to-reedbank-road', fromLocationId: 'reedbank-stalls', toLocationId: 'reedbank-road', label: 'South along Reedbank Road', direction: 'south', roadId: 'reedbank-road' },
-        { id: 'reedbank-to-willowrest-lane', fromLocationId: 'reedbank-stalls', toLocationId: 'willowrest-lane', label: 'East along Willowrest Lane', direction: 'east', roadId: 'willowrest-lane' },
-      ],
     },
-    {
-      id: 'fernshade-road',
-      name: 'Fernshade Road',
-      mapPosition: { x: -1, y: 1, terrain: 'dirt' },
-      description: 'A narrow dirt track passes beneath arching ferns. Fresh boot prints cross the damp earth.',
-      exits: [
-        { id: 'fernshade-road-to-stillwater-path', fromLocationId: 'fernshade-road', toLocationId: 'stillwater-path', label: 'South toward Willowshade Track', direction: 'south', roadId: 'fernshade-road' },
-        { id: 'fernshade-road-to-fork', fromLocationId: 'fernshade-road', toLocationId: 'fernshade-fork', label: 'West to Fernshade Fork', direction: 'west', roadId: 'fernshade-road' },
-      ],
-    },
-    {
-      id: 'fernshade-fork',
-      name: 'Fernshade Fork',
-      mapPosition: { x: -2, y: 1, terrain: 'forest' },
-      description: 'The track opens into a small fern-ringed clearing. A low cottage stands to the west; Fernshade Road runs east toward Willowshade Track.',
-      exits: [
-        { id: 'fernshade-fork-to-road', fromLocationId: 'fernshade-fork', toLocationId: 'fernshade-road', label: 'East along Fernshade Road', direction: 'east', roadId: 'fernshade-road' },
-        { id: 'fernshade-fork-to-cottage', fromLocationId: 'fernshade-fork', toLocationId: 'fernshade-cottage', label: 'West to Fernshade Cottage', direction: 'west' },
-      ],
-    },
-    {
-      id: 'fernshade-cottage',
-      name: 'Fernshade Cottage',
-      mapPosition: { x: -3, y: 1, terrain: 'building' },
-      description: 'A low cottage of pale timber and woven fern panels sits in the quiet clearing. Its worn front door faces east toward Fernshade Fork.',
+    'fernshade-cottage': {
       npcs: [
         {
           id: 'nim-fernshade',
@@ -1423,25 +899,8 @@ const draft = {
           unknownTopicResponse: 'Ask me about the baskets or the paths through the ferns.',
         },
       ],
-      exits: [
-        { id: 'fernshade-cottage-to-fork', fromLocationId: 'fernshade-cottage', toLocationId: 'fernshade-fork', label: 'East to Fernshade Fork', direction: 'east' },
-      ],
     },
-    {
-      id: 'bracken-road',
-      name: 'Bracken Road',
-      mapPosition: { x: 0, y: -1 },
-      description: 'A rutted road descends through bracken and wet grass. Mossgate Clearing lies north; Bracken Road continues west toward Sedgewatch.',
-      exits: [
-        { id: 'bracken-road-to-clearing', fromLocationId: 'bracken-road', toLocationId: 'mossgate-clearing', label: 'North to Mossgate Clearing', direction: 'north', roadId: 'bracken-road' },
-        { id: 'bracken-road-to-mile', fromLocationId: 'bracken-road', toLocationId: 'bracken-mile', label: 'West along Bracken Road', direction: 'west', roadId: 'bracken-road' },
-      ],
-    },
-    {
-      id: 'bracken-mile',
-      name: 'Bracken Mile',
-      mapPosition: { x: -1, y: -1 },
-      description: 'A milepost leans beside the road, its lettering softened by rain. The road continues west through the reeds to Sedgewatch.',
+    'bracken-mile': {
       readables: [
         {
           id: 'bracken-milepost',
@@ -1450,26 +909,8 @@ const draft = {
           text: 'SEDGEWATCH — ONE MILE',
         },
       ],
-      exits: [
-        { id: 'bracken-mile-to-road', fromLocationId: 'bracken-mile', toLocationId: 'bracken-road', label: 'East along Bracken Road', direction: 'east', roadId: 'bracken-road' },
-        { id: 'bracken-mile-to-sedgewatch', fromLocationId: 'bracken-mile', toLocationId: 'sedgewatch', label: 'West to Sedgewatch', direction: 'west', roadId: 'bracken-road' },
-      ],
     },
-    {
-      id: 'sedgewatch',
-      name: 'Sedgewatch',
-      mapPosition: { x: -2, y: -1 },
-      description: 'A raised patch of ground overlooks a broad bed of reeds. A reed-thatched cottage stands to the west; Bracken Road runs east through Bracken Mile toward Mossgate.',
-      exits: [
-        { id: 'sedgewatch-to-mile', fromLocationId: 'sedgewatch', toLocationId: 'bracken-mile', label: 'East along Bracken Road', direction: 'east', roadId: 'bracken-road' },
-        { id: 'sedgewatch-to-cottage', fromLocationId: 'sedgewatch', toLocationId: 'sedgewatch-cottage', label: 'West to Sedgewatch Cottage', direction: 'west' },
-      ],
-    },
-    {
-      id: 'sedgewatch-cottage',
-      name: 'Sedgewatch Cottage',
-      mapPosition: { x: -3, y: -1, terrain: 'building' },
-      description: 'A modest reed-thatch home stands on firmer ground beside the wetland. Its east-facing door opens toward Sedgewatch.',
+    'sedgewatch-cottage': {
       npcs: [
         {
           id: 'talla-sedgewatch',
@@ -1573,161 +1014,18 @@ const draft = {
           unknownTopicResponse: 'Ask me about the waterline or the roof reeds.',
         },
       ],
-      exits: [
-        { id: 'sedgewatch-cottage-to-sedgewatch', fromLocationId: 'sedgewatch-cottage', toLocationId: 'sedgewatch', label: 'East to Sedgewatch', direction: 'east' },
-      ],
     },
-    {
-      id: 'willowrest-inn',
-      name: 'Willowrest Inn',
+    'willowrest-inn': {
       safeResting: true,
-      mapPosition: { x: 2, y: 4, terrain: 'building' },
-      description: 'A warm timber inn stands at the edge of Reedbank, its windows bright against the river mist. A painted sign promises a full night’s rest for five moss marks. A lamp-lit lane leads west to Reedbank Stalls.',
       inn: {
         id: 'willowrest-inn-service',
         name: 'Willowrest Inn',
         restPrice: 5,
       },
-      exits: [
-        { id: 'willowrest-to-lane', fromLocationId: 'willowrest-inn', toLocationId: 'willowrest-lane', label: 'West along Willowrest Lane', direction: 'west', roadId: 'willowrest-lane' },
-      ],
     },
-    {
-      id: 'stillwater-path',
-      name: 'Willowshade Track',
-      mapPosition: { x: -1, y: 0, terrain: 'forest' },
-      description: 'Willow branches arch over a narrow track between the fountain court and Mossgate Clearing.',
-      exits: [
-        { id: 'stillwater-path-to-clearing', fromLocationId: 'stillwater-path', toLocationId: 'mossgate-clearing', label: 'East to Mossgate Clearing', direction: 'east', roadId: 'willowshade-track' },
-        { id: 'stillwater-path-to-fountain', fromLocationId: 'stillwater-path', toLocationId: 'stillwater-fountain', label: 'West to Stillwater Fountain', direction: 'west', roadId: 'willowshade-track' },
-        { id: 'stillwater-path-to-fernshade-road', fromLocationId: 'stillwater-path', toLocationId: 'fernshade-road', label: 'North along Fernshade Road', direction: 'north', roadId: 'fernshade-road' },
-      ],
-    },
-    {
-      id: 'glasswater-approach',
-      name: 'Glasswater Approach',
-      mapPosition: { x: 0, y: 1, terrain: 'gravel' },
-      description: 'The northbound road narrows along a low stone embankment. Mossgate Clearing lies south; Glasswater Bridge lies north.',
-      exits: [
-        { id: 'glasswater-approach-to-clearing', fromLocationId: 'glasswater-approach', toLocationId: 'mossgate-clearing', label: 'South to Mossgate Clearing', direction: 'south', roadId: 'glasswater-road' },
-        { id: 'glasswater-approach-to-bridge', fromLocationId: 'glasswater-approach', toLocationId: 'glasswater-bridge', label: 'North to Glasswater Bridge', direction: 'north', roadId: 'glasswater-road' },
-      ],
-    },
-    {
-      id: 'bellwarden-track',
-      name: 'Bellwarden Track',
-      mapPosition: { x: 1, y: 0, terrain: 'pasture' },
-      description: 'A grassy track skirts the old clearing stones. It runs east to the tower’s western approach and west to Mossgate.',
-      exits: [
-        { id: 'bellwarden-track-to-clearing', fromLocationId: 'bellwarden-track', toLocationId: 'mossgate-clearing', label: 'West to Mossgate Clearing', direction: 'west', roadId: 'bellwarden-road' },
-        { id: 'bellwarden-track-to-tower-west', fromLocationId: 'bellwarden-track', toLocationId: 'bell-tower-west', label: 'East to West of Old Bell Tower', direction: 'east', roadId: 'bellwarden-road' },
-      ],
-    },
-    {
-      id: 'reedbank-road',
-      name: 'Reedbank Road',
-      mapPosition: { x: 0, y: 3, terrain: 'dirt' },
-      description: 'The packed earth road follows a broad bed of reeds. It runs north toward Reedbank Stalls and south toward Glasswater Bridge.',
-      exits: [
-        { id: 'reedbank-road-to-bridge', fromLocationId: 'reedbank-road', toLocationId: 'glasswater-bridge', label: 'South to Glasswater Bridge', direction: 'south', roadId: 'reedbank-road' },
-        { id: 'reedbank-road-to-stalls', fromLocationId: 'reedbank-road', toLocationId: 'reedbank-stalls', label: 'North to Reedbank Stalls', direction: 'north', roadId: 'reedbank-road' },
-      ],
-    },
-    {
-      id: 'willowrest-lane',
-      name: 'Willowrest Lane',
-      mapPosition: { x: 1, y: 4 },
-      description: 'A lamp-lit lane runs east from Reedbank Stalls to the timber inn, with canvas awnings behind you.',
-      exits: [
-        { id: 'willowrest-lane-to-reedbank', fromLocationId: 'willowrest-lane', toLocationId: 'reedbank-stalls', label: 'West to Reedbank Stalls', direction: 'west', roadId: 'willowrest-lane' },
-        { id: 'willowrest-lane-to-inn', fromLocationId: 'willowrest-lane', toLocationId: 'willowrest-inn', label: 'East to Willowrest Inn', direction: 'east', roadId: 'willowrest-lane' },
-      ],
-    },
-    {
-      id: 'glasswater-west-reach',
-      name: 'Glasswater West Reach',
-      mapPosition: { x: -1, y: 2, terrain: 'river', visibleWhenUnvisited: true },
-      description: 'The river current runs west from beneath Glasswater Bridge.',
-      exits: [
-        { id: 'glasswater-west-reach-to-bridge-under', fromLocationId: 'glasswater-west-reach', toLocationId: 'glasswater-bridge', label: 'East beneath Glasswater Bridge', direction: 'east', toStateId: 'under', mapLineGapAtLocationId: 'glasswater-bridge' },
-        { id: 'glasswater-west-reach-to-willow-reach', fromLocationId: 'glasswater-west-reach', toLocationId: 'glasswater-willow-reach', label: 'West along Glasswater River', direction: 'west' },
-      ],
-    },
-    {
-      id: 'glasswater-east-reach',
-      name: 'Glasswater East Reach',
-      mapPosition: { x: 1, y: 2, terrain: 'river', visibleWhenUnvisited: true },
-      description: 'The Glasswater current emerges from beneath the bridge and continues east.',
-      exits: [
-        { id: 'glasswater-east-reach-to-bridge-under', fromLocationId: 'glasswater-east-reach', toLocationId: 'glasswater-bridge', label: 'West beneath Glasswater Bridge', direction: 'west', toStateId: 'under', mapLineGapAtLocationId: 'glasswater-bridge' },
-      ],
-    },
-    {
-      id: 'glasswater-willow-reach',
-      name: 'Glasswater Willow Reach',
-      mapPosition: { x: -2, y: 2, terrain: 'river', visibleWhenUnvisited: true },
-      description: 'Clear water slips past the willow roots along the western bank.',
-      exits: [
-        { id: 'glasswater-willow-reach-to-west-reach', fromLocationId: 'glasswater-willow-reach', toLocationId: 'glasswater-west-reach', label: 'East along Glasswater River', direction: 'east' },
-        { id: 'glasswater-willow-reach-to-far-reach', fromLocationId: 'glasswater-willow-reach', toLocationId: 'glasswater-far-reach', label: 'West along Glasswater River', direction: 'west' },
-      ],
-    },
-    {
-      id: 'glasswater-far-reach',
-      name: 'Glasswater Far Reach',
-      mapPosition: { x: -3, y: 2, terrain: 'river', visibleWhenUnvisited: true },
-      description: 'The current continues west beyond the mapped stretch.',
-      exits: [
-        { id: 'glasswater-far-reach-to-willow-reach', fromLocationId: 'glasswater-far-reach', toLocationId: 'glasswater-willow-reach', label: 'East along Glasswater River', direction: 'east' },
-      ],
-    },
-  ],
-  locationGroups: [
-    {
-      id: 'clearwater',
-      name: 'Clearwater',
-      type: 'settlement',
-      description: 'A small riverside settlement of market awnings, a timber inn, and a low stone bridge.',
-      memberships: [
-        { locationId: 'glasswater-bridge', isPrimary: true },
-        { locationId: 'reedbank-stalls', isPrimary: true },
-        { locationId: 'willowrest-inn', isPrimary: true },
-      ],
-      metadata: { settlementKind: 'riverside-trading-town' },
-    },
-    {
-      id: 'glasswater-river',
-      name: 'Glasswater River',
-      type: 'river',
-      description: 'The navigable watercourse running beneath the bridge and along its banks.',
-      memberships: [
-        { locationId: 'glasswater-bridge' },
-        { locationId: 'glasswater-west-reach' },
-        { locationId: 'glasswater-east-reach' },
-        { locationId: 'glasswater-willow-reach' },
-        { locationId: 'glasswater-far-reach' },
-      ],
-    },
-    {
-      id: 'kings-road',
-      name: "King's Road",
-      type: 'road',
-      description: 'The established route from Glasswater Approach across the bridge to Reedbank.',
-      memberships: [
-        { locationId: 'glasswater-approach', isPrimary: true },
-        { locationId: 'glasswater-bridge' },
-        { locationId: 'reedbank-road', isPrimary: true },
-        { locationId: 'reedbank-stalls' },
-        { locationId: 'willowrest-lane', isPrimary: true },
-      ],
-      metadata: { routeClass: 'main-road' },
-    },
-  ],
-  roads: [
-    {
-      id: 'willowshade-track',
-      name: 'Willowshade Track',
-      locationIds: ['mossgate-clearing', 'stillwater-path', 'stillwater-fountain'],
+  },
+  roadRules: {
+    'willowshade-track': {
       encounterChancePercent: 5,
       encounters: [
         {
@@ -1737,10 +1035,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'glasswater-road',
-      name: 'Glasswater Road',
-      locationIds: ['mossgate-clearing', 'glasswater-approach', 'glasswater-bridge'],
+    'glasswater-road': {
       encounterChancePercent: 10,
       encounters: [
         {
@@ -1750,10 +1045,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'bellwarden-road',
-      name: 'Bellwarden Road',
-      locationIds: ['mossgate-clearing', 'bellwarden-track', 'bell-tower-west'],
+    'bellwarden-road': {
       encounterChancePercent: 10,
       encounters: [
         {
@@ -1763,10 +1055,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'reedbank-road',
-      name: 'Reedbank Road',
-      locationIds: ['glasswater-bridge', 'reedbank-road', 'reedbank-stalls'],
+    'reedbank-road': {
       encounterChancePercent: 15,
       encounters: [
         {
@@ -1776,10 +1065,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'willowrest-lane',
-      name: 'Willowrest Lane',
-      locationIds: ['reedbank-stalls', 'willowrest-lane', 'willowrest-inn'],
+    'willowrest-lane': {
       encounterChancePercent: 5,
       encounters: [
         {
@@ -1789,10 +1075,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'fernshade-road',
-      name: 'Fernshade Road',
-      locationIds: ['stillwater-path', 'fernshade-road', 'fernshade-fork'],
+    'fernshade-road': {
       encounterChancePercent: 15,
       encounters: [
         {
@@ -1802,10 +1085,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'bracken-road',
-      name: 'Bracken Road',
-      locationIds: ['mossgate-clearing', 'bracken-road', 'bracken-mile', 'sedgewatch'],
+    'bracken-road': {
       encounterChancePercent: 20,
       encounters: [
         {
@@ -1815,15 +1095,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'undercrypt-west-rat-run',
-      name: 'Undercrypt West Corridors',
-      locationIds: [
-        'undercrypt-west-passage',
-        'undercrypt-west-bend',
-        'undercrypt-west-turn',
-        'undercrypt-north-junction',
-      ],
+    'undercrypt-west-rat-run': {
       encounterChancePercent: 15,
       encounters: [
         {
@@ -1833,18 +1105,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'undercrypt-east-rat-run',
-      name: 'Undercrypt East Corridors',
-      locationIds: [
-        'undercrypt-rattle-run',
-        'undercrypt-crossway',
-        'undercrypt-east-bend',
-        'undercrypt-east-passage',
-        'undercrypt-east-crawl',
-        'undercrypt-east-turn',
-        'undercrypt-north-junction',
-      ],
+    'undercrypt-east-rat-run': {
       encounterChancePercent: 15,
       encounters: [
         {
@@ -1854,10 +1115,14 @@ const draft = {
         },
       ],
     },
-  ],
-} satisfies WorldPackDraftInput;
+  },
+} satisfies WorldPackContent;
 
-export const demoWorld: WorldPackDraft = WorldPackDraftSchema.parse(draft);
+export const demoWorld: WorldPackDraft = WorldPackDraftSchema.parse(composeWorldPackDraft({
+  locations: WorldLocationsFileSchema.parse(locations),
+  locationGroups: WorldLocationGroupsFileSchema.parse(locationGroups),
+  roads: WorldRoadsFileSchema.parse(roads),
+}, content));
 const graphErrors = validateDraftWorldGraph(demoWorld);
 if (graphErrors.length > 0) throw new Error(`Invalid demo world: ${graphErrors.join('; ')}`);
 

@@ -10,6 +10,7 @@ export * from './protocol.js';
 export * from './movement.js';
 export * from './movement-projection.js';
 export * from './world.js';
+export * from './world-map-data.js';
 export * from './session.js';
 export * from './chat.js';
 export * from './character.js';

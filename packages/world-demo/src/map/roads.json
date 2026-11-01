@@ -1,0 +1,93 @@
+{
+  "formatVersion": 1,
+  "packId": "mudd.first-steps",
+  "roads": [
+    {
+      "id": "willowshade-track",
+      "name": "Willowshade Track",
+      "locationIds": [
+        "mossgate-clearing",
+        "stillwater-path",
+        "stillwater-fountain"
+      ]
+    },
+    {
+      "id": "glasswater-road",
+      "name": "Glasswater Road",
+      "locationIds": [
+        "mossgate-clearing",
+        "glasswater-approach",
+        "glasswater-bridge"
+      ]
+    },
+    {
+      "id": "bellwarden-road",
+      "name": "Bellwarden Road",
+      "locationIds": [
+        "mossgate-clearing",
+        "bellwarden-track",
+        "bell-tower-west"
+      ]
+    },
+    {
+      "id": "reedbank-road",
+      "name": "Reedbank Road",
+      "locationIds": [
+        "glasswater-bridge",
+        "reedbank-road",
+        "reedbank-stalls"
+      ]
+    },
+    {
+      "id": "willowrest-lane",
+      "name": "Willowrest Lane",
+      "locationIds": [
+        "reedbank-stalls",
+        "willowrest-lane",
+        "willowrest-inn"
+      ]
+    },
+    {
+      "id": "fernshade-road",
+      "name": "Fernshade Road",
+      "locationIds": [
+        "stillwater-path",
+        "fernshade-road",
+        "fernshade-fork"
+      ]
+    },
+    {
+      "id": "bracken-road",
+      "name": "Bracken Road",
+      "locationIds": [
+        "mossgate-clearing",
+        "bracken-road",
+        "bracken-mile",
+        "sedgewatch"
+      ]
+    },
+    {
+      "id": "undercrypt-west-rat-run",
+      "name": "Undercrypt West Corridors",
+      "locationIds": [
+        "undercrypt-west-passage",
+        "undercrypt-west-bend",
+        "undercrypt-west-turn",
+        "undercrypt-north-junction"
+      ]
+    },
+    {
+      "id": "undercrypt-east-rat-run",
+      "name": "Undercrypt East Corridors",
+      "locationIds": [
+        "undercrypt-rattle-run",
+        "undercrypt-crossway",
+        "undercrypt-east-bend",
+        "undercrypt-east-passage",
+        "undercrypt-east-crawl",
+        "undercrypt-east-turn",
+        "undercrypt-north-junction"
+      ]
+    }
+  ]
+}

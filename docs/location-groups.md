@@ -6,20 +6,27 @@ or own room content.
 
 ## Authoring a world pack
 
-Add an optional `locationGroups` array to `WorldPackDraft`. Packs that omit the
-field remain valid and behave as if it were empty.
+Edit `src/map/location-groups.json` in the world pack. The file has
+`formatVersion: 1`, the pack's `packId`, and a `locationGroups` array. Keep its
+existing array order and append new groups. See [map layout authoring](world-content/map-layout.md)
+for the split between JSON layout and TypeScript content.
 
-```ts
+The composed `WorldPackDraft` still accepts an optional `locationGroups` array;
+packs that omit it behave as if it were empty.
+
+For example, an entry in the file's `locationGroups` array is:
+
+```json
 {
-  id: 'clearwater',
-  name: 'Clearwater',
-  type: 'settlement',
-  description: 'A small riverside settlement.',
-  memberships: [
-    { locationId: 'glasswater-bridge', isPrimary: true },
-    { locationId: 'reedbank-stalls', isPrimary: true },
+  "id": "clearwater",
+  "name": "Clearwater",
+  "type": "settlement",
+  "description": "A small riverside settlement.",
+  "memberships": [
+    { "locationId": "glasswater-bridge", "isPrimary": true },
+    { "locationId": "reedbank-stalls", "isPrimary": true }
   ],
-  metadata: { settlementKind: 'riverside' },
+  "metadata": { "settlementKind": "riverside" }
 }
 ```
 
