@@ -258,7 +258,6 @@ export function vitalRecoveryPausedEvent(
       healthFractionalCarry: 0,
       manaFractionalCarry: 0,
     }),
-    settledAt: recoveryAt.toISOString(),
     resetAnchor: true,
   });
   return { type: 'character.vital_recovery_settled', version: 1, payload };
