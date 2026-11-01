@@ -1,7 +1,7 @@
 # Bellwold Region Expansion
 
-**Status:** In delivery. Phases 0–2 are on `main`. Phase 3 is in progress on `content/bellwold-phase-3`; Mosswake is implemented. Phases 4–5 remain proposals. Q1 (river identity), Q5 (travel scale) and Q7 (the Rillford crossing) were decided on 2026-10-31.
-**Pack:** `orraveth.bellwold` ([layout](../../../packages/world-orraveth/src/map/), [content](../../../packages/world-orraveth/src/index.ts)), currently `packVersion` 1.20.0 with 110 locations. The single Phase 3 PR will bump to 1.21.0 in its final town commit. Sections 1 and 2 describe the Codex and world data as they stood before Phase 1.
+**Status:** In delivery. Phases 0–2 are on `main`. Phase 3 is in progress on `content/bellwold-phase-3`; Mosswake and Thornmere are implemented. Phases 4–5 remain proposals. Q1 (river identity), Q5 (travel scale) and Q7 (the Rillford crossing) were decided on 2026-10-31.
+**Pack:** `orraveth.bellwold` ([layout](../../../packages/world-orraveth/src/map/), [content](../../../packages/world-orraveth/src/index.ts)), currently `packVersion` 1.20.0 with 119 locations. The single Phase 3 PR will bump to 1.21.0 in its final town commit. Sections 1 and 2 describe the Codex and world data as they stood before Phase 1.
 **Scope:** New roads, new towns, extending the existing river, and connecting Bellwold to the communities of the Bellwold Marches.
 
 ## How to read this document
@@ -304,6 +304,12 @@ by a herbalist, rather than asserted as invisible knowledge in room prose.
 | `thornmere-healer-house` | (7,6) | building | The healer is **unnamed** in the Codex. Leave the medical-exception story to dialogue from others until reviewed (Q9). |
 | `thornmere-lake` | (8,5) | lake* | A scenery tile, reached from the bridge |
 
+*Revised in Phase 3:* the lake reuses `river` terrain and its existing water
+presentation, with no new rule or `lake` slug. The shared bridge has description
+and ordinary exits only: no NPC, interactable or item-use asks a sprite to
+respond. The healer remains offstage (Q9); Nessa can discuss the unresolved
+medical exception without announcing a council decision.
+
 #### Vell's Crossing: "The Town Without a King" (Phase 4)
 
 | Location | (x, y) | Terrain | Content |
@@ -503,6 +509,11 @@ The Road Through Old Ground and the south road's destination aren't scheduled. T
   unnamed herbalist offer local perspectives. The dredging notice remains a
   proposal, the fish decline has no assigned cause, and the territory edge has no
   exit into sprite territory. No Elderhollow path is opened.
+- **Thornmere:** four woodland path segments and five settlement rooms add nine
+  rooms (119 total). The path begins at Church Approach and uses the proposed
+  5% bank-badger/roadside-deer pool. Nessa Valeen discusses agreements and their
+  limits. The settlement is independent, the route group is non-primary, and no
+  bridge response or healer interaction is authored.
 - *Revised in Phase 3:* `main` now contains ADR 0042's migration. Layout is authored
   in JSON and content in TypeScript. Orraveth's temporary pre-migration fixture
   and equality test are retired as the ADR directs after merge; permanent schema
@@ -525,14 +536,14 @@ Each is a place where the Codex is silent or contradicts itself, or a design cal
 6. **Do trade links mean roads?** The Codex says no. Every road here is a proposal; a direct Harrowfen–Rillford track (Harrowfen trades through Rillford) is left out.
 7. **Ferry fares and passage rights. Decided 2026-10-31: the crossing waits for engine work.** The Codex sets no tolls, schedules or fares, and the engine has no paid-passage capability. A free ford would undercut Rillford's ferry trade, so the ferry stage reaches only the north quay. The south bank is reached by the mile road.
 8. **Names for inns and role NPCs.** The Codex mentions Rillford's inns and Vell's Crossing's merchants but names none. Who approves new names? *Phase 2 uses a descriptive placeholder, "Quayside Inn", and unnamed role NPCs until this is settled.*
-9. **Thornmere's healer.** The person is unnamed and their case is unresolved. Should they appear in-world at all yet?
+9. **Thornmere's healer.** The person is unnamed and their case is unresolved. Should they appear in-world at all yet? *Revised in Phase 3:* the healer stays offstage; the porch is accessible scenery and Nessa reports no settled decision.
 10. **The Road Through Old Ground.** Is showing survey stakes and a notice on the existing east track acceptable, or is even that too strong a claim?
 11. **Rillford's size versus Vell's Crossing.** Rillford is "the largest established civilian settlement in the immediate region" (~620) but Vell's Crossing has ~850, and Bellwold's page calls both larger. This probably means Vell's Crossing (1½ days away) isn't "immediate". Worth clarifying in the Codex.
 12. **Greywatch's route.** "Farther southwest, two days" doesn't say whether the way runs through Rillford. This spec routes it through Rillford.
 13. **Elderhollow and outsiders.** Residents disagree about sharing with outsiders ([elderhollow.md][elderhollow]). Should the path be open by default (as proposed), or reached through an introduction such as a `requiredVisitedLocationId` or a quest gate?
 14. **Mosswake's sprite territories.** No map exists. This spec places one edge room and no entry; family recognition varies.
 15. **Ashcombe woodcutting.** Is any in-game cutting acceptable while the concession dispute is open, or should Ashcombe start with none?
-16. **Lake and marsh terrain.** `marsh` and `lake` would be new slugs. Only `river` gets the water colour and legend entry. Should lakes reuse `river` terrain, or should the client gain a water category?
+16. **Lake and marsh terrain.** `marsh` and `lake` would be new slugs. Only `river` gets the water colour and legend entry. Should lakes reuse `river` terrain, or should the client gain a water category? *Revised in Phase 3:* use `marsh` with land colour `#74865a` and no rule effect; Thornmere's lake reuses `river`. A broader water category remains open; no client change is made.
 17. **Uncatalogued content.** The church, library, museum, jail and other rooms aren't in the Codex. Should they get Codex entries before more lore attaches to them?
 18. **Codex upkeep.** `regions/bellwold.md` repeats its paragraph about gold. That's minor, but it's worth fixing in the same Codex pass.
 

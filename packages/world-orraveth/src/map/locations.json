@@ -2180,7 +2180,7 @@
     {
       "id": "bellwold-church-approach",
       "name": "Church Approach",
-      "description": "The track opens into bare ground before a dark timber doorway. Wind pushes dry leaves across the clearing; the entrance is north and the road returns south.",
+      "description": "The track opens into bare ground before a dark timber doorway. Wind pushes dry leaves across the clearing; the entrance is north, the road returns south, and a footpath crosses the field east.",
       "mapPosition": {
         "x": 3,
         "y": 3,
@@ -2201,6 +2201,14 @@
           "toLocationId": "bellwold-abandoned-church",
           "label": "north into the church",
           "direction": "north"
+        },
+        {
+          "id": "bellwold-church-approach-to-thornmere-path-church-field",
+          "fromLocationId": "bellwold-church-approach",
+          "toLocationId": "thornmere-path-church-field",
+          "label": "east to Church Field Path",
+          "direction": "east",
+          "roadId": "thornmere-path"
         }
       ]
     },
@@ -3131,6 +3139,257 @@
           "fromLocationId": "mosswake-open-water",
           "toLocationId": "mosswake-channel",
           "label": "west to Mosswake Channel",
+          "direction": "west"
+        }
+      ]
+    },
+    {
+      "id": "thornmere-path-church-field",
+      "name": "Church Field Path",
+      "description": "A narrow footpath crosses the grass east of the church. The clearing lies west; pale birches stand along the path to the north.",
+      "mapPosition": {
+        "x": 4,
+        "y": 3,
+        "terrain": "land"
+      },
+      "exits": [
+        {
+          "id": "thornmere-path-church-field-to-bellwold-church-approach",
+          "fromLocationId": "thornmere-path-church-field",
+          "toLocationId": "bellwold-church-approach",
+          "label": "west to Church Approach",
+          "direction": "west",
+          "roadId": "thornmere-path"
+        },
+        {
+          "id": "thornmere-path-church-field-to-thornmere-path-birch-run",
+          "fromLocationId": "thornmere-path-church-field",
+          "toLocationId": "thornmere-path-birch-run",
+          "label": "north to Birch Run",
+          "direction": "north",
+          "roadId": "thornmere-path"
+        }
+      ]
+    },
+    {
+      "id": "thornmere-path-birch-run",
+      "name": "Birch Run",
+      "description": "White bark catches the light beside a worn strip of earth. The path turns east between the trunks and south toward the open field.",
+      "mapPosition": {
+        "x": 4,
+        "y": 4,
+        "terrain": "land"
+      },
+      "exits": [
+        {
+          "id": "thornmere-path-birch-run-to-thornmere-path-church-field",
+          "fromLocationId": "thornmere-path-birch-run",
+          "toLocationId": "thornmere-path-church-field",
+          "label": "south to Church Field Path",
+          "direction": "south",
+          "roadId": "thornmere-path"
+        },
+        {
+          "id": "thornmere-path-birch-run-to-thornmere-path-brook",
+          "fromLocationId": "thornmere-path-birch-run",
+          "toLocationId": "thornmere-path-brook",
+          "label": "east to Brook Path",
+          "direction": "east",
+          "roadId": "thornmere-path"
+        }
+      ]
+    },
+    {
+      "id": "thornmere-path-brook",
+      "name": "Brook Path",
+      "description": "Water trickles through a shallow cut beside the path. Pale claw marks score a dry rise above it; the path bends north and west.",
+      "mapPosition": {
+        "x": 5,
+        "y": 4,
+        "terrain": "land"
+      },
+      "exits": [
+        {
+          "id": "thornmere-path-brook-to-thornmere-path-birch-run",
+          "fromLocationId": "thornmere-path-brook",
+          "toLocationId": "thornmere-path-birch-run",
+          "label": "west to Birch Run",
+          "direction": "west",
+          "roadId": "thornmere-path"
+        },
+        {
+          "id": "thornmere-path-brook-to-thornmere-path-lake-glimpse",
+          "fromLocationId": "thornmere-path-brook",
+          "toLocationId": "thornmere-path-lake-glimpse",
+          "label": "north to Lake Glimpse",
+          "direction": "north",
+          "roadId": "thornmere-path"
+        }
+      ]
+    },
+    {
+      "id": "thornmere-path-lake-glimpse",
+      "name": "Lake Glimpse",
+      "description": "A pale stretch of water shows through the branches to the east. The path opens toward its shore and returns south beside the brook.",
+      "mapPosition": {
+        "x": 5,
+        "y": 5,
+        "terrain": "land"
+      },
+      "exits": [
+        {
+          "id": "thornmere-path-lake-glimpse-to-thornmere-path-brook",
+          "fromLocationId": "thornmere-path-lake-glimpse",
+          "toLocationId": "thornmere-path-brook",
+          "label": "south to Brook Path",
+          "direction": "south",
+          "roadId": "thornmere-path"
+        },
+        {
+          "id": "thornmere-path-lake-glimpse-to-thornmere-lakeshore",
+          "fromLocationId": "thornmere-path-lake-glimpse",
+          "toLocationId": "thornmere-lakeshore",
+          "label": "east to Lakeshore",
+          "direction": "east",
+          "roadId": "thornmere-path"
+        }
+      ]
+    },
+    {
+      "id": "thornmere-lakeshore",
+      "name": "Lakeshore",
+      "description": "Small ripples cross a shallow lake beside low roofs. The woodland path runs west, a wide doorway stands north, and a small bridge reaches east over the water.",
+      "mapPosition": {
+        "x": 6,
+        "y": 5,
+        "terrain": "land"
+      },
+      "exits": [
+        {
+          "id": "thornmere-lakeshore-to-thornmere-path-lake-glimpse",
+          "fromLocationId": "thornmere-lakeshore",
+          "toLocationId": "thornmere-path-lake-glimpse",
+          "label": "west to Lake Glimpse",
+          "direction": "west",
+          "roadId": "thornmere-path"
+        },
+        {
+          "id": "thornmere-lakeshore-to-thornmere-council-house",
+          "fromLocationId": "thornmere-lakeshore",
+          "toLocationId": "thornmere-council-house",
+          "label": "north to Council House",
+          "direction": "north"
+        },
+        {
+          "id": "thornmere-lakeshore-to-thornmere-shared-bridge",
+          "fromLocationId": "thornmere-lakeshore",
+          "toLocationId": "thornmere-shared-bridge",
+          "label": "east to Shared Bridge",
+          "direction": "east"
+        }
+      ]
+    },
+    {
+      "id": "thornmere-council-house",
+      "name": "Council House",
+      "description": "Chairs form an uneven circle beneath open rafters. The lakeshore is south; a covered passage leads east toward a closed door.",
+      "mapPosition": {
+        "x": 6,
+        "y": 6,
+        "terrain": "building"
+      },
+      "exits": [
+        {
+          "id": "thornmere-council-house-to-thornmere-lakeshore",
+          "fromLocationId": "thornmere-council-house",
+          "toLocationId": "thornmere-lakeshore",
+          "label": "south to Lakeshore",
+          "direction": "south"
+        },
+        {
+          "id": "thornmere-council-house-to-thornmere-healer-house",
+          "fromLocationId": "thornmere-council-house",
+          "toLocationId": "thornmere-healer-house",
+          "label": "east to Healer House",
+          "direction": "east"
+        }
+      ]
+    },
+    {
+      "id": "thornmere-shared-bridge",
+      "name": "Shared Bridge",
+      "description": "Smooth patches interrupt the grain of the bridge rails. Water taps softly against the supports; the lakeshore is west, a doorway north, and shallow water opens east.",
+      "mapPosition": {
+        "x": 7,
+        "y": 5,
+        "terrain": "land"
+      },
+      "exits": [
+        {
+          "id": "thornmere-shared-bridge-to-thornmere-lakeshore",
+          "fromLocationId": "thornmere-shared-bridge",
+          "toLocationId": "thornmere-lakeshore",
+          "label": "west to Lakeshore",
+          "direction": "west"
+        },
+        {
+          "id": "thornmere-shared-bridge-to-thornmere-healer-house",
+          "fromLocationId": "thornmere-shared-bridge",
+          "toLocationId": "thornmere-healer-house",
+          "label": "north to Healer House",
+          "direction": "north"
+        },
+        {
+          "id": "thornmere-shared-bridge-to-thornmere-lake",
+          "fromLocationId": "thornmere-shared-bridge",
+          "toLocationId": "thornmere-lake",
+          "label": "east to Shallow Lake",
+          "direction": "east"
+        }
+      ]
+    },
+    {
+      "id": "thornmere-healer-house",
+      "name": "Healer House",
+      "description": "A latched inner door faces a sheltered porch. The boards are quiet. A covered passage leads west and steps descend south to the bridge.",
+      "mapPosition": {
+        "x": 7,
+        "y": 6,
+        "terrain": "building"
+      },
+      "exits": [
+        {
+          "id": "thornmere-healer-house-to-thornmere-council-house",
+          "fromLocationId": "thornmere-healer-house",
+          "toLocationId": "thornmere-council-house",
+          "label": "west to Council House",
+          "direction": "west"
+        },
+        {
+          "id": "thornmere-healer-house-to-thornmere-shared-bridge",
+          "fromLocationId": "thornmere-healer-house",
+          "toLocationId": "thornmere-shared-bridge",
+          "label": "south to Shared Bridge",
+          "direction": "south"
+        }
+      ]
+    },
+    {
+      "id": "thornmere-lake",
+      "name": "Shallow Lake",
+      "description": "Pebbles show beneath the clear shallows. Ripples break against the bridge supports to the west; reeds thicken beyond the open water.",
+      "mapPosition": {
+        "x": 8,
+        "y": 5,
+        "terrain": "river",
+        "visibleWhenUnvisited": true
+      },
+      "exits": [
+        {
+          "id": "thornmere-lake-to-thornmere-shared-bridge",
+          "fromLocationId": "thornmere-lake",
+          "toLocationId": "thornmere-shared-bridge",
+          "label": "west to Shared Bridge",
           "direction": "west"
         }
       ]

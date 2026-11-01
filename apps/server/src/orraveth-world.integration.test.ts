@@ -132,6 +132,7 @@ function makeHarness(options: Readonly<{
 describe('Orraveth Bellwold settlement', () => {
   for (const [roadId, junctionId, arrivalId, chance, pool] of [
     ['mosswake-causeway', 'bellwold-far-bank-track', 'mosswake-landing', 6, ['Reedback Boar', 'Stray Hound']],
+    ['thornmere-path', 'bellwold-church-approach', 'thornmere-lakeshore', 5, ['Bank Badger', 'Roadside Deer']],
   ] as const) {
     it(`travels ${roadId} from junction to arrival and back through committed road-step events`, async () => {
       const junction = orravethWorld.locations.find(({ id }) => id === junctionId);
@@ -185,6 +186,7 @@ describe('Orraveth Bellwold settlement', () => {
   for (const [locationId, npcId, topic, name, phrase] of [
     ['mosswake-boat-sheds', 'tavin-reed', 'dredging', 'Tavin Reed', 'before anyone calls the proposal settled'],
     ['mosswake-herb-platform', 'mosswake-herbalist', 'territories', 'Herbalist', 'not turn a path ending here into permission'],
+    ['thornmere-council-house', 'nessa-valeen', 'medicine', 'Nessa Valeen', 'no settled council decision'],
   ] as const) {
     it(`meets ${npcId} through an authorised dialogue query without resolving the local dispute`, async () => {
       const location = orravethWorld.locations.find(({ id }) => id === locationId);
@@ -647,7 +649,7 @@ describe('Orraveth Bellwold settlement', () => {
 
   it('has a valid, fully reachable region with map directions matching its exits', () => {
     expect(validateDraftWorldGraph(orravethWorld)).toEqual([]);
-    expect(orravethWorld.locations).toHaveLength(110);
+    expect(orravethWorld.locations).toHaveLength(119);
 
     const worldWithMissingQuestRewardItem = structuredClone(orravethWorld);
     const churchQuest = worldWithMissingQuestRewardItem.quests?.find(
@@ -1224,7 +1226,7 @@ describe('Orraveth Bellwold settlement', () => {
     const riverLocations = orravethWorld.locations.filter(
       ({ mapPosition }) => mapPosition?.terrain === 'river',
     );
-    expect(riverLocations).toHaveLength(13);
+    expect(riverLocations).toHaveLength(14);
     expect(riverLocations.every(({ mapPosition }) => mapPosition?.visibleWhenUnvisited === true)).toBe(true);
     expect(orravethWorld.locations.find(({ id }) => id === 'bellwold-river-bridge'))
       .toMatchObject({ defaultStateId: 'on', mapPosition: { x: 0, y: -7, visibleWhenUnvisited: true } });

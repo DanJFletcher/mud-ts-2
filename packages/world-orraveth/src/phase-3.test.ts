@@ -4,6 +4,24 @@ import { orravethWorld } from './index.js';
 const locations = new Map(orravethWorld.locations.map((location) => [location.id, location]));
 
 describe('Bellwold Phase 3', () => {
+  it('keeps Thornmere independent, its bridge descriptive, and the healer offstage', () => {
+    const settlement = orravethWorld.locationGroups.find(({ id }) => id === 'thornmere');
+    expect(settlement).toMatchObject({ type: 'settlement', metadata: { codexId: 'orraveth-thornmere', politicalStatus: 'independent' } });
+    expect(settlement?.memberships).toHaveLength(5);
+    expect(settlement?.memberships.every(({ isPrimary }) => isPrimary)).toBe(true);
+    const route = orravethWorld.locationGroups.find(({ id }) => id === 'thornmere-path-route');
+    expect(route).toMatchObject({ type: 'route' });
+    expect(route?.memberships.map(({ locationId }) => locationId)).toEqual(orravethWorld.roads.find(({ id }) => id === 'thornmere-path')?.locationIds);
+    expect(route?.memberships.every(({ isPrimary }) => !isPrimary)).toBe(true);
+    const bridge = locations.get('thornmere-shared-bridge');
+    expect(bridge?.interactables).toBeUndefined();
+    expect(bridge?.itemUses).toBeUndefined();
+    expect(bridge?.npcs).toBeUndefined();
+    expect(locations.get('thornmere-healer-house')?.npcs).toBeUndefined();
+    expect(locations.get('thornmere-lake')?.mapPosition?.terrain).toBe('river');
+    expect(locations.get('thornmere-council-house')?.npcs?.[0]).toMatchObject({ id: 'nessa-valeen', name: 'Nessa Valeen' });
+  });
+
   it('gives Mosswake one primary settlement and a non-primary causeway route', () => {
     const settlement = orravethWorld.locationGroups.find(({ id }) => id === 'mosswake');
     expect(settlement).toMatchObject({ type: 'settlement', metadata: { codexId: 'orraveth-mosswake', politicalStatus: 'independent' } });

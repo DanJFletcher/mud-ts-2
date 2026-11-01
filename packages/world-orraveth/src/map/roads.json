@@ -97,6 +97,18 @@
         "mosswake-causeway-sedge",
         "mosswake-landing"
       ]
+    },
+    {
+      "id": "thornmere-path",
+      "name": "Thornmere Path",
+      "locationIds": [
+        "bellwold-church-approach",
+        "thornmere-path-church-field",
+        "thornmere-path-birch-run",
+        "thornmere-path-brook",
+        "thornmere-path-lake-glimpse",
+        "thornmere-lakeshore"
+      ]
     }
   ]
 }

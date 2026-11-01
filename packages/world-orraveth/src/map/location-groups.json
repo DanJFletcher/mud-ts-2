@@ -344,6 +344,70 @@
           "isPrimary": false
         }
       ]
+    },
+    {
+      "id": "thornmere-path-route",
+      "name": "Thornmere Path",
+      "type": "route",
+      "description": "A woodland footpath maintained by the people who use it, between Church Approach and Thornmere.",
+      "memberships": [
+        {
+          "locationId": "bellwold-church-approach",
+          "isPrimary": false
+        },
+        {
+          "locationId": "thornmere-path-church-field",
+          "isPrimary": false
+        },
+        {
+          "locationId": "thornmere-path-birch-run",
+          "isPrimary": false
+        },
+        {
+          "locationId": "thornmere-path-brook",
+          "isPrimary": false
+        },
+        {
+          "locationId": "thornmere-path-lake-glimpse",
+          "isPrimary": false
+        },
+        {
+          "locationId": "thornmere-lakeshore",
+          "isPrimary": false
+        }
+      ]
+    },
+    {
+      "id": "thornmere",
+      "name": "Thornmere",
+      "type": "settlement",
+      "description": "An independent woodland community beside a shallow lake, with an independent council and varied local agreements.",
+      "memberships": [
+        {
+          "locationId": "thornmere-lakeshore",
+          "isPrimary": true
+        },
+        {
+          "locationId": "thornmere-council-house",
+          "isPrimary": true
+        },
+        {
+          "locationId": "thornmere-shared-bridge",
+          "isPrimary": true
+        },
+        {
+          "locationId": "thornmere-healer-house",
+          "isPrimary": true
+        },
+        {
+          "locationId": "thornmere-lake",
+          "isPrimary": true
+        }
+      ],
+      "metadata": {
+        "codexId": "orraveth-thornmere",
+        "politicalStatus": "independent"
+      }
     }
   ]
 }

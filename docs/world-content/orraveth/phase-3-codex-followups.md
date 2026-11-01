@@ -28,3 +28,22 @@ review that local adjacency without settling flow direction, wider hydrology,
 or a connection to the Rillward Freeholds. The public dredging-survey notice is
 an authored proposal, not a permit or a new commercial agreement. Sparse fishing
 records no cause or settled extent for the reported decline.
+
+## Thornmere footpath and shared bridge
+
+**Status: draft — awaiting Codex review.** Sources:
+[Thornmere](../../../apps/web/src/codex/content/regions/thornmere.md) and
+[Nessa Valeen](../../../apps/web/src/codex/content/people/nessa-valeen.md).
+Suggested article targets: Thornmere; the regional travel account.
+
+> A footpath kept by the people who use it leaves the clearing near Bellwold's
+> abandoned church, passes birches and a brook, and reaches Thornmere's lakeshore.
+> Neighbours give differing accounts of sharing a small bridge with a sprite.
+> Those accounts offer no universal agreement or promise that a visitor will
+> receive an answer.
+
+The five path steps, exact lake adjacency and placement of the council house
+are gameplay proposals. Keep Thornmere independent and avoid implying that
+Heskar constructed the path. Do not identify the offstage healer, announce a
+medical-exception ruling, invent religious commitments for Nessa, or turn an
+account of shared space into a new sprite-consent mechanic.
