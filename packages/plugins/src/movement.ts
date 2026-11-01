@@ -8,7 +8,7 @@ import type { EnginePlugin } from '@mudd/engine-core';
 import type { CharacterProjection } from '@mudd/contracts';
 import type { EngineCommandContext, ProposedEventEffect } from '@mudd/engine-core';
 import { RuleViolationError } from '@mudd/engine-core';
-import { MOVEMENT_STAMINA_COST } from '@mudd/contracts';
+import { movementStaminaCostForWorld } from '@mudd/contracts';
 import {
   assertCharacterAlive, characterStateCapability, staminaRecoveryEventForCommand,
 } from './character.js';
@@ -68,6 +68,9 @@ export function createMovementPlan(
   const destination = world.locations.find((candidate) => candidate.id === exit.toLocationId);
   if (!destination) throw new RuleViolationError('That destination is not available.');
   const destinationState = resolveLocationState(destination, exit.toStateId);
+  if (destinationState?.requiresWaterTravel ?? destination.requiresWaterTravel ?? false) {
+    throw new RuleViolationError('That way leads into open water. You need to swim or use a boat.');
+  }
   if (
     destination.requiredVisitedLocationId &&
     !character.visitedLocationIds.includes(destination.requiredVisitedLocationId)
@@ -88,10 +91,11 @@ export function createMovementPlan(
     throw new RuleViolationError('That passage is still sealed.');
   }
   const recoveryEvent = staminaRecoveryEventForCommand(character, now, presenceAnchorAt);
+  const movementCost = movementStaminaCostForWorld(world);
   const recoveredResources = recoveryEvent.payload.resources as CharacterProjection['resources'];
-  if (recoveredResources.stamina.current < MOVEMENT_STAMINA_COST) {
+  if (recoveredResources.stamina.current < movementCost) {
     throw new RuleViolationError(
-      `You need ${MOVEMENT_STAMINA_COST} stamina to travel; you have ${recoveredResources.stamina.current}.`,
+      `You need ${movementCost} stamina to travel; you have ${recoveredResources.stamina.current}.`,
     );
   }
   const payload = {
@@ -101,7 +105,7 @@ export function createMovementPlan(
     fromStateId: currentState?.id ?? null,
     toStateId: destinationState?.id ?? null,
     exitId: exit.id,
-    movementCost: MOVEMENT_STAMINA_COST,
+    movementCost,
   };
   CharacterMovedEventSchema.shape.payload.parse(payload);
   return {

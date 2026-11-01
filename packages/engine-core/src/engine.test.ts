@@ -2226,8 +2226,14 @@ describe('MUDD engine host', () => {
     await engine.stop();
   });
 
-  it('keeps bridge states per character and resolves state-specific room exits', async () => {
+  it('keeps dry bridge and ledge states per character and resolves state-specific room exits', async () => {
     const testWorld = structuredClone(demoWorld);
+    // This generic state-isolation fixture uses a dry ledge, not the pack's submerged context.
+    const ledge = testWorld.locations.find(({ id }) => id === 'glasswater-bridge')?.states?.find(({ id }) => id === 'under');
+    if (!ledge) throw new Error('Missing bridge state fixture.');
+    ledge.requiresWaterTravel = false;
+    ledge.name = 'Dry Ledge Under Glasswater Bridge';
+    ledge.description = 'A dry ledge runs beside the current beneath the stone arches.';
     testWorld.locations.unshift({
       id: 'bridge-state-entry',
       name: 'Bridge State Test Entry',
@@ -2244,7 +2250,7 @@ describe('MUDD engine host', () => {
           id: 'test-entry-to-bridge-under',
           fromLocationId: 'bridge-state-entry',
           toLocationId: 'glasswater-bridge',
-          label: 'Into the river beneath the bridge',
+          label: 'Onto the dry ledge beneath the bridge',
           direction: 'south',
           toStateId: 'under',
         },
@@ -2325,8 +2331,8 @@ describe('MUDD engine host', () => {
       ok: true,
       value: {
         locationStateId: 'under',
-        title: 'Clearwater: Under Glasswater Bridge',
-        description: expect.stringContaining('current passes beneath the stone arches'),
+        title: 'Clearwater: Dry Ledge Under Glasswater Bridge',
+        description: expect.stringContaining('dry ledge'),
         exits: expect.arrayContaining([
           expect.objectContaining({ id: 'bridge-under-to-west-reach' }),
           expect.objectContaining({ id: 'bridge-under-to-east-reach' }),

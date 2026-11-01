@@ -1,7 +1,7 @@
 # Bellwold Region Expansion
 
-**Status:** In delivery. Q1 (river identity), Q5 (travel scale) and Q7 (the Rillford crossing) were decided on 2026-10-31. Phases 0 and 1 are in the world data on `main`. Phase 2 is implemented on `content/lower-rill-rillford` and awaits review. Phases 3–5 remain proposals.
-**Pack:** `orraveth.bellwold` ([layout](../../../packages/world-orraveth/src/map/), [content](../../../packages/world-orraveth/src/index.ts)), `packVersion` 1.20.0 with 98 locations after Phase 2. Sections 1 and 2 describe the Codex and world data as they stood before Phase 1.
+**Status:** In delivery. Phases 0–2 are on `main`. Phase 3 is implemented on `content/bellwold-phase-3`, awaiting review, with one commit each for Mosswake, Thornmere and Ashcombe. Phases 4–5 remain proposals. Q1 (river identity), Q5 (travel scale) and Q7 (the Rillford crossing) were decided on 2026-10-31.
+**Pack:** `orraveth.bellwold` ([layout](../../../packages/world-orraveth/src/map/), [content](../../../packages/world-orraveth/src/index.ts)), `packVersion` 1.21.0 with 130 locations after Phase 3. The version bump is in the final town commit of the single Phase 3 PR. Sections 1 and 2 describe the Codex and world data as they stood before Phase 1.
 **Scope:** New roads, new towns, extending the existing river, and connecting Bellwold to the communities of the Bellwold Marches.
 
 ## How to read this document
@@ -253,6 +253,15 @@ Each town is a small, connected cluster of 5–9 rooms. NPCs listed by name come
 - **Woodcutting (proposal):** `woodcuttingTrees` only along the timber road's stand-edge segment, described as "a stand Ashcombe's yards cut by long agreement". Avoid presenting any concession stand as settled ([ashcombe.md][ashcombe], [oren-kest.md][oren]).
 - **Supply link:** charcoal and logs as `dailyBoard` items for Blackwater Forge would fit the Codex's trade links.
 
+*Revised in Phase 3:* no woodcutting is added anywhere on the timber road or in
+Ashcombe while Q15 is open. The felled oak is description only: no takeable,
+harvesting target or sprite interaction. Oren attributes sap and voice reports
+to workers and gives no cause. An unnamed cartwright offers a work-focused view
+of orders without settling the concession dispute. No new supply board or prices
+are authored. Animal combat profiles are gameplay placeholders; the encounter
+schema supplies names and profiles, while road prose carries ordinary wildlife
+signs such as burrows and pale claw marks.
+
 #### Rillford: "The River's Gate" (Phase 2)
 
 | Location | (x, y) | Terrain | Content |
@@ -285,6 +294,21 @@ Each town is a small, connected cluster of 5–9 rooms. NPCs listed by name come
 
 \* `marsh` is a new presentation-only terrain slug with a chosen land `mapColor`; it has no rule effect ([ADR 0025](../../adr/0025-map-terrain-and-crossing-presentation.md)).
 
+*Revised in Phase 3:* Mosswake's marsh tiles use the land colour `#74865a` with
+no movement or gathering rule. Its landing has a sparse fishing spot using the
+existing five-second tick interval: a ten-second rod cast gets two bite
+opportunities instead of ten. Species remain the existing Lower Rill fish;
+neither catches nor dialogue establish a cause for the decline. There are no
+new prices or passage mechanics. Families' recognition of territory is explained
+by a herbalist, rather than asserted as invisible knowledge in room prose.
+
+*Revised in Phase 3:* open-water rooms and submerged crossing states explicitly
+require water travel ([ADR 0043](../../adr/0043-water-travel-access-requirements.md)).
+Swimming and boats are unavailable, so movement into those rooms or states is
+rejected. Dry land, bridge decks and the ferry stage remain accessible; the
+river connections stay on the map for future water travel. This is independent
+of the terrain slug or map colour.
+
 #### Thornmere: "The Village That Listens" (Phase 3)
 
 | Location | (x, y) | Terrain | Content |
@@ -295,6 +319,16 @@ Each town is a small, connected cluster of 5–9 rooms. NPCs listed by name come
 | `thornmere-shared-bridge` | (7,5) | land | A bridge shared with a sprite, per local accounts. Description only; no interaction that asks a sprite to respond ([thornmere.md][thornmere], [kindly-roof-hearth.md][hearth]). |
 | `thornmere-healer-house` | (7,6) | building | The healer is **unnamed** in the Codex. Leave the medical-exception story to dialogue from others until reviewed (Q9). |
 | `thornmere-lake` | (8,5) | lake* | A scenery tile, reached from the bridge |
+
+*Revised in Phase 3:* the lake reuses `river` terrain and its existing water
+presentation, with no new rule or `lake` slug. The shared bridge has description
+and ordinary exits only: no NPC, interactable or item-use asks a sprite to
+respond. The healer remains offstage (Q9); Nessa can discuss the unresolved
+medical exception without announcing a council decision.
+
+*Revised in Phase 3:* the lake's explicit water-travel requirement prevents
+walking from the bridge into its shallows. Its `river` terrain remains purely
+visual; no swimming or boat capability is added.
 
 #### Vell's Crossing: "The Town Without a King" (Phase 4)
 
@@ -468,7 +502,7 @@ Each phase stands on its own: a valid graph, every room reachable, a `packVersio
 | **0. Groundwork** | Q1 and Q5 are decided: the river is the Lower Rill, and one day is about 8 steps. Add the `bellwold` settlement group. Add the coordinate-uniqueness and spoiler-guard tests. Refresh `world-bible.md` and `capability-inventory.md`. | 0 | Cheap, and it unblocks naming | Done: `regions/bellwold.md` and `culture/trade-transport.md` now name the Lower Rill |
 | **1. West: Harrowfen** | `harrowfen-road`, Harrowfen (7 rooms incl. road), Maela Thorn, yield tallies | 7 | Nearest town (½ day); the west road already points there; no spoiler risk | Record the road from the verge to Harrowfen |
 | **2. The Lower Rill and Rillford** | Rename the existing `bellwold-river-*` display names to Lower Rill names (IDs unchanged); river reaches west, `rillford-crossing` with states, `rill-towpath`, `rillford-south-lane-road`, Rillford, Selda Rook, the inn, fishing on the towpath reach | 19 | Grows the existing river; the Codex's strongest route link ("along the Lower Rill corridor") | River course near Bellwold; the towpath |
-| **3. Near neighbours** | Mosswake (causeway, river east, Tavin Reed); Thornmere (path, Nessa Valeen); Ashcombe (timber road, Oren Kest, woodcutting) | 32 | All 1-day independent or Crown neighbours, with low spoiler risk | Footpath and causeway routes; recognised territory edges |
+| **3. Near neighbours** | Mosswake (causeway, river east, Tavin Reed); Thornmere (path, Nessa Valeen); Ashcombe (timber road, Oren Kest; no woodcutting pending Q15) | 32 | All 1-day independent or Crown neighbours, with low spoiler risk | Footpath, causeway and timber-road routes; recognised territory edge |
 | **4. Far settlements** | Vell's Crossing (east road, Jarek Vell, apothecary row); Greywatch (via Rillford, Edric Vaul); Elderhollow (via Mosswake, Caeren Moss) | 35 | Two-day destinations and the most sensitive canon (Hollow Trade, surveys, Elira Venn) | Each route; survey notice wording |
 | **5. Regional stories** (optional) | Investigations built on existing quest objectives (read-object, visit, possess-item), for example comparing Harrowfen tallies with Bellwold's Old Grain House, or documenting Rillford cargoes for Selda Rook. All stay unresolved. | — | Matches roadmap Phase 3 / 4 | Story proposals go to Codex review first |
 
@@ -487,6 +521,45 @@ Each phase stands on its own: a valid graph, every room reachable, a `packVersio
 
 The Road Through Old Ground and the south road's destination aren't scheduled. They wait on Q4 and Q10.
 
+**Phase 3 (2026-11-01, on `content/bellwold-phase-3`, awaiting review):**
+
+- *Revised in Phase 3:* Orraveth's `movementStaminaCost` is two for ordinary
+  movement and road steps, including party travel. Five remains the default for
+  other packs. Replay preserves each event's recorded debit
+  ([ADR 0044](../../adr/0044-world-specific-movement-stamina-costs.md)).
+
+- **Mosswake:** four causeway segments, five settlement rooms and three Lower Rill
+  reaches add 12 rooms (110 total). The existing Far Bank Track is the causeway
+  junction; every existing road keeps its ordered room list. Tavin Reed and an
+  unnamed herbalist offer local perspectives. The dredging notice remains a
+  proposal, the fish decline has no assigned cause, and the territory edge has no
+  exit into sprite territory. No Elderhollow path is opened.
+- **Thornmere:** four woodland path segments and five settlement rooms add nine
+  rooms (119 total). The path begins at Church Approach and uses the proposed
+  5% bank-badger/roadside-deer pool. Nessa Valeen discusses agreements and their
+  limits. The settlement is independent, the route group is non-primary, and no
+  bridge response or healer interaction is authored.
+- **Ashcombe:** six timber-road segments and five settlement rooms add 11 rooms
+  (130 total). The new road starts at Westbound Track and uses the proposed 10%
+  bank-badger/stray-hound/roadside-deer pool. Oren Kest and an unnamed cartwright
+  give differing local perspectives without resolving the concessions or oak
+  reports. No woodcutting is added. Ashcombe is a primary Heskar settlement; its
+  route group is non-primary. The final commit bumps `packVersion` to 1.21.0.
+- Each town passes the pack and Orraveth engine integration suites before its
+  commit; engine tests step every new road outward and back, checking arrival
+  locations and committed `roadTravel.roadId`. Shared guards cover reachability,
+  coordinate uniqueness, cardinal directions, primary memberships and concealed
+  canon. The existing web suite is also run per town. An intermittent existing
+  Willowrest keyboard-navigation test required a reduced-worker retry; its
+  assertions and client code are unchanged.
+- *Revised in Phase 3:* `main` now contains ADR 0042's migration. Layout is authored
+  in JSON and content in TypeScript. Orraveth's temporary pre-migration fixture
+  and equality test are retired as the ADR directs after merge; permanent schema
+  and placeholder tests remain. The demo fixture is unchanged.
+- The [Phase 3 Codex follow-ups](phase-3-codex-followups.md) are drafts awaiting
+  Codex review. No Codex article is changed, and the Phase 2 follow-up stays out
+  of scope.
+
 ---
 
 ## 7. Open questions
@@ -494,21 +567,21 @@ The Road Through Old Ground and the south road's destination aren't scheduled. T
 Each is a place where the Codex is silent or contradicts itself, or a design call that needs an owner.
 
 1. **Is the bridged river the Lower Rill? Decided 2026-10-31: yes.** `regions/bellwold.md` and `culture/trade-transport.md` used to call it "unnamed", while `regions/lower-rill.md` said the Lower Rill passes near Bellwold. Both entries now name the Lower Rill, and Phase 2 renamed "Bellwold River" in the world data.
-2. **Which way does the Lower Rill flow, and where does it go?** The Codex doesn't say, and the name "Lower" hints at an upper course. Its link to Mosswake's channels and the Rillward Freeholds is unresolved ([lower-rill.md][lower-rill]). This spec names reaches after landmarks, not as upstream or downstream, and stops the river at `lower-rill-west-of-rillford`.
+2. **Which way does the Lower Rill flow, and where does it go?** The Codex doesn't say, and the name "Lower" hints at an upper course. Its link to Mosswake's channels and the Rillward Freeholds is unresolved ([lower-rill.md][lower-rill]). This spec names reaches after landmarks, not as upstream or downstream, and stops the river at `lower-rill-west-of-rillford`. *Revised in Phase 3:* the eastern local adjacency reaches Mosswake's channel and open water as a gameplay proposal awaiting Codex review; neither flow direction nor the wider river connection is established.
 3. **What feeds the watermill?** The mill is north of town (1,1); the river is south (y −7). Rell Soven mentions the mill's channel running low ([rell-soven.md][rell]). Don't settle this in an expansion: it touches the Mill That Never Sleeps.
 4. **Where does the unfinished south road go?** The Codex says its end gives "no basis for assuming a destination". One possibility is that it's early work on the Crown's proposed road, but that would turn a proposal into construction and needs Codex approval. *Recommendation:* leave it unfinished.
 5. **Travel scale. Decided 2026-10-31:** one travel day is about 8 road steps (§3.1).
 6. **Do trade links mean roads?** The Codex says no. Every road here is a proposal; a direct Harrowfen–Rillford track (Harrowfen trades through Rillford) is left out.
 7. **Ferry fares and passage rights. Decided 2026-10-31: the crossing waits for engine work.** The Codex sets no tolls, schedules or fares, and the engine has no paid-passage capability. A free ford would undercut Rillford's ferry trade, so the ferry stage reaches only the north quay. The south bank is reached by the mile road.
 8. **Names for inns and role NPCs.** The Codex mentions Rillford's inns and Vell's Crossing's merchants but names none. Who approves new names? *Phase 2 uses a descriptive placeholder, "Quayside Inn", and unnamed role NPCs until this is settled.*
-9. **Thornmere's healer.** The person is unnamed and their case is unresolved. Should they appear in-world at all yet?
+9. **Thornmere's healer.** The person is unnamed and their case is unresolved. Should they appear in-world at all yet? *Revised in Phase 3:* the healer stays offstage; the porch is accessible scenery and Nessa reports no settled decision.
 10. **The Road Through Old Ground.** Is showing survey stakes and a notice on the existing east track acceptable, or is even that too strong a claim?
 11. **Rillford's size versus Vell's Crossing.** Rillford is "the largest established civilian settlement in the immediate region" (~620) but Vell's Crossing has ~850, and Bellwold's page calls both larger. This probably means Vell's Crossing (1½ days away) isn't "immediate". Worth clarifying in the Codex.
 12. **Greywatch's route.** "Farther southwest, two days" doesn't say whether the way runs through Rillford. This spec routes it through Rillford.
 13. **Elderhollow and outsiders.** Residents disagree about sharing with outsiders ([elderhollow.md][elderhollow]). Should the path be open by default (as proposed), or reached through an introduction such as a `requiredVisitedLocationId` or a quest gate?
 14. **Mosswake's sprite territories.** No map exists. This spec places one edge room and no entry; family recognition varies.
-15. **Ashcombe woodcutting.** Is any in-game cutting acceptable while the concession dispute is open, or should Ashcombe start with none?
-16. **Lake and marsh terrain.** `marsh` and `lake` would be new slugs. Only `river` gets the water colour and legend entry. Should lakes reuse `river` terrain, or should the client gain a water category?
+15. **Ashcombe woodcutting.** Is any in-game cutting acceptable while the concession dispute is open, or should Ashcombe start with none? *Revised in Phase 3:* no Ashcombe or timber-road woodcutting is authored. The existing Bellwold pine is unchanged; this does not settle the broader question.
+16. **Lake and marsh terrain.** `marsh` and `lake` would be new slugs. Only `river` gets the water colour and legend entry. Should lakes reuse `river` terrain, or should the client gain a water category? *Revised in Phase 3:* use `marsh` with land colour `#74865a` and no rule effect; Thornmere's lake reuses `river`. A broader water category remains open; no client change is made.
 17. **Uncatalogued content.** The church, library, museum, jail and other rooms aren't in the Codex. Should they get Codex entries before more lore attaches to them?
 18. **Codex upkeep.** `regions/bellwold.md` repeats its paragraph about gold. That's minor, but it's worth fixing in the same Codex pass.
 

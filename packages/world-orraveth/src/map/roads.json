@@ -85,6 +85,44 @@
         "rillford-south-lane",
         "rillford-south-landing"
       ]
+    },
+    {
+      "id": "mosswake-causeway",
+      "name": "Mosswake Causeway",
+      "locationIds": [
+        "bellwold-far-bank-track",
+        "mosswake-causeway-reedbank",
+        "mosswake-causeway-plank-run",
+        "mosswake-causeway-mud-flats",
+        "mosswake-causeway-sedge",
+        "mosswake-landing"
+      ]
+    },
+    {
+      "id": "thornmere-path",
+      "name": "Thornmere Path",
+      "locationIds": [
+        "bellwold-church-approach",
+        "thornmere-path-church-field",
+        "thornmere-path-birch-run",
+        "thornmere-path-brook",
+        "thornmere-path-lake-glimpse",
+        "thornmere-lakeshore"
+      ]
+    },
+    {
+      "id": "ashcombe-timber-road",
+      "name": "Ashcombe Timber Road",
+      "locationIds": [
+        "bellwold-westbound-track",
+        "timber-road-cutbank",
+        "timber-road-hauling-track",
+        "timber-road-rise",
+        "timber-road-kiln-wind",
+        "timber-road-stand-edge",
+        "timber-road-skid-trail",
+        "ashcombe-timber-yard"
+      ]
     }
   ]
 }

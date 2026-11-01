@@ -28,6 +28,54 @@ function firstExitOf(worldPack = world()) {
 }
 
 describe('createMovementPlan', () => {
+  it('uses a world-specific cost and allows travel with exactly that much stamina', () => {
+    const { world: pack, exit } = firstExitOf();
+    pack.movementStaminaCost = 2;
+    const base = character();
+    const traveler = character({
+      resources: { ...base.resources, stamina: { ...base.resources.stamina, current: 2 } },
+      staminaRecovery: { ...base.staminaRecovery, lastSettledAt: now.toISOString() },
+    });
+    expect(createMovementPlan(pack, traveler, exit.id, true, now).events.at(-1)?.payload).toMatchObject({ movementCost: 2 });
+    traveler.resources.stamina.current = 1;
+    expect(() => createMovementPlan(pack, traveler, exit.id, true, now)).toThrow('You need 2 stamina to travel; you have 1.');
+  });
+
+  it('rejects water independently of map colour and terrain, including road-authorised moves', () => {
+    const { world: pack, exit } = firstExitOf();
+    const destination = pack.locations.find(({ id }) => id === exit.toLocationId);
+    if (!destination) throw new Error('Missing destination fixture.');
+    destination.mapPosition = { x: 1, y: 0, terrain: 'land' };
+    destination.requiresWaterTravel = true;
+    expect(() => createMovementPlan(pack, character(), exit.id, true, now)).toThrow('You need to swim or use a boat.');
+    delete destination.requiresWaterTravel;
+    destination.mapPosition.terrain = 'river';
+    expect(() => createMovementPlan(pack, character(), exit.id, true, now)).not.toThrow();
+  });
+
+  it('allows dry crossing states to override a water location and blocks a water state on dry terrain', () => {
+    const { world: pack, exit } = firstExitOf();
+    const destination = pack.locations.find(({ id }) => id === exit.toLocationId);
+    if (!destination) throw new Error('Missing crossing fixture.');
+    destination.requiresWaterTravel = true;
+    destination.defaultStateId = 'stage';
+    destination.states = [{ id: 'stage', requiresWaterTravel: false }, { id: 'water' }];
+    expect(() => createMovementPlan(pack, character(), exit.id, true, now)).not.toThrow();
+    exit.toStateId = 'water';
+    expect(() => createMovementPlan(pack, character(), exit.id, true, now)).toThrow('open water');
+    destination.requiresWaterTravel = false;
+    destination.states[1] = { id: 'water', requiresWaterTravel: true };
+    expect(() => createMovementPlan(pack, character(), exit.id, true, now)).toThrow('open water');
+  });
+
+  it('allows a character already in water to return directly to a dry destination', () => {
+    const { world: pack, exit } = firstExitOf();
+    const source = pack.locations.find(({ id }) => id === roomId);
+    if (!source) throw new Error('Missing source fixture.');
+    source.requiresWaterTravel = true;
+    expect(() => createMovementPlan(pack, character(), exit.id, true, now)).not.toThrow();
+  });
+
   it('plans a valid move and emits location-entry effects', () => {
     const { world: pack, exit } = firstExitOf();
     const plan = createMovementPlan(pack, character(), exit.id, true, now);

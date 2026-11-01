@@ -263,10 +263,222 @@
         {
           "locationId": "rillford-crossing",
           "isPrimary": false
+        },
+        {
+          "locationId": "lower-rill-sedge-reach",
+          "isPrimary": true
+        },
+        {
+          "locationId": "mosswake-channel",
+          "isPrimary": true
+        },
+        {
+          "locationId": "mosswake-open-water",
+          "isPrimary": true
         }
       ],
       "metadata": {
         "codexId": "orraveth-lower-rill"
+      }
+    },
+    {
+      "id": "mosswake",
+      "name": "Mosswake",
+      "type": "settlement",
+      "description": "An independent community of raised platforms, boat sheds and wetland paths.",
+      "memberships": [
+        {
+          "locationId": "mosswake-landing",
+          "isPrimary": true
+        },
+        {
+          "locationId": "mosswake-boat-sheds",
+          "isPrimary": true
+        },
+        {
+          "locationId": "mosswake-herb-platform",
+          "isPrimary": true
+        },
+        {
+          "locationId": "mosswake-territory-edge",
+          "isPrimary": true
+        },
+        {
+          "locationId": "mosswake-south-platforms",
+          "isPrimary": true
+        }
+      ],
+      "metadata": {
+        "codexId": "orraveth-mosswake",
+        "politicalStatus": "independent"
+      }
+    },
+    {
+      "id": "mosswake-causeway-route",
+      "name": "Mosswake Causeway",
+      "type": "route",
+      "description": "A raised path kept by the people who use the wetland crossing.",
+      "memberships": [
+        {
+          "locationId": "bellwold-far-bank-track",
+          "isPrimary": false
+        },
+        {
+          "locationId": "mosswake-causeway-reedbank",
+          "isPrimary": false
+        },
+        {
+          "locationId": "mosswake-causeway-plank-run",
+          "isPrimary": false
+        },
+        {
+          "locationId": "mosswake-causeway-mud-flats",
+          "isPrimary": false
+        },
+        {
+          "locationId": "mosswake-causeway-sedge",
+          "isPrimary": false
+        },
+        {
+          "locationId": "mosswake-landing",
+          "isPrimary": false
+        }
+      ]
+    },
+    {
+      "id": "thornmere-path-route",
+      "name": "Thornmere Path",
+      "type": "route",
+      "description": "A woodland footpath maintained by the people who use it, between Church Approach and Thornmere.",
+      "memberships": [
+        {
+          "locationId": "bellwold-church-approach",
+          "isPrimary": false
+        },
+        {
+          "locationId": "thornmere-path-church-field",
+          "isPrimary": false
+        },
+        {
+          "locationId": "thornmere-path-birch-run",
+          "isPrimary": false
+        },
+        {
+          "locationId": "thornmere-path-brook",
+          "isPrimary": false
+        },
+        {
+          "locationId": "thornmere-path-lake-glimpse",
+          "isPrimary": false
+        },
+        {
+          "locationId": "thornmere-lakeshore",
+          "isPrimary": false
+        }
+      ]
+    },
+    {
+      "id": "thornmere",
+      "name": "Thornmere",
+      "type": "settlement",
+      "description": "An independent woodland community beside a shallow lake, with an independent council and varied local agreements.",
+      "memberships": [
+        {
+          "locationId": "thornmere-lakeshore",
+          "isPrimary": true
+        },
+        {
+          "locationId": "thornmere-council-house",
+          "isPrimary": true
+        },
+        {
+          "locationId": "thornmere-shared-bridge",
+          "isPrimary": true
+        },
+        {
+          "locationId": "thornmere-healer-house",
+          "isPrimary": true
+        },
+        {
+          "locationId": "thornmere-lake",
+          "isPrimary": true
+        }
+      ],
+      "metadata": {
+        "codexId": "orraveth-thornmere",
+        "politicalStatus": "independent"
+      }
+    },
+    {
+      "id": "ashcombe-timber-road-route",
+      "name": "Ashcombe Timber Road",
+      "type": "route",
+      "description": "The ordered locations along Ashcombe Timber Road.",
+      "memberships": [
+        {
+          "locationId": "bellwold-westbound-track",
+          "isPrimary": false
+        },
+        {
+          "locationId": "timber-road-cutbank",
+          "isPrimary": false
+        },
+        {
+          "locationId": "timber-road-hauling-track",
+          "isPrimary": false
+        },
+        {
+          "locationId": "timber-road-rise",
+          "isPrimary": false
+        },
+        {
+          "locationId": "timber-road-kiln-wind",
+          "isPrimary": false
+        },
+        {
+          "locationId": "timber-road-stand-edge",
+          "isPrimary": false
+        },
+        {
+          "locationId": "timber-road-skid-trail",
+          "isPrimary": false
+        },
+        {
+          "locationId": "ashcombe-timber-yard",
+          "isPrimary": false
+        }
+      ]
+    },
+    {
+      "id": "ashcombe",
+      "name": "Ashcombe",
+      "type": "settlement",
+      "description": "A Heskar timber settlement of yards, kilns and workshops, with disputed concessions beyond them.",
+      "memberships": [
+        {
+          "locationId": "ashcombe-timber-yard",
+          "isPrimary": true
+        },
+        {
+          "locationId": "ashcombe-charcoal-kilns",
+          "isPrimary": true
+        },
+        {
+          "locationId": "ashcombe-kest-workshop",
+          "isPrimary": true
+        },
+        {
+          "locationId": "ashcombe-cart-yard",
+          "isPrimary": true
+        },
+        {
+          "locationId": "ashcombe-felled-oak-clearing",
+          "isPrimary": true
+        }
+      ],
+      "metadata": {
+        "codexId": "orraveth-ashcombe",
+        "politicalStatus": "crown-of-heskar"
       }
     }
   ]

@@ -98,7 +98,7 @@
     {
       "id": "bellwold-westbound-track",
       "name": "Westbound Track",
-      "description": "The packed-earth road follows low hedgerows beyond Bellwold’s western fields. The West Gate is east; the rough road end is west.",
+      "description": "The packed-earth road follows low hedgerows beyond Bellwold’s western fields. The West Gate is east and the rough road verge west. Deep wheel ruts turn north between cut banks.",
       "mapPosition": {
         "x": -3,
         "y": 0,
@@ -120,6 +120,14 @@
           "label": "west",
           "direction": "west",
           "roadId": "bellwold-west-road"
+        },
+        {
+          "id": "bellwold-westbound-track-to-timber-road-cutbank",
+          "fromLocationId": "bellwold-westbound-track",
+          "toLocationId": "timber-road-cutbank",
+          "label": "north to Timber Road Cut Bank",
+          "direction": "north",
+          "roadId": "ashcombe-timber-road"
         }
       ]
     },
@@ -1276,7 +1284,7 @@
     {
       "id": "bellwold-river-far-east-reach",
       "name": "Far East Reach",
-      "description": "The eastern current continues past the last visible bank and around a long bend. Alder Reach is west.",
+      "description": "The water curves around an alder-lined bank. Alder Reach lies west; tall sedge marks another bend to the east.",
       "mapPosition": {
         "x": 3,
         "y": -7,
@@ -1290,6 +1298,13 @@
           "toLocationId": "bellwold-river-alder-reach",
           "label": "west along the river",
           "direction": "west"
+        },
+        {
+          "id": "bellwold-river-far-east-reach-to-lower-rill-sedge-reach",
+          "fromLocationId": "bellwold-river-far-east-reach",
+          "toLocationId": "lower-rill-sedge-reach",
+          "label": "east to Sedge Reach",
+          "direction": "east"
         }
       ]
     },
@@ -1825,7 +1840,7 @@
     {
       "id": "bellwold-far-bank-track",
       "name": "Far Bank Track",
-      "description": "The road climbs away from the bridge onto firmer ground. Lower Rill Bridge is north; the old mile marker is south.",
+      "description": "The road climbs away from the bridge onto firmer ground. Lower Rill Bridge is north and the old mile marker south. A raised causeway threads east between reed beds.",
       "mapPosition": {
         "x": 0,
         "y": -8,
@@ -1848,6 +1863,14 @@
           "label": "south",
           "direction": "south",
           "roadId": "bellwold-south-road"
+        },
+        {
+          "id": "bellwold-far-bank-track-to-mosswake-causeway-reedbank",
+          "fromLocationId": "bellwold-far-bank-track",
+          "toLocationId": "mosswake-causeway-reedbank",
+          "label": "east to Reedbank Causeway",
+          "direction": "east",
+          "roadId": "mosswake-causeway"
         }
       ]
     },
@@ -2165,7 +2188,7 @@
     {
       "id": "bellwold-church-approach",
       "name": "Church Approach",
-      "description": "The track opens into bare ground before a dark timber doorway. Wind pushes dry leaves across the clearing; the entrance is north and the road returns south.",
+      "description": "The track opens into bare ground before a dark timber doorway. Wind pushes dry leaves across the clearing; the entrance is north, the road returns south, and a footpath crosses the field east.",
       "mapPosition": {
         "x": 3,
         "y": 3,
@@ -2186,6 +2209,14 @@
           "toLocationId": "bellwold-abandoned-church",
           "label": "north into the church",
           "direction": "north"
+        },
+        {
+          "id": "bellwold-church-approach-to-thornmere-path-church-field",
+          "fromLocationId": "bellwold-church-approach",
+          "toLocationId": "thornmere-path-church-field",
+          "label": "east to Church Field Path",
+          "direction": "east",
+          "roadId": "thornmere-path"
         }
       ]
     },
@@ -2773,6 +2804,907 @@
           "label": "west",
           "direction": "west",
           "roadId": "bellwold-east-mill-road"
+        }
+      ]
+    },
+    {
+      "id": "mosswake-causeway-reedbank",
+      "name": "Reedbank Causeway",
+      "description": "Packed earth rises between the reeds. The bridge road lies west; a narrow causeway continues east beside shallow pools.",
+      "mapPosition": {
+        "x": 1,
+        "y": -8,
+        "terrain": "land"
+      },
+      "exits": [
+        {
+          "id": "mosswake-causeway-reedbank-to-bellwold-far-bank-track",
+          "fromLocationId": "mosswake-causeway-reedbank",
+          "toLocationId": "bellwold-far-bank-track",
+          "label": "west to Far Bank Track",
+          "direction": "west",
+          "roadId": "mosswake-causeway"
+        },
+        {
+          "id": "mosswake-causeway-reedbank-to-mosswake-causeway-plank-run",
+          "fromLocationId": "mosswake-causeway-reedbank",
+          "toLocationId": "mosswake-causeway-plank-run",
+          "label": "east to Plank Run",
+          "direction": "east",
+          "roadId": "mosswake-causeway"
+        }
+      ]
+    },
+    {
+      "id": "mosswake-causeway-plank-run",
+      "name": "Plank Run",
+      "description": "Short planks bridge the wet hollows between patches of firm ground. Loose reed bundles lie beside the path, which runs east and west.",
+      "mapPosition": {
+        "x": 2,
+        "y": -8,
+        "terrain": "marsh",
+        "mapColor": "#74865a"
+      },
+      "exits": [
+        {
+          "id": "mosswake-causeway-plank-run-to-mosswake-causeway-reedbank",
+          "fromLocationId": "mosswake-causeway-plank-run",
+          "toLocationId": "mosswake-causeway-reedbank",
+          "label": "west to Reedbank Causeway",
+          "direction": "west",
+          "roadId": "mosswake-causeway"
+        },
+        {
+          "id": "mosswake-causeway-plank-run-to-mosswake-causeway-mud-flats",
+          "fromLocationId": "mosswake-causeway-plank-run",
+          "toLocationId": "mosswake-causeway-mud-flats",
+          "label": "east to Muddy Causeway",
+          "direction": "east",
+          "roadId": "mosswake-causeway"
+        }
+      ]
+    },
+    {
+      "id": "mosswake-causeway-mud-flats",
+      "name": "Muddy Causeway",
+      "description": "Broad cloven prints mark the pale mud beside a low bank. Reeds brush the raised path as it continues east and west.",
+      "mapPosition": {
+        "x": 3,
+        "y": -8,
+        "terrain": "marsh",
+        "mapColor": "#74865a"
+      },
+      "exits": [
+        {
+          "id": "mosswake-causeway-mud-flats-to-mosswake-causeway-plank-run",
+          "fromLocationId": "mosswake-causeway-mud-flats",
+          "toLocationId": "mosswake-causeway-plank-run",
+          "label": "west to Plank Run",
+          "direction": "west",
+          "roadId": "mosswake-causeway"
+        },
+        {
+          "id": "mosswake-causeway-mud-flats-to-mosswake-causeway-sedge",
+          "fromLocationId": "mosswake-causeway-mud-flats",
+          "toLocationId": "mosswake-causeway-sedge",
+          "label": "east to Sedge Causeway",
+          "direction": "east",
+          "roadId": "mosswake-causeway"
+        }
+      ]
+    },
+    {
+      "id": "mosswake-causeway-sedge",
+      "name": "Sedge Causeway",
+      "description": "Sedge crowds both sides of the causeway. Raised roofs and a timber landing show through the stems to the east; the plank run returns west.",
+      "mapPosition": {
+        "x": 4,
+        "y": -8,
+        "terrain": "marsh",
+        "mapColor": "#74865a"
+      },
+      "exits": [
+        {
+          "id": "mosswake-causeway-sedge-to-mosswake-causeway-mud-flats",
+          "fromLocationId": "mosswake-causeway-sedge",
+          "toLocationId": "mosswake-causeway-mud-flats",
+          "label": "west to Muddy Causeway",
+          "direction": "west",
+          "roadId": "mosswake-causeway"
+        },
+        {
+          "id": "mosswake-causeway-sedge-to-mosswake-landing",
+          "fromLocationId": "mosswake-causeway-sedge",
+          "toLocationId": "mosswake-landing",
+          "label": "east to Landing",
+          "direction": "east",
+          "roadId": "mosswake-causeway"
+        }
+      ]
+    },
+    {
+      "id": "mosswake-landing",
+      "name": "Landing",
+      "description": "Wet posts ring a low landing beside a narrow channel to the north. A few small fish lie in a shallow basket. The causeway runs west, a roofed platform stands east, and boat sheds open south.",
+      "mapPosition": {
+        "x": 5,
+        "y": -8,
+        "terrain": "marsh",
+        "mapColor": "#74865a"
+      },
+      "exits": [
+        {
+          "id": "mosswake-landing-to-mosswake-causeway-sedge",
+          "fromLocationId": "mosswake-landing",
+          "toLocationId": "mosswake-causeway-sedge",
+          "label": "west to Sedge Causeway",
+          "direction": "west",
+          "roadId": "mosswake-causeway"
+        },
+        {
+          "id": "mosswake-landing-to-mosswake-boat-sheds",
+          "fromLocationId": "mosswake-landing",
+          "toLocationId": "mosswake-boat-sheds",
+          "label": "south to Boat Sheds",
+          "direction": "south"
+        },
+        {
+          "id": "mosswake-landing-to-mosswake-herb-platform",
+          "fromLocationId": "mosswake-landing",
+          "toLocationId": "mosswake-herb-platform",
+          "label": "east to Herb Platform",
+          "direction": "east"
+        },
+        {
+          "id": "mosswake-landing-to-mosswake-channel",
+          "fromLocationId": "mosswake-landing",
+          "toLocationId": "mosswake-channel",
+          "label": "north to Mosswake Channel",
+          "direction": "north"
+        }
+      ]
+    },
+    {
+      "id": "mosswake-boat-sheds",
+      "name": "Boat Sheds",
+      "description": "A shallow hull rests on wooden blocks beneath a reed roof. Pale curls of wood gather along its edge; the landing is north and planks lead east.",
+      "mapPosition": {
+        "x": 5,
+        "y": -9,
+        "terrain": "building"
+      },
+      "exits": [
+        {
+          "id": "mosswake-boat-sheds-to-mosswake-landing",
+          "fromLocationId": "mosswake-boat-sheds",
+          "toLocationId": "mosswake-landing",
+          "label": "north to Landing",
+          "direction": "north"
+        },
+        {
+          "id": "mosswake-boat-sheds-to-mosswake-south-platforms",
+          "fromLocationId": "mosswake-boat-sheds",
+          "toLocationId": "mosswake-south-platforms",
+          "label": "east to South Platforms",
+          "direction": "east"
+        }
+      ]
+    },
+    {
+      "id": "mosswake-herb-platform",
+      "name": "Herb Platform",
+      "description": "Bundles of narrow leaves hang beneath the eaves, giving off a sharp green scent. Planks lead west to the landing, east toward the reeds, and south between raised houses.",
+      "mapPosition": {
+        "x": 6,
+        "y": -8,
+        "terrain": "building"
+      },
+      "exits": [
+        {
+          "id": "mosswake-herb-platform-to-mosswake-landing",
+          "fromLocationId": "mosswake-herb-platform",
+          "toLocationId": "mosswake-landing",
+          "label": "west to Landing",
+          "direction": "west"
+        },
+        {
+          "id": "mosswake-herb-platform-to-mosswake-south-platforms",
+          "fromLocationId": "mosswake-herb-platform",
+          "toLocationId": "mosswake-south-platforms",
+          "label": "south to South Platforms",
+          "direction": "south"
+        },
+        {
+          "id": "mosswake-herb-platform-to-mosswake-territory-edge",
+          "fromLocationId": "mosswake-herb-platform",
+          "toLocationId": "mosswake-territory-edge",
+          "label": "east to Territory Edge",
+          "direction": "east"
+        }
+      ]
+    },
+    {
+      "id": "mosswake-territory-edge",
+      "name": "Territory Edge",
+      "description": "The planks end against a fringe of tall reeds. Dark water glints beyond them, with no marked passage across it. The only path returns west.",
+      "mapPosition": {
+        "x": 7,
+        "y": -8,
+        "terrain": "marsh",
+        "mapColor": "#74865a"
+      },
+      "exits": [
+        {
+          "id": "mosswake-territory-edge-to-mosswake-herb-platform",
+          "fromLocationId": "mosswake-territory-edge",
+          "toLocationId": "mosswake-herb-platform",
+          "label": "west to Herb Platform",
+          "direction": "west"
+        }
+      ]
+    },
+    {
+      "id": "mosswake-south-platforms",
+      "name": "South Platforms",
+      "description": "Raised boards pass between homes above patches of standing water. The herb platform is north and the boat sheds west; reeds close around the boards to the south.",
+      "mapPosition": {
+        "x": 6,
+        "y": -9,
+        "terrain": "marsh",
+        "mapColor": "#74865a"
+      },
+      "exits": [
+        {
+          "id": "mosswake-south-platforms-to-mosswake-boat-sheds",
+          "fromLocationId": "mosswake-south-platforms",
+          "toLocationId": "mosswake-boat-sheds",
+          "label": "west to Boat Sheds",
+          "direction": "west"
+        },
+        {
+          "id": "mosswake-south-platforms-to-mosswake-herb-platform",
+          "fromLocationId": "mosswake-south-platforms",
+          "toLocationId": "mosswake-herb-platform",
+          "label": "north to Herb Platform",
+          "direction": "north"
+        }
+      ]
+    },
+    {
+      "id": "lower-rill-sedge-reach",
+      "name": "Sedge Reach",
+      "description": "Tall sedge leans over the water. The river bends west toward the alder-lined reaches; a narrow channel opens east between raised platforms.",
+      "mapPosition": {
+        "x": 4,
+        "y": -7,
+        "terrain": "river",
+        "visibleWhenUnvisited": true
+      },
+      "exits": [
+        {
+          "id": "lower-rill-sedge-reach-to-bellwold-river-far-east-reach",
+          "fromLocationId": "lower-rill-sedge-reach",
+          "toLocationId": "bellwold-river-far-east-reach",
+          "label": "west to Far East Reach",
+          "direction": "west"
+        },
+        {
+          "id": "lower-rill-sedge-reach-to-mosswake-channel",
+          "fromLocationId": "lower-rill-sedge-reach",
+          "toLocationId": "mosswake-channel",
+          "label": "east to Mosswake Channel",
+          "direction": "east"
+        }
+      ]
+    },
+    {
+      "id": "mosswake-channel",
+      "name": "Mosswake Channel",
+      "description": "Low hulls lie beside timber posts on the southern bank. Water runs between sedge to the west and spreads east beside the platforms; the landing is south.",
+      "mapPosition": {
+        "x": 5,
+        "y": -7,
+        "terrain": "river",
+        "visibleWhenUnvisited": true
+      },
+      "exits": [
+        {
+          "id": "mosswake-channel-to-lower-rill-sedge-reach",
+          "fromLocationId": "mosswake-channel",
+          "toLocationId": "lower-rill-sedge-reach",
+          "label": "west to Sedge Reach",
+          "direction": "west"
+        },
+        {
+          "id": "mosswake-channel-to-mosswake-open-water",
+          "fromLocationId": "mosswake-channel",
+          "toLocationId": "mosswake-open-water",
+          "label": "east to Mosswake Open Water",
+          "direction": "east"
+        },
+        {
+          "id": "mosswake-channel-to-mosswake-landing",
+          "fromLocationId": "mosswake-channel",
+          "toLocationId": "mosswake-landing",
+          "label": "south to Landing",
+          "direction": "south"
+        }
+      ]
+    },
+    {
+      "id": "mosswake-open-water",
+      "name": "Mosswake Open Water",
+      "description": "A broad patch of water catches the light between the platforms and reed beds. A notice is tied to a post. The channel returns west; reeds hem the other sides.",
+      "mapPosition": {
+        "x": 6,
+        "y": -7,
+        "terrain": "river",
+        "visibleWhenUnvisited": true
+      },
+      "exits": [
+        {
+          "id": "mosswake-open-water-to-mosswake-channel",
+          "fromLocationId": "mosswake-open-water",
+          "toLocationId": "mosswake-channel",
+          "label": "west to Mosswake Channel",
+          "direction": "west"
+        }
+      ]
+    },
+    {
+      "id": "thornmere-path-church-field",
+      "name": "Church Field Path",
+      "description": "A narrow footpath crosses the grass east of the church. The clearing lies west; pale birches stand along the path to the north.",
+      "mapPosition": {
+        "x": 4,
+        "y": 3,
+        "terrain": "land"
+      },
+      "exits": [
+        {
+          "id": "thornmere-path-church-field-to-bellwold-church-approach",
+          "fromLocationId": "thornmere-path-church-field",
+          "toLocationId": "bellwold-church-approach",
+          "label": "west to Church Approach",
+          "direction": "west",
+          "roadId": "thornmere-path"
+        },
+        {
+          "id": "thornmere-path-church-field-to-thornmere-path-birch-run",
+          "fromLocationId": "thornmere-path-church-field",
+          "toLocationId": "thornmere-path-birch-run",
+          "label": "north to Birch Run",
+          "direction": "north",
+          "roadId": "thornmere-path"
+        }
+      ]
+    },
+    {
+      "id": "thornmere-path-birch-run",
+      "name": "Birch Run",
+      "description": "White bark catches the light beside a worn strip of earth. The path turns east between the trunks and south toward the open field.",
+      "mapPosition": {
+        "x": 4,
+        "y": 4,
+        "terrain": "land"
+      },
+      "exits": [
+        {
+          "id": "thornmere-path-birch-run-to-thornmere-path-church-field",
+          "fromLocationId": "thornmere-path-birch-run",
+          "toLocationId": "thornmere-path-church-field",
+          "label": "south to Church Field Path",
+          "direction": "south",
+          "roadId": "thornmere-path"
+        },
+        {
+          "id": "thornmere-path-birch-run-to-thornmere-path-brook",
+          "fromLocationId": "thornmere-path-birch-run",
+          "toLocationId": "thornmere-path-brook",
+          "label": "east to Brook Path",
+          "direction": "east",
+          "roadId": "thornmere-path"
+        }
+      ]
+    },
+    {
+      "id": "thornmere-path-brook",
+      "name": "Brook Path",
+      "description": "Water trickles through a shallow cut beside the path. Pale claw marks score a dry rise above it; the path bends north and west.",
+      "mapPosition": {
+        "x": 5,
+        "y": 4,
+        "terrain": "land"
+      },
+      "exits": [
+        {
+          "id": "thornmere-path-brook-to-thornmere-path-birch-run",
+          "fromLocationId": "thornmere-path-brook",
+          "toLocationId": "thornmere-path-birch-run",
+          "label": "west to Birch Run",
+          "direction": "west",
+          "roadId": "thornmere-path"
+        },
+        {
+          "id": "thornmere-path-brook-to-thornmere-path-lake-glimpse",
+          "fromLocationId": "thornmere-path-brook",
+          "toLocationId": "thornmere-path-lake-glimpse",
+          "label": "north to Lake Glimpse",
+          "direction": "north",
+          "roadId": "thornmere-path"
+        }
+      ]
+    },
+    {
+      "id": "thornmere-path-lake-glimpse",
+      "name": "Lake Glimpse",
+      "description": "A pale stretch of water shows through the branches to the east. The path opens toward its shore and returns south beside the brook.",
+      "mapPosition": {
+        "x": 5,
+        "y": 5,
+        "terrain": "land"
+      },
+      "exits": [
+        {
+          "id": "thornmere-path-lake-glimpse-to-thornmere-path-brook",
+          "fromLocationId": "thornmere-path-lake-glimpse",
+          "toLocationId": "thornmere-path-brook",
+          "label": "south to Brook Path",
+          "direction": "south",
+          "roadId": "thornmere-path"
+        },
+        {
+          "id": "thornmere-path-lake-glimpse-to-thornmere-lakeshore",
+          "fromLocationId": "thornmere-path-lake-glimpse",
+          "toLocationId": "thornmere-lakeshore",
+          "label": "east to Lakeshore",
+          "direction": "east",
+          "roadId": "thornmere-path"
+        }
+      ]
+    },
+    {
+      "id": "thornmere-lakeshore",
+      "name": "Lakeshore",
+      "description": "Small ripples cross a shallow lake beside low roofs. The woodland path runs west, a wide doorway stands north, and a small bridge reaches east over the water.",
+      "mapPosition": {
+        "x": 6,
+        "y": 5,
+        "terrain": "land"
+      },
+      "exits": [
+        {
+          "id": "thornmere-lakeshore-to-thornmere-path-lake-glimpse",
+          "fromLocationId": "thornmere-lakeshore",
+          "toLocationId": "thornmere-path-lake-glimpse",
+          "label": "west to Lake Glimpse",
+          "direction": "west",
+          "roadId": "thornmere-path"
+        },
+        {
+          "id": "thornmere-lakeshore-to-thornmere-council-house",
+          "fromLocationId": "thornmere-lakeshore",
+          "toLocationId": "thornmere-council-house",
+          "label": "north to Council House",
+          "direction": "north"
+        },
+        {
+          "id": "thornmere-lakeshore-to-thornmere-shared-bridge",
+          "fromLocationId": "thornmere-lakeshore",
+          "toLocationId": "thornmere-shared-bridge",
+          "label": "east to Shared Bridge",
+          "direction": "east"
+        }
+      ]
+    },
+    {
+      "id": "thornmere-council-house",
+      "name": "Council House",
+      "description": "Chairs form an uneven circle beneath open rafters. The lakeshore is south; a covered passage leads east toward a closed door.",
+      "mapPosition": {
+        "x": 6,
+        "y": 6,
+        "terrain": "building"
+      },
+      "exits": [
+        {
+          "id": "thornmere-council-house-to-thornmere-lakeshore",
+          "fromLocationId": "thornmere-council-house",
+          "toLocationId": "thornmere-lakeshore",
+          "label": "south to Lakeshore",
+          "direction": "south"
+        },
+        {
+          "id": "thornmere-council-house-to-thornmere-healer-house",
+          "fromLocationId": "thornmere-council-house",
+          "toLocationId": "thornmere-healer-house",
+          "label": "east to Healer House",
+          "direction": "east"
+        }
+      ]
+    },
+    {
+      "id": "thornmere-shared-bridge",
+      "name": "Shared Bridge",
+      "description": "Smooth patches interrupt the grain of the bridge rails. Water taps softly against the supports; the lakeshore is west, a doorway north, and shallow water opens east.",
+      "mapPosition": {
+        "x": 7,
+        "y": 5,
+        "terrain": "land"
+      },
+      "exits": [
+        {
+          "id": "thornmere-shared-bridge-to-thornmere-lakeshore",
+          "fromLocationId": "thornmere-shared-bridge",
+          "toLocationId": "thornmere-lakeshore",
+          "label": "west to Lakeshore",
+          "direction": "west"
+        },
+        {
+          "id": "thornmere-shared-bridge-to-thornmere-healer-house",
+          "fromLocationId": "thornmere-shared-bridge",
+          "toLocationId": "thornmere-healer-house",
+          "label": "north to Healer House",
+          "direction": "north"
+        },
+        {
+          "id": "thornmere-shared-bridge-to-thornmere-lake",
+          "fromLocationId": "thornmere-shared-bridge",
+          "toLocationId": "thornmere-lake",
+          "label": "east to Shallow Lake",
+          "direction": "east"
+        }
+      ]
+    },
+    {
+      "id": "thornmere-healer-house",
+      "name": "Healer House",
+      "description": "A latched inner door faces a sheltered porch. The boards are quiet. A covered passage leads west and steps descend south to the bridge.",
+      "mapPosition": {
+        "x": 7,
+        "y": 6,
+        "terrain": "building"
+      },
+      "exits": [
+        {
+          "id": "thornmere-healer-house-to-thornmere-council-house",
+          "fromLocationId": "thornmere-healer-house",
+          "toLocationId": "thornmere-council-house",
+          "label": "west to Council House",
+          "direction": "west"
+        },
+        {
+          "id": "thornmere-healer-house-to-thornmere-shared-bridge",
+          "fromLocationId": "thornmere-healer-house",
+          "toLocationId": "thornmere-shared-bridge",
+          "label": "south to Shared Bridge",
+          "direction": "south"
+        }
+      ]
+    },
+    {
+      "id": "thornmere-lake",
+      "name": "Shallow Lake",
+      "description": "Pebbles show beneath the clear shallows. Ripples break against the bridge supports to the west; reeds thicken beyond the open water.",
+      "mapPosition": {
+        "x": 8,
+        "y": 5,
+        "terrain": "river",
+        "visibleWhenUnvisited": true
+      },
+      "exits": [
+        {
+          "id": "thornmere-lake-to-thornmere-shared-bridge",
+          "fromLocationId": "thornmere-lake",
+          "toLocationId": "thornmere-shared-bridge",
+          "label": "west to Shared Bridge",
+          "direction": "west"
+        }
+      ]
+    },
+    {
+      "id": "timber-road-cutbank",
+      "name": "Timber Road Cut Bank",
+      "description": "The track rises between cut banks. Heavy foreprints and pale claw scores mark a dry burrow mouth beside the northern bend; the westbound track is south.",
+      "mapPosition": {
+        "x": -3,
+        "y": 1,
+        "terrain": "land"
+      },
+      "exits": [
+        {
+          "id": "timber-road-cutbank-to-bellwold-westbound-track",
+          "fromLocationId": "timber-road-cutbank",
+          "toLocationId": "bellwold-westbound-track",
+          "label": "south to Westbound Track",
+          "direction": "south",
+          "roadId": "ashcombe-timber-road"
+        },
+        {
+          "id": "timber-road-cutbank-to-timber-road-hauling-track",
+          "fromLocationId": "timber-road-cutbank",
+          "toLocationId": "timber-road-hauling-track",
+          "label": "north to Hauling Track",
+          "direction": "north",
+          "roadId": "ashcombe-timber-road"
+        }
+      ]
+    },
+    {
+      "id": "timber-road-hauling-track",
+      "name": "Hauling Track",
+      "description": "Deep wheel ruts run beside a strip of trampled grass. The hauling track turns west; the cut bank drops away to the south.",
+      "mapPosition": {
+        "x": -3,
+        "y": 2,
+        "terrain": "dirt"
+      },
+      "exits": [
+        {
+          "id": "timber-road-hauling-track-to-timber-road-cutbank",
+          "fromLocationId": "timber-road-hauling-track",
+          "toLocationId": "timber-road-cutbank",
+          "label": "south to Timber Road Cut Bank",
+          "direction": "south",
+          "roadId": "ashcombe-timber-road"
+        },
+        {
+          "id": "timber-road-hauling-track-to-timber-road-rise",
+          "fromLocationId": "timber-road-hauling-track",
+          "toLocationId": "timber-road-rise",
+          "label": "west to Timber Road Rise",
+          "direction": "west",
+          "roadId": "ashcombe-timber-road"
+        }
+      ]
+    },
+    {
+      "id": "timber-road-rise",
+      "name": "Timber Road Rise",
+      "description": "A low rise lifts the track above the field edge. Scraps of bark lie caught in its ruts, which continue east and west.",
+      "mapPosition": {
+        "x": -4,
+        "y": 2,
+        "terrain": "land"
+      },
+      "exits": [
+        {
+          "id": "timber-road-rise-to-timber-road-hauling-track",
+          "fromLocationId": "timber-road-rise",
+          "toLocationId": "timber-road-hauling-track",
+          "label": "east to Hauling Track",
+          "direction": "east",
+          "roadId": "ashcombe-timber-road"
+        },
+        {
+          "id": "timber-road-rise-to-timber-road-kiln-wind",
+          "fromLocationId": "timber-road-rise",
+          "toLocationId": "timber-road-kiln-wind",
+          "label": "west to Kiln Wind Track",
+          "direction": "west",
+          "roadId": "ashcombe-timber-road"
+        }
+      ]
+    },
+    {
+      "id": "timber-road-kiln-wind",
+      "name": "Kiln Wind Track",
+      "description": "A thin smell of charcoal smoke carries between the trunks. The ruts turn north toward the trees and east toward open ground.",
+      "mapPosition": {
+        "x": -5,
+        "y": 2,
+        "terrain": "dirt"
+      },
+      "exits": [
+        {
+          "id": "timber-road-kiln-wind-to-timber-road-rise",
+          "fromLocationId": "timber-road-kiln-wind",
+          "toLocationId": "timber-road-rise",
+          "label": "east to Timber Road Rise",
+          "direction": "east",
+          "roadId": "ashcombe-timber-road"
+        },
+        {
+          "id": "timber-road-kiln-wind-to-timber-road-stand-edge",
+          "fromLocationId": "timber-road-kiln-wind",
+          "toLocationId": "timber-road-stand-edge",
+          "label": "north to Stand Edge Track",
+          "direction": "north",
+          "roadId": "ashcombe-timber-road"
+        }
+      ]
+    },
+    {
+      "id": "timber-road-stand-edge",
+      "name": "Stand Edge Track",
+      "description": "Tall trunks stand close to the northern verge. The track follows their edge west and bends south beside a shallow ditch.",
+      "mapPosition": {
+        "x": -5,
+        "y": 3,
+        "terrain": "land"
+      },
+      "exits": [
+        {
+          "id": "timber-road-stand-edge-to-timber-road-kiln-wind",
+          "fromLocationId": "timber-road-stand-edge",
+          "toLocationId": "timber-road-kiln-wind",
+          "label": "south to Kiln Wind Track",
+          "direction": "south",
+          "roadId": "ashcombe-timber-road"
+        },
+        {
+          "id": "timber-road-stand-edge-to-timber-road-skid-trail",
+          "fromLocationId": "timber-road-stand-edge",
+          "toLocationId": "timber-road-skid-trail",
+          "label": "west to Skid Trail",
+          "direction": "west",
+          "roadId": "ashcombe-timber-road"
+        }
+      ]
+    },
+    {
+      "id": "timber-road-skid-trail",
+      "name": "Skid Trail",
+      "description": "Long scrape marks score the earth between wheel ruts. Timber stacks rise to the west; the track returns east along the trees.",
+      "mapPosition": {
+        "x": -6,
+        "y": 3,
+        "terrain": "dirt"
+      },
+      "exits": [
+        {
+          "id": "timber-road-skid-trail-to-timber-road-stand-edge",
+          "fromLocationId": "timber-road-skid-trail",
+          "toLocationId": "timber-road-stand-edge",
+          "label": "east to Stand Edge Track",
+          "direction": "east",
+          "roadId": "ashcombe-timber-road"
+        },
+        {
+          "id": "timber-road-skid-trail-to-ashcombe-timber-yard",
+          "fromLocationId": "timber-road-skid-trail",
+          "toLocationId": "ashcombe-timber-yard",
+          "label": "west to Timber Yard",
+          "direction": "west",
+          "roadId": "ashcombe-timber-road"
+        }
+      ]
+    },
+    {
+      "id": "ashcombe-timber-yard",
+      "name": "Timber Yard",
+      "description": "Timber lies stacked with gaps between the boards. The scent of fresh wood hangs over the yard. The road leaves east, a workshop opens west, and dark kiln mounds stand north.",
+      "mapPosition": {
+        "x": -7,
+        "y": 3,
+        "terrain": "dirt"
+      },
+      "exits": [
+        {
+          "id": "ashcombe-timber-yard-to-timber-road-skid-trail",
+          "fromLocationId": "ashcombe-timber-yard",
+          "toLocationId": "timber-road-skid-trail",
+          "label": "east to Skid Trail",
+          "direction": "east",
+          "roadId": "ashcombe-timber-road"
+        },
+        {
+          "id": "ashcombe-timber-yard-to-ashcombe-charcoal-kilns",
+          "fromLocationId": "ashcombe-timber-yard",
+          "toLocationId": "ashcombe-charcoal-kilns",
+          "label": "north to Charcoal Kilns",
+          "direction": "north"
+        },
+        {
+          "id": "ashcombe-timber-yard-to-ashcombe-kest-workshop",
+          "fromLocationId": "ashcombe-timber-yard",
+          "toLocationId": "ashcombe-kest-workshop",
+          "label": "west to Kest Workshop",
+          "direction": "west"
+        }
+      ]
+    },
+    {
+      "id": "ashcombe-charcoal-kilns",
+      "name": "Charcoal Kilns",
+      "description": "Thin smoke seeps through small openings in earth-covered mounds. A cart yard lies west, timber stacks south, and a broad stump shows beyond the grass to the north.",
+      "mapPosition": {
+        "x": -7,
+        "y": 4,
+        "terrain": "land"
+      },
+      "exits": [
+        {
+          "id": "ashcombe-charcoal-kilns-to-ashcombe-timber-yard",
+          "fromLocationId": "ashcombe-charcoal-kilns",
+          "toLocationId": "ashcombe-timber-yard",
+          "label": "south to Timber Yard",
+          "direction": "south"
+        },
+        {
+          "id": "ashcombe-charcoal-kilns-to-ashcombe-cart-yard",
+          "fromLocationId": "ashcombe-charcoal-kilns",
+          "toLocationId": "ashcombe-cart-yard",
+          "label": "west to Cart Yard",
+          "direction": "west"
+        },
+        {
+          "id": "ashcombe-charcoal-kilns-to-ashcombe-felled-oak-clearing",
+          "fromLocationId": "ashcombe-charcoal-kilns",
+          "toLocationId": "ashcombe-felled-oak-clearing",
+          "label": "north to Felled Oak Clearing",
+          "direction": "north"
+        }
+      ]
+    },
+    {
+      "id": "ashcombe-kest-workshop",
+      "name": "Kest Workshop",
+      "description": "Wooden joints and half-shaped boards cover a low bench. Shavings crunch underfoot beside the doorway; the timber yard is east and the cart yard north.",
+      "mapPosition": {
+        "x": -8,
+        "y": 3,
+        "terrain": "building"
+      },
+      "exits": [
+        {
+          "id": "ashcombe-kest-workshop-to-ashcombe-timber-yard",
+          "fromLocationId": "ashcombe-kest-workshop",
+          "toLocationId": "ashcombe-timber-yard",
+          "label": "east to Timber Yard",
+          "direction": "east"
+        },
+        {
+          "id": "ashcombe-kest-workshop-to-ashcombe-cart-yard",
+          "fromLocationId": "ashcombe-kest-workshop",
+          "toLocationId": "ashcombe-cart-yard",
+          "label": "north to Cart Yard",
+          "direction": "north"
+        }
+      ]
+    },
+    {
+      "id": "ashcombe-cart-yard",
+      "name": "Cart Yard",
+      "description": "Axles rest across trestles beside a row of wheels. A wooden mallet knocks against a rim. The workshop lies south and the kilns east.",
+      "mapPosition": {
+        "x": -8,
+        "y": 4,
+        "terrain": "dirt"
+      },
+      "exits": [
+        {
+          "id": "ashcombe-cart-yard-to-ashcombe-kest-workshop",
+          "fromLocationId": "ashcombe-cart-yard",
+          "toLocationId": "ashcombe-kest-workshop",
+          "label": "south to Kest Workshop",
+          "direction": "south"
+        },
+        {
+          "id": "ashcombe-cart-yard-to-ashcombe-charcoal-kilns",
+          "fromLocationId": "ashcombe-cart-yard",
+          "toLocationId": "ashcombe-charcoal-kilns",
+          "label": "east to Charcoal Kilns",
+          "direction": "east"
+        }
+      ]
+    },
+    {
+      "id": "ashcombe-felled-oak-clearing",
+      "name": "Felled Oak Clearing",
+      "description": "A broad oak stump fills a gap between the standing trees. Splinters fringe the pale cut face; the kiln mounds lie south beyond a strip of grass.",
+      "mapPosition": {
+        "x": -7,
+        "y": 5,
+        "terrain": "land"
+      },
+      "exits": [
+        {
+          "id": "ashcombe-felled-oak-clearing-to-ashcombe-charcoal-kilns",
+          "fromLocationId": "ashcombe-felled-oak-clearing",
+          "toLocationId": "ashcombe-charcoal-kilns",
+          "label": "south to Charcoal Kilns",
+          "direction": "south"
         }
       ]
     }

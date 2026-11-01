@@ -48,6 +48,8 @@ export const LocationStateDefinitionSchema = z.object({
   id: IdSchema,
   name: z.string().min(1).max(160).optional(),
   description: z.string().min(1).max(1000).optional(),
+  /** Override the location's water-travel requirement for this physical context. */
+  requiresWaterTravel: z.boolean().optional(),
 }).strict();
 
 export const MapTerrainSchema = z.string()
@@ -497,6 +499,8 @@ export const LocationDefinitionSchema = z.object({
   /** Independent dungeon/overworld map namespace; omitted means overworld. */
   mapAreaId: IdSchema.optional(),
   mapPosition: MapPositionSchema.optional(),
+  /** Mechanical access requirement, independent of presentation-only map terrain. */
+  requiresWaterTravel: z.boolean().optional(),
   /** Per-character context within this map node; it never changes map coordinates. */
   defaultStateId: IdSchema.optional(),
   states: z.array(LocationStateDefinitionSchema).min(1).max(16).optional(),
@@ -522,6 +526,7 @@ export const WorldPackDraftSchema = z.object({
   classCatalog: CharacterClassCatalogSchema.optional(),
   currency: WorldCurrencyDefinitionSchema.optional(),
   respawn: z.object({ locationId: IdSchema }).strict().optional(),
+  movementStaminaCost: PositiveIntSchema.max(100).optional(),
   corpseLifecycle: CorpseLifecycleRulesSchema.default({}),
   locations: z.array(LocationDefinitionSchema),
   locationGroups: z.array(LocationGroupDefinitionSchema).max(500).default([]),

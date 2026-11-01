@@ -184,7 +184,8 @@ const lowerRillFishSpecies = [
 const content = {
   formatVersion: 1,
   packId: 'orraveth.bellwold',
-  packVersion: '1.20.0',
+  packVersion: '1.21.0',
+  movementStaminaCost: 2,
   displayName: 'Orraveth: Bellwold',
   dailyBoards: [{
     id: 'bellwold-notice-board', locationId: 'bellwold-south-common', name: 'South Common bulletin board',
@@ -241,6 +242,12 @@ const content = {
     label: 'Towpath mooring posts',
     tickSeconds: 1,
     species: lowerRillFishSpecies,
+  }, {
+    id: 'mosswake-landing-fishing',
+    locationId: 'mosswake-landing',
+    label: 'Mosswake landing',
+    tickSeconds: 5,
+    species: lowerRillFishSpecies,
   }],
   classCatalog: orravethClassCatalog,
   currency: {
@@ -250,6 +257,170 @@ const content = {
     startingBalance: 0,
   },
   locationContent: {
+    'bellwold-river-west-reach': { requiresWaterTravel: true },
+    'bellwold-river-willow-reach': { requiresWaterTravel: true },
+    'bellwold-river-far-west-reach': { requiresWaterTravel: true },
+    'bellwold-river-east-reach': { requiresWaterTravel: true },
+    'bellwold-river-alder-reach': { requiresWaterTravel: true },
+    'bellwold-river-far-east-reach': { requiresWaterTravel: true },
+    'lower-rill-reed-reach': { requiresWaterTravel: true },
+    'lower-rill-towpath-reach': { requiresWaterTravel: true },
+    'lower-rill-west-of-rillford': { requiresWaterTravel: true },
+    'lower-rill-sedge-reach': { requiresWaterTravel: true },
+    'mosswake-channel': { requiresWaterTravel: true },
+    'thornmere-lake': { requiresWaterTravel: true },
+    'ashcombe-kest-workshop': {
+      npcs: [{
+        id: 'oren-kest',
+        name: 'Oren Kest',
+        description: 'A man holds two shaped pieces of wood together above the bench, checking the seam against the light.',
+        activityDescription: 'checking a fitted wooden joint',
+        greeting: '“Tell me where the timber came from before you tell me how straight it is.”',
+        topics: [
+          { id: 'stands', keywords: ['stands', 'timber', 'wood', 'refusal'], response: '“There are stands I will not take timber from. My suppliers know my refusal; it is not a public map of everyone’s rights. How a tree was taken matters to me as much as the board it yields.”' },
+          { id: 'concessions', keywords: ['concession', 'concessions', 'Heskar', 'permits'], response: '“Officials have granted larger concessions. Some neighbours see reliable work; others dispute which stands those grants can include. A grant does not settle every older practice or obligation.”' },
+          { id: 'oak', keywords: ['oak', 'sap', 'voices', 'rumour'], response: '“Workers said the old oak wept clear sap, and some reported voices in the lumber. I have heard the accounts. I do not know whether a sprite lived there or what caused the sounds.”' },
+        ],
+        unknownTopicResponse: '“I can answer for the wood I accept and the work on this bench. I do not speak for all the woods.”',
+        dialogue: {
+          prompt: '“The joint can wait a moment. What did you want to ask?”',
+          choices: bellwoldSmallTalkChoices(
+            'oren-kest',
+            '“Oren Kest. A carpenter here in Ashcombe. I make wooden fittings and other work the yards and households need.”',
+            '“Checking this joint before I shape the next piece. Good wood is wasted by a poor fit.”',
+            '“Ashcombe is within Heskar. Timber, charcoal, carts and carpentry feed households here and trade beyond us. People disagree about how far the new concessions should reach.”',
+            [
+              { id: 'stands', label: 'Why refuse timber from some stands?', response: '“A straight board is not the whole account of a harvest. I consider where and how the tree was taken. My refusal is my own; it does not settle every neighbour’s view.”' },
+              { id: 'concessions', label: 'Do the concessions settle access to the woods?', response: '“No. They are grants issued by officials, and people dispute which stands they can include. Some welcome steadier orders; others worry what will remain for future households.”' },
+              { id: 'oak', label: 'What do you know about the felled oak?', response: '“I heard workers describe clear sap and voices in the lumber. Others call the sounds settling wood or a rumour. I cannot turn those reports into an explanation.”' },
+            ], [], [], 'Ashcombe',
+          ),
+        },
+      }],
+    },
+    'ashcombe-cart-yard': {
+      npcs: [{
+        id: 'ashcombe-cartwright',
+        name: 'Cartwright',
+        description: 'A person braces a wooden wheel against a trestle, tapping its rim with a mallet. An unfinished axle lies nearby.',
+        activityDescription: 'tapping a wheel rim beside a trestle',
+        greeting: '“Give the wheel a little room. I need to hear where the rim sits loose.”',
+        topics: [
+          { id: 'loads', keywords: ['cart', 'carts', 'loads', 'road'], response: '“Heavy timber loads punish wheels. The hauling track takes them toward Bellwold, but a road under a cart does not tell you who may cut every stand beside it.”' },
+          { id: 'orders', keywords: ['orders', 'concessions', 'work'], response: '“Some of us welcome more orders from the concessions. Work keeps a household going. That is my concern; it does not settle the arguments about which trees the grants cover.”' },
+        ],
+        unknownTopicResponse: '“Try Oren about the boards he refuses. I can talk about wheels and loads.”',
+        dialogue: {
+          prompt: '“I can talk while the wheel is on the trestle.”',
+          choices: bellwoldSmallTalkChoices(
+            'ashcombe-cartwright',
+            '“A cartwright here. These wheels and axles are my work.”',
+            '“Listening for the loose part of this rim before another heavy load finds it.”',
+            '“Timber, charcoal and wooden goods keep this place busy. The road brings work, and the concessions bring arguments as well as orders.”',
+            [
+              { id: 'loads', label: 'What does the timber road carry?', response: '“Heavy loads toward the regional markets, including Bellwold. A wheel has to hold whether the cart carries boards or charcoal.”' },
+              { id: 'orders', label: 'Do all the workers oppose the concessions?', response: '“No. Some see work they need. Others worry about the stands and the future. I welcome orders, but I cannot give you everyone’s consent.”' },
+            ], [], [], 'Ashcombe',
+          ),
+        },
+      }],
+    },
+    'thornmere-council-house': {
+      npcs: [{
+        id: 'nessa-valeen',
+        name: 'Nessa Valeen',
+        description: 'An elder woman sits beside an open space in the circle of chairs, her hands resting on a folded cloth.',
+        activityDescription: 'listening beside the circle of chairs',
+        greeting: '“Before we speak of an agreement, who has been heard?”',
+        topics: [
+          { id: 'agreements', keywords: ['agreement', 'agreements', 'council', 'sprites'], response: '“I help people listen to one another. A promise needs parties who understand its terms, and a way to revisit them. I cannot promise on behalf of a being who has not been heard.”' },
+          { id: 'bridge', keywords: ['bridge', 'shared'], response: '“Some neighbours say a sprite shares that bridge. Their accounts are not identical. A shared place does not entitle a visitor to demand an answer.”' },
+          { id: 'medicine', keywords: ['medicine', 'healer', 'Veyl', 'child'], response: '“Thornmere prohibits commercial Veyl harvesting. A healer bought essence-based medicine for a critically ill child. We still have to consider urgency, choice and the trust our rules ask of people. I have no settled council decision to give you.”' },
+        ],
+        unknownTopicResponse: '“I would need to hear the people involved before pretending to settle that.”',
+        dialogue: {
+          prompt: '“There is room in the circle. What would you like to ask?”',
+          choices: bellwoldSmallTalkChoices(
+            'nessa-valeen',
+            '“Nessa Valeen. I mediate disputes here, including agreements between human neighbours and sprites.”',
+            '“Listening for what each person thinks was promised. The same words do not always carry the same understanding.”',
+            '“Thornmere has its own council. People here keep the woodland path and make agreements about shared places, but no single custom speaks for every household or sprite.”',
+            [
+              { id: 'agreements', label: 'What makes an agreement last?', response: '“The parties must understand what they are agreeing to, and how they can return to the conversation. I will not make a promise for someone who has not been heard.”' },
+              { id: 'bridge', label: 'What does sharing the bridge mean?', response: '“People describe that bridge as shared with a sprite. That does not make an answer something we can require. Listen to the differing accounts without turning them into a summons.”' },
+              { id: 'medicine', label: 'Has the council decided about the medicine?', response: '“I have no resolution to announce. A rigid response and an unexamined exception can each harm trust. The healer and the child are not here for a visitor to question.”' },
+            ], [], [], 'Thornmere',
+          ),
+        },
+      }],
+    },
+    'mosswake-boat-sheds': {
+      npcs: [{
+        id: 'tavin-reed',
+        name: 'Tavin Reed',
+        description: 'A young man kneels beside a shallow hull, a wooden batten held against its curve. Fine shavings cling to his cuffs.',
+        activityDescription: 'checking the curve of a shallow hull',
+        greeting: '“Mind that batten. A little change in the curve makes a difference in shallow water.”',
+        topics: [
+          { id: 'hulls', keywords: ['hull', 'boats', 'work', 'channels'], response: '“I fit hulls for these channels and patch them after a hard season. My family knows the marsh, but they do not all read the same water in the same way.”' },
+          { id: 'dredging', keywords: ['dredging', 'consortium', 'Veyl'], response: '“The consortium wants to dredge the deposits beneath the water. There could be contracts in it, but a changed channel changes our work too. I want marsh knowledge heard before anyone calls the proposal settled.”' },
+          { id: 'fish', keywords: ['fish', 'decline'], response: '“People bring in fewer fish from some stretches. I hear different accounts of how far that goes. I cannot tell you why it is happening.”' },
+        ],
+        unknownTopicResponse: '“I can speak about hulls and the channels I use. I do not speak for every household.”',
+        dialogue: {
+          prompt: '“Keep clear of the hull supports. What would you like to know?”',
+          choices: bellwoldSmallTalkChoices(
+            'tavin-reed',
+            '“Tavin Reed. I make and repair boats here. My family has navigated these wetlands for a long time; I am still earning my own standing.”',
+            '“Checking this hull against the batten. It needs to sit right in shallow channels, not just look fair on the blocks.”',
+            '“Mosswake is an independent community. Fishing, reeds, plants and boats keep us in touch with our neighbours. The people who use the causeway keep it passable.”',
+            [
+              { id: 'shallow-hulls', label: 'What does shallow water ask of a hull?', response: '“A hull has to suit the channel, and a repair has to last through use. I would rather look at the water with the person taking the boat than guess from here.”' },
+              { id: 'dredging', label: 'Has the dredging proposal been agreed?', response: '“No settled agreement that I can give you. The consortium sees deposits and possible contracts; people here also see fishing grounds and changing channels. I want those concerns heard together.”' },
+              { id: 'fish', label: 'Why are there fewer fish?', response: '“I do not know. Some families report poorer catches. A report about a catch is not proof of its cause.”' },
+            ], [], [], 'Mosswake',
+          ),
+        },
+      }],
+    },
+    'mosswake-herb-platform': {
+      npcs: [{
+        id: 'mosswake-herbalist',
+        name: 'Herbalist',
+        description: 'A person in rolled sleeves separates narrow leaves over a woven tray. Damp stems lie in a basket at their feet.',
+        activityDescription: 'sorting leaves on a woven tray',
+        greeting: '“Leave the damp bundle apart from the dry ones, please. What are you looking for?”',
+        topics: [
+          { id: 'plants', keywords: ['herbs', 'plants', 'work'], response: '“We gather medicinal plants when the wetland conditions allow it. A traded bundle does not mean there is an endless supply, or that every household gathers in the same place.”' },
+          { id: 'territories', keywords: ['territory', 'territories', 'sprites', 'edge'], response: '“Some families recognise sprite territories beyond those reeds. There is no complete map everyone agrees on. I would not turn a path ending here into permission to go farther.”' },
+          { id: 'fish', keywords: ['fish', 'decline'], response: '“Some neighbours say their catches are smaller. I can repeat what they report; I cannot give you a cause.”' },
+        ],
+        unknownTopicResponse: '“Ask about the plants or the paths I know. Other households may give you another account.”',
+        dialogue: {
+          prompt: '“These bundles need sorting. I can talk while I do it.”',
+          choices: bellwoldSmallTalkChoices(
+            'mosswake-herbalist',
+            '“A herbalist here in Mosswake. I sort and gather plants; I am not a guide to every part of the marsh.”',
+            '“Separating the damp leaves before they spoil the dry bundle.”',
+            '“We live above wet ground and keep our own paths and platforms. Different families have different knowledge of the places beyond them.”',
+            [
+              { id: 'plants', label: 'Are these plants always available?', response: '“No. Water and season matter. We trade herbs, reeds and fish, but a trading list is not a promise of an unlimited supply.”' },
+              { id: 'territories', label: 'What lies beyond the last planks?', response: '“Water that some families recognise as sprite territory. That recognition is not one boundary I can draw for everyone, and there is no marked passage from here.”' },
+              { id: 'fish', label: 'What have you heard about the fish?', response: '“Poorer catches in some parts, according to neighbours who fish there. How far the decline goes, and why, are still disputed.”' },
+            ], [], [], 'Mosswake',
+          ),
+        },
+      }],
+    },
+    'mosswake-open-water': {
+      requiresWaterTravel: true,
+      readables: [{
+        id: 'mosswake-dredging-survey-notice',
+        label: 'Dredging survey notice',
+        description: 'A public notice tied above the waterline, its lower corners curled with damp.',
+        text: 'Proposal for a survey of deposits beneath the water. The commercial consortium seeks discussion of possible dredging. This notice records a proposal, not permission to dredge or enter recognised sprite territories. Residents raise concerns about fisheries and channels; others raise possible income and work. No agreement or explanation for the reported fish decline is recorded here.',
+      }],
+    },
     'bellwold-market-square': {
       npcs: [
         {
@@ -1300,17 +1471,20 @@ const content = {
         { id: 'on' },
         {
           id: 'under',
+          requiresWaterTravel: true,
           name: 'Under Lower Rill Bridge',
           description: 'The river moves beneath the stone arches. The road bridge rumbles overhead as the current passes east and west.',
         },
       ],
     },
     'rillford-crossing': {
+      requiresWaterTravel: true,
       defaultStateId: 'stage',
       states: [
-        { id: 'stage' },
+        { id: 'stage', requiresWaterTravel: false },
         {
           id: 'water',
+          requiresWaterTravel: true,
           name: 'Beside the Ferry Stage',
           description: 'The current pulls past the tarred piles of Rillford’s ferry stage. Towpath Reach is east; the river runs on west.',
         },
@@ -1568,6 +1742,28 @@ const content = {
     },
   },
   roadRules: {
+    'ashcombe-timber-road': {
+      encounterChancePercent: 10,
+      encounters: [
+        { id: 'ashcombe-timber-road-bank-badger', name: 'Bank Badger', combatProfile: { maxHealth: 6, attackDamage: 2, style: 'steady' } },
+        { id: 'ashcombe-timber-road-stray-hound', name: 'Stray Hound', combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' } },
+        { id: 'ashcombe-timber-road-roadside-deer', name: 'Roadside Deer', combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' } },
+      ],
+    },
+    'thornmere-path': {
+      encounterChancePercent: 5,
+      encounters: [
+        { id: 'thornmere-path-bank-badger', name: 'Bank Badger', combatProfile: { maxHealth: 6, attackDamage: 2, style: 'steady' } },
+        { id: 'thornmere-path-roadside-deer', name: 'Roadside Deer', combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' } },
+      ],
+    },
+    'mosswake-causeway': {
+      encounterChancePercent: 6,
+      encounters: [
+        { id: 'mosswake-causeway-reedback-boar', name: 'Reedback Boar', combatProfile: { maxHealth: 7, attackDamage: 2, style: 'steady' } },
+        { id: 'mosswake-causeway-stray-hound', name: 'Stray Hound', combatProfile: { maxHealth: 4, attackDamage: 1, style: 'steady' } },
+      ],
+    },
     'bellwold-mile-west-road': {
       encounterChancePercent: 10,
       encounters: [

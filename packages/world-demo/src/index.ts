@@ -16,7 +16,7 @@ import roads from './map/roads.json' with { type: 'json' };
 const content = {
   formatVersion: 1,
   packId: 'mudd.first-steps',
-  packVersion: '1.1.1',
+  packVersion: '1.1.2',
   displayName: 'The Waystone Path',
   respawn: { locationId: 'stillwater-fountain' },
   currency: {
@@ -125,6 +125,10 @@ const content = {
     },
   ],
   locationContent: {
+    'glasswater-west-reach': { requiresWaterTravel: true },
+    'glasswater-east-reach': { requiresWaterTravel: true },
+    'glasswater-willow-reach': { requiresWaterTravel: true },
+    'glasswater-far-reach': { requiresWaterTravel: true },
     'mossgate-clearing': {
       readables: [
         {
@@ -361,6 +365,7 @@ const content = {
         { id: 'on' },
         {
           id: 'under',
+          requiresWaterTravel: true,
           name: 'Under Glasswater Bridge',
           description: 'The Glasswater current passes beneath the stone arches. The bridge deck rumbles overhead as the river runs east and west.',
         },

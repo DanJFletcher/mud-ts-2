@@ -88,6 +88,20 @@ function movement(exit: Record<string, unknown>) {
 }
 
 describe('road travel command', () => {
+  it('rejects a water destination before rolling an encounter', async () => {
+    const fixture = roadFixture();
+    const destination = fixture.world.locations.find(({ id }) => id === fixture.toLocationId);
+    if (!destination) throw new Error('Missing road destination fixture.');
+    destination.requiresWaterTravel = true;
+    const player = character(fixture.fromLocationId);
+    const { handlers, context } = harness(player, fixture);
+    const handler = handlers.get('character.road.step');
+    if (!handler) throw new Error('Missing road handler.');
+    await expect(handler({ characterId: player.characterId, expectedVersion: player.revision,
+      payload: { exitId: fixture.exit.id } }, context)).rejects.toThrow('You need to swim or use a boat.');
+    expect(context.rng.roll).not.toHaveBeenCalled();
+  });
+
   it('records an adjacent road step and its encounter roll when no encounter occurs', async () => {
     const fixture = roadFixture();
     const player = character(fixture.fromLocationId);
