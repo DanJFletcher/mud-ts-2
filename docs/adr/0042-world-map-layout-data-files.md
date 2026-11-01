@@ -1,6 +1,6 @@
 # ADR 0042 — World map layout data files
 
-- **Status:** Accepted
+- **Status:** Accepted (amended 2026-11-01: one locations file instead of one file per map area; see *Amendment*)
 - **Date:** 2026-11-01
 - **Owners:** MUDD contracts and world packs
 - **Related:** [Map builder plan](../implementation-plans/map-builder.md), [location groups](../location-groups.md)
@@ -32,21 +32,20 @@ Each pack's layout moves into JSON files under `src/map/`. Everything else stays
 
 ```text
 packages/world-<pack>/src/map/
-  overworld.json            locations with no mapAreaId
-  <mapAreaId>.json          one file per map area
+  locations.json            every location, in pack order
   location-groups.json
   roads.json
 ```
 
-Every file starts with `formatVersion: 1` and `packId`. Exits are nested in their source location, as they are today, so a cross-area exit lives in the file of the room it leaves from.
+Every file starts with `formatVersion: 1` and `packId`. Each location keeps its own optional `mapAreaId`; tools show one map area at a time by filtering on it. Exits are nested in their source location, as they are today.
 
-Array order is meaningful and preserved: the composed pack lists locations, exits, groups and roads in file order. New entries are appended. Keys are written in schema order with two-space indentation and a trailing newline, so diffs stay readable.
+Array order is meaningful and preserved: the composed pack lists locations, exits, groups and roads in file order. Location order is behavior, not presentation: new characters start at the first location (`context.world.locations[0]` in the character plugin), and NPC setup, the world map projection and the quest projection iterate in pack order. Both packs interleave map areas in that order, which is why locations share one file. New entries are appended. Keys are written in schema order with two-space indentation and a trailing newline, so diffs stay readable.
 
 ### Contracts
 
 `@mudd/contracts` gains a `world-map-data` module:
 
-- `WorldMapAreaFileSchema`, `WorldLocationGroupsFileSchema` and `WorldRoadsFileSchema`, built from the existing location, exit, group and road schemas. Unknown `formatVersion` values fail parsing.
+- `WorldLocationsFileSchema`, `WorldLocationGroupsFileSchema` and `WorldRoadsFileSchema`, built from the existing location, exit, group and road schemas. Unknown `formatVersion` values fail parsing.
 - `WorldPackContent`: the TypeScript side, with location content keyed by location ID and road rules keyed by road ID.
 - `composeWorldPackDraft(map, content)`: a pure function, usable in Node and the browser, that merges the two and returns the input for `WorldPackDraftSchema`. It fails when content refers to a location or road the map does not define, or when a road has no rules.
 
@@ -75,6 +74,8 @@ Rooms created in the builder get the description `TODO: describe <name>.` A pack
 ## Consequences and trade-offs
 
 - **Positive:** the builder reads and writes plain data. Layout changes show as small JSON diffs. The format is the first piece of a distributable pack.
+- **Negative:** all locations share one file, so two branches that both edit the map are more likely to conflict than they would be with per-area files.
+- **Fragile start location:** reordering `locations.json` changes where new characters start. Tools that write the file must append new locations and never reorder existing ones. An explicit starting location field would remove this dependency; it changes engine behavior and needs its own ADR.
 - **Negative:** a location's definition is split across two files. Full validation, including references from quests, NPCs and gathering to locations, needs both halves, so the builder's local server must load the pack's TypeScript content to validate.
 - **Compatibility/migration:** the composed pack equals the current pack, so event history, saved character locations and replay are unaffected.
 - **Security/abuse/trust:** JSON files are parsed with the same schemas as today. This ADR adds no network or runtime write path.
@@ -90,11 +91,21 @@ Rooms created in the builder get the description `TODO: describe <name>.` A pack
 
 ## Verification
 
-- Contract unit tests for each file schema, unknown `formatVersion`, and `composeWorldPackDraft` errors: content for an unknown location, a road without rules, duplicate IDs across area files.
+- Contract unit tests for each file schema, unknown `formatVersion`, and `composeWorldPackDraft` errors: content for an unknown location, a road without rules, duplicate location IDs, and files that disagree on `packId`.
 - Deep-equality tests for the Orraveth and demo packs against pre-migration fixtures.
 - A placeholder-description test in each pack.
 - The existing pack, server integration and web test suites pass unchanged.
 
 ## Revisit trigger
 
-Revisit when packs need to be installed from outside the repository, when a second tool writes the map files, or when the builder needs to edit content that this ADR leaves in TypeScript.
+Revisit when packs need to be installed from outside the repository, when a second tool writes the map files, when the builder needs to edit content that this ADR leaves in TypeScript, or when conflicts in `locations.json` become frequent. Splitting locations across files first needs an explicit starting location, so that file order no longer decides behavior.
+
+## Amendment — 2026-11-01
+
+The accepted version specified one file per map area (`overworld.json` and `<mapAreaId>.json`), concatenated in file order. Implementation found that both packs interleave map areas in their location order (the demo world runs overworld, bell tower, undercrypt, then overworld again), and that location order decides where new characters start. Per-area files cannot reproduce that order, so the composed pack could not equal the current pack. Locations now share one `locations.json`.
+
+| Option | Benefits | Costs / rejected reason |
+| --- | --- | --- |
+| One `locations.json` (chosen) | Preserves order exactly; one source of truth | More merge conflicts on a larger file |
+| Per-area files plus an explicit order list | Smaller files | Two sources to keep in step; a stale order list silently moves the starting location |
+| Reorder locations once, grouped by area | Per-area files | Breaks the equivalence check and moves the demo world's starting location |

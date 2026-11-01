@@ -34,7 +34,7 @@
 
 - **Engine, not Orraveth.** The builder opens any pack, including the demo world. Terrain choices come from the pack, not a hardcoded list.
 - **Accessibility.** The selection moves with arrow keys, and Shift+arrow creates a neighbouring room. A room and exit list beside the map gives screen readers the same information. Follow the existing Storybook accessibility checks.
-- **Git-friendly output.** Stable key order and sorted arrays keep diffs readable. Consider one file per map area to reduce conflicts between branches.
+- **Git-friendly output.** Stable key order keeps diffs readable. Array order is preserved, never sorted: location order decides where new characters start ([ADR 0042](../adr/0042-world-map-layout-data-files.md)), so the builder appends new rooms and never reorders existing ones.
 - **File access.** The local file API rejects paths outside the approved pack directories and validates every write against the schema before writing.
 
 ## Phases
