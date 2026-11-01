@@ -1,5 +1,11 @@
 # Round-trip latency audit — 2026-10-30
 
+> **Later measurement:** a 2026-10-31 production benchmark measured moves at
+> 270 ms and snapshots at 187 ms (median), after the quick wins below and with
+> the single-call append (recommendation 6) enabled. See
+> [production-benchmark-2026-10-31.md](production-benchmark-2026-10-31.md). The
+> 574 ms and 206 ms figures here are historical.
+
 ## Summary
 
 Production gameplay latency is dominated by sequential PostgreSQL round trips,
