@@ -14,7 +14,11 @@ import type {
 } from '@mudd/engine-core';
 import { RuleViolationError, replayCharacter, SYSTEM_ACTOR_ID } from '@mudd/engine-core';
 import { z } from 'zod';
-import { assertCharacterAlive, type CharacterStateCapability } from './character.js';
+import {
+  assertCharacterAlive,
+  vitalRecoveryPausedEvent,
+  type CharacterStateCapability,
+} from './character.js';
 import {
   interactionPolicyRegistry,
   interactionStreamId,
@@ -197,7 +201,10 @@ async function applyPvpOutcome(
     if (duplicate && (!respawnPayload || respawnAlreadyApplied)) continue;
     const events: ProposedDomainEvent[] = outcomeAlreadyApplied
       ? []
-      : [event('character.pvp_outcome_applied', eventPayload)];
+      : [
+        vitalRecoveryPausedEvent(character, context.now()),
+        event('character.pvp_outcome_applied', eventPayload),
+      ];
     const effects: ProposedEventEffect[] = [];
     if (respawnPayload && !respawnAlreadyApplied) {
       events.push(event('character.respawned', respawnPayload));

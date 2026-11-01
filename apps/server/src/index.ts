@@ -50,6 +50,7 @@ import {
 } from '@mudd/engine-core';
 import {
   interactionStreamId,
+  activeSharedCombatCharacterIds,
   mobileNpcDefinitions,
   projectInteractionEvents,
   projectCharacterInteractions,
@@ -181,6 +182,10 @@ const staminaRecoverySchedulers = [...worldRuntimes.values()].map((runtime) =>
     store,
     worldInstanceId: runtime.worldInstanceId,
     enabled: process.env.MUDD_TIMER_RECOVERY !== '0',
+    listActiveSharedCombatants: () => activeSharedCombatCharacterIds({
+      store,
+      worldInstanceId: runtime.worldInstanceId,
+    }),
     listSessions: async (activeSince) => {
       const sessions = await db.select({
         characterId: worldSessions.characterId,

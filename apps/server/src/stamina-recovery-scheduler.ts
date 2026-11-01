@@ -11,6 +11,7 @@ export function createStaminaRecoveryScheduler(input: Readonly<{
   store: Pick<EventStorePort, 'readStream'>;
   worldInstanceId: string;
   listSessions: (activeSince?: Date) => Promise<readonly StaminaRecoverySession[]>;
+  listActiveSharedCombatants?: () => Promise<ReadonlySet<string>>;
   now?: () => Date;
   enabled?: boolean;
   intervalMs?: number;
@@ -42,6 +43,9 @@ export function createStaminaRecoveryScheduler(input: Readonly<{
             tracked.has(session.characterId)) tracked.set(session.characterId, session);
       }
       initialized = true;
+      const activeSharedCombatants = tracked.size && input.listActiveSharedCombatants
+        ? await input.listActiveSharedCombatants()
+        : new Set<string>();
       for (const session of tracked.values()) {
         const online = currentTime.getTime() - session.lastSeenAt.getTime() <= onlineWindowMs;
         let retry = false;
@@ -49,6 +53,7 @@ export function createStaminaRecoveryScheduler(input: Readonly<{
           const events = await input.store.readStream(input.worldInstanceId, session.characterId);
           const character = replayCharacter(events);
           if (!character || character.archived || character.health?.current === 0) continue;
+          if (character.combat?.status === 'active' || activeSharedCombatants.has(character.characterId)) continue;
           const seenAt = session.lastSeenAt.getTime();
           if (!online && !character.staminaRecovery.lastSettledAt) continue;
           const settleAt = new Date(Math.min(currentTime.getTime(), seenAt));

@@ -271,6 +271,21 @@ describe('online stamina recovery scheduler', () => {
     expect(dispatchSystem).not.toHaveBeenCalled();
   });
 
+  it('does not dispatch passive recovery for shared-combat participants', async () => {
+    const now = new Date('2026-10-23T12:00:00.000Z');
+    const dispatchSystem = vi.fn();
+    const scheduler = createStaminaRecoveryScheduler({
+      engine: { dispatchSystem } as unknown as EngineHost,
+      store: { readStream: async () => characterEvents('2026-10-23T11:59:50.000Z') },
+      worldInstanceId: 'world',
+      listSessions: async () => [{ characterId: 'character', lastSeenAt: now }],
+      listActiveSharedCombatants: async () => new Set(['character']),
+      now: () => now,
+    });
+    expect(await scheduler.tick()).toBe(0);
+    expect(dispatchSystem).not.toHaveBeenCalled();
+  });
+
   it('reports rejected recovery commands and retries thrown dispatches', async () => {
     const now = new Date('2026-10-23T12:00:00.000Z');
     const onError = vi.fn();

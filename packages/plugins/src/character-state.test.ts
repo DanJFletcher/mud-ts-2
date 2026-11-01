@@ -5,11 +5,13 @@ import { demoWorld } from '@mudd/world-demo';
 import {
   assertCharacterAlive,
   assertCharacterStanding,
+  activeSharedCombatCharacterIds,
   characterPlugin,
   isInSharedCombat,
   staminaRecoveryEvent,
   staminaRecoveryEventForCommand,
   teamFleeStaminaEffect,
+  vitalRecoveryPausedEvent,
   type CharacterStateCapability,
 } from './character.js';
 import { worldItemsStateCapability } from './world-items.js';
@@ -303,6 +305,38 @@ describe('character state guards and recovery', () => {
       recovery: { lastSettledAt: now.toISOString() },
     });
   });
+
+  it('pauses all vital recovery without changing current values or retaining fractional carry', () => {
+    const player = character({
+      health: { current: 2, maximum: 6 },
+      resources: {
+        stamina: { current: 23, maximum: 100 },
+        mana: { current: 11, maximum: 100 },
+      },
+      staminaRecovery: {
+        posture: 'standing',
+        lastSettledAt: new Date(now.getTime() - 30_000).toISOString(),
+        fractionalCarry: 12_000,
+        healthFractionalCarry: 24_000,
+        manaFractionalCarry: 36_000,
+      },
+    });
+    const paused = vitalRecoveryPausedEvent(player, now);
+    expect(paused.payload).toMatchObject({
+      health: { current: 2, maximum: 6 },
+      resources: {
+        stamina: { current: 23, maximum: 100 },
+        mana: { current: 11, maximum: 100 },
+      },
+      recovery: {
+        lastSettledAt: now.toISOString(),
+        fractionalCarry: 0,
+        healthFractionalCarry: 0,
+        manaFractionalCarry: 0,
+      },
+      resetAnchor: true,
+    });
+  });
 });
 
 describe('shared combat presence detection', () => {
@@ -347,6 +381,30 @@ describe('shared combat presence detection', () => {
       pvpEvents: [event('pvp.request.created', {})],
     }) as any;
     await expect(isInSharedCombat(unrelated, 'character-one')).resolves.toBe(false);
+  });
+
+  it('lists all active team and PvP combatants for scheduled recovery suppression', async () => {
+    const context = commandContext(character(), {
+      teamEvents: [event('team.combat_started', {
+        encounter: {
+          encounterId: 'team-encounter',
+          status: 'active',
+          participants: [
+            { characterId: 'team-one', status: 'active' },
+            { characterId: 'team-out', status: 'defeated' },
+          ],
+        },
+      })],
+      pvpEvents: [event('pvp.encounter.started', {
+        encounter: {
+          status: 'active',
+          participants: [{ characterId: 'pvp-one' }, { characterId: 'pvp-two' }],
+        },
+      })],
+    });
+    await expect(activeSharedCombatCharacterIds(context as any)).resolves.toEqual(
+      new Set(['team-one', 'pvp-one', 'pvp-two']),
+    );
   });
 });
 
@@ -668,6 +726,76 @@ describe('character creation and recovery system commands', () => {
           mana: { current: 30, maximum: 100 },
         },
         recovery: { lastSettledAt: now.toISOString() },
+      },
+    });
+  });
+
+  it('does not passively restore health, stamina, or mana during solo or shared combat', async () => {
+    const depleted = {
+      health: { current: 2, maximum: 6 },
+      resources: {
+        stamina: { current: 23, maximum: 100 },
+        mana: { current: 11, maximum: 100 },
+      },
+      staminaRecovery: {
+        posture: 'standing' as const,
+        lastSettledAt: new Date(now.getTime() - 30_000).toISOString(),
+        fractionalCarry: 12_000,
+        healthFractionalCarry: 24_000,
+        manaFractionalCarry: 36_000,
+      },
+    };
+    const solo = character({
+      ...depleted,
+      combat: { ...defeatedCombat, status: 'active', playerHealth: 2 },
+    });
+    const soloHandler = captureCommands(solo).systemCommands.get('character.stamina.recover')!;
+    const command = {
+      type: 'character.stamina.recover',
+      version: 1,
+      commandId: 'combat-recovery-v1',
+      worldInstanceId: worldId,
+      characterId: solo.characterId,
+      expectedVersion: solo.revision,
+      payload: { settleAt: new Date(now.getTime() + 20_000).toISOString(), resetAnchor: false },
+    };
+    const soloResult = await soloHandler(command, commandContext(solo)) as any;
+    expect(soloResult.events[0].payload).toMatchObject({
+      health: depleted.health,
+      resources: depleted.resources,
+      recovery: {
+        lastSettledAt: now.toISOString(),
+        fractionalCarry: 0,
+        healthFractionalCarry: 0,
+        manaFractionalCarry: 0,
+      },
+    });
+
+    const shared = character(depleted);
+    const sharedHandler = captureCommands(shared).systemCommands.get('character.stamina.recover@2')!;
+    const activeTeamEvent = event('team.combat_started', {
+      encounter: {
+        encounterId: 'shared-combat',
+        status: 'active',
+        participants: [{ characterId: shared.characterId, status: 'active' }],
+      },
+    });
+    const sharedResult = await sharedHandler({
+      ...command,
+      version: 2,
+      commandId: 'combat-recovery-v2',
+      characterId: shared.characterId,
+      expectedVersion: shared.revision,
+      payload: { settleAt: now.toISOString(), resetAnchorAt: now.toISOString() },
+    }, commandContext(shared, { teamEvents: [activeTeamEvent] })) as any;
+    expect(sharedResult.events[0].payload).toMatchObject({
+      health: depleted.health,
+      resources: depleted.resources,
+      recovery: {
+        lastSettledAt: now.toISOString(),
+        fractionalCarry: 0,
+        healthFractionalCarry: 0,
+        manaFractionalCarry: 0,
       },
     });
   });

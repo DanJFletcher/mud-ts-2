@@ -10,7 +10,15 @@ export type { WoodcuttingTreePresence } from './woodcutting.js';
 export { craftingPlugin, validateCraftingWorld } from './crafting.js';
 export { projectGroupActivity } from './groups.js';
 export * from './classes.js';
-export { characterPlugin } from './character.js';
+export {
+  activeSharedCombatCharacterIds,
+  characterPlugin,
+  isCharacterInActiveCombat,
+  isInSharedCombat,
+  staminaRecoveryEvent,
+  staminaRecoveryEventForCommand,
+  vitalRecoveryPausedEvent,
+} from './character.js';
 export { movementPlugin } from './movement.js';
 export { autonomousNpcsPlugin, autonomousNpcStateCapability } from './autonomous-npcs.js';
 export {

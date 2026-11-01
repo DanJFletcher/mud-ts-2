@@ -249,7 +249,7 @@ async function spendStaminaForTest(
 }
 
 describe('turn-based PvE combat', () => {
-  it('keeps standing health recovery synchronized with an active solo encounter', async () => {
+  it('pauses passive vital recovery during an active solo encounter', async () => {
     let now = new Date('2026-10-23T12:00:00.000Z');
     const { client, store, engine } = makeClient(demoWorld, () => now);
     const created = await client.createCharacter('Standing Recovery', 'solo-recovery-create');
@@ -278,8 +278,8 @@ describe('turn-based PvE combat', () => {
     }, SYSTEM_ACTOR_ID);
     expect(settled.receipt.ok).toBe(true);
     state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-    expect(state.health?.current).toBe(6);
-    expect(state.combat?.playerHealth).toBe(6);
+    expect(state.health?.current).toBe(5);
+    expect(state.combat?.playerHealth).toBe(5);
 
     await client.performCombatAction(
       characterId,

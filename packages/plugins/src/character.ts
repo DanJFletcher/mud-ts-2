@@ -226,8 +226,54 @@ export function staminaRecoveryEventForCommand(
   };
 }
 
+export function vitalRecoveryPausedEvent(
+  character: CharacterProjection,
+  pausedAt: Date,
+) {
+  if (!Number.isFinite(pausedAt.getTime())) throw new Error('Invalid vital recovery pause time.');
+  const recoveryAt = new Date(Math.max(
+    pausedAt.getTime(),
+    character.staminaRecovery.lastSettledAt
+      ? Date.parse(character.staminaRecovery.lastSettledAt)
+      : pausedAt.getTime(),
+  ));
+  const health = character.health ?? {
+    current: maximumHealthForLevel(
+      character.advancement?.level ?? 1,
+      character.attributes.constitution,
+    ),
+    maximum: maximumHealthForLevel(
+      character.advancement?.level ?? 1,
+      character.attributes.constitution,
+    ),
+  };
+  const payload = CharacterVitalRecoverySettledEventSchema.shape.payload.parse({
+    characterId: character.characterId,
+    health,
+    resources: character.resources,
+    recovery: CharacterStaminaRecoverySchema.parse({
+      ...character.staminaRecovery,
+      lastSettledAt: recoveryAt.toISOString(),
+      fractionalCarry: 0,
+      healthFractionalCarry: 0,
+      manaFractionalCarry: 0,
+    }),
+    settledAt: recoveryAt.toISOString(),
+    resetAnchor: true,
+  });
+  return { type: 'character.vital_recovery_settled', version: 1, payload };
+}
+
+export async function isCharacterInActiveCombat(
+  context: Pick<EngineCommandContext, 'store' | 'worldInstanceId'>,
+  character: Pick<CharacterProjection, 'characterId' | 'combat'>,
+): Promise<boolean> {
+  return character.combat?.status === 'active' ||
+    await isInSharedCombat(context, character.characterId);
+}
+
 export async function isInSharedCombat(
-  context: EngineCommandContext,
+  context: Pick<EngineCommandContext, 'store' | 'worldInstanceId'>,
   characterId: string,
 ): Promise<boolean> {
   const teamEvents = await context.store.readStream(context.worldInstanceId, 'world-team-combat');
@@ -265,6 +311,59 @@ export async function isInSharedCombat(
   return latestPvp?.status !== undefined &&
     latestPvp.status !== 'completed' &&
     Boolean(latestPvp.participants?.some((participant) => participant.characterId === characterId));
+}
+
+export async function activeSharedCombatCharacterIds(
+  context: Pick<EngineCommandContext, 'store' | 'worldInstanceId'>,
+): Promise<ReadonlySet<string>> {
+  const [teamEvents, pvpEvents] = await Promise.all([
+    context.store.readStream(context.worldInstanceId, 'world-team-combat'),
+    context.store.readStream(
+      context.worldInstanceId,
+      interactionStreamId(context.worldInstanceId),
+    ),
+  ]);
+  const teamEncounters = new Map<string, {
+    status: string;
+    participants: { characterId?: string; status?: string }[];
+  }>();
+  for (const event of teamEvents) {
+    if (!['team.combat_started', 'team.road_encounter_started', 'team.combat_action_resolved'].includes(event.type)) continue;
+    const encounter = (event.payload as {
+      encounter?: {
+        encounterId?: string;
+        status?: string;
+        participants?: { characterId?: string; status?: string }[];
+      };
+    }).encounter;
+    if (encounter?.encounterId && encounter.status && encounter.participants) {
+      teamEncounters.set(encounter.encounterId, {
+        status: encounter.status,
+        participants: encounter.participants,
+      });
+    }
+  }
+  const active = new Set<string>();
+  for (const encounter of teamEncounters.values()) {
+    if (encounter.status !== 'active') continue;
+    for (const participant of encounter.participants) {
+      if (participant.characterId && participant.status === 'active') active.add(participant.characterId);
+    }
+  }
+  let latestPvp: { status?: string; participants?: { characterId?: string }[] } | undefined;
+  for (const event of pvpEvents) {
+    if (!['pvp.encounter.started', 'pvp.action.resolved', 'pvp.outcome.applied'].includes(event.type)) continue;
+    const encounter = (event.payload as {
+      encounter?: { status?: string; participants?: { characterId?: string }[] };
+    }).encounter;
+    if (encounter?.status && encounter.participants) latestPvp = encounter;
+  }
+  if (latestPvp?.status && latestPvp.status !== 'completed') {
+    for (const participant of latestPvp.participants ?? []) {
+      if (participant.characterId) active.add(participant.characterId);
+    }
+  }
+  return active;
 }
 
 export const characterStateCapability = Object.freeze({
@@ -432,6 +531,14 @@ export const characterPlugin: EnginePlugin = {
           throw new RuleViolationError('That character is no longer available.');
         }
         assertCharacterAlive(character);
+        const combatActive = await isCharacterInActiveCombat(context, character);
+        if (combatActive) {
+          return {
+            streamId: character.characterId,
+            expectedVersion: command.expectedVersion,
+            events: [vitalRecoveryPausedEvent(character, context.now())],
+          };
+        }
         const settledAt = new Date(command.payload.settleAt);
         const settled = command.payload.resetAnchor
           ? undefined
@@ -479,6 +586,13 @@ export const characterPlugin: EnginePlugin = {
         }
         assertCharacterAlive(character);
 
+        if (await isCharacterInActiveCombat(context, character)) {
+          return {
+            streamId: character.characterId,
+            expectedVersion: command.expectedVersion,
+            events: [vitalRecoveryPausedEvent(character, context.now())],
+          };
+        }
         const settledAt = new Date(command.payload.settleAt);
         const settled = staminaRecoveryEvent(character, settledAt);
         const resetAnchorAt = command.payload.resetAnchorAt
@@ -528,11 +642,9 @@ export const characterPlugin: EnginePlugin = {
       if (!context.world.locations.some((candidate) => candidate.id === character.locationId)) {
         throw new RuleViolationError('Your current location is not available.');
       }
-      const settled = staminaRecoveryEventForCommand(
-        character,
-        context.now(),
-        context.presenceAnchorAt,
-      );
+      const settled = await isCharacterInActiveCombat(context, character)
+        ? vitalRecoveryPausedEvent(character, context.now())
+        : staminaRecoveryEventForCommand(character, context.now(), context.presenceAnchorAt);
       const posture = CharacterPostureChangedEventSchema.shape.payload.parse({
         characterId: character.characterId,
         posture: 'resting',
@@ -555,11 +667,9 @@ export const characterPlugin: EnginePlugin = {
       if (character.staminaRecovery.posture !== 'resting') {
         throw new RuleViolationError('You are already standing.');
       }
-      const settled = staminaRecoveryEventForCommand(
-        character,
-        context.now(),
-        context.presenceAnchorAt,
-      );
+      const settled = await isCharacterInActiveCombat(context, character)
+        ? vitalRecoveryPausedEvent(character, context.now())
+        : staminaRecoveryEventForCommand(character, context.now(), context.presenceAnchorAt);
       const posture = CharacterPostureChangedEventSchema.shape.payload.parse({
         characterId: character.characterId,
         posture: 'standing',
