@@ -1,0 +1,90 @@
+{
+  "formatVersion": 1,
+  "packId": "orraveth.bellwold",
+  "roads": [
+    {
+      "id": "bellwold-mile-west-road",
+      "name": "Bellwold Mile Marker West Road",
+      "locationIds": [
+        "bellwold-south-mile-marker",
+        "bellwold-mile-west-track",
+        "bellwold-hazel-cut",
+        "bellwold-milepost-workshop"
+      ]
+    },
+    {
+      "id": "bellwold-south-road",
+      "name": "Bellwold South Road",
+      "locationIds": [
+        "bellwold-south-gate",
+        "bellwold-southbound-track",
+        "bellwold-reedbed-approach",
+        "bellwold-river-bridge",
+        "bellwold-far-bank-track",
+        "bellwold-south-mile-marker",
+        "bellwold-unfinished-road-end"
+      ]
+    },
+    {
+      "id": "bellwold-east-mill-road",
+      "name": "Bellwold East Mill Road",
+      "locationIds": [
+        "abandoned-watermill",
+        "bellwold-east-mill-track",
+        "bellwold-east-road-bend",
+        "bellwold-east-road-verge"
+      ]
+    },
+    {
+      "id": "bellwold-north-church-road",
+      "name": "Bellwold North Church Road",
+      "locationIds": [
+        "bellwold-east-road-bend",
+        "bellwold-north-church-track",
+        "bellwold-church-approach"
+      ]
+    },
+    {
+      "id": "bellwold-west-road",
+      "name": "Bellwold West Road",
+      "locationIds": [
+        "bellwold-west-gate",
+        "bellwold-westbound-track",
+        "bellwold-west-road-end"
+      ]
+    },
+    {
+      "id": "harrowfen-road",
+      "name": "Harrowfen Road",
+      "locationIds": [
+        "bellwold-west-road-end",
+        "harrowfen-road-ditch-verge",
+        "harrowfen-east-field-gate"
+      ]
+    },
+    {
+      "id": "rill-towpath",
+      "name": "Rill Towpath",
+      "locationIds": [
+        "bellwold-reedbed-approach",
+        "rill-towpath-willow-bank",
+        "rill-towpath-mooring-posts",
+        "rill-towpath-sedge-flats",
+        "rill-towpath-culvert",
+        "rill-towpath-quay-lane",
+        "rillford-north-quay"
+      ]
+    },
+    {
+      "id": "rillford-south-lane-road",
+      "name": "Rillford South Lane Road",
+      "locationIds": [
+        "bellwold-milepost-workshop",
+        "mile-road-sedge-track",
+        "mile-road-landing-lane",
+        "rillford-south-lane",
+        "rillford-south-landing"
+      ]
+    }
+  ]
+}

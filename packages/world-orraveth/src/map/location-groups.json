@@ -1,0 +1,273 @@
+{
+  "formatVersion": 1,
+  "packId": "orraveth.bellwold",
+  "locationGroups": [
+    {
+      "id": "bellwold",
+      "name": "Bellwold",
+      "type": "settlement",
+      "description": "A growing trading settlement near the frontier of the Crown of Heskar. Its exact legal status is not established.",
+      "memberships": [
+        {
+          "locationId": "bellwold-market-square",
+          "isPrimary": false
+        },
+        {
+          "locationId": "kindly-roof-inn",
+          "isPrimary": false
+        },
+        {
+          "locationId": "marrs-general-goods",
+          "isPrimary": false
+        },
+        {
+          "locationId": "bellwold-west-gate",
+          "isPrimary": false
+        },
+        {
+          "locationId": "old-bell-tower-approach",
+          "isPrimary": false
+        },
+        {
+          "locationId": "old-bell-tower",
+          "isPrimary": false
+        },
+        {
+          "locationId": "bellwold-south-common",
+          "isPrimary": false
+        },
+        {
+          "locationId": "green-mortar",
+          "isPrimary": false
+        },
+        {
+          "locationId": "blackwater-forge",
+          "isPrimary": false
+        },
+        {
+          "locationId": "bellwold-well-court",
+          "isPrimary": false
+        },
+        {
+          "locationId": "bellwold-wattle-row",
+          "isPrimary": false
+        },
+        {
+          "locationId": "sovens-wheelwright-yard",
+          "isPrimary": false
+        },
+        {
+          "locationId": "tallow-end-cottage",
+          "isPrimary": false
+        },
+        {
+          "locationId": "old-grain-house",
+          "isPrimary": false
+        },
+        {
+          "locationId": "bellwold-common-house",
+          "isPrimary": false
+        },
+        {
+          "locationId": "bellwold-south-gate",
+          "isPrimary": false
+        },
+        {
+          "locationId": "bellwold-hearth-alley",
+          "isPrimary": false
+        },
+        {
+          "locationId": "bellwold-lantern-court",
+          "isPrimary": false
+        },
+        {
+          "locationId": "bellwold-nettlemere-house",
+          "isPrimary": false
+        },
+        {
+          "locationId": "bellwold-upper-row-house",
+          "isPrimary": false
+        },
+        {
+          "locationId": "bellwold-lower-row-west",
+          "isPrimary": false
+        },
+        {
+          "locationId": "bellwold-lower-row-house",
+          "isPrimary": false
+        },
+        {
+          "locationId": "bellwold-lower-row",
+          "isPrimary": false
+        },
+        {
+          "locationId": "bellwold-south-lane-cottage",
+          "isPrimary": false
+        },
+        {
+          "locationId": "bellwold-jail",
+          "isPrimary": false
+        },
+        {
+          "locationId": "bellwold-jail-cell",
+          "isPrimary": false
+        },
+        {
+          "locationId": "bellwold-library",
+          "isPrimary": false
+        },
+        {
+          "locationId": "bellwold-library-upper-room",
+          "isPrimary": false
+        },
+        {
+          "locationId": "bellwold-local-museum",
+          "isPrimary": false
+        }
+      ],
+      "metadata": {
+        "codexId": "orraveth-bellwold",
+        "politicalStatus": "unestablished"
+      }
+    },
+    {
+      "id": "harrowfen",
+      "name": "Harrowfen",
+      "type": "settlement",
+      "description": "A farming village of low fields and drainage cuts, half a day west of Bellwold. Much of its land belongs to Heskar noble families.",
+      "memberships": [
+        {
+          "locationId": "harrowfen-east-field-gate",
+          "isPrimary": true
+        },
+        {
+          "locationId": "harrowfen-threshing-green",
+          "isPrimary": true
+        },
+        {
+          "locationId": "harrowfen-weigh-house",
+          "isPrimary": true
+        },
+        {
+          "locationId": "harrowfen-drainage-cut",
+          "isPrimary": true
+        },
+        {
+          "locationId": "harrowfen-tenant-row",
+          "isPrimary": true
+        },
+        {
+          "locationId": "harrowfen-west-fields",
+          "isPrimary": true
+        }
+      ],
+      "metadata": {
+        "codexId": "orraveth-harrowfen",
+        "politicalStatus": "crown-of-heskar"
+      }
+    },
+    {
+      "id": "rillford",
+      "name": "Rillford",
+      "type": "settlement",
+      "description": "A river crossing and trading town a day southwest of Bellwold along the Lower Rill, with a contested ferry trade.",
+      "memberships": [
+        {
+          "locationId": "rillford-north-quay",
+          "isPrimary": true
+        },
+        {
+          "locationId": "rillford-customs-house",
+          "isPrimary": true
+        },
+        {
+          "locationId": "rillford-guild-hall",
+          "isPrimary": true
+        },
+        {
+          "locationId": "rillford-inn",
+          "isPrimary": true
+        },
+        {
+          "locationId": "rillford-warehouse-row",
+          "isPrimary": true
+        },
+        {
+          "locationId": "rillford-livestock-market",
+          "isPrimary": true
+        },
+        {
+          "locationId": "rillford-crossing",
+          "isPrimary": true
+        },
+        {
+          "locationId": "rillford-south-landing",
+          "isPrimary": true
+        },
+        {
+          "locationId": "rillford-south-lane",
+          "isPrimary": true
+        }
+      ],
+      "metadata": {
+        "codexId": "orraveth-rillford",
+        "politicalStatus": "crown-of-heskar"
+      }
+    },
+    {
+      "id": "lower-rill",
+      "name": "Lower Rill",
+      "type": "waterway",
+      "description": "A provisional name for the river passing near Bellwold. Its full course is not recorded.",
+      "memberships": [
+        {
+          "locationId": "lower-rill-west-of-rillford",
+          "isPrimary": true
+        },
+        {
+          "locationId": "lower-rill-towpath-reach",
+          "isPrimary": true
+        },
+        {
+          "locationId": "lower-rill-reed-reach",
+          "isPrimary": true
+        },
+        {
+          "locationId": "bellwold-river-far-west-reach",
+          "isPrimary": true
+        },
+        {
+          "locationId": "bellwold-river-willow-reach",
+          "isPrimary": true
+        },
+        {
+          "locationId": "bellwold-river-west-reach",
+          "isPrimary": true
+        },
+        {
+          "locationId": "bellwold-river-east-reach",
+          "isPrimary": true
+        },
+        {
+          "locationId": "bellwold-river-alder-reach",
+          "isPrimary": true
+        },
+        {
+          "locationId": "bellwold-river-far-east-reach",
+          "isPrimary": true
+        },
+        {
+          "locationId": "bellwold-river-bridge",
+          "isPrimary": false
+        },
+        {
+          "locationId": "rillford-crossing",
+          "isPrimary": false
+        }
+      ],
+      "metadata": {
+        "codexId": "orraveth-lower-rill"
+      }
+    }
+  ]
+}

@@ -1,9 +1,18 @@
 import {
   WorldPackDraftSchema,
+  WorldLocationsFileSchema,
+  WorldLocationGroupsFileSchema,
+  WorldRoadsFileSchema,
+  composeWorldPackDraft,
   validateDraftWorldGraph,
   type WorldPackDraft,
+  type WorldPackContent,
   type NpcDailyJobResponseDefinition,
+  type FishingSpeciesDefinition,
 } from '@mudd/contracts';
+import locations from './map/locations.json' with { type: 'json' };
+import locationGroups from './map/location-groups.json' with { type: 'json' };
+import roads from './map/roads.json' with { type: 'json' };
 import { orravethClassCatalog } from './classes.js';
 export { orravethClassCatalog } from './classes.js';
 
@@ -110,7 +119,7 @@ function bellwoldSmallTalkChoices(
   ];
 }
 
-function banditEncounter(id: string) {
+function banditEncounter(id: string): WorldPackContent['roadRules'][string]['encounters'][number] {
   return {
     id,
     name: 'Bandit',
@@ -170,9 +179,9 @@ const lowerRillFishSpecies = [
       { rarity: 'trophy', weightPercent: 1, minLengthCm: 86, maxLengthCm: 107, minWeightGrams: 8001, maxWeightGrams: 21770 },
     ],
   },
-] as const;
+] satisfies FishingSpeciesDefinition[];
 
-const draft = {
+const content = {
   formatVersion: 1,
   packId: 'orraveth.bellwold',
   packVersion: '1.20.0',
@@ -240,12 +249,8 @@ const draft = {
     symbol: 'g',
     startingBalance: 0,
   },
-  locations: [
-    {
-      id: 'bellwold-market-square',
-      name: 'Bellwold Market Square',
-      description: 'Stalls and handcarts crowd the open ground. The smell of baked bread drifts from the east side of the square.\n\nThe tower road rises north and South Common lies south. A lane leads west toward the Kindly Roof; Marr’s General Goods is east.',
-      mapPosition: { x: 0, y: 0, terrain: 'cobblestone' },
+  locationContent: {
+    'bellwold-market-square': {
       npcs: [
         {
           id: 'linnet-reed',
@@ -439,23 +444,9 @@ const draft = {
           },
         },
       ],
-      exits: [
-        { id: 'square-to-inn', fromLocationId: 'bellwold-market-square', toLocationId: 'kindly-roof-inn', label: 'west', direction: 'west' },
-        { id: 'square-to-shop', fromLocationId: 'bellwold-market-square', toLocationId: 'marrs-general-goods', label: 'east', direction: 'east' },
-        { id: 'square-to-tower-road', fromLocationId: 'bellwold-market-square', toLocationId: 'old-bell-tower-approach', label: 'north', direction: 'north' },
-        { id: 'square-to-south-common', fromLocationId: 'bellwold-market-square', toLocationId: 'bellwold-south-common', label: 'south', direction: 'south' },
-      ],
     },
-    {
-      id: 'kindly-roof-inn',
-      name: 'The Kindly Roof',
+    'kindly-roof-inn': {
       safeResting: true,
-      description: 'Firelight warms the common room, and low voices drift between the tables. A trace of smoke clings to the rafters. The market square lies east; a narrow road leaves west.',
-      mapPosition: { x: -1, y: 0, terrain: 'building' },
-      exits: [
-        { id: 'inn-to-square', fromLocationId: 'kindly-roof-inn', toLocationId: 'bellwold-market-square', label: 'east', direction: 'east' },
-        { id: 'inn-to-west-gate', fromLocationId: 'kindly-roof-inn', toLocationId: 'bellwold-west-gate', label: 'west', direction: 'west' },
-      ],
       npcs: [
         {
           id: 'tomas-innkeeper',
@@ -496,76 +487,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'bellwold-west-gate',
-      name: 'Bellwold West Gate',
-      description: 'The western lane passes the last village fences and a simple timber gate. The Kindly Roof is east; the westbound road runs past the hedgerows.',
-      mapPosition: { x: -2, y: 0, terrain: 'land' },
-      exits: [
-        { id: 'west-gate-to-inn', fromLocationId: 'bellwold-west-gate', toLocationId: 'kindly-roof-inn', label: 'east', direction: 'east' },
-        { id: 'west-gate-to-track', fromLocationId: 'bellwold-west-gate', toLocationId: 'bellwold-westbound-track', label: 'west', direction: 'west', roadId: 'bellwold-west-road' },
-      ],
-    },
-    {
-      id: 'bellwold-westbound-track',
-      name: 'Westbound Track',
-      description: 'The packed-earth road follows low hedgerows beyond Bellwold’s western fields. The West Gate is east; the rough road end is west.',
-      mapPosition: { x: -3, y: 0, terrain: 'dirt' },
-      exits: [
-        { id: 'westbound-track-to-gate', fromLocationId: 'bellwold-westbound-track', toLocationId: 'bellwold-west-gate', label: 'east', direction: 'east', roadId: 'bellwold-west-road' },
-        { id: 'westbound-track-to-end', fromLocationId: 'bellwold-westbound-track', toLocationId: 'bellwold-west-road-end', label: 'west', direction: 'west', roadId: 'bellwold-west-road' },
-      ],
-    },
-    {
-      id: 'bellwold-west-road-end',
-      name: 'Western Road Verge',
-      description: 'The packed track narrows between scrub and open ground. A rutted farm road carries on west beside a drainage ditch toward Harrowfen’s fields; West Gate lies back to the east.',
-      mapPosition: { x: -4, y: 0, terrain: 'land' },
-      exits: [
-        { id: 'west-road-end-to-track', fromLocationId: 'bellwold-west-road-end', toLocationId: 'bellwold-westbound-track', label: 'east', direction: 'east', roadId: 'bellwold-west-road' },
-        { id: 'west-road-end-to-harrowfen-ditch', fromLocationId: 'bellwold-west-road-end', toLocationId: 'harrowfen-road-ditch-verge', label: 'west', direction: 'west', roadId: 'harrowfen-road' },
-      ],
-    },
-    {
-      id: 'harrowfen-road-ditch-verge',
-      name: 'Harrowfen Road Ditch',
-      description: 'The farm road runs beside a straight drainage ditch. Cart wheels have cut the bank, and the mud near the reeds is churned by something heavier. Flat fields open to the west; the Western Road Verge is east.',
-      mapPosition: { x: -5, y: 0, terrain: 'land' },
-      exits: [
-        { id: 'harrowfen-ditch-to-west-road-end', fromLocationId: 'harrowfen-road-ditch-verge', toLocationId: 'bellwold-west-road-end', label: 'east', direction: 'east', roadId: 'harrowfen-road' },
-        { id: 'harrowfen-ditch-to-field-gate', fromLocationId: 'harrowfen-road-ditch-verge', toLocationId: 'harrowfen-east-field-gate', label: 'west', direction: 'west', roadId: 'harrowfen-road' },
-      ],
-    },
-    {
-      id: 'harrowfen-east-field-gate',
-      name: 'East Field Gate',
-      description: 'A field gate stands open where the road meets Harrowfen’s first strips of grain and flax. Low fields stretch away under a wide sky. The threshing green is west; the road back to Bellwold runs east.',
-      mapPosition: { x: -6, y: 0, terrain: 'pasture' },
-      exits: [
-        { id: 'harrowfen-field-gate-to-ditch', fromLocationId: 'harrowfen-east-field-gate', toLocationId: 'harrowfen-road-ditch-verge', label: 'east', direction: 'east', roadId: 'harrowfen-road' },
-        { id: 'harrowfen-field-gate-to-green', fromLocationId: 'harrowfen-east-field-gate', toLocationId: 'harrowfen-threshing-green', label: 'west', direction: 'west' },
-      ],
-    },
-    {
-      id: 'harrowfen-threshing-green',
-      name: 'Threshing Green',
-      description: 'A beaten circle of shared ground is swept clear for threshing, with flails stacked against a post. The weigh-house is north, a drainage cut runs south, and the tenant cottages line the way west. The field gate is east.',
-      mapPosition: { x: -7, y: 0, terrain: 'pasture' },
-      exits: [
-        { id: 'harrowfen-green-to-field-gate', fromLocationId: 'harrowfen-threshing-green', toLocationId: 'harrowfen-east-field-gate', label: 'east', direction: 'east' },
-        { id: 'harrowfen-green-to-weigh-house', fromLocationId: 'harrowfen-threshing-green', toLocationId: 'harrowfen-weigh-house', label: 'north', direction: 'north' },
-        { id: 'harrowfen-green-to-drainage-cut', fromLocationId: 'harrowfen-threshing-green', toLocationId: 'harrowfen-drainage-cut', label: 'south', direction: 'south' },
-        { id: 'harrowfen-green-to-tenant-row', fromLocationId: 'harrowfen-threshing-green', toLocationId: 'harrowfen-tenant-row', label: 'west', direction: 'west' },
-      ],
-    },
-    {
-      id: 'harrowfen-weigh-house',
-      name: 'Weigh-House',
-      description: 'A squat timber house holds a heavy beam scale and a board of chalked tallies. Sacks wait by the door to be weighed. The threshing green is south.',
-      mapPosition: { x: -7, y: 1, terrain: 'building' },
-      exits: [
-        { id: 'harrowfen-weigh-house-to-green', fromLocationId: 'harrowfen-weigh-house', toLocationId: 'harrowfen-threshing-green', label: 'south', direction: 'south' },
-      ],
+    'harrowfen-weigh-house': {
       readables: [
         {
           id: 'harrowfen-yield-tallies',
@@ -709,42 +631,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'harrowfen-drainage-cut',
-      name: 'Drainage Cut',
-      description: 'A long channel drains the low fields. Its sides are freshly recut in places and slumped in others, as if no two seasons agreed on how the water should run. The threshing green is north.',
-      mapPosition: { x: -7, y: -1, terrain: 'land' },
-      exits: [
-        { id: 'harrowfen-drainage-cut-to-green', fromLocationId: 'harrowfen-drainage-cut', toLocationId: 'harrowfen-threshing-green', label: 'north', direction: 'north' },
-      ],
-    },
-    {
-      id: 'harrowfen-tenant-row',
-      name: 'Tenant Row',
-      description: 'Small cottages face the lane, each with a patched roof and tools hung by the door. The people who work the fields live here; most of the land beyond belongs to others. The threshing green is east and the west fields lie beyond.',
-      mapPosition: { x: -8, y: 0, terrain: 'dirt' },
-      exits: [
-        { id: 'harrowfen-tenant-row-to-green', fromLocationId: 'harrowfen-tenant-row', toLocationId: 'harrowfen-threshing-green', label: 'east', direction: 'east' },
-        { id: 'harrowfen-tenant-row-to-west-fields', fromLocationId: 'harrowfen-tenant-row', toLocationId: 'harrowfen-west-fields', label: 'west', direction: 'west' },
-      ],
-    },
-    {
-      id: 'harrowfen-west-fields',
-      name: 'West Fields',
-      description: 'Strips of grain, root crops and flax run toward the horizon, divided by ditches and a weathered boundary stone carved with an estate mark. Tenant Row is east.',
-      mapPosition: { x: -9, y: 0, terrain: 'dirt' },
-      exits: [
-        { id: 'harrowfen-west-fields-to-tenant-row', fromLocationId: 'harrowfen-west-fields', toLocationId: 'harrowfen-tenant-row', label: 'east', direction: 'east' },
-      ],
-    },
-    {
-      id: 'marrs-general-goods',
-      name: 'Marr’s General Goods',
-      description: 'Provision jars line the shelves. Near the counter, a balance scale sits beside an open ledger; a brass weight glints in the window light.',
-      mapPosition: { x: 1, y: 0, terrain: 'building' },
-      exits: [
-        { id: 'shop-to-square', fromLocationId: 'marrs-general-goods', toLocationId: 'bellwold-market-square', label: 'west', direction: 'west' },
-      ],
+    'marrs-general-goods': {
       takeables: [{
         id: 'marr-starter-bronze-axe',
         typeId: 'bronze-axe',
@@ -890,32 +777,14 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'bellwold-south-common',
-      name: 'Bellwold South Common',
-      description: 'Benches stand beside drying lines and a bulletin board. Voices and footsteps carry across the grass. The market square is north, the Green Mortar west, Blackwater Forge east, and Well Court south.',
+    'bellwold-south-common': {
       readables: [{
         id: 'bellwold-daily-notice', label: 'Bulletin board',
         description: 'A broad plank board holds handwritten notices in uneven rows.',
         text: 'Residents post daily jobs and requests here. Read the bulletin to see current postings and rewards. Accept a posting, then follow its instructions to complete it. New postings appear with each daily refresh.',
       }],
-      mapPosition: { x: 0, y: -1, terrain: 'pasture' },
-      exits: [
-        { id: 'south-common-to-square', fromLocationId: 'bellwold-south-common', toLocationId: 'bellwold-market-square', label: 'north', direction: 'north' },
-        { id: 'south-common-to-green-mortar', fromLocationId: 'bellwold-south-common', toLocationId: 'green-mortar', label: 'west', direction: 'west' },
-        { id: 'south-common-to-blackwater-forge', fromLocationId: 'bellwold-south-common', toLocationId: 'blackwater-forge', label: 'east', direction: 'east' },
-        { id: 'south-common-to-well-court', fromLocationId: 'bellwold-south-common', toLocationId: 'bellwold-well-court', label: 'south', direction: 'south' },
-      ],
     },
-    {
-      id: 'green-mortar',
-      name: 'The Green Mortar',
-      description: 'Bundles of dried plants hang above a workbench; clean cloth is folded near a shallow bowl. The sharp scent of crushed herbs lingers in the air. The open green is east; Wattle Row is south.',
-      mapPosition: { x: -1, y: -1, terrain: 'building' },
-      exits: [
-        { id: 'green-mortar-to-south-common', fromLocationId: 'green-mortar', toLocationId: 'bellwold-south-common', label: 'east', direction: 'east' },
-        { id: 'green-mortar-to-wattle-row', fromLocationId: 'green-mortar', toLocationId: 'bellwold-wattle-row', label: 'south', direction: 'south' },
-      ],
+    'green-mortar': {
       npcs: [
         {
           id: 'ilya-fen',
@@ -954,14 +823,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'blackwater-forge',
-      name: 'Blackwater Forge',
-      description: 'Tongs and hammers hang over a dark stone hearth. Half-mended iron pieces rest on the bench, and coal smoke clings to the beams. South Common lies west.',
-      mapPosition: { x: 1, y: -1, terrain: 'building' },
-      exits: [
-        { id: 'blackwater-forge-to-south-common', fromLocationId: 'blackwater-forge', toLocationId: 'bellwold-south-common', label: 'west', direction: 'west' },
-      ],
+    'blackwater-forge': {
       npcs: [
         {
           id: 'darric-holt',
@@ -1002,39 +864,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'bellwold-well-court',
-      name: 'Bellwold Well Court',
-      description: 'A stone-rimmed well and a broad trough give this quiet court a steady rhythm of buckets, footsteps, and short conversations. A covered storehouse stands to the east; Wattle Row branches west.\n\nSouth Common is north, and the Common House is south.',
-      mapPosition: { x: 0, y: -2, terrain: 'cobblestone' },
-      exits: [
-        { id: 'well-court-to-south-common', fromLocationId: 'bellwold-well-court', toLocationId: 'bellwold-south-common', label: 'north', direction: 'north' },
-        { id: 'well-court-to-wattle-row', fromLocationId: 'bellwold-well-court', toLocationId: 'bellwold-wattle-row', label: 'west', direction: 'west' },
-        { id: 'well-court-to-grain-house', fromLocationId: 'bellwold-well-court', toLocationId: 'old-grain-house', label: 'east', direction: 'east' },
-        { id: 'well-court-to-common-house', fromLocationId: 'bellwold-well-court', toLocationId: 'bellwold-common-house', label: 'south', direction: 'south' },
-      ],
-    },
-    {
-      id: 'bellwold-wattle-row',
-      name: 'Wattle Row',
-      description: 'Low homes and work yards line a narrow lane. Pale new strips weave through the older, darkened reeds of the wattle walls. The Green Mortar is north, Well Court east, a wheelwright’s yard west, and Tallow End Cottage south.',
-      mapPosition: { x: -1, y: -2, terrain: 'land' },
-      exits: [
-        { id: 'wattle-row-to-green-mortar', fromLocationId: 'bellwold-wattle-row', toLocationId: 'green-mortar', label: 'north', direction: 'north' },
-        { id: 'wattle-row-to-well-court', fromLocationId: 'bellwold-wattle-row', toLocationId: 'bellwold-well-court', label: 'east', direction: 'east' },
-        { id: 'wattle-row-to-sovens-yard', fromLocationId: 'bellwold-wattle-row', toLocationId: 'sovens-wheelwright-yard', label: 'west', direction: 'west' },
-        { id: 'wattle-row-to-tallow-cottage', fromLocationId: 'bellwold-wattle-row', toLocationId: 'tallow-end-cottage', label: 'south', direction: 'south' },
-      ],
-    },
-    {
-      id: 'sovens-wheelwright-yard',
-      name: 'Soven’s Wheelwright Yard',
-      description: 'A turning frame, wooden spokes, and a rack of finished rims fill this fenced yard. Shavings gather in the corners despite the broom leaning by the gate; the sound of a saw carries from the south.',
-      mapPosition: { x: -2, y: -2, terrain: 'building' },
-      exits: [
-        { id: 'sovens-yard-to-wattle-row', fromLocationId: 'sovens-wheelwright-yard', toLocationId: 'bellwold-wattle-row', label: 'east', direction: 'east' },
-        { id: 'sovens-yard-to-hearth-alley', fromLocationId: 'sovens-wheelwright-yard', toLocationId: 'bellwold-hearth-alley', label: 'south', direction: 'south' },
-      ],
+    'sovens-wheelwright-yard': {
       npcs: [
         {
           id: 'rell-soven',
@@ -1072,16 +902,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'tallow-end-cottage',
-      name: 'Tallow End Cottage',
-      description: 'A narrow cottage opens onto Wattle Row. A loom stands beside the window, with folded cloth kept clear of the hearth and a basket of mending beside the door.\n\nWattle Row is north; the Common House is east.',
-      mapPosition: { x: -1, y: -3, terrain: 'building' },
-      exits: [
-        { id: 'tallow-cottage-to-wattle-row', fromLocationId: 'tallow-end-cottage', toLocationId: 'bellwold-wattle-row', label: 'north', direction: 'north' },
-        { id: 'tallow-cottage-to-common-house', fromLocationId: 'tallow-end-cottage', toLocationId: 'bellwold-common-house', label: 'east', direction: 'east' },
-        { id: 'tallow-cottage-to-hearth-alley', fromLocationId: 'tallow-end-cottage', toLocationId: 'bellwold-hearth-alley', label: 'west', direction: 'west' },
-      ],
+    'tallow-end-cottage': {
       npcs: [
         {
           id: 'seli-tor',
@@ -1121,14 +942,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'old-grain-house',
-      name: 'Old Grain House',
-      description: 'A timber storehouse stands on a raised stone sill; narrow vent gaps cut the upper walls. Chalk marks cross the faces of several storage bins. Well Court is west.',
-      mapPosition: { x: 1, y: -2, terrain: 'building' },
-      exits: [
-        { id: 'grain-house-to-well-court', fromLocationId: 'old-grain-house', toLocationId: 'bellwold-well-court', label: 'west', direction: 'west' },
-      ],
+    'old-grain-house': {
       takeables: [
         {
           id: 'bellwold-church-annex-key',
@@ -1175,17 +989,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'bellwold-common-house',
-      name: 'Bellwold Common House',
-      description: 'A long timber room holds a scuffed table and mismatched benches. Paper notices cover one wall, and fresh ink smells sharp near the record book. Well Court is north, Tallow End Cottage is west, and the south road leaves town beyond the last yards.',
-      mapPosition: { x: 0, y: -3, terrain: 'building' },
-      exits: [
-        { id: 'common-house-to-well-court', fromLocationId: 'bellwold-common-house', toLocationId: 'bellwold-well-court', label: 'north', direction: 'north' },
-        { id: 'common-house-to-tallow-cottage', fromLocationId: 'bellwold-common-house', toLocationId: 'tallow-end-cottage', label: 'west', direction: 'west' },
-        { id: 'common-house-to-south-gate', fromLocationId: 'bellwold-common-house', toLocationId: 'bellwold-south-gate', label: 'south', direction: 'south' },
-        { id: 'common-house-to-library', fromLocationId: 'bellwold-common-house', toLocationId: 'bellwold-library', label: 'east', direction: 'east' },
-      ],
+    'bellwold-common-house': {
       npcs: [
         {
           id: 'enna-pell',
@@ -1242,49 +1046,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'bellwold-south-gate',
-      name: 'Bellwold South Gate',
-      description: 'The last cluster of village yards gives way to a low gate and a packed-earth road. The Common House is north; the southbound track continues south.',
-      mapPosition: { x: 0, y: -4, terrain: 'land' },
-      exits: [
-        { id: 'south-gate-to-common-house', fromLocationId: 'bellwold-south-gate', toLocationId: 'bellwold-common-house', label: 'north', direction: 'north' },
-        { id: 'south-gate-to-track', fromLocationId: 'bellwold-south-gate', toLocationId: 'bellwold-southbound-track', label: 'south', direction: 'south', roadId: 'bellwold-south-road' },
-        { id: 'south-gate-to-jail', fromLocationId: 'bellwold-south-gate', toLocationId: 'bellwold-jail', label: 'west', direction: 'west' },
-      ],
-    },
-    {
-      id: 'bellwold-hearth-alley',
-      name: 'Hearth Alley',
-      description: 'Close-set walls cast a narrow strip of shade across the lane. A cooking fire crackles behind one shutter.',
-      mapPosition: { x: -2, y: -3, terrain: 'dirt' },
-      exits: [
-        { id: 'hearth-alley-to-wheelwright-yard', fromLocationId: 'bellwold-hearth-alley', toLocationId: 'sovens-wheelwright-yard', label: 'north', direction: 'north' },
-        { id: 'hearth-alley-to-tallow-cottage', fromLocationId: 'bellwold-hearth-alley', toLocationId: 'tallow-end-cottage', label: 'east', direction: 'east' },
-        { id: 'hearth-alley-to-lantern-court', fromLocationId: 'bellwold-hearth-alley', toLocationId: 'bellwold-lantern-court', label: 'west', direction: 'west' },
-        { id: 'hearth-alley-to-lower-row', fromLocationId: 'bellwold-hearth-alley', toLocationId: 'bellwold-lower-row', label: 'south', direction: 'south' },
-      ],
-    },
-    {
-      id: 'bellwold-lantern-court',
-      name: 'Lantern Court',
-      description: 'A dented iron lantern hangs above the lane, and rainwater darkens the stones beneath it.',
-      mapPosition: { x: -3, y: -3, terrain: 'cobblestone' },
-      exits: [
-        { id: 'lantern-court-to-hearth-alley', fromLocationId: 'bellwold-lantern-court', toLocationId: 'bellwold-hearth-alley', label: 'east', direction: 'east' },
-        { id: 'lantern-court-to-nettlemere-house', fromLocationId: 'bellwold-lantern-court', toLocationId: 'bellwold-nettlemere-house', label: 'west', direction: 'west' },
-        { id: 'lantern-court-to-upper-row-house', fromLocationId: 'bellwold-lantern-court', toLocationId: 'bellwold-upper-row-house', label: 'north', direction: 'north' },
-        { id: 'lantern-court-to-lower-row-west', fromLocationId: 'bellwold-lantern-court', toLocationId: 'bellwold-lower-row-west', label: 'south', direction: 'south' },
-      ],
-    },
-    {
-      id: 'bellwold-nettlemere-house',
-      name: 'Nettlemere House',
-      description: 'A copper kettle rattles softly above the hearth, and the kitchen smells of warm bread.',
-      mapPosition: { x: -4, y: -3, terrain: 'building' },
-      exits: [
-        { id: 'nettlemere-house-to-lantern-court', fromLocationId: 'bellwold-nettlemere-house', toLocationId: 'bellwold-lantern-court', label: 'east', direction: 'east' },
-      ],
+    'bellwold-nettlemere-house': {
       npcs: [
         {
           id: 'sella-nettlemere',
@@ -1321,14 +1083,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'bellwold-upper-row-house',
-      name: 'Upper Row House',
-      description: 'A handloom clicks beside a sunlit window. Wool fibers cling to the rough boards.',
-      mapPosition: { x: -3, y: -2, terrain: 'building' },
-      exits: [
-        { id: 'upper-row-house-to-lantern-court', fromLocationId: 'bellwold-upper-row-house', toLocationId: 'bellwold-lantern-court', label: 'south', direction: 'south' },
-      ],
+    'bellwold-upper-row-house': {
       npcs: [
         {
           id: 'tovin-ashdown',
@@ -1365,25 +1120,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'bellwold-lower-row-west',
-      name: 'Lower Row',
-      description: 'A loose shutter taps in the breeze; damp earth darkens the packed lane.',
-      mapPosition: { x: -3, y: -4, terrain: 'dirt' },
-      exits: [
-        { id: 'lower-row-west-to-lantern-court', fromLocationId: 'bellwold-lower-row-west', toLocationId: 'bellwold-lantern-court', label: 'north', direction: 'north' },
-        { id: 'lower-row-west-to-lower-row', fromLocationId: 'bellwold-lower-row-west', toLocationId: 'bellwold-lower-row', label: 'east', direction: 'east' },
-        { id: 'lower-row-west-to-row-house', fromLocationId: 'bellwold-lower-row-west', toLocationId: 'bellwold-lower-row-house', label: 'west', direction: 'west' },
-      ],
-    },
-    {
-      id: 'bellwold-lower-row-house',
-      name: 'Lower Row House',
-      description: 'A saw scrapes across a plank, scattering pale curls over the workbench.',
-      mapPosition: { x: -4, y: -4, terrain: 'building' },
-      exits: [
-        { id: 'lower-row-house-to-lower-row', fromLocationId: 'bellwold-lower-row-house', toLocationId: 'bellwold-lower-row-west', label: 'east', direction: 'east' },
-      ],
+    'bellwold-lower-row-house': {
       npcs: [
         {
           id: 'renna-kell',
@@ -1420,26 +1157,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'bellwold-lower-row',
-      name: 'South Lower Row',
-      description: 'Packed earth gives way to a patch of worn stone. A dog barks behind a fence.',
-      mapPosition: { x: -2, y: -4, terrain: 'dirt' },
-      exits: [
-        { id: 'lower-row-to-hearth-alley', fromLocationId: 'bellwold-lower-row', toLocationId: 'bellwold-hearth-alley', label: 'north', direction: 'north' },
-        { id: 'lower-row-to-lower-row-west', fromLocationId: 'bellwold-lower-row', toLocationId: 'bellwold-lower-row-west', label: 'west', direction: 'west' },
-        { id: 'lower-row-to-jail', fromLocationId: 'bellwold-lower-row', toLocationId: 'bellwold-jail', label: 'east', direction: 'east' },
-        { id: 'lower-row-to-cottage', fromLocationId: 'bellwold-lower-row', toLocationId: 'bellwold-south-lane-cottage', label: 'south', direction: 'south' },
-      ],
-    },
-    {
-      id: 'bellwold-south-lane-cottage',
-      name: 'South Lane Cottage',
-      description: 'A clay pot of thyme sits on the sill; its sharp scent reaches through the open window.',
-      mapPosition: { x: -2, y: -5, terrain: 'building' },
-      exits: [
-        { id: 'south-lane-cottage-to-lower-row', fromLocationId: 'bellwold-south-lane-cottage', toLocationId: 'bellwold-lower-row', label: 'north', direction: 'north' },
-      ],
+    'bellwold-south-lane-cottage': {
       npcs: [
         {
           id: 'pella-wren',
@@ -1476,16 +1194,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'bellwold-jail',
-      name: 'Bellwold Jail',
-      description: 'Iron bars cast thin shadows across the stone floor. Keys clink briefly behind the desk.',
-      mapPosition: { x: -1, y: -4, terrain: 'building' },
-      exits: [
-        { id: 'jail-to-south-gate', fromLocationId: 'bellwold-jail', toLocationId: 'bellwold-south-gate', label: 'east', direction: 'east' },
-        { id: 'jail-to-lower-row', fromLocationId: 'bellwold-jail', toLocationId: 'bellwold-lower-row', label: 'west', direction: 'west' },
-        { id: 'jail-to-holding-cell', fromLocationId: 'bellwold-jail', toLocationId: 'bellwold-jail-cell', label: 'down to the holding cell', direction: 'down' },
-      ],
+    'bellwold-jail': {
       npcs: [
         {
           id: 'sergeant-nera-vail',
@@ -1523,26 +1232,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'bellwold-jail-cell',
-      name: 'Jail Holding Cell',
-      description: 'A narrow barred door stands across from the stone wall. Damp straw smells sour in the close air.',
-      mapAreaId: 'bellwold-jail',
-      mapPosition: { x: -1, y: -4, z: -1, terrain: 'building' },
-      exits: [
-        { id: 'jail-cell-to-jail', fromLocationId: 'bellwold-jail-cell', toLocationId: 'bellwold-jail', label: 'up to the jail desk', direction: 'up' },
-      ],
-    },
-    {
-      id: 'bellwold-library',
-      name: 'Bellwold Library',
-      description: 'Books and stitched pamphlets fill the shelves around a broad reading table. Dry paper and lamp oil mingle in the air.',
-      mapPosition: { x: 1, y: -3, terrain: 'building' },
-      exits: [
-        { id: 'library-to-common-house', fromLocationId: 'bellwold-library', toLocationId: 'bellwold-common-house', label: 'west', direction: 'west' },
-        { id: 'library-to-museum', fromLocationId: 'bellwold-library', toLocationId: 'bellwold-local-museum', label: 'east to the museum', direction: 'east' },
-        { id: 'library-to-upper-room', fromLocationId: 'bellwold-library', toLocationId: 'bellwold-library-upper-room', label: 'upstairs', direction: 'up' },
-      ],
+    'bellwold-library': {
       readables: [
         {
           id: 'bellwold-library-shelf-guide',
@@ -1588,24 +1278,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'bellwold-library-upper-room',
-      name: 'Upper Reading Room',
-      description: 'A long window fills the sloped room with pale light. Pages rustle softly in the draft.',
-      mapAreaId: 'bellwold-library',
-      mapPosition: { x: 1, y: -3, z: 1, terrain: 'building' },
-      exits: [
-        { id: 'library-upper-room-to-library', fromLocationId: 'bellwold-library-upper-room', toLocationId: 'bellwold-library', label: 'down to the library', direction: 'down' },
-      ],
-    },
-    {
-      id: 'bellwold-local-museum',
-      name: 'Bellwold Local Museum',
-      description: 'Glass-fronted cases stand against the walls. A slate tally board and a faded waterwheel sketch sit beneath a dusty window.',
-      mapPosition: { x: 2, y: -3, terrain: 'building' },
-      exits: [
-        { id: 'museum-to-library', fromLocationId: 'bellwold-local-museum', toLocationId: 'bellwold-library', label: 'west to the library', direction: 'west' },
-      ],
+    'bellwold-local-museum': {
       readables: [
         {
           id: 'museum-tally-board-label',
@@ -1621,32 +1294,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'bellwold-southbound-track',
-      name: 'Southbound Track',
-      description: 'Wind stirs the grass as Bellwold’s roofs recede north; deer prints mark the softer earth.\n\nThe South Gate is north; the reedbed approach lies south.',
-      mapPosition: { x: 0, y: -5, terrain: 'pasture' },
-      exits: [
-        { id: 'southbound-track-to-gate', fromLocationId: 'bellwold-southbound-track', toLocationId: 'bellwold-south-gate', label: 'north', direction: 'north', roadId: 'bellwold-south-road' },
-        { id: 'southbound-track-to-reedbed', fromLocationId: 'bellwold-southbound-track', toLocationId: 'bellwold-reedbed-approach', label: 'south', direction: 'south', roadId: 'bellwold-south-road' },
-      ],
-    },
-    {
-      id: 'bellwold-reedbed-approach',
-      name: 'Reedbed Approach',
-      description: 'Damp grass brushes the road’s edges, and reeds rustle along the riverbanks. The current deepens toward the stone bridge to the south, and a towpath follows the north bank west toward Rillford.\n\nThe Southbound Track is north; Lower Rill Bridge is south.',
-      mapPosition: { x: 0, y: -6, terrain: 'land' },
-      exits: [
-        { id: 'reedbed-approach-to-track', fromLocationId: 'bellwold-reedbed-approach', toLocationId: 'bellwold-southbound-track', label: 'north', direction: 'north', roadId: 'bellwold-south-road' },
-        { id: 'reedbed-approach-to-bridge', fromLocationId: 'bellwold-reedbed-approach', toLocationId: 'bellwold-river-bridge', label: 'south', direction: 'south', roadId: 'bellwold-south-road' },
-        { id: 'reedbed-approach-to-towpath', fromLocationId: 'bellwold-reedbed-approach', toLocationId: 'rill-towpath-willow-bank', label: 'west', direction: 'west', roadId: 'rill-towpath' },
-      ],
-    },
-    {
-      id: 'bellwold-river-bridge',
-      name: 'Lower Rill Bridge',
-      description: 'A low stone bridge carries the south road over the Lower Rill. The current runs east and west beneath its arches. Reedbed Approach is north; Far Bank Track is south.',
-      mapPosition: { x: 0, y: -7, terrain: 'land', visibleWhenUnvisited: true },
+    'bellwold-river-bridge': {
       defaultStateId: 'on',
       states: [
         { id: 'on' },
@@ -1656,99 +1304,8 @@ const draft = {
           description: 'The river moves beneath the stone arches. The road bridge rumbles overhead as the current passes east and west.',
         },
       ],
-      exits: [
-        { id: 'river-bridge-to-reedbed', fromLocationId: 'bellwold-river-bridge', toLocationId: 'bellwold-reedbed-approach', label: 'north', direction: 'north', fromStateId: 'on', roadId: 'bellwold-south-road' },
-        { id: 'river-bridge-to-far-bank', fromLocationId: 'bellwold-river-bridge', toLocationId: 'bellwold-far-bank-track', label: 'south', direction: 'south', fromStateId: 'on', roadId: 'bellwold-south-road' },
-        { id: 'bridge-under-to-west-reach', fromLocationId: 'bellwold-river-bridge', toLocationId: 'bellwold-river-west-reach', label: 'west', direction: 'west', fromStateId: 'under', mapLineGapAtLocationId: 'bellwold-river-bridge' },
-        { id: 'bridge-under-to-east-reach', fromLocationId: 'bellwold-river-bridge', toLocationId: 'bellwold-river-east-reach', label: 'east', direction: 'east', fromStateId: 'under', mapLineGapAtLocationId: 'bellwold-river-bridge' },
-      ],
     },
-    {
-      id: 'bellwold-river-west-reach',
-      name: 'West Reach',
-      description: 'The current passes the bridge piers and slides west beneath the reeds. The bridge lies east; Willow Reach is west.',
-      mapPosition: { x: -1, y: -7, terrain: 'river', visibleWhenUnvisited: true },
-      exits: [
-        { id: 'west-reach-to-bridge-under', fromLocationId: 'bellwold-river-west-reach', toLocationId: 'bellwold-river-bridge', label: 'east beneath Lower Rill Bridge', direction: 'east', toStateId: 'under', mapLineGapAtLocationId: 'bellwold-river-bridge' },
-        { id: 'west-reach-to-willow-reach', fromLocationId: 'bellwold-river-west-reach', toLocationId: 'bellwold-river-willow-reach', label: 'west along the river', direction: 'west' },
-      ],
-    },
-    {
-      id: 'bellwold-river-willow-reach',
-      name: 'Willow Reach',
-      description: 'Willow roots trail into the slow water along this stretch. West Reach is east; Far West Reach is west.',
-      mapPosition: { x: -2, y: -7, terrain: 'river', visibleWhenUnvisited: true },
-      exits: [
-        { id: 'willow-reach-to-west-reach', fromLocationId: 'bellwold-river-willow-reach', toLocationId: 'bellwold-river-west-reach', label: 'east along the river', direction: 'east' },
-        { id: 'willow-reach-to-far-west-reach', fromLocationId: 'bellwold-river-willow-reach', toLocationId: 'bellwold-river-far-west-reach', label: 'west along the river', direction: 'west' },
-      ],
-    },
-    {
-      id: 'bellwold-river-far-west-reach',
-      name: 'Far West Reach',
-      description: 'The river broadens beyond the western reedbeds. Willow Reach is east; Reed Reach is west.',
-      mapPosition: { x: -3, y: -7, terrain: 'river', visibleWhenUnvisited: true },
-      exits: [
-        { id: 'far-west-reach-to-willow-reach', fromLocationId: 'bellwold-river-far-west-reach', toLocationId: 'bellwold-river-willow-reach', label: 'east along the river', direction: 'east' },
-        { id: 'far-west-reach-to-reed-reach', fromLocationId: 'bellwold-river-far-west-reach', toLocationId: 'lower-rill-reed-reach', label: 'west along the river', direction: 'west' },
-      ],
-    },
-    {
-      id: 'bellwold-river-east-reach',
-      name: 'East Reach',
-      description: 'The current emerges from beneath the bridge and runs east through reeds and shallow stones. The bridge lies west; Alder Reach is east.',
-      mapPosition: { x: 1, y: -7, terrain: 'river', visibleWhenUnvisited: true },
-      exits: [
-        { id: 'east-reach-to-bridge-under', fromLocationId: 'bellwold-river-east-reach', toLocationId: 'bellwold-river-bridge', label: 'west beneath Lower Rill Bridge', direction: 'west', toStateId: 'under', mapLineGapAtLocationId: 'bellwold-river-bridge' },
-        { id: 'east-reach-to-alder-reach', fromLocationId: 'bellwold-river-east-reach', toLocationId: 'bellwold-river-alder-reach', label: 'east along the river', direction: 'east' },
-      ],
-    },
-    {
-      id: 'bellwold-river-alder-reach',
-      name: 'Alder Reach',
-      description: 'A line of alder trees shadows this stretch of water. East Reach is west; Far East Reach is east.',
-      mapPosition: { x: 2, y: -7, terrain: 'river', visibleWhenUnvisited: true },
-      exits: [
-        { id: 'alder-reach-to-east-reach', fromLocationId: 'bellwold-river-alder-reach', toLocationId: 'bellwold-river-east-reach', label: 'west along the river', direction: 'west' },
-        { id: 'alder-reach-to-far-east-reach', fromLocationId: 'bellwold-river-alder-reach', toLocationId: 'bellwold-river-far-east-reach', label: 'east along the river', direction: 'east' },
-      ],
-    },
-    {
-      id: 'bellwold-river-far-east-reach',
-      name: 'Far East Reach',
-      description: 'The eastern current continues past the last visible bank and around a long bend. Alder Reach is west.',
-      mapPosition: { x: 3, y: -7, terrain: 'river', visibleWhenUnvisited: true },
-      exits: [
-        { id: 'far-east-reach-to-alder-reach', fromLocationId: 'bellwold-river-far-east-reach', toLocationId: 'bellwold-river-alder-reach', label: 'west along the river', direction: 'west' },
-      ],
-    },
-    {
-      id: 'lower-rill-reed-reach',
-      name: 'Reed Reach',
-      description: 'Tall reeds crowd both banks and lean over the slow water. A towpath shows along the north bank. Far West Reach is east; Towpath Reach is west.',
-      mapPosition: { x: -4, y: -7, terrain: 'river', visibleWhenUnvisited: true },
-      exits: [
-        { id: 'reed-reach-to-far-west-reach', fromLocationId: 'lower-rill-reed-reach', toLocationId: 'bellwold-river-far-west-reach', label: 'east along the river', direction: 'east' },
-        { id: 'reed-reach-to-towpath-reach', fromLocationId: 'lower-rill-reed-reach', toLocationId: 'lower-rill-towpath-reach', label: 'west along the river', direction: 'west' },
-      ],
-    },
-    {
-      id: 'lower-rill-towpath-reach',
-      name: 'Towpath Reach',
-      description: 'The river runs close beside the towpath here, and rope-worn posts stand along the north bank. Reed Reach is east; Rillford’s ferry stage lies west.',
-      mapPosition: { x: -5, y: -7, terrain: 'river', visibleWhenUnvisited: true },
-      exits: [
-        { id: 'towpath-reach-to-reed-reach', fromLocationId: 'lower-rill-towpath-reach', toLocationId: 'lower-rill-reed-reach', label: 'east along the river', direction: 'east' },
-        { id: 'towpath-reach-to-ferry-stage', fromLocationId: 'lower-rill-towpath-reach', toLocationId: 'rillford-crossing', label: 'west past the ferry stage', direction: 'west', toStateId: 'water' },
-      ],
-    },
-    {
-      // The Codex describes a ferry crossing with a contested ferry trade and no settled right of
-      // passage, so the stage links the north quay to the river but not to the south landing.
-      id: 'rillford-crossing',
-      name: 'Ferry Stage',
-      description: 'A timber stage reaches out over the Lower Rill on tarred piles. Boats tie up along its edge to load and unload, and crews keep an eye on the current while they work. Rillford’s south landing lies across the water; passage over is arranged with the boat crews, and none is taking passengers now. The north quay is north.',
-      mapPosition: { x: -6, y: -7, terrain: 'river', visibleWhenUnvisited: true },
+    'rillford-crossing': {
       defaultStateId: 'stage',
       states: [
         { id: 'stage' },
@@ -1757,11 +1314,6 @@ const draft = {
           name: 'Beside the Ferry Stage',
           description: 'The current pulls past the tarred piles of Rillford’s ferry stage. Towpath Reach is east; the river runs on west.',
         },
-      ],
-      exits: [
-        { id: 'ferry-stage-to-north-quay', fromLocationId: 'rillford-crossing', toLocationId: 'rillford-north-quay', label: 'north', direction: 'north', fromStateId: 'stage' },
-        { id: 'ferry-stage-water-to-towpath-reach', fromLocationId: 'rillford-crossing', toLocationId: 'lower-rill-towpath-reach', label: 'east along the river', direction: 'east', fromStateId: 'water' },
-        { id: 'ferry-stage-water-to-west-reach', fromLocationId: 'rillford-crossing', toLocationId: 'lower-rill-west-of-rillford', label: 'west along the river', direction: 'west', fromStateId: 'water' },
       ],
       readables: [
         {
@@ -1772,86 +1324,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'lower-rill-west-of-rillford',
-      name: 'West of Rillford',
-      description: 'Beyond Rillford’s ferry stage the river widens and runs on out of sight. Nobody here has marked where it goes. The ferry stage lies east.',
-      mapPosition: { x: -7, y: -7, terrain: 'river', visibleWhenUnvisited: true },
-      exits: [
-        { id: 'west-of-rillford-to-ferry-stage', fromLocationId: 'lower-rill-west-of-rillford', toLocationId: 'rillford-crossing', label: 'east past the ferry stage', direction: 'east', toStateId: 'water' },
-      ],
-    },
-    {
-      id: 'rill-towpath-willow-bank',
-      name: 'Towpath Willow Bank',
-      description: 'A worn towpath leaves the south road and follows the river’s north bank under leaning willows. Reedbed Approach is east; the towpath runs on west.',
-      mapPosition: { x: -1, y: -6, terrain: 'land' },
-      exits: [
-        { id: 'towpath-willow-bank-to-reedbed', fromLocationId: 'rill-towpath-willow-bank', toLocationId: 'bellwold-reedbed-approach', label: 'east', direction: 'east', roadId: 'rill-towpath' },
-        { id: 'towpath-willow-bank-to-mooring-posts', fromLocationId: 'rill-towpath-willow-bank', toLocationId: 'rill-towpath-mooring-posts', label: 'west', direction: 'west', roadId: 'rill-towpath' },
-      ],
-    },
-    {
-      id: 'rill-towpath-mooring-posts',
-      name: 'Towpath Mooring Posts',
-      description: 'Old mooring posts stand along the bank, their tops grooved by rope. The water runs deep enough here to drop a line. The towpath runs east and west.',
-      mapPosition: { x: -2, y: -6, terrain: 'land' },
-      exits: [
-        { id: 'towpath-mooring-posts-to-willow-bank', fromLocationId: 'rill-towpath-mooring-posts', toLocationId: 'rill-towpath-willow-bank', label: 'east', direction: 'east', roadId: 'rill-towpath' },
-        { id: 'towpath-mooring-posts-to-sedge-flats', fromLocationId: 'rill-towpath-mooring-posts', toLocationId: 'rill-towpath-sedge-flats', label: 'west', direction: 'west', roadId: 'rill-towpath' },
-      ],
-    },
-    {
-      id: 'rill-towpath-sedge-flats',
-      name: 'Towpath Sedge Flats',
-      description: 'Sedge flats spread between the towpath and the water, cut by narrow channels. Something heavy has rooted along the margin. The towpath runs east and west.',
-      mapPosition: { x: -3, y: -6, terrain: 'land' },
-      exits: [
-        { id: 'towpath-sedge-flats-to-mooring-posts', fromLocationId: 'rill-towpath-sedge-flats', toLocationId: 'rill-towpath-mooring-posts', label: 'east', direction: 'east', roadId: 'rill-towpath' },
-        { id: 'towpath-sedge-flats-to-culvert', fromLocationId: 'rill-towpath-sedge-flats', toLocationId: 'rill-towpath-culvert', label: 'west', direction: 'west', roadId: 'rill-towpath' },
-      ],
-    },
-    {
-      id: 'rill-towpath-culvert',
-      name: 'Towpath Culvert',
-      description: 'The towpath crosses a stone culvert where a field drain empties into the river. Fox tracks mark the mud at its mouth. The towpath runs east and west.',
-      mapPosition: { x: -4, y: -6, terrain: 'land' },
-      exits: [
-        { id: 'towpath-culvert-to-sedge-flats', fromLocationId: 'rill-towpath-culvert', toLocationId: 'rill-towpath-sedge-flats', label: 'east', direction: 'east', roadId: 'rill-towpath' },
-        { id: 'towpath-culvert-to-quay-lane', fromLocationId: 'rill-towpath-culvert', toLocationId: 'rill-towpath-quay-lane', label: 'west', direction: 'west', roadId: 'rill-towpath' },
-      ],
-    },
-    {
-      id: 'rill-towpath-quay-lane',
-      name: 'Quay Lane',
-      description: 'The towpath widens into a cart lane between stacked crates and coiled rope. Voices and the knock of loading carry from the quay to the west. The towpath back toward Bellwold runs east.',
-      mapPosition: { x: -5, y: -6, terrain: 'dirt' },
-      exits: [
-        { id: 'quay-lane-to-culvert', fromLocationId: 'rill-towpath-quay-lane', toLocationId: 'rill-towpath-culvert', label: 'east', direction: 'east', roadId: 'rill-towpath' },
-        { id: 'quay-lane-to-north-quay', fromLocationId: 'rill-towpath-quay-lane', toLocationId: 'rillford-north-quay', label: 'west', direction: 'west', roadId: 'rill-towpath' },
-      ],
-    },
-    {
-      id: 'rillford-north-quay',
-      name: 'North Quay',
-      description: 'Boats nose against the stone quay while crews load, mend and argue over the current. The ferry stage reaches into the river to the south. The customs house is west, the guild hall is north, and the towpath to Bellwold runs east.',
-      mapPosition: { x: -6, y: -6, terrain: 'cobblestone' },
-      exits: [
-        { id: 'north-quay-to-quay-lane', fromLocationId: 'rillford-north-quay', toLocationId: 'rill-towpath-quay-lane', label: 'east', direction: 'east', roadId: 'rill-towpath' },
-        { id: 'north-quay-to-customs-house', fromLocationId: 'rillford-north-quay', toLocationId: 'rillford-customs-house', label: 'west', direction: 'west' },
-        { id: 'north-quay-to-guild-hall', fromLocationId: 'rillford-north-quay', toLocationId: 'rillford-guild-hall', label: 'north', direction: 'north' },
-        { id: 'north-quay-to-ferry-stage', fromLocationId: 'rillford-north-quay', toLocationId: 'rillford-crossing', label: 'south', direction: 'south', toStateId: 'stage' },
-      ],
-    },
-    {
-      id: 'rillford-customs-house',
-      name: 'Customs House',
-      description: 'Ledgers fill the shelves of a narrow stone office, and a counter faces the quay door. A notice is pinned beside the door. The quay is east; Warehouse Row lies west.',
-      mapPosition: { x: -7, y: -6, terrain: 'building' },
-      exits: [
-        { id: 'customs-house-to-north-quay', fromLocationId: 'rillford-customs-house', toLocationId: 'rillford-north-quay', label: 'east', direction: 'east' },
-        { id: 'customs-house-to-warehouse-row', fromLocationId: 'rillford-customs-house', toLocationId: 'rillford-warehouse-row', label: 'west', direction: 'west' },
-      ],
+    'rillford-customs-house': {
       readables: [
         {
           id: 'rillford-cargo-notice',
@@ -1896,15 +1369,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'rillford-guild-hall',
-      name: 'Guild Hall',
-      description: 'Long tables hold bills of lading and a chalked board of boats due and boats gone. Merchants talk in low, quick voices. The quay is south; the inn is west.',
-      mapPosition: { x: -6, y: -5, terrain: 'building' },
-      exits: [
-        { id: 'guild-hall-to-north-quay', fromLocationId: 'rillford-guild-hall', toLocationId: 'rillford-north-quay', label: 'south', direction: 'south' },
-        { id: 'guild-hall-to-inn', fromLocationId: 'rillford-guild-hall', toLocationId: 'rillford-inn', label: 'west', direction: 'west' },
-      ],
+    'rillford-guild-hall': {
       npcs: [
         {
           id: 'selda-rook',
@@ -1948,26 +1413,10 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'rillford-inn',
-      name: 'Quayside Inn',
+    'rillford-inn': {
       safeResting: true,
-      description: 'Crews and carters share the benches of a low, smoky common room. Wet coats steam by the hearth. The guild hall is east; the livestock market is west.',
-      mapPosition: { x: -7, y: -5, terrain: 'building' },
-      exits: [
-        { id: 'rillford-inn-to-guild-hall', fromLocationId: 'rillford-inn', toLocationId: 'rillford-guild-hall', label: 'east', direction: 'east' },
-        { id: 'rillford-inn-to-livestock-market', fromLocationId: 'rillford-inn', toLocationId: 'rillford-livestock-market', label: 'west', direction: 'west' },
-      ],
     },
-    {
-      id: 'rillford-warehouse-row',
-      name: 'Warehouse Row',
-      description: 'Timber warehouses stand shoulder to shoulder, their doors open on sacks, bales and barrels. Boat crews mend gear between loads. The customs house is east; the livestock market is north.',
-      mapPosition: { x: -8, y: -6, terrain: 'dirt' },
-      exits: [
-        { id: 'warehouse-row-to-customs-house', fromLocationId: 'rillford-warehouse-row', toLocationId: 'rillford-customs-house', label: 'east', direction: 'east' },
-        { id: 'warehouse-row-to-livestock-market', fromLocationId: 'rillford-warehouse-row', toLocationId: 'rillford-livestock-market', label: 'north', direction: 'north' },
-      ],
+    'rillford-warehouse-row': {
       npcs: [
         {
           id: 'rillford-independent-boatman',
@@ -2004,75 +1453,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'rillford-livestock-market',
-      name: 'Livestock Market',
-      description: 'Hurdle pens fill the open ground. The weekly market leaves trampled straw and the smell of animals long after it ends. The inn is east; Warehouse Row is south.',
-      mapPosition: { x: -8, y: -5, terrain: 'pasture' },
-      exits: [
-        { id: 'livestock-market-to-inn', fromLocationId: 'rillford-livestock-market', toLocationId: 'rillford-inn', label: 'east', direction: 'east' },
-        { id: 'livestock-market-to-warehouse-row', fromLocationId: 'rillford-livestock-market', toLocationId: 'rillford-warehouse-row', label: 'south', direction: 'south' },
-      ],
-    },
-    {
-      id: 'rillford-south-landing',
-      name: 'South Landing',
-      description: 'A muddy landing on the south bank faces the ferry stage across the water. Boats put in here when the crews are carrying, but none waits now. A lane runs south.',
-      mapPosition: { x: -6, y: -8, terrain: 'land' },
-      exits: [
-        { id: 'south-landing-to-south-lane', fromLocationId: 'rillford-south-landing', toLocationId: 'rillford-south-lane', label: 'south', direction: 'south', roadId: 'rillford-south-lane-road' },
-      ],
-    },
-    {
-      id: 'rillford-south-lane',
-      name: 'South Lane',
-      description: 'Low cottages and net sheds line a lane along Rillford’s south bank. The landing is north; a track leads east toward Bellwold’s Milepost Workshop.',
-      mapPosition: { x: -6, y: -9, terrain: 'dirt' },
-      exits: [
-        { id: 'south-lane-to-south-landing', fromLocationId: 'rillford-south-lane', toLocationId: 'rillford-south-landing', label: 'north', direction: 'north', roadId: 'rillford-south-lane-road' },
-        { id: 'south-lane-to-landing-lane', fromLocationId: 'rillford-south-lane', toLocationId: 'mile-road-landing-lane', label: 'east', direction: 'east', roadId: 'rillford-south-lane-road' },
-      ],
-    },
-    {
-      id: 'mile-road-landing-lane',
-      name: 'Landing Lane',
-      description: 'The track firms into a lane as it nears the river. Rillford’s roofs show to the west; the sedge track runs east.',
-      mapPosition: { x: -5, y: -9, terrain: 'dirt' },
-      exits: [
-        { id: 'landing-lane-to-sedge-track', fromLocationId: 'mile-road-landing-lane', toLocationId: 'mile-road-sedge-track', label: 'east', direction: 'east', roadId: 'rillford-south-lane-road' },
-        { id: 'landing-lane-to-south-lane', fromLocationId: 'mile-road-landing-lane', toLocationId: 'rillford-south-lane', label: 'west', direction: 'west', roadId: 'rillford-south-lane-road' },
-      ],
-    },
-    {
-      id: 'mile-road-sedge-track',
-      name: 'Sedge Track',
-      description: 'A narrow track runs through sedge and alder scrub. The Milepost Workshop is east; the track continues west toward Rillford.',
-      mapPosition: { x: -4, y: -9, terrain: 'dirt' },
-      exits: [
-        { id: 'sedge-track-to-workshop', fromLocationId: 'mile-road-sedge-track', toLocationId: 'bellwold-milepost-workshop', label: 'east', direction: 'east', roadId: 'rillford-south-lane-road' },
-        { id: 'sedge-track-to-landing-lane', fromLocationId: 'mile-road-sedge-track', toLocationId: 'mile-road-landing-lane', label: 'west', direction: 'west', roadId: 'rillford-south-lane-road' },
-      ],
-    },
-    {
-      id: 'bellwold-far-bank-track',
-      name: 'Far Bank Track',
-      description: 'The road climbs away from the bridge onto firmer ground. Lower Rill Bridge is north; the old mile marker is south.',
-      mapPosition: { x: 0, y: -8, terrain: 'land' },
-      exits: [
-        { id: 'far-bank-track-to-bridge', fromLocationId: 'bellwold-far-bank-track', toLocationId: 'bellwold-river-bridge', label: 'north', direction: 'north', toStateId: 'on', roadId: 'bellwold-south-road' },
-        { id: 'far-bank-track-to-mile-marker', fromLocationId: 'bellwold-far-bank-track', toLocationId: 'bellwold-south-mile-marker', label: 'south', direction: 'south', roadId: 'bellwold-south-road' },
-      ],
-    },
-    {
-      id: 'bellwold-south-mile-marker',
-      name: 'Old South Mile Marker',
-      description: 'A weathered stone marker stands beside the packed road. Most of its face is worn smooth; shallow grooves remain beneath the lichen. Far Bank Track is north; the unfinished road lies south, and a dirt track branches west.',
-      mapPosition: { x: 0, y: -9, terrain: 'land' },
-      exits: [
-        { id: 'mile-marker-to-far-bank', fromLocationId: 'bellwold-south-mile-marker', toLocationId: 'bellwold-far-bank-track', label: 'north', direction: 'north', roadId: 'bellwold-south-road' },
-        { id: 'mile-marker-to-road-end', fromLocationId: 'bellwold-south-mile-marker', toLocationId: 'bellwold-unfinished-road-end', label: 'south', direction: 'south', roadId: 'bellwold-south-road' },
-        { id: 'mile-marker-to-west-track', fromLocationId: 'bellwold-south-mile-marker', toLocationId: 'bellwold-mile-west-track', label: 'west', direction: 'west', roadId: 'bellwold-mile-west-road' },
-      ],
+    'bellwold-south-mile-marker': {
       readables: [
         {
           id: 'old-south-mile-marker-inscription',
@@ -2082,35 +1463,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'bellwold-mile-west-track',
-      name: 'Mile Marker West Track',
-      description: 'The packed dirt bends west from the stone marker. Dry grass rasps against your boots, and a line of hazel leaves shivers ahead; the marker is east.',
-      mapPosition: { x: -1, y: -9, terrain: 'dirt' },
-      exits: [
-        { id: 'mile-west-track-to-marker', fromLocationId: 'bellwold-mile-west-track', toLocationId: 'bellwold-south-mile-marker', label: 'east', direction: 'east', roadId: 'bellwold-mile-west-road' },
-        { id: 'mile-west-track-to-hazel-cut', fromLocationId: 'bellwold-mile-west-track', toLocationId: 'bellwold-hazel-cut', label: 'west', direction: 'west', roadId: 'bellwold-mile-west-road' },
-      ],
-    },
-    {
-      id: 'bellwold-hazel-cut',
-      name: 'Hazel Cut',
-      description: 'Hazel branches narrow the track, their leaves whispering over the road. A faint smell of woodsmoke drifts from the west; the Mile Marker West Track is east.',
-      mapPosition: { x: -2, y: -9, terrain: 'land' },
-      exits: [
-        { id: 'hazel-cut-to-mile-west-track', fromLocationId: 'bellwold-hazel-cut', toLocationId: 'bellwold-mile-west-track', label: 'east', direction: 'east', roadId: 'bellwold-mile-west-road' },
-        { id: 'hazel-cut-to-workshop', fromLocationId: 'bellwold-hazel-cut', toLocationId: 'bellwold-milepost-workshop', label: 'west', direction: 'west', roadId: 'bellwold-mile-west-road' },
-      ],
-    },
-    {
-      id: 'bellwold-milepost-workshop',
-      name: 'Milepost Workshop',
-      description: 'Pale shavings curl across a scarred workbench beside a low, warm stove. A file rasps against metal; the hazel track runs east, and a sedge-lined track leads west toward Rillford’s south landing.',
-      mapPosition: { x: -3, y: -9, terrain: 'building' },
-      exits: [
-        { id: 'workshop-to-hazel-cut', fromLocationId: 'bellwold-milepost-workshop', toLocationId: 'bellwold-hazel-cut', label: 'east', direction: 'east', roadId: 'bellwold-mile-west-road' },
-        { id: 'workshop-to-mile-road-sedge-track', fromLocationId: 'bellwold-milepost-workshop', toLocationId: 'mile-road-sedge-track', label: 'west', direction: 'west', roadId: 'rillford-south-lane-road' },
-      ],
+    'bellwold-milepost-workshop': {
       npcs: [
         {
           id: 'nessa-rill',
@@ -2155,34 +1508,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'bellwold-unfinished-road-end',
-      name: 'Unfinished South Road',
-      description: 'The packed road ends at a shallow cut in the earth. Loose soil and ungraded ground extend beyond it, with no roofs visible. The old mile marker is north.',
-      mapPosition: { x: 0, y: -10, terrain: 'land' },
-      exits: [
-        { id: 'unfinished-road-to-mile-marker', fromLocationId: 'bellwold-unfinished-road-end', toLocationId: 'bellwold-south-mile-marker', label: 'north', direction: 'north', roadId: 'bellwold-south-road' },
-      ],
-    },
-    {
-      id: 'old-bell-tower-approach',
-      name: 'Old Bell Tower Road',
-      description: 'The road climbs north, and Bellwold’s roofs drop from view behind a rise. The old tower’s outline stands against the sky. A narrow track branches east, where water glints beside the mill.',
-      mapPosition: { x: 0, y: 1, terrain: 'land' },
-      exits: [
-        { id: 'tower-road-to-square', fromLocationId: 'old-bell-tower-approach', toLocationId: 'bellwold-market-square', label: 'south', direction: 'south' },
-        { id: 'tower-road-to-tower', fromLocationId: 'old-bell-tower-approach', toLocationId: 'old-bell-tower', label: 'north', direction: 'north' },
-        { id: 'tower-road-to-mill', fromLocationId: 'old-bell-tower-approach', toLocationId: 'abandoned-watermill', label: 'east', direction: 'east' },
-      ],
-    },
-    {
-      id: 'old-bell-tower',
-      name: 'Old Bell Tower',
-      description: 'Dust gathers in the seams between the stones. A bronze bell hangs motionless in a weathered frame; its clapper rests against its side.',
-      mapPosition: { x: 0, y: 2, terrain: 'building' },
-      exits: [
-        { id: 'tower-to-road', fromLocationId: 'old-bell-tower', toLocationId: 'old-bell-tower-approach', label: 'south', direction: 'south' },
-      ],
+    'old-bell-tower': {
       readables: [
         {
           id: 'bellwold-tower-inscription',
@@ -2192,15 +1518,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'abandoned-watermill',
-      name: 'Abandoned Watermill',
-      description: 'The air by the channel is damp and cool. A slow wooden creak carries from the wheel, and water glints through the channel. A damp work ledger lies open on the desk. The tower road is west; the east track follows the channel.',
-      mapPosition: { x: 1, y: 1, terrain: 'land' },
-      exits: [
-        { id: 'mill-to-tower-road', fromLocationId: 'abandoned-watermill', toLocationId: 'old-bell-tower-approach', label: 'west', direction: 'west' },
-        { id: 'mill-to-east-track', fromLocationId: 'abandoned-watermill', toLocationId: 'bellwold-east-mill-track', label: 'east', direction: 'east', roadId: 'bellwold-east-mill-road' },
-      ],
+    'abandoned-watermill': {
       takeables: [{
         id: 'mill-copper-axe',
         typeId: 'copper-axe',
@@ -2218,74 +1536,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'bellwold-east-mill-track',
-      name: 'East Mill Track',
-      description: 'The road leaves the mill and runs east between shallow drainage channels. The abandoned watermill is west; a bend in the track lies east.',
-      mapPosition: { x: 2, y: 1, terrain: 'gravel' },
-      exits: [
-        { id: 'east-mill-track-to-mill', fromLocationId: 'bellwold-east-mill-track', toLocationId: 'abandoned-watermill', label: 'west', direction: 'west', roadId: 'bellwold-east-mill-road' },
-        { id: 'east-mill-track-to-bend', fromLocationId: 'bellwold-east-mill-track', toLocationId: 'bellwold-east-road-bend', label: 'east', direction: 'east', roadId: 'bellwold-east-mill-road' },
-      ],
-    },
-    {
-      id: 'bellwold-east-road-bend',
-      name: 'East Road Bend',
-      description: 'The packed track curves around a low rise; the mill channel has vanished from view. A narrower path branches north toward the old church. East Mill Track is west; the road verge is east.',
-      mapPosition: { x: 3, y: 1, terrain: 'gravel' },
-      exits: [
-        { id: 'east-road-bend-to-track', fromLocationId: 'bellwold-east-road-bend', toLocationId: 'bellwold-east-mill-track', label: 'west', direction: 'west', roadId: 'bellwold-east-mill-road' },
-        { id: 'east-road-bend-to-verge', fromLocationId: 'bellwold-east-road-bend', toLocationId: 'bellwold-east-road-verge', label: 'east', direction: 'east', roadId: 'bellwold-east-mill-road' },
-        { id: 'east-road-bend-to-church-track', fromLocationId: 'bellwold-east-road-bend', toLocationId: 'bellwold-north-church-track', label: 'north toward the abandoned church', direction: 'north', roadId: 'bellwold-north-church-road' },
-      ],
-    },
-    {
-      id: 'bellwold-north-church-track',
-      name: 'North Church Track',
-      description: 'A narrow track climbs north between low banks of grass. Wind combs the grass as the road rises; East Road Bend is south and the church approach is north.',
-      mapPosition: { x: 3, y: 2, terrain: 'dirt' },
-      exits: [
-        { id: 'church-track-to-east-bend', fromLocationId: 'bellwold-north-church-track', toLocationId: 'bellwold-east-road-bend', label: 'south to East Road Bend', direction: 'south', roadId: 'bellwold-north-church-road' },
-        { id: 'church-track-to-approach', fromLocationId: 'bellwold-north-church-track', toLocationId: 'bellwold-church-approach', label: 'north to the church approach', direction: 'north', roadId: 'bellwold-north-church-road' },
-      ],
-    },
-    {
-      id: 'bellwold-church-approach',
-      name: 'Church Approach',
-      description: 'The track opens into bare ground before a dark timber doorway. Wind pushes dry leaves across the clearing; the entrance is north and the road returns south.',
-      mapPosition: { x: 3, y: 3, terrain: 'land' },
-      exits: [
-        { id: 'church-approach-to-track', fromLocationId: 'bellwold-church-approach', toLocationId: 'bellwold-north-church-track', label: 'south along the road', direction: 'south', roadId: 'bellwold-north-church-road' },
-        { id: 'church-approach-to-church', fromLocationId: 'bellwold-church-approach', toLocationId: 'bellwold-abandoned-church', label: 'north into the church', direction: 'north' },
-      ],
-    },
-    {
-      id: 'bellwold-abandoned-church',
-      name: 'Abandoned Church',
-      description: 'Dust powders the stone floor, and muted light falls through gaps in the roof. A narrow stair climbs toward a frame overhead; worn steps descend below.',
-      mapPosition: { x: 3, y: 4, z: 0, terrain: 'building' },
-      exits: [
-        { id: 'church-to-approach', fromLocationId: 'bellwold-abandoned-church', toLocationId: 'bellwold-church-approach', label: 'south to the church approach', direction: 'south' },
-        { id: 'church-to-belfry', fromLocationId: 'bellwold-abandoned-church', toLocationId: 'bellwold-church-belfry', label: 'up to the belfry', direction: 'up' },
-        { id: 'church-to-annex', fromLocationId: 'bellwold-abandoned-church', toLocationId: 'bellwold-church-annex', label: 'down to the annex', direction: 'down' },
-      ],
-    },
-    {
-      id: 'bellwold-church-belfry',
-      name: 'Church Belfry',
-      description: 'Wind cuts through the narrow belfry. A weathered frame hangs over the roofline, ringed by empty mounting holes; a cut length of rope taps against it. The stair leads down to the nave.',
-      mapAreaId: 'bellwold-abandoned-church',
-      mapPosition: { x: 3, y: 4, z: 1, terrain: 'building' },
-      exits: [
-        { id: 'belfry-to-church', fromLocationId: 'bellwold-church-belfry', toLocationId: 'bellwold-abandoned-church', label: 'down to the church', direction: 'down' },
-      ],
-    },
-    {
-      id: 'bellwold-church-annex',
-      name: 'Church Annex',
-      description: 'The steps descend into a low stone room. Damp darkens the mortar, and shallow shelves run along the walls. A locked iron door stands to the east; the stair leads up.',
-      mapAreaId: 'bellwold-abandoned-church',
-      mapPosition: { x: 3, y: 4, z: -1, terrain: 'building' },
+    'bellwold-church-annex': {
       interactables: [
         {
           id: 'bellwold-church-iron-door',
@@ -2302,202 +1553,8 @@ const draft = {
           repeatResponse: 'The iron door stands open. The old key still turns in its lock.',
         },
       ],
-      exits: [
-        { id: 'annex-to-church', fromLocationId: 'bellwold-church-annex', toLocationId: 'bellwold-abandoned-church', label: 'up to the church', direction: 'up' },
-        {
-          id: 'annex-to-crypt-entry',
-          fromLocationId: 'bellwold-church-annex',
-          toLocationId: 'bellwold-church-crypt-entry',
-          label: 'east through the iron door',
-          direction: 'east',
-          requiredInteractionId: 'unlock-bellwold-church-door',
-        },
-      ],
     },
-    {
-      id: 'bellwold-church-crypt-entry',
-      name: 'Undercrypt Entry',
-      description: 'A low stone corridor begins beyond the iron door. Damp air carries the smell of earth; a shallow recess opens east, the passage runs north, and the annex lies west.',
-      mapAreaId: 'bellwold-church-undercrypt',
-      mapPosition: { x: 4, y: 4, z: -1, terrain: 'building' },
-      exits: [
-        { id: 'crypt-entry-to-annex', fromLocationId: 'bellwold-church-crypt-entry', toLocationId: 'bellwold-church-annex', label: 'west to the annex', direction: 'west' },
-        { id: 'crypt-entry-to-passage', fromLocationId: 'bellwold-church-crypt-entry', toLocationId: 'bellwold-crypt-entry-passage', label: 'north', direction: 'north' },
-        { id: 'crypt-entry-to-recess', fromLocationId: 'bellwold-church-crypt-entry', toLocationId: 'bellwold-crypt-entry-recess', label: 'east', direction: 'east' },
-      ],
-    },
-    {
-      id: 'bellwold-crypt-entry-recess',
-      name: 'Entry Recess',
-      description: 'The eastern recess ends at bare stone. A smooth layer of dust covers the floor; the corridor returns west.',
-      mapAreaId: 'bellwold-church-undercrypt',
-      mapPosition: { x: 5, y: 4, z: -1, terrain: 'building' },
-      exits: [
-        { id: 'crypt-recess-to-entry', fromLocationId: 'bellwold-crypt-entry-recess', toLocationId: 'bellwold-church-crypt-entry', label: 'west', direction: 'west' },
-      ],
-    },
-    {
-      id: 'bellwold-crypt-entry-passage',
-      name: 'First Passage',
-      description: 'Rough stone presses close on either side, leaving space for two people to pass. Footsteps echo toward a fork north; the entry lies south.',
-      mapAreaId: 'bellwold-church-undercrypt',
-      mapPosition: { x: 4, y: 5, z: -1, terrain: 'building' },
-      exits: [
-        { id: 'crypt-passage-to-entry', fromLocationId: 'bellwold-crypt-entry-passage', toLocationId: 'bellwold-church-crypt-entry', label: 'south', direction: 'south' },
-        { id: 'crypt-passage-to-fork', fromLocationId: 'bellwold-crypt-entry-passage', toLocationId: 'bellwold-crypt-fork', label: 'north', direction: 'north' },
-      ],
-    },
-    {
-      id: 'bellwold-crypt-fork',
-      name: 'Three-Way Fork',
-      description: 'Three worn corridors meet beneath a cracked arch. Fine grit crunches underfoot; the first passage is south, the central hall north, and narrow branches open east and west.',
-      mapAreaId: 'bellwold-church-undercrypt',
-      mapPosition: { x: 4, y: 6, z: -1, terrain: 'building' },
-      exits: [
-        { id: 'crypt-fork-to-passage', fromLocationId: 'bellwold-crypt-fork', toLocationId: 'bellwold-crypt-entry-passage', label: 'south', direction: 'south' },
-        { id: 'crypt-fork-to-central-hall', fromLocationId: 'bellwold-crypt-fork', toLocationId: 'bellwold-crypt-central-hall', label: 'north', direction: 'north' },
-        { id: 'crypt-fork-to-west-blind-passage', fromLocationId: 'bellwold-crypt-fork', toLocationId: 'bellwold-crypt-west-blind-passage', label: 'west', direction: 'west' },
-        { id: 'crypt-fork-to-east-bend', fromLocationId: 'bellwold-crypt-fork', toLocationId: 'bellwold-crypt-east-bend', label: 'east', direction: 'east' },
-      ],
-    },
-    {
-      id: 'bellwold-crypt-west-blind-passage',
-      name: 'Blind Passage',
-      description: 'The western branch stops at a rough stone wall; loose grit gathers at its base. The fork lies east.',
-      mapAreaId: 'bellwold-church-undercrypt',
-      mapPosition: { x: 3, y: 6, z: -1, terrain: 'building' },
-      exits: [
-        { id: 'crypt-blind-passage-to-fork', fromLocationId: 'bellwold-crypt-west-blind-passage', toLocationId: 'bellwold-crypt-fork', label: 'east', direction: 'east' },
-      ],
-    },
-    {
-      id: 'bellwold-crypt-east-bend',
-      name: 'Eastern Bend',
-      description: 'Stone walls curve north, where a colder draft threads through the passage. The fork lies west.',
-      mapAreaId: 'bellwold-church-undercrypt',
-      mapPosition: { x: 5, y: 6, z: -1, terrain: 'building' },
-      exits: [
-        { id: 'crypt-east-bend-to-fork', fromLocationId: 'bellwold-crypt-east-bend', toLocationId: 'bellwold-crypt-fork', label: 'west', direction: 'west' },
-        { id: 'crypt-east-bend-to-east-corridor', fromLocationId: 'bellwold-crypt-east-bend', toLocationId: 'bellwold-crypt-east-corridor', label: 'north', direction: 'north' },
-      ],
-    },
-    {
-      id: 'bellwold-crypt-east-corridor',
-      name: 'Eastern Corridor',
-      description: 'Bootsteps echo down the straight corridor. The central hall opens west, the passage returns south, and a short branch ends east.',
-      mapAreaId: 'bellwold-church-undercrypt',
-      mapPosition: { x: 5, y: 7, z: -1, terrain: 'building' },
-      exits: [
-        { id: 'crypt-east-corridor-to-east-bend', fromLocationId: 'bellwold-crypt-east-corridor', toLocationId: 'bellwold-crypt-east-bend', label: 'south', direction: 'south' },
-        { id: 'crypt-east-corridor-to-central-hall', fromLocationId: 'bellwold-crypt-east-corridor', toLocationId: 'bellwold-crypt-central-hall', label: 'west', direction: 'west' },
-        { id: 'crypt-east-corridor-to-dead-end', fromLocationId: 'bellwold-crypt-east-corridor', toLocationId: 'bellwold-crypt-east-dead-end', label: 'east', direction: 'east' },
-      ],
-    },
-    {
-      id: 'bellwold-crypt-east-dead-end',
-      name: 'Eastern Dead End',
-      description: 'The eastern corridor ends at a collapsed stone niche; fine dust lies undisturbed across the floor. The corridor is west.',
-      mapAreaId: 'bellwold-church-undercrypt',
-      mapPosition: { x: 6, y: 7, z: -1, terrain: 'building' },
-      exits: [
-        { id: 'crypt-east-dead-end-to-corridor', fromLocationId: 'bellwold-crypt-east-dead-end', toLocationId: 'bellwold-crypt-east-corridor', label: 'west', direction: 'west' },
-      ],
-    },
-    {
-      id: 'bellwold-crypt-central-hall',
-      name: 'Central Hall',
-      description: 'A square chamber gathers the echoes of four passages. Cold air spills from the northern route; the fork lies south, with cross-corridors west and east.',
-      mapAreaId: 'bellwold-church-undercrypt',
-      mapPosition: { x: 4, y: 7, z: -1, terrain: 'building' },
-      exits: [
-        { id: 'crypt-central-hall-to-fork', fromLocationId: 'bellwold-crypt-central-hall', toLocationId: 'bellwold-crypt-fork', label: 'south', direction: 'south' },
-        { id: 'crypt-central-hall-to-west-corridor', fromLocationId: 'bellwold-crypt-central-hall', toLocationId: 'bellwold-crypt-west-corridor', label: 'west', direction: 'west' },
-        { id: 'crypt-central-hall-to-east-corridor', fromLocationId: 'bellwold-crypt-central-hall', toLocationId: 'bellwold-crypt-east-corridor', label: 'east', direction: 'east' },
-        { id: 'crypt-central-hall-to-north-passage', fromLocationId: 'bellwold-crypt-central-hall', toLocationId: 'bellwold-crypt-north-passage', label: 'north', direction: 'north' },
-      ],
-    },
-    {
-      id: 'bellwold-crypt-west-corridor',
-      name: 'Western Corridor',
-      description: 'A narrow passage runs west from the central hall; a stone shelf juts from the northern wall into a shallow recess.',
-      mapAreaId: 'bellwold-church-undercrypt',
-      mapPosition: { x: 3, y: 7, z: -1, terrain: 'building' },
-      exits: [
-        { id: 'crypt-west-corridor-to-central-hall', fromLocationId: 'bellwold-crypt-west-corridor', toLocationId: 'bellwold-crypt-central-hall', label: 'east', direction: 'east' },
-        { id: 'crypt-west-corridor-to-recess', fromLocationId: 'bellwold-crypt-west-corridor', toLocationId: 'bellwold-crypt-west-recess', label: 'north', direction: 'north' },
-      ],
-    },
-    {
-      id: 'bellwold-crypt-west-recess',
-      name: 'Western Burial Recess',
-      description: 'A stone shelf juts from the wall of this shallow recess; dust gathers along its edge. The passage returns south.',
-      mapAreaId: 'bellwold-church-undercrypt',
-      mapPosition: { x: 3, y: 8, z: -1, terrain: 'building' },
-      exits: [
-        { id: 'crypt-west-recess-to-corridor', fromLocationId: 'bellwold-crypt-west-recess', toLocationId: 'bellwold-crypt-west-corridor', label: 'south', direction: 'south' },
-      ],
-    },
-    {
-      id: 'bellwold-crypt-north-passage',
-      name: 'Northern Passage',
-      description: 'Cool air brushes through the straight passage. The central hall lies south; a larger junction waits north.',
-      mapAreaId: 'bellwold-church-undercrypt',
-      mapPosition: { x: 4, y: 8, z: -1, terrain: 'building' },
-      exits: [
-        { id: 'crypt-north-passage-to-central-hall', fromLocationId: 'bellwold-crypt-north-passage', toLocationId: 'bellwold-crypt-central-hall', label: 'south', direction: 'south' },
-        { id: 'crypt-north-passage-to-upper-junction', fromLocationId: 'bellwold-crypt-north-passage', toLocationId: 'bellwold-crypt-upper-junction', label: 'north', direction: 'north' },
-      ],
-    },
-    {
-      id: 'bellwold-crypt-upper-junction',
-      name: 'Upper Junction',
-      description: 'Stone branches meet beneath an old lintel. Dust shifts in a draft; the northern passage is south, recesses open east and west, and a narrow route continues north.',
-      mapAreaId: 'bellwold-church-undercrypt',
-      mapPosition: { x: 4, y: 9, z: -1, terrain: 'building' },
-      exits: [
-        { id: 'crypt-upper-junction-to-north-passage', fromLocationId: 'bellwold-crypt-upper-junction', toLocationId: 'bellwold-crypt-north-passage', label: 'south', direction: 'south' },
-        { id: 'crypt-upper-junction-to-west-recess', fromLocationId: 'bellwold-crypt-upper-junction', toLocationId: 'bellwold-crypt-west-burial-recess', label: 'west', direction: 'west' },
-        { id: 'crypt-upper-junction-to-east-recess', fromLocationId: 'bellwold-crypt-upper-junction', toLocationId: 'bellwold-crypt-east-burial-recess', label: 'east', direction: 'east' },
-        { id: 'crypt-upper-junction-to-north-approach', fromLocationId: 'bellwold-crypt-upper-junction', toLocationId: 'bellwold-crypt-north-approach', label: 'north', direction: 'north' },
-      ],
-    },
-    {
-      id: 'bellwold-crypt-west-burial-recess',
-      name: 'West Burial Recess',
-      description: 'A narrow stone shelf projects from the western wall, its surface dulled by dust. The junction lies east.',
-      mapAreaId: 'bellwold-church-undercrypt',
-      mapPosition: { x: 3, y: 9, z: -1, terrain: 'building' },
-      exits: [
-        { id: 'crypt-west-burial-recess-to-junction', fromLocationId: 'bellwold-crypt-west-burial-recess', toLocationId: 'bellwold-crypt-upper-junction', label: 'east', direction: 'east' },
-      ],
-    },
-    {
-      id: 'bellwold-crypt-east-burial-recess',
-      name: 'East Burial Recess',
-      description: 'A cracked stone slab rests in the small recess, its surface scored with pale lines. The junction lies west.',
-      mapAreaId: 'bellwold-church-undercrypt',
-      mapPosition: { x: 5, y: 9, z: -1, terrain: 'building' },
-      exits: [
-        { id: 'crypt-east-burial-recess-to-junction', fromLocationId: 'bellwold-crypt-east-burial-recess', toLocationId: 'bellwold-crypt-upper-junction', label: 'west', direction: 'west' },
-      ],
-    },
-    {
-      id: 'bellwold-crypt-north-approach',
-      name: 'Reliquary Approach',
-      description: 'A squared arch rises ahead; cool, still air flows from a chamber to the north. The upper junction lies south.',
-      mapAreaId: 'bellwold-church-undercrypt',
-      mapPosition: { x: 4, y: 10, z: -1, terrain: 'building' },
-      exits: [
-        { id: 'crypt-approach-to-junction', fromLocationId: 'bellwold-crypt-north-approach', toLocationId: 'bellwold-crypt-upper-junction', label: 'south', direction: 'south' },
-        { id: 'crypt-approach-to-reliquary', fromLocationId: 'bellwold-crypt-north-approach', toLocationId: 'bellwold-church-reliquary', label: 'north', direction: 'north' },
-      ],
-    },
-    {
-      id: 'bellwold-church-reliquary',
-      name: 'Church Reliquary',
-      description: 'Dry, still air hangs in the chamber. A narrow sword rests on a black stone shelf beneath a faded carving of a watchful hand.',
-      mapAreaId: 'bellwold-church-undercrypt',
-      mapPosition: { x: 4, y: 11, z: -1, terrain: 'building' },
+    'bellwold-church-reliquary': {
       takeables: [
         {
           id: 'bellwold-reliquary-sword',
@@ -2508,127 +1565,10 @@ const draft = {
           equipment: { slot: 'weapon', attackBonus: 2, defenseBonus: 0 },
         },
       ],
-      exits: [
-        { id: 'reliquary-to-approach', fromLocationId: 'bellwold-church-reliquary', toLocationId: 'bellwold-crypt-north-approach', label: 'south', direction: 'south' },
-      ],
     },
-    {
-      id: 'bellwold-east-road-verge',
-      name: 'Eastern Road Verge',
-      description: 'The packed track ends at open ground beyond the bend. Grass pushes through the wheel ruts, and the eastern way is overgrown. The bend lies west.',
-      mapPosition: { x: 4, y: 1, terrain: 'land' },
-      exits: [
-        { id: 'east-road-verge-to-bend', fromLocationId: 'bellwold-east-road-verge', toLocationId: 'bellwold-east-road-bend', label: 'west', direction: 'west', roadId: 'bellwold-east-mill-road' },
-      ],
-    },
-  ],
-  locationGroups: [
-    {
-      // Bellwold's room names already carry the village name, so memberships stay
-      // descriptive rather than primary to avoid titles such as "Bellwold: Bellwold Market Square".
-      id: 'bellwold',
-      name: 'Bellwold',
-      type: 'settlement',
-      description: 'A growing trading settlement near the frontier of the Crown of Heskar. Its exact legal status is not established.',
-      memberships: [
-        'bellwold-market-square',
-        'kindly-roof-inn',
-        'marrs-general-goods',
-        'bellwold-west-gate',
-        'old-bell-tower-approach',
-        'old-bell-tower',
-        'bellwold-south-common',
-        'green-mortar',
-        'blackwater-forge',
-        'bellwold-well-court',
-        'bellwold-wattle-row',
-        'sovens-wheelwright-yard',
-        'tallow-end-cottage',
-        'old-grain-house',
-        'bellwold-common-house',
-        'bellwold-south-gate',
-        'bellwold-hearth-alley',
-        'bellwold-lantern-court',
-        'bellwold-nettlemere-house',
-        'bellwold-upper-row-house',
-        'bellwold-lower-row-west',
-        'bellwold-lower-row-house',
-        'bellwold-lower-row',
-        'bellwold-south-lane-cottage',
-        'bellwold-jail',
-        'bellwold-jail-cell',
-        'bellwold-library',
-        'bellwold-library-upper-room',
-        'bellwold-local-museum',
-      ].map((locationId) => ({ locationId, isPrimary: false })),
-      metadata: { codexId: 'orraveth-bellwold', politicalStatus: 'unestablished' },
-    },
-    {
-      id: 'harrowfen',
-      name: 'Harrowfen',
-      type: 'settlement',
-      description: 'A farming village of low fields and drainage cuts, half a day west of Bellwold. Much of its land belongs to Heskar noble families.',
-      memberships: [
-        'harrowfen-east-field-gate',
-        'harrowfen-threshing-green',
-        'harrowfen-weigh-house',
-        'harrowfen-drainage-cut',
-        'harrowfen-tenant-row',
-        'harrowfen-west-fields',
-      ].map((locationId) => ({ locationId, isPrimary: true })),
-      metadata: { codexId: 'orraveth-harrowfen', politicalStatus: 'crown-of-heskar' },
-    },
-    {
-      id: 'rillford',
-      name: 'Rillford',
-      type: 'settlement',
-      description: 'A river crossing and trading town a day southwest of Bellwold along the Lower Rill, with a contested ferry trade.',
-      memberships: [
-        'rillford-north-quay',
-        'rillford-customs-house',
-        'rillford-guild-hall',
-        'rillford-inn',
-        'rillford-warehouse-row',
-        'rillford-livestock-market',
-        'rillford-crossing',
-        'rillford-south-landing',
-        'rillford-south-lane',
-      ].map((locationId) => ({ locationId, isPrimary: true })),
-      metadata: { codexId: 'orraveth-rillford', politicalStatus: 'crown-of-heskar' },
-    },
-    {
-      // The bridge and Rillford's ferry stage belong to the river without taking its name.
-      id: 'lower-rill',
-      name: 'Lower Rill',
-      type: 'waterway',
-      description: 'A provisional name for the river passing near Bellwold. Its full course is not recorded.',
-      memberships: [
-        ...[
-          'lower-rill-west-of-rillford',
-          'lower-rill-towpath-reach',
-          'lower-rill-reed-reach',
-          'bellwold-river-far-west-reach',
-          'bellwold-river-willow-reach',
-          'bellwold-river-west-reach',
-          'bellwold-river-east-reach',
-          'bellwold-river-alder-reach',
-          'bellwold-river-far-east-reach',
-        ].map((locationId) => ({ locationId, isPrimary: true })),
-        ...['bellwold-river-bridge', 'rillford-crossing'].map((locationId) => ({ locationId, isPrimary: false })),
-      ],
-      metadata: { codexId: 'orraveth-lower-rill' },
-    },
-  ],
-  roads: [
-    {
-      id: 'bellwold-mile-west-road',
-      name: 'Bellwold Mile Marker West Road',
-      locationIds: [
-        'bellwold-south-mile-marker',
-        'bellwold-mile-west-track',
-        'bellwold-hazel-cut',
-        'bellwold-milepost-workshop',
-      ],
+  },
+  roadRules: {
+    'bellwold-mile-west-road': {
       encounterChancePercent: 10,
       encounters: [
         {
@@ -2639,18 +1579,7 @@ const draft = {
         banditEncounter('bellwold-mile-west-road-bandit'),
       ],
     },
-    {
-      id: 'bellwold-south-road',
-      name: 'Bellwold South Road',
-      locationIds: [
-        'bellwold-south-gate',
-        'bellwold-southbound-track',
-        'bellwold-reedbed-approach',
-        'bellwold-river-bridge',
-        'bellwold-far-bank-track',
-        'bellwold-south-mile-marker',
-        'bellwold-unfinished-road-end',
-      ],
+    'bellwold-south-road': {
       encounterChancePercent: 10,
       encounters: [
         {
@@ -2667,15 +1596,7 @@ const draft = {
         banditEncounter('bellwold-south-road-bandit'),
       ],
     },
-    {
-      id: 'bellwold-east-mill-road',
-      name: 'Bellwold East Mill Road',
-      locationIds: [
-        'abandoned-watermill',
-        'bellwold-east-mill-track',
-        'bellwold-east-road-bend',
-        'bellwold-east-road-verge',
-      ],
+    'bellwold-east-mill-road': {
       encounterChancePercent: 10,
       encounters: [
         {
@@ -2686,14 +1607,7 @@ const draft = {
         banditEncounter('bellwold-east-mill-road-bandit'),
       ],
     },
-    {
-      id: 'bellwold-north-church-road',
-      name: 'Bellwold North Church Road',
-      locationIds: [
-        'bellwold-east-road-bend',
-        'bellwold-north-church-track',
-        'bellwold-church-approach',
-      ],
+    'bellwold-north-church-road': {
       encounterChancePercent: 10,
       encounters: [
         {
@@ -2704,14 +1618,7 @@ const draft = {
         banditEncounter('bellwold-north-church-road-bandit'),
       ],
     },
-    {
-      id: 'bellwold-west-road',
-      name: 'Bellwold West Road',
-      locationIds: [
-        'bellwold-west-gate',
-        'bellwold-westbound-track',
-        'bellwold-west-road-end',
-      ],
+    'bellwold-west-road': {
       encounterChancePercent: 10,
       encounters: [
         {
@@ -2722,14 +1629,7 @@ const draft = {
         banditEncounter('bellwold-west-road-bandit'),
       ],
     },
-    {
-      id: 'harrowfen-road',
-      name: 'Harrowfen Road',
-      locationIds: [
-        'bellwold-west-road-end',
-        'harrowfen-road-ditch-verge',
-        'harrowfen-east-field-gate',
-      ],
+    'harrowfen-road': {
       encounterChancePercent: 10,
       encounters: [
         {
@@ -2749,18 +1649,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'rill-towpath',
-      name: 'Rill Towpath',
-      locationIds: [
-        'bellwold-reedbed-approach',
-        'rill-towpath-willow-bank',
-        'rill-towpath-mooring-posts',
-        'rill-towpath-sedge-flats',
-        'rill-towpath-culvert',
-        'rill-towpath-quay-lane',
-        'rillford-north-quay',
-      ],
+    'rill-towpath': {
       encounterChancePercent: 10,
       encounters: [
         {
@@ -2780,16 +1669,7 @@ const draft = {
         },
       ],
     },
-    {
-      id: 'rillford-south-lane-road',
-      name: 'Rillford South Lane Road',
-      locationIds: [
-        'bellwold-milepost-workshop',
-        'mile-road-sedge-track',
-        'mile-road-landing-lane',
-        'rillford-south-lane',
-        'rillford-south-landing',
-      ],
+    'rillford-south-lane-road': {
       encounterChancePercent: 10,
       encounters: [
         {
@@ -2804,7 +1684,7 @@ const draft = {
         },
       ],
     },
-  ],
+  },
   quests: [
     {
       id: 'bellwold-mill-observations',
@@ -2946,9 +1826,13 @@ const draft = {
       },
     },
   ],
-} as const;
+} satisfies WorldPackContent;
 
-export const orravethWorld: WorldPackDraft = WorldPackDraftSchema.parse(draft);
+export const orravethWorld: WorldPackDraft = WorldPackDraftSchema.parse(composeWorldPackDraft({
+  locations: WorldLocationsFileSchema.parse(locations),
+  locationGroups: WorldLocationGroupsFileSchema.parse(locationGroups),
+  roads: WorldRoadsFileSchema.parse(roads),
+}, content));
 const graphErrors = validateDraftWorldGraph(orravethWorld);
 if (graphErrors.length > 0) {
   throw new Error(`Invalid Orraveth world graph:\n${graphErrors.map((error) => `- ${error}`).join('\n')}`);
