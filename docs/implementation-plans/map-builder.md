@@ -1,6 +1,6 @@
 # MUDD feature implementation plan — Map builder
 
-**Status:** Phase 0 is specified in [ADR 0042](../adr/0042-world-map-layout-data-files.md) (accepted); implementation has not started. This is the first part of a GUI for authoring worlds. It moves part of the engine roadmap's "CLI and eventually GUI world-editing tools" work earlier, and its data-format work is the first step toward distributable content packs (finding A6 of the 2026-10-31 architecture audit).
+**Status:** Phase 0 is implemented following [ADR 0042](../adr/0042-world-map-layout-data-files.md) (accepted and amended). Both packs compose JSON layout with TypeScript content. Phases 1–4 have not started. This is the first part of a GUI for authoring worlds. It moves part of the engine roadmap's "CLI and eventually GUI world-editing tools" work earlier, and its data-format work is the first step toward distributable content packs (finding A6 of the 2026-10-31 architecture audit).
 
 **Goal / user-observable behavior:** A world author opens a world pack in a local builder app, sees its map as a grid, and edits the layout: adds rooms next to existing ones with paired exits, sets terrain, and assigns rooms to settlements and roads. Saving writes data files in the pack that pass the existing schema and graph validation. Players see no change until the pack is released as usual.
 
@@ -12,7 +12,7 @@
 - **Settlements are location groups.** A settlement is a `locationGroup` with `type: 'settlement'`; a room can have at most one primary membership ([location-groups.md](../location-groups.md)). Groups also have a runtime catalog with revisions and create/update/delete operations, seeded from the pack ([location-groups.ts:99](../../engine-contracts/src/location-groups.ts#L99)).
 - **Roads need encounters.** A road is an ordered list of at least 3 location IDs and needs at least one encounter ([world.ts:240](../../engine-contracts/src/world.ts#L240)). Every consecutive pair needs an exit carrying the road's `roadId`.
 - **Descriptions are required.** `LocationDefinitionSchema` requires a non-empty `description`.
-- **All layout is hand-written TypeScript.** Orraveth's 98 rooms, groups and roads sit in one 2,958-line file, mixed with NPCs, quests and descriptions ([index.ts:243](../../packages/world-orraveth/src/index.ts#L243), [index.ts:2525](../../packages/world-orraveth/src/index.ts#L2525), [index.ts:2622](../../packages/world-orraveth/src/index.ts#L2622)). The pack is parsed with `WorldPackDraftSchema` and checked with `validateDraftWorldGraph` at module load ([world.ts:517](../../engine-contracts/src/world.ts#L517), [world.ts:1072](../../engine-contracts/src/world.ts#L1072)).
+- **Layout is now JSON data (Phase 0).** Orraveth's 98 rooms and the demo's 42 rooms live in each pack's `src/map/locations.json`, in their original order, alongside `location-groups.json` and `roads.json`. [Composition](../../engine-contracts/src/world-map-data.ts) merges this with TypeScript content. Both packs retain `WorldPackDraftSchema` parsing and `validateDraftWorldGraph` checks at module load. See [authoring instructions](../world-content/map-layout.md).
 - **A tile renderer already exists.** `WorldMapPanel` draws tiles, connections, terrain and vertical markers from a map projection ([WorldMapPanel.tsx](../../apps/web/src/WorldMapPanel.tsx)). It lives in `apps/web`, not in `@mudd/ui`.
 - **Room IDs are kept stable on purpose.** The Lower Rill content change renamed rooms without changing their IDs, because event history refers to location IDs.
 
@@ -40,6 +40,11 @@
 ## Phases
 
 ### Phase 0 — Separate the map data
+
+**Implemented.** The extraction script generated all six layout files from the
+built original packs. Strict equality tests preserve array order against fixtures
+captured before migration in commit `3ced52f`. Remove those fixtures and their
+equivalence tests in a follow-up after merge, before changing authored content.
 
 1. Follow [ADR 0042](../adr/0042-world-map-layout-data-files.md) (accepted), which specifies the map data format and how it combines with TypeScript content.
 2. Move layout out of the TypeScript: locations' ID, name, description, region, map area and position; exits; location groups; and each road's room list. NPCs, quests, objects and road encounters stay in TypeScript.

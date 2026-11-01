@@ -1,14 +1,14 @@
 # Bellwold Region Expansion
 
 **Status:** In delivery. Q1 (river identity), Q5 (travel scale) and Q7 (the Rillford crossing) were decided on 2026-10-31. Phases 0 and 1 are in the world data on `main`. Phase 2 is implemented on `content/lower-rill-rillford` and awaits review. Phases 3–5 remain proposals.
-**Pack:** `orraveth.bellwold` (`packages/world-orraveth/src/index.ts`), `packVersion` 1.20.0 with 98 locations after Phase 2. Sections 1 and 2 describe the Codex and world data as they stood before Phase 1.
+**Pack:** `orraveth.bellwold` ([layout](../../../packages/world-orraveth/src/map/), [content](../../../packages/world-orraveth/src/index.ts)), `packVersion` 1.20.0 with 98 locations after Phase 2. Sections 1 and 2 describe the Codex and world data as they stood before Phase 1.
 **Scope:** New roads, new towns, extending the existing river, and connecting Bellwold to the communities of the Bellwold Marches.
 
 ## How to read this document
 
 - **Canon** means a fact stated in the Orraveth Codex (`apps/web/src/codex/content/`). Each canon claim cites its Codex file.
 - **Proposal** means something this spec invents to make the region playable: a room, a road alignment, a step count, a placeholder name. Proposals are not canon. They need Codex review before anyone writes them back into the Codex.
-- **World data** means what `packages/world-orraveth/src/index.ts` contains today.
+- **World data** means the composed pack: layout in `packages/world-orraveth/src/map/` plus content in `packages/world-orraveth/src/index.ts`. Historical findings below describe the original TypeScript pack.
 
 Most of the Marches communities are **Provisional Canon**: their populations, travel times and politics are recorded but can still change ([regions/bellwold-marches.md][marches]). This spec follows those records. It doesn't harden them.
 
@@ -389,19 +389,24 @@ HF(-9..-6,-1..1)◄─WV─WT─WG─inn─SQ─…─mill─bend─EV══ eas
 
 | Addition | Where it goes | Fields |
 |---|---|---|
-| Road segment room | `locations[]` | `id`, `name`, `description`, `mapPosition {x, y, terrain}`, two road exits (`roadId`, opposite cardinal directions) |
-| Junction on an existing room | Add one exit to the existing location (e.g. `bellwold-reedbed-approach` gets `west` → `rill-towpath-willow-bank`, `roadId: 'rill-towpath'`), plus the matching reverse exit | The existing room appears in the new road's `locationIds` as its first entry |
-| Road | `roads[]` | `id`, `name`, ordered `locationIds` (junction first, arrival last), `encounterChancePercent`, `encounters` |
-| River reach | `locations[]` | `terrain: 'river'`, `visibleWhenUnvisited: true`, plain (non-road) exits along the river |
-| Rillford crossing | `locations[]` | `states: [{id:'ford'}, {id:'water'}]`, `defaultStateId: 'ford'`; land exits use `fromStateId: 'ford'`, river exits `fromStateId: 'water'`; reach exits arrive with `toStateId: 'water'`. Same as `bellwold-river-bridge`. |
-| Town room | `locations[]` | Ordinary location; `npcs`, `readables`, `inn`, `shop` as listed |
-| Settlement identity | `locationGroups[]` | One `type: 'settlement'` group per town, with every room as an `isPrimary` member; see §5.2 |
+| Road segment room | `src/map/locations.json` → `locations[]` | `id`, `name`, `description`, `mapPosition {x, y, terrain}`, two road exits (`roadId`, opposite cardinal directions) |
+| Junction on an existing room | Add an exit in `src/map/locations.json` (e.g. `bellwold-reedbed-approach` gets `west` → `rill-towpath-willow-bank`, `roadId: 'rill-towpath'`), plus the reverse exit | The existing room appears in the new road's `locationIds` as its first entry |
+| Road | `src/map/roads.json` → `roads[]`; `src/index.ts` → `roadRules[roadId]` | JSON: `id`, `name`, ordered `locationIds` (junction first, arrival last). TypeScript: `encounterChancePercent`, `encounters` |
+| River reach | `src/map/locations.json` → `locations[]` | `terrain: 'river'`, `visibleWhenUnvisited: true`, plain (non-road) exits along the river |
+| Rillford crossing | Layout and exits in `src/map/locations.json`; `src/index.ts` → `locationContent[locationId]` for states | `states: [{id:'ford'}, {id:'water'}]`, `defaultStateId: 'ford'`; land exits use `fromStateId: 'ford'`, river exits `fromStateId: 'water'`; reach exits arrive with `toStateId: 'water'`. Same as `bellwold-river-bridge`. |
+| Town room | Layout in `src/map/locations.json`; `src/index.ts` → `locationContent[locationId]` | Ordinary location; `npcs`, `readables`, `inn`, merchant content as listed |
+| Settlement identity | `src/map/location-groups.json` → `locationGroups[]` | One `type: 'settlement'` group per town, with every room as an `isPrimary` member; see §5.2 |
 | Activities | `fishingSpots`, `woodcuttingTrees`, `dailyBoards` | `locationId` points at the new rooms |
 | Version | `packVersion` | Bump on every phase; group seeding is keyed by pack version |
 
+Follow [map layout authoring](../map-layout.md): append rooms and preserve every
+existing array order. New characters start at the first location. The Phase 0 map
+data migration itself preserves `packVersion`; the content phases above change it.
+
 ### 5.2 Location groups (proposal)
 
-Orraveth has no groups yet. Add:
+The original proposal below predates the current groups. Edit
+`src/map/location-groups.json` when extending them:
 
 - **`type: 'settlement'`** for `bellwold` (backfilled onto the existing town rooms, *not* the road segments) and for each new town. In new towns every room is a primary member, so previews and room titles read "Rillford: North Quay". *Revised during Phase 0:* Bellwold's memberships are **non-primary**, because its room names already include the village name and a primary group would produce titles like "Bellwold: Bellwold Market Square". Suggested metadata: `{ codexId: 'orraveth-rillford', politicalStatus: 'crown-of-heskar' | 'independent' | 'disputed' | 'unestablished' }`, taken straight from the Codex directory. Bellwold's status is `unestablished`.
 - **`type: 'waterway'`**, `lower-rill`: all river rooms and `rillford-crossing`. Primary for river reaches, non-primary for the crossing (which is primary in Rillford).
@@ -412,15 +417,27 @@ Don't create a group that implies a border, such as "Uncrowned Lands" or "Heskar
 
 ### 5.3 Example (Harrowfen road junction, abbreviated)
 
-```ts
-// bellwold-west-road-end gains an onward exit; its description no longer says the track ends.
-{ id: 'west-road-end-to-harrowfen-verge', fromLocationId: 'bellwold-west-road-end', toLocationId: 'harrowfen-road-ditch-verge', label: 'west', direction: 'west', roadId: 'harrowfen-road' },
+In `src/map/locations.json`, `bellwold-west-road-end` gains an onward exit;
+its description no longer says the track ends:
 
-// roads[]
+```json
+{ "id": "west-road-end-to-harrowfen-verge", "fromLocationId": "bellwold-west-road-end", "toLocationId": "harrowfen-road-ditch-verge", "label": "west", "direction": "west", "roadId": "harrowfen-road" }
+```
+
+In the `roads` array of `src/map/roads.json`:
+
+```json
 {
-  id: 'harrowfen-road',
-  name: 'Harrowfen Road',
-  locationIds: ['bellwold-west-road-end', 'harrowfen-road-ditch-verge', 'harrowfen-east-field-gate'],
+  "id": "harrowfen-road",
+  "name": "Harrowfen Road",
+  "locationIds": ["bellwold-west-road-end", "harrowfen-road-ditch-verge", "harrowfen-east-field-gate"]
+}
+```
+
+In `src/index.ts`, under `roadRules`:
+
+```ts
+'harrowfen-road': {
   encounterChancePercent: 10,
   encounters: [
     { id: 'harrowfen-road-ditch-fox', name: 'Ditch Fox', combatProfile: { maxHealth: 3, attackDamage: 1, style: 'steady' } },
