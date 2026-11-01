@@ -1,6 +1,6 @@
 # MUDD feature implementation plan — Map builder
 
-**Status:** Proposed. Phase 0 is specified in [ADR 0042](../adr/0042-world-map-layout-data-files.md) (proposed). This is the first part of a GUI for authoring worlds. It moves part of the engine roadmap's "CLI and eventually GUI world-editing tools" work earlier, and its data-format work is the first step toward distributable content packs (finding A6 of the 2026-10-31 architecture audit).
+**Status:** Phase 0 is specified in [ADR 0042](../adr/0042-world-map-layout-data-files.md) (accepted); implementation has not started. This is the first part of a GUI for authoring worlds. It moves part of the engine roadmap's "CLI and eventually GUI world-editing tools" work earlier, and its data-format work is the first step toward distributable content packs (finding A6 of the 2026-10-31 architecture audit).
 
 **Goal / user-observable behavior:** A world author opens a world pack in a local builder app, sees its map as a grid, and edits the layout: adds rooms next to existing ones with paired exits, sets terrain, and assigns rooms to settlements and roads. Saving writes data files in the pack that pass the existing schema and graph validation. Players see no change until the pack is released as usual.
 
@@ -41,7 +41,7 @@
 
 ### Phase 0 — Separate the map data
 
-1. Accept [ADR 0042](../adr/0042-world-map-layout-data-files.md), which specifies the map data format and how it combines with TypeScript content.
+1. Follow [ADR 0042](../adr/0042-world-map-layout-data-files.md) (accepted), which specifies the map data format and how it combines with TypeScript content.
 2. Move layout out of the TypeScript: locations' ID, name, description, region, map area and position; exits; location groups; and each road's room list. NPCs, quests, objects and road encounters stay in TypeScript.
 3. Build the packs from both sources through `WorldPackDraftSchema` and `validateDraftWorldGraph`.
 4. Add a test that the rebuilt Orraveth and demo packs deep-equal the current packs.

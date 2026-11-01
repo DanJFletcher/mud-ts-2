@@ -1,6 +1,6 @@
 # ADR 0042 — World map layout data files
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-01
 - **Owners:** MUDD contracts and world packs
 - **Related:** [Map builder plan](../implementation-plans/map-builder.md), [location groups](../location-groups.md)
