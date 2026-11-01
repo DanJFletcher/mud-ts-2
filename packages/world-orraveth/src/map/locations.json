@@ -1276,7 +1276,7 @@
     {
       "id": "bellwold-river-far-east-reach",
       "name": "Far East Reach",
-      "description": "The eastern current continues past the last visible bank and around a long bend. Alder Reach is west.",
+      "description": "The water curves around an alder-lined bank. Alder Reach lies west; tall sedge marks another bend to the east.",
       "mapPosition": {
         "x": 3,
         "y": -7,
@@ -1290,6 +1290,13 @@
           "toLocationId": "bellwold-river-alder-reach",
           "label": "west along the river",
           "direction": "west"
+        },
+        {
+          "id": "bellwold-river-far-east-reach-to-lower-rill-sedge-reach",
+          "fromLocationId": "bellwold-river-far-east-reach",
+          "toLocationId": "lower-rill-sedge-reach",
+          "label": "east to Sedge Reach",
+          "direction": "east"
         }
       ]
     },
@@ -1825,7 +1832,7 @@
     {
       "id": "bellwold-far-bank-track",
       "name": "Far Bank Track",
-      "description": "The road climbs away from the bridge onto firmer ground. Lower Rill Bridge is north; the old mile marker is south.",
+      "description": "The road climbs away from the bridge onto firmer ground. Lower Rill Bridge is north and the old mile marker south. A raised causeway threads east between reed beds.",
       "mapPosition": {
         "x": 0,
         "y": -8,
@@ -1848,6 +1855,14 @@
           "label": "south",
           "direction": "south",
           "roadId": "bellwold-south-road"
+        },
+        {
+          "id": "bellwold-far-bank-track-to-mosswake-causeway-reedbank",
+          "fromLocationId": "bellwold-far-bank-track",
+          "toLocationId": "mosswake-causeway-reedbank",
+          "label": "east to Reedbank Causeway",
+          "direction": "east",
+          "roadId": "mosswake-causeway"
         }
       ]
     },
@@ -2773,6 +2788,350 @@
           "label": "west",
           "direction": "west",
           "roadId": "bellwold-east-mill-road"
+        }
+      ]
+    },
+    {
+      "id": "mosswake-causeway-reedbank",
+      "name": "Reedbank Causeway",
+      "description": "Packed earth rises between the reeds. The bridge road lies west; a narrow causeway continues east beside shallow pools.",
+      "mapPosition": {
+        "x": 1,
+        "y": -8,
+        "terrain": "land"
+      },
+      "exits": [
+        {
+          "id": "mosswake-causeway-reedbank-to-bellwold-far-bank-track",
+          "fromLocationId": "mosswake-causeway-reedbank",
+          "toLocationId": "bellwold-far-bank-track",
+          "label": "west to Far Bank Track",
+          "direction": "west",
+          "roadId": "mosswake-causeway"
+        },
+        {
+          "id": "mosswake-causeway-reedbank-to-mosswake-causeway-plank-run",
+          "fromLocationId": "mosswake-causeway-reedbank",
+          "toLocationId": "mosswake-causeway-plank-run",
+          "label": "east to Plank Run",
+          "direction": "east",
+          "roadId": "mosswake-causeway"
+        }
+      ]
+    },
+    {
+      "id": "mosswake-causeway-plank-run",
+      "name": "Plank Run",
+      "description": "Short planks bridge the wet hollows between patches of firm ground. Loose reed bundles lie beside the path, which runs east and west.",
+      "mapPosition": {
+        "x": 2,
+        "y": -8,
+        "terrain": "marsh",
+        "mapColor": "#74865a"
+      },
+      "exits": [
+        {
+          "id": "mosswake-causeway-plank-run-to-mosswake-causeway-reedbank",
+          "fromLocationId": "mosswake-causeway-plank-run",
+          "toLocationId": "mosswake-causeway-reedbank",
+          "label": "west to Reedbank Causeway",
+          "direction": "west",
+          "roadId": "mosswake-causeway"
+        },
+        {
+          "id": "mosswake-causeway-plank-run-to-mosswake-causeway-mud-flats",
+          "fromLocationId": "mosswake-causeway-plank-run",
+          "toLocationId": "mosswake-causeway-mud-flats",
+          "label": "east to Muddy Causeway",
+          "direction": "east",
+          "roadId": "mosswake-causeway"
+        }
+      ]
+    },
+    {
+      "id": "mosswake-causeway-mud-flats",
+      "name": "Muddy Causeway",
+      "description": "Broad cloven prints mark the pale mud beside a low bank. Reeds brush the raised path as it continues east and west.",
+      "mapPosition": {
+        "x": 3,
+        "y": -8,
+        "terrain": "marsh",
+        "mapColor": "#74865a"
+      },
+      "exits": [
+        {
+          "id": "mosswake-causeway-mud-flats-to-mosswake-causeway-plank-run",
+          "fromLocationId": "mosswake-causeway-mud-flats",
+          "toLocationId": "mosswake-causeway-plank-run",
+          "label": "west to Plank Run",
+          "direction": "west",
+          "roadId": "mosswake-causeway"
+        },
+        {
+          "id": "mosswake-causeway-mud-flats-to-mosswake-causeway-sedge",
+          "fromLocationId": "mosswake-causeway-mud-flats",
+          "toLocationId": "mosswake-causeway-sedge",
+          "label": "east to Sedge Causeway",
+          "direction": "east",
+          "roadId": "mosswake-causeway"
+        }
+      ]
+    },
+    {
+      "id": "mosswake-causeway-sedge",
+      "name": "Sedge Causeway",
+      "description": "Sedge crowds both sides of the causeway. Raised roofs and a timber landing show through the stems to the east; the plank run returns west.",
+      "mapPosition": {
+        "x": 4,
+        "y": -8,
+        "terrain": "marsh",
+        "mapColor": "#74865a"
+      },
+      "exits": [
+        {
+          "id": "mosswake-causeway-sedge-to-mosswake-causeway-mud-flats",
+          "fromLocationId": "mosswake-causeway-sedge",
+          "toLocationId": "mosswake-causeway-mud-flats",
+          "label": "west to Muddy Causeway",
+          "direction": "west",
+          "roadId": "mosswake-causeway"
+        },
+        {
+          "id": "mosswake-causeway-sedge-to-mosswake-landing",
+          "fromLocationId": "mosswake-causeway-sedge",
+          "toLocationId": "mosswake-landing",
+          "label": "east to Landing",
+          "direction": "east",
+          "roadId": "mosswake-causeway"
+        }
+      ]
+    },
+    {
+      "id": "mosswake-landing",
+      "name": "Landing",
+      "description": "Wet posts ring a low landing beside a narrow channel to the north. A few small fish lie in a shallow basket. The causeway runs west, a roofed platform stands east, and boat sheds open south.",
+      "mapPosition": {
+        "x": 5,
+        "y": -8,
+        "terrain": "marsh",
+        "mapColor": "#74865a"
+      },
+      "exits": [
+        {
+          "id": "mosswake-landing-to-mosswake-causeway-sedge",
+          "fromLocationId": "mosswake-landing",
+          "toLocationId": "mosswake-causeway-sedge",
+          "label": "west to Sedge Causeway",
+          "direction": "west",
+          "roadId": "mosswake-causeway"
+        },
+        {
+          "id": "mosswake-landing-to-mosswake-boat-sheds",
+          "fromLocationId": "mosswake-landing",
+          "toLocationId": "mosswake-boat-sheds",
+          "label": "south to Boat Sheds",
+          "direction": "south"
+        },
+        {
+          "id": "mosswake-landing-to-mosswake-herb-platform",
+          "fromLocationId": "mosswake-landing",
+          "toLocationId": "mosswake-herb-platform",
+          "label": "east to Herb Platform",
+          "direction": "east"
+        },
+        {
+          "id": "mosswake-landing-to-mosswake-channel",
+          "fromLocationId": "mosswake-landing",
+          "toLocationId": "mosswake-channel",
+          "label": "north to Mosswake Channel",
+          "direction": "north"
+        }
+      ]
+    },
+    {
+      "id": "mosswake-boat-sheds",
+      "name": "Boat Sheds",
+      "description": "A shallow hull rests on wooden blocks beneath a reed roof. Pale curls of wood gather along its edge; the landing is north and planks lead east.",
+      "mapPosition": {
+        "x": 5,
+        "y": -9,
+        "terrain": "building"
+      },
+      "exits": [
+        {
+          "id": "mosswake-boat-sheds-to-mosswake-landing",
+          "fromLocationId": "mosswake-boat-sheds",
+          "toLocationId": "mosswake-landing",
+          "label": "north to Landing",
+          "direction": "north"
+        },
+        {
+          "id": "mosswake-boat-sheds-to-mosswake-south-platforms",
+          "fromLocationId": "mosswake-boat-sheds",
+          "toLocationId": "mosswake-south-platforms",
+          "label": "east to South Platforms",
+          "direction": "east"
+        }
+      ]
+    },
+    {
+      "id": "mosswake-herb-platform",
+      "name": "Herb Platform",
+      "description": "Bundles of narrow leaves hang beneath the eaves, giving off a sharp green scent. Planks lead west to the landing, east toward the reeds, and south between raised houses.",
+      "mapPosition": {
+        "x": 6,
+        "y": -8,
+        "terrain": "building"
+      },
+      "exits": [
+        {
+          "id": "mosswake-herb-platform-to-mosswake-landing",
+          "fromLocationId": "mosswake-herb-platform",
+          "toLocationId": "mosswake-landing",
+          "label": "west to Landing",
+          "direction": "west"
+        },
+        {
+          "id": "mosswake-herb-platform-to-mosswake-south-platforms",
+          "fromLocationId": "mosswake-herb-platform",
+          "toLocationId": "mosswake-south-platforms",
+          "label": "south to South Platforms",
+          "direction": "south"
+        },
+        {
+          "id": "mosswake-herb-platform-to-mosswake-territory-edge",
+          "fromLocationId": "mosswake-herb-platform",
+          "toLocationId": "mosswake-territory-edge",
+          "label": "east to Territory Edge",
+          "direction": "east"
+        }
+      ]
+    },
+    {
+      "id": "mosswake-territory-edge",
+      "name": "Territory Edge",
+      "description": "The planks end against a fringe of tall reeds. Dark water glints beyond them, with no marked passage across it. The only path returns west.",
+      "mapPosition": {
+        "x": 7,
+        "y": -8,
+        "terrain": "marsh",
+        "mapColor": "#74865a"
+      },
+      "exits": [
+        {
+          "id": "mosswake-territory-edge-to-mosswake-herb-platform",
+          "fromLocationId": "mosswake-territory-edge",
+          "toLocationId": "mosswake-herb-platform",
+          "label": "west to Herb Platform",
+          "direction": "west"
+        }
+      ]
+    },
+    {
+      "id": "mosswake-south-platforms",
+      "name": "South Platforms",
+      "description": "Raised boards pass between homes above patches of standing water. The herb platform is north and the boat sheds west; reeds close around the boards to the south.",
+      "mapPosition": {
+        "x": 6,
+        "y": -9,
+        "terrain": "marsh",
+        "mapColor": "#74865a"
+      },
+      "exits": [
+        {
+          "id": "mosswake-south-platforms-to-mosswake-boat-sheds",
+          "fromLocationId": "mosswake-south-platforms",
+          "toLocationId": "mosswake-boat-sheds",
+          "label": "west to Boat Sheds",
+          "direction": "west"
+        },
+        {
+          "id": "mosswake-south-platforms-to-mosswake-herb-platform",
+          "fromLocationId": "mosswake-south-platforms",
+          "toLocationId": "mosswake-herb-platform",
+          "label": "north to Herb Platform",
+          "direction": "north"
+        }
+      ]
+    },
+    {
+      "id": "lower-rill-sedge-reach",
+      "name": "Sedge Reach",
+      "description": "Tall sedge leans over the water. The river bends west toward the alder-lined reaches; a narrow channel opens east between raised platforms.",
+      "mapPosition": {
+        "x": 4,
+        "y": -7,
+        "terrain": "river",
+        "visibleWhenUnvisited": true
+      },
+      "exits": [
+        {
+          "id": "lower-rill-sedge-reach-to-bellwold-river-far-east-reach",
+          "fromLocationId": "lower-rill-sedge-reach",
+          "toLocationId": "bellwold-river-far-east-reach",
+          "label": "west to Far East Reach",
+          "direction": "west"
+        },
+        {
+          "id": "lower-rill-sedge-reach-to-mosswake-channel",
+          "fromLocationId": "lower-rill-sedge-reach",
+          "toLocationId": "mosswake-channel",
+          "label": "east to Mosswake Channel",
+          "direction": "east"
+        }
+      ]
+    },
+    {
+      "id": "mosswake-channel",
+      "name": "Mosswake Channel",
+      "description": "Low hulls lie beside timber posts on the southern bank. Water runs between sedge to the west and spreads east beside the platforms; the landing is south.",
+      "mapPosition": {
+        "x": 5,
+        "y": -7,
+        "terrain": "river",
+        "visibleWhenUnvisited": true
+      },
+      "exits": [
+        {
+          "id": "mosswake-channel-to-lower-rill-sedge-reach",
+          "fromLocationId": "mosswake-channel",
+          "toLocationId": "lower-rill-sedge-reach",
+          "label": "west to Sedge Reach",
+          "direction": "west"
+        },
+        {
+          "id": "mosswake-channel-to-mosswake-open-water",
+          "fromLocationId": "mosswake-channel",
+          "toLocationId": "mosswake-open-water",
+          "label": "east to Mosswake Open Water",
+          "direction": "east"
+        },
+        {
+          "id": "mosswake-channel-to-mosswake-landing",
+          "fromLocationId": "mosswake-channel",
+          "toLocationId": "mosswake-landing",
+          "label": "south to Landing",
+          "direction": "south"
+        }
+      ]
+    },
+    {
+      "id": "mosswake-open-water",
+      "name": "Mosswake Open Water",
+      "description": "A broad patch of water catches the light between the platforms and reed beds. A notice is tied to a post. The channel returns west; reeds hem the other sides.",
+      "mapPosition": {
+        "x": 6,
+        "y": -7,
+        "terrain": "river",
+        "visibleWhenUnvisited": true
+      },
+      "exits": [
+        {
+          "id": "mosswake-open-water-to-mosswake-channel",
+          "fromLocationId": "mosswake-open-water",
+          "toLocationId": "mosswake-channel",
+          "label": "west to Mosswake Channel",
+          "direction": "west"
         }
       ]
     }

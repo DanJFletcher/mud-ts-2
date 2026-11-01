@@ -1,7 +1,7 @@
 # Bellwold Region Expansion
 
-**Status:** In delivery. Q1 (river identity), Q5 (travel scale) and Q7 (the Rillford crossing) were decided on 2026-10-31. Phases 0 and 1 are in the world data on `main`. Phase 2 is implemented on `content/lower-rill-rillford` and awaits review. Phases 3–5 remain proposals.
-**Pack:** `orraveth.bellwold` ([layout](../../../packages/world-orraveth/src/map/), [content](../../../packages/world-orraveth/src/index.ts)), `packVersion` 1.20.0 with 98 locations after Phase 2. Sections 1 and 2 describe the Codex and world data as they stood before Phase 1.
+**Status:** In delivery. Phases 0–2 are on `main`. Phase 3 is in progress on `content/bellwold-phase-3`; Mosswake is implemented. Phases 4–5 remain proposals. Q1 (river identity), Q5 (travel scale) and Q7 (the Rillford crossing) were decided on 2026-10-31.
+**Pack:** `orraveth.bellwold` ([layout](../../../packages/world-orraveth/src/map/), [content](../../../packages/world-orraveth/src/index.ts)), currently `packVersion` 1.20.0 with 110 locations. The single Phase 3 PR will bump to 1.21.0 in its final town commit. Sections 1 and 2 describe the Codex and world data as they stood before Phase 1.
 **Scope:** New roads, new towns, extending the existing river, and connecting Bellwold to the communities of the Bellwold Marches.
 
 ## How to read this document
@@ -285,6 +285,14 @@ Each town is a small, connected cluster of 5–9 rooms. NPCs listed by name come
 
 \* `marsh` is a new presentation-only terrain slug with a chosen land `mapColor`; it has no rule effect ([ADR 0025](../../adr/0025-map-terrain-and-crossing-presentation.md)).
 
+*Revised in Phase 3:* Mosswake's marsh tiles use the land colour `#74865a` with
+no movement or gathering rule. Its landing has a sparse fishing spot using the
+existing five-second tick interval: a ten-second rod cast gets two bite
+opportunities instead of ten. Species remain the existing Lower Rill fish;
+neither catches nor dialogue establish a cause for the decline. There are no
+new prices or passage mechanics. Families' recognition of territory is explained
+by a herbalist, rather than asserted as invisible knowledge in room prose.
+
 #### Thornmere: "The Village That Listens" (Phase 3)
 
 | Location | (x, y) | Terrain | Content |
@@ -486,6 +494,22 @@ Each phase stands on its own: a valid graph, every room reachable, a `packVersio
 - The Codex follow-up (the towpath and the river's course past Rillford) hasn't been written yet.
 
 The Road Through Old Ground and the south road's destination aren't scheduled. They wait on Q4 and Q10.
+
+**Phase 3 (2026-11-01, on `content/bellwold-phase-3`, awaiting review):**
+
+- **Mosswake:** four causeway segments, five settlement rooms and three Lower Rill
+  reaches add 12 rooms (110 total). The existing Far Bank Track is the causeway
+  junction; every existing road keeps its ordered room list. Tavin Reed and an
+  unnamed herbalist offer local perspectives. The dredging notice remains a
+  proposal, the fish decline has no assigned cause, and the territory edge has no
+  exit into sprite territory. No Elderhollow path is opened.
+- *Revised in Phase 3:* `main` now contains ADR 0042's migration. Layout is authored
+  in JSON and content in TypeScript. Orraveth's temporary pre-migration fixture
+  and equality test are retired as the ADR directs after merge; permanent schema
+  and placeholder tests remain. The demo fixture is unchanged.
+- The [Phase 3 Codex follow-ups](phase-3-codex-followups.md) are drafts awaiting
+  Codex review. No Codex article is changed, and the Phase 2 follow-up stays out
+  of scope.
 
 ---
 

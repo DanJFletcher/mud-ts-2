@@ -85,6 +85,18 @@
         "rillford-south-lane",
         "rillford-south-landing"
       ]
+    },
+    {
+      "id": "mosswake-causeway",
+      "name": "Mosswake Causeway",
+      "locationIds": [
+        "bellwold-far-bank-track",
+        "mosswake-causeway-reedbank",
+        "mosswake-causeway-plank-run",
+        "mosswake-causeway-mud-flats",
+        "mosswake-causeway-sedge",
+        "mosswake-landing"
+      ]
     }
   ]
 }
