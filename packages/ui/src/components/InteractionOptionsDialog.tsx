@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
 import { Button } from './Button.js';
 import type { ActivityLogAction } from './ActivityLog.js';
+import { useModalDialog } from './use-modal-dialog.js';
 
 export interface InteractionOptionsDialogProps {
   targetLabel: string;
@@ -22,18 +23,7 @@ export function InteractionOptionsDialog({
 }: InteractionOptionsDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
 
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    const supportsNativeModal = typeof dialog.showModal === 'function';
-    if (supportsNativeModal) dialog.showModal();
-    else dialog.setAttribute('open', '');
-
-    return () => {
-      if (supportsNativeModal && dialog.open) dialog.close();
-      else dialog.removeAttribute('open');
-    };
-  }, []);
+  useModalDialog(dialogRef);
 
   return (
     <dialog

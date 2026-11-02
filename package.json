@@ -18,10 +18,14 @@
     "test:coverage": "npm run build && npm run test:coverage --workspace @mudd/contracts && npm run test --workspace @mudd/world-demo -- --coverage && npm run test --workspace @mudd/world-orraveth -- --coverage && npm run test --workspace @mudd/engine-core -- --coverage && npm run test --workspace @mudd/core-plugins -- --coverage && npm run test --workspace @mudd/client-sdk -- --coverage && npm run test --workspace @mudd/ui -- --coverage && npm run test --workspace @mudd/server -- --coverage && npm run test --workspace @mudd/web -- --coverage",
     "db:generate": "npm run db:generate --workspace @mudd/server",
     "db:migrate": "npm run db:migrate --workspace @mudd/server",
+    "test:e2e": "node scripts/e2e/run.mjs",
+    "test:e2e:install": "playwright install chromium",
+    "test:e2e:playwright": "playwright test",
     "storybook": "npm run storybook --workspace @mudd/ui",
     "storybook:build": "npm run storybook:build --workspace @mudd/ui"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@vitest/coverage-v8": "^5.0.5"
   },
   "dependencies": {

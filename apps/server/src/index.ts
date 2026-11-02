@@ -105,6 +105,7 @@ import {
   createTrustedHostGuard,
 } from './request-security.js';
 import { readServerConfiguration } from './server-config.js';
+import { readE2eAuthMode } from './e2e-auth-mode.js';
 import {
   createWorldRuntimes,
   registeredWorlds,
@@ -115,6 +116,7 @@ import {
 } from './world-registry.js';
 
 const { trustedProxyHops, allowedOrigins, trustedHosts } = readServerConfiguration(process.env);
+const e2eAuthEnabled = readE2eAuthMode(process.env);
 
 await warmDatabasePool();
 const store = new PostgresEventStore();
@@ -427,16 +429,24 @@ app.use('/api', (req, res, next) => {
   res.locals.worldInstanceId = runtime.worldInstanceId;
   return next();
 });
-app.use(clerkMiddleware((req: Request) => ({
-  publishableKey: publishableKeyFromHost(getClerkProxyHost(req) ?? '', process.env.CLERK_PUBLISHABLE_KEY),
-})));
+if (!e2eAuthEnabled) {
+  app.use(clerkMiddleware((req: Request) => ({
+    publishableKey: publishableKeyFromHost(getClerkProxyHost(req) ?? '', process.env.CLERK_PUBLISHABLE_KEY),
+  })));
+}
+
+function requestAuth(request: Request) {
+  return e2eAuthEnabled
+    ? { userId: null, sessionId: null, sessionClaims: null }
+    : getAuth(request);
+}
 
 async function accountFor(
   request: Request,
   response: Response,
   needsWorldSession = true,
 ): Promise<AccountIdentity | undefined> {
-  const auth = getAuth(request);
+  const auth = requestAuth(request);
   const selected = selectedRuntime(response);
   const resolved = await measureStage('account', () => getAccountIdentityForRequest(
     request,
@@ -454,7 +464,7 @@ async function accountFor(
 
 app.post('/api/guest-session', createRateLimiter({ windowMs: 60_000, maxRequests: 10 }), async (req, res, next) => {
   try {
-    if (getAuth(req).userId) {
+    if (requestAuth(req).userId) {
       return res.status(409).json({ message: 'Sign out before starting a guest session.' });
     }
     const { identity, setCookie } = await createGuestIdentity(req);
@@ -506,7 +516,7 @@ function worldContext(identity: AccountIdentity, session: typeof worldSessions.$
 }
 
 const realtimeGateway = createRealtimeGateway(async (req, channels) => {
-  const auth = getAuth(req);
+  const auth = requestAuth(req);
   if (auth.sessionClaims?.exp && Date.now() >= auth.sessionClaims.exp * 1000) return undefined;
   const worldId = typeof req.query.world === 'string' ? req.query.world : '';
   const resolved = await getAccountIdentityForRequest(
@@ -1453,7 +1463,7 @@ app.use((error: unknown, _req: Request, res: Response, _next: express.NextFuncti
 const port = Number(
   process.env.PORT ?? process.env.API_PORT ?? (process.env.NODE_ENV === 'production' ? 5000 : 5001),
 );
-export const server = app.listen(port, '0.0.0.0', () => {
+export const server = app.listen(port, e2eAuthEnabled ? '127.0.0.1' : '0.0.0.0', () => {
   console.log(`MUDD server listening on ${port}`);
 });
 

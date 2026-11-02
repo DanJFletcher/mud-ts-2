@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
 import { Button } from './Button.js';
+import { useModalDialog } from './use-modal-dialog.js';
 
 export interface CraftingQuantityChoice {
   quantity: 1 | 5 | 10;
@@ -24,17 +25,7 @@ export function CraftingQuantityDialog({
 }: CraftingQuantityDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
 
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    const supportsNativeModal = typeof dialog.showModal === 'function';
-    if (supportsNativeModal) dialog.showModal();
-    else dialog.setAttribute('open', '');
-    return () => {
-      if (supportsNativeModal && dialog.open) dialog.close();
-      else dialog.removeAttribute('open');
-    };
-  }, []);
+  useModalDialog(dialogRef);
 
   return (
     <dialog
