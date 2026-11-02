@@ -1,0 +1,24 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dev",
+      "runtimeExecutable": "/private/tmp/claude-502/-Users-danfletcher-Library-Application-Support-Claude-scratch-workspaces-acb377c8-a071-4e10-9edf-4e39f094cfd4-b980f864-fe9b-45ce-9884-5729998f9e7a-scratch-2026-10-30-01d8f4/c4eaf670-18cf-4f9a-9110-8226809e4990/scratchpad/run-web.sh",
+      "runtimeArgs": [],
+      "port": 5173
+    },
+    {
+      "name": "dev-api",
+      "runtimeExecutable": "/private/tmp/claude-502/-Users-danfletcher-Library-Application-Support-Claude-scratch-workspaces-acb377c8-a071-4e10-9edf-4e39f094cfd4-b980f864-fe9b-45ce-9884-5729998f9e7a-scratch-2026-10-30-01d8f4/c4eaf670-18cf-4f9a-9110-8226809e4990/scratchpad/run-api.sh",
+      "runtimeArgs": [],
+      "port": 5001
+    },
+    {
+      "name": "dev-web-corpse",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["/private/tmp/claude-502/-Users-danfletcher-batcave-mud-ts-2/fc315534-8b3c-4a3d-9f4b-b526a15e6716/scratchpad/run-web-corpse.sh"],
+      "port": 5175,
+      "autoPort": false
+    }
+  ]
+}

@@ -12,7 +12,6 @@ import {
   type TouchEvent as ReactTouchEvent,
 } from "react";
 import {
-  GameSnapshotSchema,
   MuddCommandError,
   MuddHttpClient,
   MuddHttpError,
@@ -52,8 +51,7 @@ import {
 } from "@mudd/ui";
 import { ChevronDown, Coins, Compass, Heart, Info as InfoIcon, Keyboard, Menu, Moon, Sparkles, Sun, Users, X, Zap } from "lucide-react";
 import { RoomChatPanel, type RoomChatMessage } from "./RoomChatPanel.js";
-import { ActionRefreshGate } from "./action-refresh-gate.js";
-import { commandResultProjection } from "./command-projection.js";
+import { useGameSession } from "./use-game-session.js";
 import { TerminalPanel } from "./TerminalPanel.js";
 import { WorldMapPanel } from "./WorldMapPanel.js";
 import { PwaInstallAction } from "./lobby/PwaInstallAction.js";
@@ -110,20 +108,6 @@ function ProjectedVitalReadout({ snapshot }: { snapshot: GameSnapshot }) {
       )}
     </div>
   );
-}
-
-/**
- * The game view after a successful command: the projection returned with it,
- * merged over the stable player and currency details, or a fresh snapshot when
- * the response has none the client may apply.
- */
-async function snapshotAfterCommand(
-  base: GameSnapshot,
-  response: CommandResponse,
-  traceId?: string,
-): Promise<GameSnapshot> {
-  const projection = commandResultProjection(response, client.realtimeRevisionHint("character"));
-  return projection ? { ...base, ...projection } : client.getGame(traceId);
 }
 
 type ClassCatalogSummary = { id: string; revision: number; classes: CharacterClassDefinition[] };
@@ -512,12 +496,17 @@ export function WorldClient({
   onLeaveWorld,
   worldInstanceId = window.localStorage.getItem("mudd-world-instance-id") ?? "mudd-demo-instance",
 }: WorldClientProps) {
-  const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
-  // Realtime watchers read the applied character revision without re-subscribing.
-  const appliedCharacterRevisionRef = useRef<number | undefined>(undefined);
-  useEffect(() => {
-    appliedCharacterRevisionRef.current = snapshot?.character?.revision;
-  }, [snapshot?.character?.revision]);
+  const {
+    snapshot,
+    setSnapshot,
+    loading,
+    connectionError,
+    setConnectionError,
+    loadGame: loadSession,
+    reconcileCommand,
+    presenceStale,
+    refreshGate,
+  } = useGameSession(client);
   const [optimisticTravel, setOptimisticTravel] = useState<OptimisticTravel | null>(null);
   const optimisticTravelRef = useRef<OptimisticTravel | null>(null);
   const optimisticNpcDepartureFallbacksRef = useRef<OptimisticNpcDepartureFallback[]>([]);
@@ -534,11 +523,11 @@ export function WorldClient({
   const [confirmClassAdoption, setConfirmClassAdoption] = useState(false);
   const [interactionInbox, setInteractionInbox] = useState<InteractionInbox | null>(null);
   const [partyInfo, setPartyInfo] = useState<Awaited<ReturnType<MuddHttpClient["getPartyInfo"]>> | null>(null);
+  const partyPollingIntervalRef = useRef(partyInfo?.party ? 3_000 : 9_000);
+  partyPollingIntervalRef.current = partyInfo?.party ? 3_000 : 9_000;
   const [teamCombatInfo, setTeamCombatInfo] = useState<Awaited<ReturnType<MuddHttpClient["getTeamCombatInfo"]>> | null>(null);
   const teamPollingActive = useRef(false);
   teamPollingActive.current = Boolean(partyInfo?.party || teamCombatInfo?.encounter?.status === "active");
-  const [presenceStale, setPresenceStale] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [pending, setPendingState] = useState<"look" | "read" | "take" | "use" | "drop" | "put" | "move" | "talk" | "shop" | "buy" | "craft" | "combat" | "rest" | "stand" | "equip" | "party" | "daily" | "gather" | null>(null);
   const pendingActionSnapshot = useSyncExternalStore(
     client.pendingActions.subscribe,
@@ -552,15 +541,14 @@ export function WorldClient({
     action.details.kind !== "character.move" &&
     (action.state === "sending" || action.state === "acknowledged" || action.state === "uncertain")
   ).at(-1);
-  const refreshGate = useRef(new ActionRefreshGate());
   const actionTiming = useRef<{ name: string; started: number } | null>(null);
   const setPending = useCallback((value: typeof pending) => {
     if (value) {
-      refreshGate.current.begin();
+      refreshGate.begin();
       actionTiming.current = { name: value, started: performance.now() };
-    } else refreshGate.current.end();
+    } else refreshGate.end();
     setPendingState(value);
-  }, []);
+  }, [refreshGate]);
   useLayoutEffect(() => {
     if (pending || !actionTiming.current) return;
     const { name, started } = actionTiming.current;
@@ -598,7 +586,6 @@ export function WorldClient({
   const [dailyBoardLoading, setDailyBoardLoading] = useState(false);
   const [dailyBoardError, setDailyBoardError] = useState("");
   const [pendingDailyJobId, setPendingDailyJobId] = useState<string>();
-  const [connectionError, setConnectionError] = useState("");
   const [inspectedCarriedItem, setInspectedCarriedItem] = useState<{ id: string; label: string; description: string }>();
   const [inventoryInspectError, setInventoryInspectError] = useState("");
   const [leaving, setLeaving] = useState(false);
@@ -790,7 +777,7 @@ export function WorldClient({
       }
     }
     addEntry("narration", `${message.speakerName}: ${message.text}`, true, message.roomId);
-  }, [addEntry, worldInstanceId]);
+  }, [addEntry, setSnapshot, worldInstanceId]);
   useEffect(() => () => window.clearTimeout(terminalRoomRefreshTimerRef.current), []);
   useEffect(() => {
     optimisticNpcDepartureFallbacksRef.current = [];
@@ -1016,21 +1003,14 @@ export function WorldClient({
   }, [worldInstanceId]);
 
   const loadGame = useCallback(async () => {
-    setLoading(true);
-    setConnectionError("");
-    try {
-      const nextSnapshot = await client.getGame();
-      rememberCompletedQuestObjectives(nextSnapshot);
-      setSnapshot(nextSnapshot);
-      addDefaultLook(nextSnapshot.location);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "The world could not be reached.";
-      setConnectionError(message);
-      addEntry("error", message);
-    } finally {
-      setLoading(false);
+    const result = await loadSession();
+    if ("error" in result) {
+      addEntry("error", result.error);
+      return;
     }
-  }, [addDefaultLook, addEntry, rememberCompletedQuestObjectives]);
+    rememberCompletedQuestObjectives(result.snapshot);
+    addDefaultLook(result.snapshot.location);
+  }, [addDefaultLook, addEntry, loadSession, rememberCompletedQuestObjectives]);
 
   useEffect(() => {
     void loadGame();
@@ -1044,102 +1024,6 @@ export function WorldClient({
 
   useEffect(() => {
     if (!presenceCharacterId) {
-      setPresenceStale(false);
-      return;
-    }
-
-    let active = true;
-    let requestRunning = false;
-    const sendHeartbeat = async () => {
-      if (!active || document.visibilityState === "hidden" || requestRunning || refreshGate.current.busy) return;
-      const epoch = refreshGate.current.capture();
-      requestRunning = true;
-      try {
-        const presence = await client.heartbeatWorldSession();
-        if (!active || !refreshGate.current.accepts(epoch)) return;
-        setSnapshot((current) => {
-          const location = current?.location;
-          if (
-            !current ||
-            !location ||
-            presence.worldInstanceId !== location.worldInstanceId ||
-            presence.locationId !== location.locationId
-          ) return current;
-          return { ...current, location: { ...location, occupants: presence.occupants } };
-        });
-        setPresenceStale(false);
-      } catch {
-        if (active) setPresenceStale(true);
-      } finally {
-        requestRunning = false;
-      }
-    };
-    let snapshotRefreshRunning = false;
-    const refreshSnapshot = async () => {
-      if (!active || document.visibilityState === "hidden" || snapshotRefreshRunning || refreshGate.current.busy) return;
-      const epoch = refreshGate.current.capture();
-      snapshotRefreshRunning = true;
-      try {
-        const latest = GameSnapshotSchema.parse(await client.getGame());
-        if (active && refreshGate.current.accepts(epoch)) setSnapshot((current) => {
-          const previousLocation = current?.location;
-          if (previousLocation && latest.location &&
-              previousLocation.worldInstanceId === latest.location.worldInstanceId &&
-              previousLocation.locationId === latest.location.locationId) {
-            return { ...latest, location: { ...latest.location, occupants: previousLocation.occupants } };
-          }
-          return latest;
-        });
-      } catch {
-        // Keep the last known snapshot; heartbeat owns connection health.
-      } finally {
-        snapshotRefreshRunning = false;
-      }
-    };
-    const refreshWhenVisible = () => {
-      if (document.visibilityState === "visible") {
-        void sendHeartbeat();
-        void refreshSnapshot();
-      }
-    };
-
-    void sendHeartbeat();
-    const interval = window.setInterval(() => void sendHeartbeat(), 30_000);
-    const snapshotFallback = window.setInterval(() => {
-      if (client.realtimeConnectionState !== 'connected') void refreshSnapshot();
-    }, 15_000);
-    const stopPresence = client.watchRealtime("presence", sendHeartbeat, 3_000, () => !refreshGate.current.busy);
-    // Presence remains frequent for multiplayer; the full game snapshot also
-    // includes map, journal, stats and room data, so refresh that less often.
-    // The socket reports which character revision changed; skip the snapshot when
-    // the UI already shows it, usually from the action's own response.
-    const refreshSnapshotForCharacterChange = () => {
-      const hinted = client.realtimeRevisionHint("character");
-      const applied = appliedCharacterRevisionRef.current;
-      if (hinted !== undefined && applied !== undefined && hinted <= applied) return;
-      return refreshSnapshot();
-    };
-    const stopSnapshot = client.watchRealtime(
-      "character",
-      refreshSnapshotForCharacterChange,
-      15_000,
-      () => !refreshGate.current.busy,
-    );
-    document.addEventListener("visibilitychange", refreshWhenVisible);
-    window.addEventListener("pageshow", refreshWhenVisible);
-    return () => {
-      active = false;
-      window.clearInterval(interval);
-      window.clearInterval(snapshotFallback);
-      stopPresence();
-      stopSnapshot();
-      document.removeEventListener("visibilitychange", refreshWhenVisible);
-      window.removeEventListener("pageshow", refreshWhenVisible);
-    };
-  }, [presenceCharacterId]);
-
-  useEffect(() => {
-    if (!presenceCharacterId) {
       setInteractionInbox(null);
       knownInteractionStatusesRef.current.clear();
       return;
@@ -1147,12 +1031,12 @@ export function WorldClient({
     let active = true;
     let requestRunning = false;
     const refreshInteractions = async () => {
-      if (!active || document.visibilityState === "hidden" || requestRunning || refreshGate.current.busy) return;
-      const epoch = refreshGate.current.capture();
+      if (!active || document.visibilityState === "hidden" || requestRunning || refreshGate.busy) return;
+      const epoch = refreshGate.capture();
       requestRunning = true;
       try {
         const inbox = await client.getInteractionInbox();
-        if (!active || !refreshGate.current.accepts(epoch)) return;
+        if (!active || !refreshGate.accepts(epoch)) return;
         for (const request of inbox.requests) {
           const previous = knownInteractionStatusesRef.current.get(request.requestId);
           if (previous === undefined) {
@@ -1187,7 +1071,7 @@ export function WorldClient({
       }
     };
     void refreshInteractions();
-    const stopInteractions = client.watchRealtime("interactions", refreshInteractions, 3_000, () => !refreshGate.current.busy);
+    const stopInteractions = client.watchRealtime("interactions", refreshInteractions, 3_000, () => !refreshGate.busy);
     const onVisible = () => {
       if (document.visibilityState === "visible") void refreshInteractions();
     };
@@ -1197,15 +1081,15 @@ export function WorldClient({
       stopInteractions();
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [addEntry, presenceCharacterId]);
+  }, [addEntry, presenceCharacterId, refreshGate]);
 
   const refreshPartyState = useCallback(async (preserveTerminalScroll = false) => {
     if (!presenceCharacterId) return null;
-    if (preserveTerminalScroll && refreshGate.current.busy) return null;
-    const epoch = refreshGate.current.capture();
+    if (preserveTerminalScroll && refreshGate.busy) return null;
+    const epoch = refreshGate.capture();
     const previousRevision = knownPartyRevisionRef.current;
     const next = await client.getPartyInfo(presenceCharacterId, previousRevision ?? undefined);
-    if (preserveTerminalScroll && !refreshGate.current.accepts(epoch)) return null;
+    if (preserveTerminalScroll && !refreshGate.accepts(epoch)) return null;
     if (previousRevision !== null) {
       for (const activity of next.activity) {
         if (activity.playerId === snapshot?.player.id) continue;
@@ -1223,7 +1107,7 @@ export function WorldClient({
     knownPartyRevisionRef.current = next.revision;
     setPartyInfo(next);
     return next;
-  }, [addEntry, presenceCharacterId, snapshot?.player.id]);
+  }, [addEntry, presenceCharacterId, refreshGate, snapshot?.player.id]);
 
   const refreshTeamCombat = useCallback(async () => {
     if (!presenceCharacterId) return null;
@@ -1241,14 +1125,14 @@ export function WorldClient({
     let requestRunning = false;
     let lastChecked = 0;
     const poll = async () => {
-      if (!active || requestRunning || document.visibilityState === "hidden" || refreshGate.current.busy) return;
+      if (!active || requestRunning || document.visibilityState === "hidden" || refreshGate.busy) return;
       if (!teamPollingActive.current && Date.now() - lastChecked < 6_000) return;
-      const epoch = refreshGate.current.capture();
+      const epoch = refreshGate.capture();
       lastChecked = Date.now();
       requestRunning = true;
       try {
         const next = await client.getTeamCombatInfo(presenceCharacterId);
-        if (active && refreshGate.current.accepts(epoch)) setTeamCombatInfo(next);
+        if (active && refreshGate.accepts(epoch)) setTeamCombatInfo(next);
       } catch {
         // Keep the last known encounter while the connection recovers.
       } finally {
@@ -1257,12 +1141,12 @@ export function WorldClient({
     };
     void poll();
     const stopTeam = client.watchRealtime("team", () => { lastChecked = 0; return poll(); }, 2_000,
-      () => !refreshGate.current.busy);
+      () => !refreshGate.busy);
     return () => {
       active = false;
       stopTeam();
     };
-  }, [presenceCharacterId]);
+  }, [presenceCharacterId, refreshGate]);
 
   useEffect(() => {
     if (!presenceCharacterId) {
@@ -1273,9 +1157,16 @@ export function WorldClient({
     knownPartyRevisionRef.current = null;
     let active = true;
     let requestRunning = false;
-    const pollParty = async () => {
+    let lastChecked = 0;
+    const pollParty = async (force = false) => {
       if (!active || document.visibilityState === "hidden" || requestRunning) return;
+      if (
+        !force &&
+        client.realtimeConnectionState !== "connected" &&
+        Date.now() - lastChecked < partyPollingIntervalRef.current
+      ) return;
       requestRunning = true;
+      lastChecked = Date.now();
       try {
         await refreshPartyState(true);
       } catch {
@@ -1284,11 +1175,11 @@ export function WorldClient({
         requestRunning = false;
       }
     };
-    void pollParty();
-    const stopParty = client.watchRealtime("party", pollParty, partyInfo?.party ? 3_000 : 9_000,
-      () => !refreshGate.current.busy);
+    void pollParty(true);
+    const stopParty = client.watchRealtime("party", pollParty, 3_000,
+      () => !refreshGate.busy);
     const onVisible = () => {
-      if (document.visibilityState === "visible") void pollParty();
+      if (document.visibilityState === "visible") void pollParty(true);
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
@@ -1296,7 +1187,7 @@ export function WorldClient({
       stopParty();
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [presenceCharacterId, refreshPartyState, Boolean(partyInfo?.party)]);
+  }, [presenceCharacterId, refreshGate, refreshPartyState]);
 
   const refreshAfterMutation = useCallback(async (
     message: string,
@@ -1306,15 +1197,15 @@ export function WorldClient({
   ) => {
     addEntry("system", message);
     const nextSnapshot = command
-      ? await snapshotAfterCommand(command.base, command.response, traceId)
+      ? (await reconcileCommand(command.base, command.response, traceId)).snapshot
       : await client.getGame(traceId);
-    setSnapshot(nextSnapshot);
+    if (!command) setSnapshot(nextSnapshot);
     setConnectionError("");
     addDefaultLook(nextSnapshot.location);
     if (announceQuestObjectives) announceNewQuestObjectives(nextSnapshot);
     else rememberCompletedQuestObjectives(nextSnapshot);
     return nextSnapshot;
-  }, [addDefaultLook, addEntry, announceNewQuestObjectives, rememberCompletedQuestObjectives]);
+  }, [addDefaultLook, addEntry, announceNewQuestObjectives, reconcileCommand, rememberCompletedQuestObjectives, setConnectionError, setSnapshot]);
 
   const fetchDailyBoard = useCallback(async (boardId: string) => {
     const requestContext = { ...dailyContextRef.current };
@@ -1492,8 +1383,7 @@ export function WorldClient({
       const result = await client.advanceFishingCast(character.characterId, castId, character.revision);
       const event = result.events?.find((candidate) => candidate.type === "character.fishing_cast_advanced");
       const payload = event?.payload;
-      const next = await snapshotAfterCommand(current, result);
-      setSnapshot(next);
+      await reconcileCommand(current, result);
       setConnectionError("");
       if (!payload || typeof payload !== "object" || !("status" in payload)) return;
       const outcome = payload as {
@@ -1533,7 +1423,7 @@ export function WorldClient({
     } finally {
       fishingTickBusyRef.current = false;
     }
-  }, [addEntry]);
+  }, [addEntry, reconcileCommand, setConnectionError, setSnapshot]);
 
   const performFishingCast = useCallback(async (rodItemId: string) => {
     if (!snapshot?.character || pending) return;
@@ -1544,8 +1434,7 @@ export function WorldClient({
         rodItemId,
         snapshot.character.revision,
       );
-      const next = await snapshotAfterCommand(snapshot, result);
-      setSnapshot(next);
+      await reconcileCommand(snapshot, result);
       setConnectionError("");
       const stoppedChopping = result.events?.some((event) =>
         event.type === "character.woodcutting_action_advanced");
@@ -1564,7 +1453,7 @@ export function WorldClient({
     } finally {
       setPending(null);
     }
-  }, [addEntry, pending, snapshot]);
+  }, [addEntry, pending, reconcileCommand, setConnectionError, setPending, snapshot]);
 
   const cancelFishingCast = useCallback(async (castId: string) => {
     const characterId = snapshot?.character?.characterId;
@@ -1590,7 +1479,7 @@ export function WorldClient({
         }
         response = await client.cancelFishingCast(characterId, castId, character.revision);
       }
-      setSnapshot(await snapshotAfterCommand(current, response));
+      await reconcileCommand(current, response);
       setConnectionError("");
       addEntry("narration", "You reel in your line and stop fishing.");
     } catch (error) {
@@ -1603,7 +1492,7 @@ export function WorldClient({
     } finally {
       setPending(null);
     }
-  }, [addEntry, pending, setPending, snapshot?.character?.characterId]);
+  }, [addEntry, pending, reconcileCommand, setConnectionError, setPending, setSnapshot, snapshot?.character?.characterId]);
 
   const activeFishingCast = snapshot?.character?.activeFishing;
   const fishingCastId = activeFishingCast?.castId;
@@ -1655,8 +1544,7 @@ export function WorldClient({
       const result = await client.advanceWoodcutting(character.characterId, actionId, character.revision);
       const event = result.events?.find((candidate) => candidate.type === "character.woodcutting_action_advanced");
       const payload = event?.payload;
-      const next = await snapshotAfterCommand(current, result);
-      setSnapshot(next);
+      await reconcileCommand(current, result);
       setConnectionError("");
       if (!payload || typeof payload !== "object" || !("status" in payload)) return;
       const outcome = payload as {
@@ -1713,7 +1601,7 @@ export function WorldClient({
     } finally {
       woodcuttingTickBusyRef.current = false;
     }
-  }, [addEntry]);
+  }, [addEntry, reconcileCommand, setConnectionError, setSnapshot]);
 
   const performWoodcuttingStart = useCallback(async (axeItemId: string, treeId: string) => {
     if (!snapshot?.character || pending) return;
@@ -1725,8 +1613,7 @@ export function WorldClient({
         treeId,
         snapshot.character.revision,
       );
-      const next = await snapshotAfterCommand(snapshot, result);
-      setSnapshot(next);
+      await reconcileCommand(snapshot, result);
       setConnectionError("");
       const stoppedFishing = result.events?.some((event) =>
         event.type === "character.fishing_cast_advanced");
@@ -1745,7 +1632,7 @@ export function WorldClient({
     } finally {
       setPending(null);
     }
-  }, [addEntry, pending, snapshot]);
+  }, [addEntry, pending, reconcileCommand, setConnectionError, setPending, snapshot]);
 
   const cancelWoodcuttingAction = useCallback(async (actionId: string) => {
     const characterId = snapshot?.character?.characterId;
@@ -1771,7 +1658,7 @@ export function WorldClient({
         }
         response = await client.cancelWoodcutting(characterId, actionId, character.revision);
       }
-      setSnapshot(await snapshotAfterCommand(current, response));
+      await reconcileCommand(current, response);
       setConnectionError("");
       addEntry("narration", "You lower your axe and stop chopping.");
     } catch (error) {
@@ -1784,7 +1671,7 @@ export function WorldClient({
     } finally {
       setPending(null);
     }
-  }, [addEntry, pending, setPending, snapshot?.character?.characterId]);
+  }, [addEntry, pending, reconcileCommand, setConnectionError, setPending, setSnapshot, snapshot?.character?.characterId]);
 
   const activeWoodcutting = snapshot?.character?.activeWoodcutting;
   const woodcuttingActionId = activeWoodcutting?.actionId;
@@ -1957,8 +1844,7 @@ export function WorldClient({
       const progress = character.npcProgress.find((entry) => entry.npcId === npcId);
       if (!topic && dialogue.choices.length === 0 && progress?.lastChoiceId) {
         const response = await client.restartNpcDialogue(character.characterId, npcId, character.revision);
-        const nextSnapshot = await snapshotAfterCommand(snapshot, response);
-        setSnapshot(nextSnapshot);
+        await reconcileCommand(snapshot, response);
         setConnectionError("");
         dialogue = await client.talk(character.characterId, npcId);
       }
@@ -1970,7 +1856,7 @@ export function WorldClient({
     } finally {
       setPending(null);
     }
-  }, [addEntry, pending, snapshot]);
+  }, [addEntry, pending, reconcileCommand, snapshot]);
 
   const closeNpcDialogue = useCallback(async () => {
     const dialogue = activeDialogue;
@@ -2017,12 +1903,12 @@ export function WorldClient({
         choice.id,
         snapshot.character.revision,
       );
-      const [nextSnapshot, dialogue] = await Promise.all([
-        snapshotAfterCommand(snapshot, response),
+      const [reconciliation, dialogue] = await Promise.all([
+        reconcileCommand(snapshot, response),
         client.talk(snapshot.character.characterId, activeDialogue.npcId),
       ]);
+      const nextSnapshot = reconciliation.snapshot;
       rememberCompletedQuestObjectives(nextSnapshot);
-      setSnapshot(nextSnapshot);
       setConnectionError("");
       setActiveDialogue(dialogue);
       setDialogueModalOpen((isOpen) => isOpen || dialogue.choices.length > 0);
@@ -2032,7 +1918,7 @@ export function WorldClient({
     } finally {
       setPending(null);
     }
-  }, [activeDialogue, addEntry, pending, rememberCompletedQuestObjectives, snapshot]);
+  }, [activeDialogue, addEntry, pending, reconcileCommand, rememberCompletedQuestObjectives, snapshot]);
 
   const takeObject = useCallback(async (itemId: string, label: string) => {
     if (!snapshot?.character || !snapshot.location || pending) return;
@@ -2080,8 +1966,7 @@ export function WorldClient({
         const location = latestSnapshot.location;
         if (!location || !location.objects.some((object) => object.id === item.id && object.takeable)) continue;
         const response = await client.take(snapshot.character.characterId, item.id, location.revision);
-        latestSnapshot = await snapshotAfterCommand(latestSnapshot, response);
-        setSnapshot(latestSnapshot);
+        latestSnapshot = (await reconcileCommand(latestSnapshot, response)).snapshot;
         setConnectionError("");
         addEntry("narration", `You pick up the ${item.label.toLocaleLowerCase()}.`);
         takenCount += 1;
@@ -2102,7 +1987,7 @@ export function WorldClient({
     } finally {
       setPending(null);
     }
-  }, [addEntry, pending, snapshot]);
+  }, [addEntry, pending, reconcileCommand, setConnectionError, setPending, setSnapshot, snapshot]);
 
   const lootCorpse = useCallback(async (corpseId: string, corpseLabel: string) => {
     if (!snapshot?.character || pending) return;
@@ -2138,8 +2023,7 @@ export function WorldClient({
         )) continue;
 
         const response = await client.take(snapshot.character.characterId, item.id, currentLocation.revision);
-        latestSnapshot = await snapshotAfterCommand(latestSnapshot, response);
-        setSnapshot(latestSnapshot);
+        latestSnapshot = (await reconcileCommand(latestSnapshot, response)).snapshot;
         setConnectionError("");
         addEntry("narration", `You pick up the ${item.label.toLocaleLowerCase()}.`);
         takenCount += 1;
@@ -2160,7 +2044,7 @@ export function WorldClient({
     } finally {
       setPending(null);
     }
-  }, [addEntry, pending, snapshot]);
+  }, [addEntry, pending, reconcileCommand, setConnectionError, setPending, setSnapshot, snapshot]);
 
   const dropObject = useCallback(async (itemId: string, label: string) => {
     if (!snapshot?.character || !snapshot.location || pending) return;
@@ -2232,8 +2116,7 @@ export function WorldClient({
       const response = action === "equip"
         ? await client.equip(snapshot.character.characterId, item!.id, snapshot.character.revision)
         : await client.unequip(snapshot.character.characterId, slot, snapshot.character.revision);
-      const nextSnapshot = await snapshotAfterCommand(snapshot, response);
-      setSnapshot(nextSnapshot);
+      await reconcileCommand(snapshot, response);
       setConnectionError("");
       addEntry("narration", action === "equip"
         ? `You equip the ${item!.label.toLocaleLowerCase()} as your ${slot}.`
@@ -2243,7 +2126,7 @@ export function WorldClient({
     } finally {
       setPending(null);
     }
-  }, [addEntry, pending, snapshot]);
+  }, [addEntry, pending, reconcileCommand, setConnectionError, setPending, snapshot]);
 
   const performItemUse = useCallback(async (itemId: string, targetId: string) => {
     if (!snapshot?.character || !snapshot.location || pending) return;
@@ -2367,11 +2250,10 @@ export function WorldClient({
       client.pendingActions.acknowledge(commandId);
       commandAccepted = true;
       const partyAmbush = response.events?.some((event) => event.type === "team.road_encounter_started");
-      const projection = commandResultProjection(response, client.realtimeRevisionHint("character"));
-      const nextSnapshot = projection ? { ...snapshot, ...projection } : await client.getGame(traceId);
-      projectionSource = projection ? "command-response" : "snapshot-fallback";
+      const reconciliation = await reconcileCommand(snapshot, response, traceId);
+      const nextSnapshot = reconciliation.snapshot;
+      projectionSource = reconciliation.source;
       snapshotReadyAt = traceId ? performance.now() : undefined;
-      setSnapshot(nextSnapshot);
       setConnectionError("");
       if (nextSnapshot.location?.locationId !== fromLocationId) {
         const stoppedFishing = response.events?.some((event) =>
@@ -2451,7 +2333,7 @@ export function WorldClient({
       if (optimisticTravelRef.current?.commandId === commandId) {
         // Let realtime and fallback snapshots reconcile the optimistic room while
         // keeping other actions locked against the still-authoritative source room.
-        refreshGate.current.end();
+        refreshGate.end();
         setPendingState("move");
       } else {
         setPending(null);
@@ -2463,9 +2345,14 @@ export function WorldClient({
     announceNewQuestObjectives,
     dialogueModalOpen,
     pending,
+    reconcileCommand,
     reconcileOptimisticTravel,
+    refreshGate,
     refreshTeamCombat,
     rollbackOptimisticTravel,
+    setConnectionError,
+    setPending,
+    setSnapshot,
     snapshot,
     worldInstanceId,
   ]);
@@ -2498,11 +2385,10 @@ export function WorldClient({
         listing.id,
         snapshot.location.revision,
       );
-      const [nextSnapshot, nextCatalog] = await Promise.all([
-        snapshotAfterCommand(snapshot, response),
+      const [, nextCatalog] = await Promise.all([
+        reconcileCommand(snapshot, response),
         client.getMerchantCatalog(snapshot.character.characterId, activeMerchantCatalog.merchantNpcId),
       ]);
-      setSnapshot(nextSnapshot);
       setActiveMerchantCatalog(nextCatalog);
       setConnectionError("");
       addEntry(
@@ -2514,7 +2400,7 @@ export function WorldClient({
     } finally {
       setPending(null);
     }
-  }, [activeMerchantCatalog, addEntry, pending, snapshot]);
+  }, [activeMerchantCatalog, addEntry, pending, reconcileCommand, snapshot]);
 
   const performCrafting = useCallback(async (
     recipeId: string,
@@ -2537,7 +2423,7 @@ export function WorldClient({
       );
       addEntry("narration", `You craft ${quantity} × ${outputLabel.toLocaleLowerCase()}.`);
       try {
-        setSnapshot(await snapshotAfterCommand(snapshot, response));
+        await reconcileCommand(snapshot, response);
       } catch {
         setConnectionError("Crafting succeeded, but the character view could not refresh.");
       }
@@ -2548,7 +2434,7 @@ export function WorldClient({
     } finally {
       setPending(null);
     }
-  }, [addEntry, pending, snapshot]);
+  }, [addEntry, pending, reconcileCommand, snapshot]);
 
   const craftingCommand = useCallback(async (rawTarget: string) => {
     if (!snapshot?.character) {
@@ -2706,11 +2592,11 @@ export function WorldClient({
         );
       }
       if (!result.receipt.ok) throw new Error(result.receipt.message);
-      const [nextSnapshot, nextTeamInfo] = await Promise.all([
-        snapshotAfterCommand(snapshot, result),
+      const [reconciliation, nextTeamInfo] = await Promise.all([
+        reconcileCommand(snapshot, result),
         refreshTeamCombat(),
       ]);
-      setSnapshot(nextSnapshot);
+      const nextSnapshot = reconciliation.snapshot;
       if (nextTeamInfo) setTeamCombatInfo(nextTeamInfo);
       setConnectionError("");
       const encounter = nextSnapshot.character?.combat;
@@ -2743,7 +2629,7 @@ export function WorldClient({
     } finally {
       setPending(null);
     }
-  }, [addEntry, partyInfo?.party, pending, refreshTeamCombat, snapshot, teamCombatInfo]);
+  }, [addEntry, partyInfo?.party, pending, reconcileCommand, refreshTeamCombat, snapshot, teamCombatInfo]);
 
   const performClassAbility = useCallback(async (abilityId: string) => {
     const game = snapshot;
@@ -2768,12 +2654,12 @@ export function WorldClient({
             { encounterId: soloEncounter?.encounterId, abilityId },
           );
       if (!result.receipt.ok) throw new Error(result.receipt.message);
-      const [nextSnapshot, nextTeamInfo, nextInbox] = await Promise.all([
-        snapshotAfterCommand(game, result),
+      const [reconciliation, nextTeamInfo, nextInbox] = await Promise.all([
+        reconcileCommand(game, result),
         refreshTeamCombat(),
         pvpEncounter ? client.getInteractionInbox() : Promise.resolve(interactionInbox),
       ]);
-      setSnapshot(nextSnapshot);
+      const nextSnapshot = reconciliation.snapshot;
       if (nextTeamInfo) setTeamCombatInfo(nextTeamInfo);
       if (nextInbox) setInteractionInbox(nextInbox);
       const refreshedPvp = nextInbox?.encounter;
@@ -2791,7 +2677,7 @@ export function WorldClient({
     } finally {
       setPending(null);
     }
-  }, [addEntry, interactionInbox, pending, refreshTeamCombat, snapshot, teamCombatInfo]);
+  }, [addEntry, interactionInbox, pending, reconcileCommand, refreshTeamCombat, snapshot, teamCombatInfo]);
 
   const adoptCharacterClass = useCallback(async () => {
     const game = snapshot;
@@ -2935,12 +2821,12 @@ export function WorldClient({
     setPending("combat");
     try {
       const result = await client.performPvpAction(snapshot.character.characterId, encounter.encounterId, action, itemId);
-      const [inbox, nextSnapshot] = await Promise.all([
+      const [inbox, reconciliation] = await Promise.all([
         client.getInteractionInbox(),
-        snapshotAfterCommand(snapshot, result),
+        reconcileCommand(snapshot, result),
       ]);
+      const nextSnapshot = reconciliation.snapshot;
       setInteractionInbox(inbox);
-      setSnapshot(nextSnapshot);
       const nextEncounter = inbox.encounter;
       if (nextEncounter) {
         knownPvpUpdateRef.current = `${nextEncounter.encounterId}:${nextEncounter.updatedAt}`;
@@ -2953,7 +2839,7 @@ export function WorldClient({
     } finally {
       setPending(null);
     }
-  }, [addEntry, interactionInbox, pending, snapshot]);
+  }, [addEntry, interactionInbox, pending, reconcileCommand, snapshot]);
 
   const performStaminaPostureChange = useCallback(async (posture: "rest" | "stand") => {
     if (!snapshot?.character || pending) return;
@@ -2962,8 +2848,7 @@ export function WorldClient({
       const response = posture === "rest"
         ? await client.rest(snapshot.character.characterId, snapshot.character.revision)
         : await client.stand(snapshot.character.characterId, snapshot.character.revision);
-      const nextSnapshot = await snapshotAfterCommand(snapshot, response);
-      setSnapshot(nextSnapshot);
+      await reconcileCommand(snapshot, response);
       setConnectionError("");
       addEntry("narration", posture === "rest"
         ? "You ease into a resting posture. The surface beneath you feels cool and firm; your breathing slows as nearby sounds soften."
@@ -2973,7 +2858,7 @@ export function WorldClient({
     } finally {
       setPending(null);
     }
-  }, [addEntry, pending, snapshot]);
+  }, [addEntry, pending, reconcileCommand, setConnectionError, setPending, snapshot]);
 
   const performInnRest = useCallback(async () => {
     if (!snapshot?.character || !snapshot.location?.inn || pending) return;
@@ -2983,8 +2868,7 @@ export function WorldClient({
     setPending("rest");
     try {
       const response = await client.restAtInn(snapshot.character.characterId, inn.id, snapshot.character.revision);
-      const nextSnapshot = await snapshotAfterCommand(snapshot, response);
-      setSnapshot(nextSnapshot);
+      const { snapshot: nextSnapshot } = await reconcileCommand(snapshot, response);
       setConnectionError("");
       const nextHealth = nextSnapshot.character?.health;
       const nextResources = nextSnapshot.character?.resources;
@@ -3007,7 +2891,7 @@ export function WorldClient({
     } finally {
       setPending(null);
     }
-  }, [addEntry, pending, snapshot]);
+  }, [addEntry, pending, reconcileCommand, setConnectionError, setPending, snapshot]);
 
   const executeCommand = useCallback(async (rawCommand: string) => {
     const value = rawCommand.trim();
