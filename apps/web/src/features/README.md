@@ -42,8 +42,11 @@ nor accesses another controller's state. The history port adapts the session-own
 announcement bookkeeping remains composition-owned, behind the explicit
 narration port.
 
-App composes these controllers and retains combat command handlers and screen
-compositions. Screen extraction remains tracked by the OpenSpec change.
+App composes these controllers through explicit callbacks. Combat execution,
+challenge/response handling, class adoption, and resting commands belong to
+[useCombatController](./combat/use-combat-controller.ts). It uses the same
+session reconciliation and foreground execution ports as the other controllers;
+it does not own a second snapshot or social subscription.
 
 ## Gathering
 
@@ -163,3 +166,38 @@ region changes only for actual appended activity, not for window navigation or
 historical replacement. Retention and accessibility details are documented in
 packages/ui/docs/design-system/activity-history.md; manual screen-reader and
 native-browser checks remain tracked separately.
+
+## Screen composition and navigation
+
+[WorldClient](../../App.tsx) creates the session boundary. Its feature composition
+connects feature APIs, execution feedback, history, and UI selection state. It
+contains no text-command grammar, gathering scheduler, or feature polling loop.
+Pending-action confirmation and quest/NPC announcement coordination remain
+explicit composition concerns.
+
+The app-specific views live in [screens](../../screens):
+
+- [PlayScreen](../../screens/PlayScreen.tsx) composes the existing terminal, room
+  presence, projected vitals, gathering feedback, daily bulletin, chat, map, and
+  command entry. Merchant, combat, quick-command, and modal views enter through
+  slots rather than requiring the layout to execute feature logic.
+- [CombatPanel](../../screens/CombatPanel.tsx),
+  [MerchantPanel](../../screens/MerchantPanel.tsx), and
+  [QuickCommands](../../screens/QuickCommands.tsx) render typed data and call
+  action callbacks. They neither fetch data nor own gameplay authority.
+- [WorldDialogs](../../screens/WorldDialogs.tsx) adapts feature dialog state to
+  the existing UI-library dialogs, preserving selected IDs and context.
+- [VitalsScreen](../../screens/VitalsScreen.tsx),
+  [InventoryScreen](../../screens/InventoryScreen.tsx), and
+  [StatsScreen](../../screens/StatsScreen.tsx) render canonical projections.
+  [FieldNotesScreen](../../screens/FieldNotesScreen.tsx) consumes the shared
+  chronological history; [CodexPage](../../screens/CodexPage.tsx) retains the
+  lazy-loaded Codex boundary.
+- [WorldNavigation](../../screens/WorldNavigation.tsx) and
+  [InfoTabs](../../screens/InfoTabs.tsx) render navigation.
+  [useWorldNavigation](./navigation/world-navigation.ts) owns hash changes,
+  content focus, menu dismissal/focus restoration, and persisted theme state.
+
+These are application compositions, not new generic UI primitives. They reuse
+the existing shared controls and their stories; new reusable controls must
+still be developed in the UI library before screen integration.

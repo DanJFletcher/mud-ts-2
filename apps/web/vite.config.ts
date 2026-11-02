@@ -2,8 +2,29 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { fileURLToPath } from 'node:url';
+
+const e2eAuth = process.env.MUDD_E2E_AUTH === '1';
+const e2eApiPort = process.env.MUDD_E2E_API_PORT ?? '5001';
+const e2eWebPort = Number(process.env.MUDD_E2E_WEB_PORT ?? '5000');
 
 export default defineConfig({
+  resolve: {
+    alias: e2eAuth ? [
+      {
+        find: /^@clerk\/react\/internal$/,
+        replacement: fileURLToPath(new URL('./src/e2e/clerk-internal.ts', import.meta.url)),
+      },
+      {
+        find: /^@clerk\/react$/,
+        replacement: fileURLToPath(new URL('./src/e2e/clerk-react.tsx', import.meta.url)),
+      },
+      {
+        find: /^@clerk\/themes$/,
+        replacement: fileURLToPath(new URL('./src/e2e/clerk-themes.ts', import.meta.url)),
+      },
+    ] : [],
+  },
   plugins: [
     react(),
     tailwindcss(),
@@ -48,12 +69,17 @@ export default defineConfig({
     }),
   ],
   server: {
-    host: '0.0.0.0',
-    port: 5000,
+    host: e2eAuth ? '127.0.0.1' : '0.0.0.0',
+    port: e2eAuth ? e2eWebPort : 5000,
     strictPort: true,
     allowedHosts: true,
     proxy: {
-      '/api': { target: 'http://127.0.0.1:5001', changeOrigin: true, ws: true },
+      '/api': { target: `http://127.0.0.1:${e2eAuth ? e2eApiPort : '5001'}`, changeOrigin: true, ws: true },
     },
+  },
+  preview: {
+    host: e2eAuth ? '127.0.0.1' : '0.0.0.0',
+    port: e2eAuth ? e2eWebPort : 5000,
+    strictPort: true,
   },
 });

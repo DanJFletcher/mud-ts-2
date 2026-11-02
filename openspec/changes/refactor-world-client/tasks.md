@@ -44,13 +44,13 @@
 
 - [x] 7.1 Replace local class/daily-job transport assertions with canonical types and pure view-model adapters; verify web typechecking and focused class/daily rendering tests without widening transport types through assertions.
 - [x] 7.2 Consolidate repeated inventory/action selectors and correct memo dependencies; verify selector tests for equipment, duplicate labels, gathering level changes, and disappearing targets, then check hook dependency lint warnings in changed modules.
-- [ ] 7.3 Extract the play screen and combat/merchant compositions using existing shared controls; retain App tests for solo/team/PvP controls, dialogue, map/chat fullscreen, and responsive navigation.
-- [ ] 7.4 Extract information screens, navigation/theme behavior, and field-note composition; verify existing route/hash, class adoption, equipment, menu, and theme tests. Add stories first for any reusable controls introduced by the extraction.
-- [ ] 7.5 Document the final module map and ownership rules; inspect `WorldClient` to verify it composes narrow feature APIs and contains no command grammar, gathering scheduling, or feature polling loops.
+- [x] 7.3 Extract the play screen and combat/merchant compositions using existing shared controls; retain App tests for solo/team/PvP controls, dialogue, map/chat fullscreen, and responsive navigation.
+- [x] 7.4 Extract information screens, navigation/theme behavior, and field-note composition; verify existing route/hash, class adoption, equipment, menu, and theme tests. Add stories first for any reusable controls introduced by the extraction.
+- [x] 7.5 Document the final module map and ownership rules; inspect `WorldClient` to verify it composes narrow feature APIs and contains no command grammar, gathering scheduling, or feature polling loops.
 
 ## 8. Validate integrated behavior
 
-- [ ] 8.1 Run `npm run test --workspace @mudd/web` and `npm run test --workspace @mudd/ui`; confirm existing reconciliation/uncertainty tests and all new lifecycle, identity, keyboard, and history regressions pass.
-- [ ] 8.2 Run `npm run typecheck --workspace @mudd/web`, `npm run typecheck --workspace @mudd/ui`, `npm run lint`, and `npm run storybook:build`; resolve introduced failures and report any pre-existing failures separately.
+- [x] 8.1 Run `npm run test --workspace @mudd/web` and `npm run test --workspace @mudd/ui`; confirm existing reconciliation/uncertainty tests and all new lifecycle, identity, keyboard, and history regressions pass.
+- [x] 8.2 Run `npm run typecheck --workspace @mudd/web`, `npm run typecheck --workspace @mudd/ui`, `npm run lint`, and `npm run storybook:build`; resolve introduced failures and report any pre-existing failures separately.
 - [ ] 8.3 Exercise enter-world, movement, NPC dialogue, item selection, gathering cancellation, world exit/re-entry, and long-session history in a production web build/preview; record keyboard, mobile viewport, scroll, and screen-reader results separately from automated tests.
-- [ ] 8.4 Run `openspec validate refactor-world-client --strict` and review requirement-to-test coverage for all three capability specs; confirm implementation preserves the existing `game-session-state` guarantees.
+- [x] 8.4 Run `openspec validate refactor-world-client --strict` and review requirement-to-test coverage for all three capability specs; confirm implementation preserves the existing `game-session-state` guarantees.

@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
 import { Button } from './Button.js';
+import { useModalDialog } from './use-modal-dialog.js';
 
 export interface NpcDialogueChoice {
   id: string;
@@ -28,18 +29,7 @@ export function NpcDialogueDialog({
 }: NpcDialogueDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
 
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    const supportsNativeModal = typeof dialog.showModal === 'function';
-    if (supportsNativeModal) dialog.showModal();
-    else dialog.setAttribute('open', '');
-
-    return () => {
-      if (supportsNativeModal && dialog.open) dialog.close();
-      else dialog.removeAttribute('open');
-    };
-  }, []);
+  useModalDialog(dialogRef);
 
   const dismiss = () => {
     if (!busy) onClose();
