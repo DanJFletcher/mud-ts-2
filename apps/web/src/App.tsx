@@ -1,3 +1,16 @@
+import { readableObjectsForQuickActions, selectItemActions, selectUsableAxes } from "./features/inventory/action-selectors.js";
+import { useActivityHistory } from "./features/history/use-activity-history.js";
+import { useWorldCommands } from "./commands/use-world-commands.js";
+import { useActionDispatch } from "./commands/use-action-dispatch.js";
+import { type ActionIntent, type EntityRef, type IntentContext, entityRef, intentContext, sameIntentContext } from "./commands/intents.js";
+import { useMovementShortcuts } from "./features/keyboard/use-movement-shortcuts.js";
+import { useDailyController } from "./features/daily/use-daily-controller.js";
+import { useInventoryController } from "./features/inventory/use-inventory-controller.js";
+import { useDialogueController } from "./features/dialogue/use-dialogue-controller.js";
+import { useCommerceController } from "./features/commerce/use-commerce-controller.js";
+import { useSocialController } from "./features/social/use-social-controller.js";
+import { useFishingController } from "./features/gathering/use-fishing-controller.js";
+import { useWoodcuttingController } from "./features/gathering/use-woodcutting-controller.js";
 import {
   useCallback,
   useEffect,
@@ -24,11 +37,9 @@ import {
   EQUIPMENT_SLOTS,
   equipmentItemIdForSlot,
   FLEE_STAMINA_COST,
-  type EquipmentSlot,
-  type InteractionInbox,
 } from "@mudd/contracts";
 import {
-  ActivityLog,
+  ActivityHistoryWindow,
   Button,
   ClassAbilityList,
   ClassChoice,
@@ -46,11 +57,12 @@ import {
   type ActivityEntry,
   type ActivityLogAction,
   type ActivityLogTarget,
-  type AvailableClassAction,
-  type CharacterClassDefinition,
 } from "@mudd/ui";
 import { ChevronDown, Coins, Compass, Heart, Info as InfoIcon, Keyboard, Menu, Moon, Sparkles, Sun, Users, X, Zap } from "lucide-react";
 import { RoomChatPanel, type RoomChatMessage } from "./RoomChatPanel.js";
+import { traceFirstFeedbackPaint } from "./features/session/action-feedback.js";
+import { useTravelController } from "./features/travel/use-travel-controller.js";
+import { ForegroundExecution, type ExecutionToken } from "./features/session/foreground-execution.js";
 import { useGameSession } from "./use-game-session.js";
 import { TerminalPanel } from "./TerminalPanel.js";
 import { WorldMapPanel } from "./WorldMapPanel.js";
@@ -59,13 +71,7 @@ import { getNpcFarewellLabel } from "./npc-farewell.js";
 
 const CodexScreen = lazy(() => import("./codex/CodexScreen.js"));
 
-const client = new MuddHttpClient({
-  worldInstanceId: "mudd-demo-instance",
-  basePath: import.meta.env.BASE_URL,
-  commandProjection: "game",
-});
-
-function ProjectedVitalReadout({ snapshot }: { snapshot: GameSnapshot }) {
+function ProjectedVitalReadout({ snapshot, client }: { snapshot: GameSnapshot; client: MuddHttpClient }) {
   const [clientNow, setClientNow] = useState(() => new Date());
   useEffect(() => {
     const timer = setInterval(() => setClientNow(new Date()), 1_000);
@@ -110,34 +116,7 @@ function ProjectedVitalReadout({ snapshot }: { snapshot: GameSnapshot }) {
   );
 }
 
-type ClassCatalogSummary = { id: string; revision: number; classes: CharacterClassDefinition[] };
-type CharacterClassSnapshot = CharacterClassDefinition & { catalogId: string; catalogRevision: number };
-type ClassAwareCharacter = NonNullable<GameSnapshot["character"]> & {
-  characterClass?: CharacterClassSnapshot;
-  availableClassActions?: AvailableClassAction[];
-};
-type CraftingRecipeOption = Awaited<ReturnType<MuddHttpClient["getCraftingCatalog"]>>["recipes"][number];
-const classCharacter = (character: GameSnapshot["character"]): ClassAwareCharacter | undefined =>
-  character as ClassAwareCharacter | undefined;
-
-function readableObjectsForQuickActions(snapshot: GameSnapshot | null | undefined) {
-  const bulletin = snapshot?.dailyActivities?.boards[0];
-  const bulletinAliases = [
-    "bulletin",
-    "bulletin board",
-    "daily bulletin",
-    "daily bulletin board",
-    "notice",
-    "notice board",
-  ];
-  return (snapshot?.location?.objects ?? []).filter((object) => {
-    if (!object.readable) return false;
-    if (!bulletin) return true;
-    const label = object.label.trim().toLocaleLowerCase().replace(/\s+/g, " ");
-    const boardName = bulletin.name.trim().toLocaleLowerCase().replace(/\s+/g, " ");
-    return label !== boardName && !bulletinAliases.includes(label);
-  });
-}
+type ClassCatalogSummary = NonNullable<Awaited<ReturnType<MuddHttpClient["getWorlds"]>>[number]["classCatalog"]>;
 
 function isRejectedAction(error: unknown): boolean {
   return error instanceof MuddCommandError ||
@@ -178,32 +157,15 @@ function pendingActionPresentation(action: PendingAction) {
   } as const;
 }
 
-function traceFirstFeedbackPaint(traceId: string | undefined, action: string, startedAt: number): void {
-  if (!traceId) return;
-  window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
-    console.info("[mudd_perf_trace_feedback]", JSON.stringify({
-      traceId,
-      action,
-      actionToFirstFeedbackPaintMs: Math.round((performance.now() - startedAt) * 10) / 10,
-    }));
-  }));
-}
-type DialogueProjection = Awaited<ReturnType<MuddHttpClient["talk"]>>;
-type MerchantCatalog = Awaited<ReturnType<MuddHttpClient["getMerchantCatalog"]>>;
+
 type Screen = "play" | "vitals" | "items" | "equipment" | "stats" | "notes" | "codex";
-type WorldClientProps = { onLeaveWorld: () => Promise<void>; worldInstanceId?: string };
-type VisibleNpc = NonNullable<NonNullable<GameSnapshot["location"]>["npcs"]>[number];
-type DestinationRoomPreview = NonNullable<
-  NonNullable<GameSnapshot["location"]>["exits"][number]["destinationPreview"]
->;
-type OptimisticTravel = Readonly<{
-  commandId: string;
-  exitId: string;
-  fromLocationId: string;
-  preview: DestinationRoomPreview;
-  entryIds: readonly string[];
-  roomDetailsEntryId?: string;
-}>;
+type WorldClientProps = {
+  onLeaveWorld: () => Promise<void>;
+  worldInstanceId?: string;
+  characterId?: string;
+  client?: MuddHttpClient;
+  historyLimit?: number;
+};
 type OptimisticNpcDepartureFallback = Readonly<{
   worldInstanceId: string;
   locationId: string;
@@ -222,61 +184,6 @@ type RoomLookPreview = Pick<
   "locationId" | "title" | "description"
 >;
 
-function findObjectMatches<T extends { id: string; label: string }>(
-  target: string,
-  objects: readonly T[],
-): T[] {
-  const normalizedTarget = target.toLocaleLowerCase();
-  const exactMatch = objects.find((object) =>
-    object.id.toLocaleLowerCase() === normalizedTarget ||
-    object.label.toLocaleLowerCase() === normalizedTarget
-  );
-  return exactMatch
-    ? [exactMatch]
-    : objects.filter((object) => object.label.toLocaleLowerCase().includes(normalizedTarget));
-}
-
-function findItemContainerMatches<
-  TItem extends { id: string; label: string; containerId?: string },
-  TContainer extends { id: string; label: string },
->(
-  target: string,
-  items: readonly TItem[],
-  containers: readonly TContainer[],
-  requireItemInsideContainer = false,
-): Array<{ item: TItem; container: TContainer }> {
-  const words = target
-    .trim()
-    .replace(/^(?:the|a|an)\s+/i, "")
-    .replace(/\s+(?:from|in|into)\s+/gi, " ")
-    .replace(/\s+(?:the|a|an)\s+/gi, " ")
-    .split(/\s+/)
-    .filter(Boolean);
-  const matches = new Map<string, { item: TItem; container: TContainer }>();
-  for (let itemWordCount = 1; itemWordCount < words.length; itemWordCount += 1) {
-    const itemTarget = words.slice(0, itemWordCount).join(" ");
-    const containerTarget = words.slice(itemWordCount).join(" ");
-    for (const item of findObjectMatches(itemTarget, items)) {
-      for (const container of findObjectMatches(containerTarget, containers)) {
-        if (requireItemInsideContainer && item.containerId !== container.id) continue;
-        matches.set(`${item.id}:${container.id}`, { item, container });
-      }
-    }
-  }
-  return [...matches.values()];
-}
-
-function findNpcMatches(target: string, npcs: readonly VisibleNpc[]) {
-  const normalizedTarget = target.toLocaleLowerCase();
-  const exactMatch = npcs.find((npc) =>
-    npc.id.toLocaleLowerCase() === normalizedTarget ||
-    npc.name.toLocaleLowerCase() === normalizedTarget
-  );
-  return exactMatch
-    ? [exactMatch]
-    : npcs.filter((npc) => npc.name.toLocaleLowerCase().includes(normalizedTarget));
-}
-
 function respawnNotice(events: CommandResponse["events"], locationName: string): string | undefined {
   const event = events?.find((candidate) => candidate.type === "character.respawned");
   if (!event?.payload || typeof event.payload !== "object") return undefined;
@@ -289,170 +196,11 @@ function respawnNotice(events: CommandResponse["events"], locationName: string):
   return `You awaken at ${locationName}, restored to full health.${droppedLabel ? ` ${droppedLabel} was dropped where you fell.` : ""}`;
 }
 
-const COMMAND_HELP: Record<string, readonly string[]> = {
-  help: [
-    "Usage: help [command]",
-    "Show the command list or instructions for one command.",
-  ],
-  party: [
-    "Usage: party [help|info|list|create|join <id>|quests|quest start <id>|leave|close]",
-    "Manage a public party of up to four players, start shared quests, and coordinate cooperative encounters.",
-  ],
-  quests: [
-    "Usage: quests | quests <number or choice>",
-    "After talking to an NPC, list and select one of their dialogue choices.",
-  ],
-  jobs: [
-    "Usage: jobs [browse|accept <id>|deliver <id>]",
-    "Browse today’s local bulletin, accept a posting, or deliver its carried supplies.",
-  ],
-  gather: [
-    "Usage: gather <source-id or label>",
-    "Collect a non-fish supply from a source in the current location. Use a fishing rod to fish.",
-  ],
-  accept: [
-    "Usage: accept <request-id>",
-    "Accept a pending player challenge addressed to your current character.",
-  ],
-  decline: [
-    "Usage: decline <request-id>",
-    "Decline a pending player challenge addressed to your current character.",
-  ],
-  talk: [
-    "Usage: talk <npc> [about <topic>]",
-    "Speak privately with someone here. Choose a reply or ask about a topic.",
-  ],
-  shop: [
-    "Usage: shop <merchant>",
-    "Browse the current merchant’s character-specific stock.",
-  ],
-  buy: [
-    "Usage: buy <item>",
-    "Buy an item from a merchant catalog you have opened in this room.",
-  ],
-  craft: [
-    "Usage: craft | craft <item> | craft <item> <1|2|3>",
-    "Craft at a workbench. Choose 1 for one item, 2 for five, or 3 for ten. Crafting level and materials are checked by the server.",
-  ],
-  look: [
-    "Usage: look | look [at] <object>",
-    "Look describes the current room. Add an object to inspect it here or in your inventory.",
-  ],
-  go: [
-    "Usage: go <direction>",
-    "Travel through an available exit. Use the Go quick action to choose from current exits.",
-  ],
-  read: [
-    "Usage: read <object> | read bulletin",
-    "Read written text in this room or open its daily bulletin.",
-  ],
-  extinguish: [
-    "Usage: extinguish <campfire>",
-    "Put out a burning campfire in the current room.",
-  ],
-  take: [
-    "Usage: take <item> | take <item> <container> | take all",
-    "Pick up an item in the current room or one of its containers; get is an alias.",
-  ],
-  loot: [
-    "Usage: loot <corpse>",
-    "Take all remaining items and currency from a corpse in this room.",
-  ],
-  get: [
-    "Usage: get <item> | get <item> <container>",
-    "Take an item from the room or the named container. Get is an alias of take.",
-  ],
-  put: [
-    "Usage: put <item> <container>",
-    "Store a carried item in a container here. Contents you store are saved for your character.",
-  ],
-  equip: [
-    "Usage: equip <item>",
-    "Equip carried gear to its slot. Weapons change damage; armor changes defense.",
-  ],
-  unequip: [
-    "Usage: unequip <slot>",
-    "Remove the item from an equipment slot. Gear cannot be changed during combat.",
-  ],
-  use: [
-    "Usage: use <item> on <target> | use <healing item> | use <fishing rod>",
-    "Use an item on a room object, or restore health during or between encounters.",
-  ],
-  rest: [
-    "Usage: rest",
-    "Rest for free in any room while out of combat. Standing restores each vital by 2% of its maximum every two seconds; resting restores 6%.",
-  ],
-  stand: [
-    "Usage: stand",
-    "Leave the free resting posture so you can travel or begin combat.",
-  ],
-  inn: [
-    "Usage: inn rest",
-    "Immediately restore missing health, stamina, and mana at this inn for its listed price.",
-  ],
-  drop: [
-    "Usage: drop <item>",
-    "Put down an item you carry in the current room.",
-  ],
-  attack: [
-    "Usage: attack <opponent> | attack",
-    "Challenge a player in the same room, start a solo NPC fight, or attack during combat. Eligible online party members join NPC fights together.",
-  ],
-  defend: [
-    "Usage: defend",
-    "Guard against the opponent’s next strike during an active encounter.",
-  ],
-  flee: [
-    "Usage: flee",
-    `End an active PvE encounter and return to the room. Costs ${FLEE_STAMINA_COST} stamina.`,
-  ],
-  inspect: [
-    "There is no separate inspect command.",
-    "Use look at <object> to inspect something in the room or an item you carry.",
-  ],
-};
 
-const GENERAL_HELP = [
-  "Commands",
-  "help [command] — List commands or show instructions for one.",
-  "party [help|info|list|create|join <id>|quests|quest start <id>|leave|close] — Manage your party and its quests.",
-  "quests [number or choice] — List or select a reply in the current NPC dialogue.",
-  "jobs [browse|accept <id>|deliver <id>] — Browse the local daily bulletin and fulfil postings.",
-  "gather <source> — Collect a local supply source; use a fishing rod to fish.",
-  "talk <npc> [about <topic>] — Speak privately with someone in the current room.",
-  "shop <merchant> — Browse a merchant’s goods and your balance.",
-  "buy <item> — Purchase an item from the open merchant catalog.",
-  "craft [item] [1|2|3] — List craftable items, choose a recipe, or craft 1, 5, or 10 at a workbench.",
-  "look [at] <object> — Describe the room or inspect an object here or in your inventory.",
-  "go <direction> — Travel through an available exit.",
-  "read <object> | read bulletin — Read room text or open the local daily bulletin.",
-  "extinguish <campfire> — Put out a burning campfire in the current room.",
-  "get <item> | get <item> <container> — Take an item from the room or a container; alias of take.",
-  "take <item> | take <item> <container> | take all — Pick up items from the room or a container.",
-  "loot <corpse> — Take all remaining items and currency from a corpse here.",
-  "put <item> <container> — Store a carried item in a container here.",
-  "equip <item> — Equip carried gear in its equipment slot.",
-  "unequip <slot> — Remove equipped gear from a slot.",
-  "use <item> on <target> | use <healing item> | use <fishing rod> — Use a room item, restore health, or fish at a marked spot.",
-  "rest — Rest for free in any room while out of combat; recover health, stamina, and mana.",
-  "stand — Leave the free resting posture.",
-  "inn rest — Immediately restore missing health, stamina, and mana for the inn’s listed price.",
-  "drop <item> — Put down an item you carry.",
-  "attack <opponent> — Begin an encounter or attack during combat.",
-  "defend — Guard against the opponent’s next strike.",
-  `flee — End an active PvE encounter; costs ${FLEE_STAMINA_COST} stamina.`,
-  "Quick actions include available movement, item, loot, equipment, merchant, dialogue, and combat actions.",
-];
 
-function getCommandHelp(topic: string): readonly string[] {
-  const normalizedTopic = topic.trim().toLocaleLowerCase().replace(/\s+/g, " ");
-  if (!normalizedTopic) return GENERAL_HELP;
-  const helpTopic = normalizedTopic === "look at" ? "look" : normalizedTopic;
-  return COMMAND_HELP[helpTopic] ?? [
-    `No help is available for "${topic.trim()}".`,
-    'Try "help" for the command list.',
-  ];
-}
+
+
+
 
 function currentScreen(): Screen {
   const route = window.location.hash.slice(2).split("?")[0];
@@ -492,23 +240,45 @@ function completedQuestObjectiveKeys(snapshot: GameSnapshot): string[] {
   );
 }
 
+/** Own one immutable SDK client per world/character entry, including re-entry. */
 export function WorldClient({
-  onLeaveWorld,
   worldInstanceId = window.localStorage.getItem("mudd-world-instance-id") ?? "mudd-demo-instance",
+  ...props
 }: WorldClientProps) {
+  return <WorldSession key={JSON.stringify([worldInstanceId, props.characterId])}
+    {...props} worldInstanceId={worldInstanceId} />;
+}
+
+function WorldSession({ client: suppliedClient, ...props }: WorldClientProps & { worldInstanceId: string }) {
+  const [ownedClient] = useState(() => new MuddHttpClient({
+    worldInstanceId: props.worldInstanceId,
+    basePath: import.meta.env.BASE_URL,
+    commandProjection: "game",
+  }));
+  const client = suppliedClient ?? ownedClient;
+  const session = useGameSession(client);
+  // The first loaded character belongs to this entry. Later replacements dispose
+  // all feature state, timers and subscriptions by replacing the composition.
+  const identity = useRef<{ characterId?: string; generation: number }>({ generation: 0 });
+  const characterId = session.snapshot?.character?.characterId;
+  if (characterId && identity.current.characterId !== characterId) {
+    if (identity.current.characterId) identity.current.generation++;
+    identity.current.characterId = characterId;
+  }
+  return <WorldFeatures key={identity.current.generation} {...props} client={client} session={session} />;
+}
+
+function WorldFeatures({
+  onLeaveWorld, worldInstanceId, client, session, historyLimit,
+}: WorldClientProps & {
+  worldInstanceId: string;
+  client: MuddHttpClient;
+  session: ReturnType<typeof useGameSession>;
+}) {
   const {
-    snapshot,
-    setSnapshot,
-    loading,
-    connectionError,
-    setConnectionError,
-    loadGame: loadSession,
-    reconcileCommand,
-    presenceStale,
-    refreshGate,
-  } = useGameSession(client);
-  const [optimisticTravel, setOptimisticTravel] = useState<OptimisticTravel | null>(null);
-  const optimisticTravelRef = useRef<OptimisticTravel | null>(null);
+    snapshot, setSnapshot, loading, connectionError, setConnectionError,
+    loadGame: loadSession, reconcileCommand, presenceStale, refreshGate,
+  } = session;
   const optimisticNpcDepartureFallbacksRef = useRef<OptimisticNpcDepartureFallback[]>([]);
   const recentNpcDepartureAnnouncementsRef = useRef<RecentNpcDepartureAnnouncement[]>([]);
   const recentNpcTerminalEventIdsRef = useRef<Set<string>>(new Set());
@@ -521,13 +291,6 @@ export function WorldClient({
   const [classCatalogError, setClassCatalogError] = useState<string>();
   const [classChoiceId, setClassChoiceId] = useState("");
   const [confirmClassAdoption, setConfirmClassAdoption] = useState(false);
-  const [interactionInbox, setInteractionInbox] = useState<InteractionInbox | null>(null);
-  const [partyInfo, setPartyInfo] = useState<Awaited<ReturnType<MuddHttpClient["getPartyInfo"]>> | null>(null);
-  const partyPollingIntervalRef = useRef(partyInfo?.party ? 3_000 : 9_000);
-  partyPollingIntervalRef.current = partyInfo?.party ? 3_000 : 9_000;
-  const [teamCombatInfo, setTeamCombatInfo] = useState<Awaited<ReturnType<MuddHttpClient["getTeamCombatInfo"]>> | null>(null);
-  const teamPollingActive = useRef(false);
-  teamPollingActive.current = Boolean(partyInfo?.party || teamCombatInfo?.encounter?.status === "active");
   const [pending, setPendingState] = useState<"look" | "read" | "take" | "use" | "drop" | "put" | "move" | "talk" | "shop" | "buy" | "craft" | "combat" | "rest" | "stand" | "equip" | "party" | "daily" | "gather" | null>(null);
   const pendingActionSnapshot = useSyncExternalStore(
     client.pendingActions.subscribe,
@@ -542,13 +305,20 @@ export function WorldClient({
     (action.state === "sending" || action.state === "acknowledged" || action.state === "uncertain")
   ).at(-1);
   const actionTiming = useRef<{ name: string; started: number } | null>(null);
-  const setPending = useCallback((value: typeof pending) => {
-    if (value) {
-      refreshGate.begin();
-      actionTiming.current = { name: value, started: performance.now() };
-    } else refreshGate.end();
-    setPendingState(value);
-  }, [refreshGate]);
+  const executionCoordinator = useMemo(() => new ForegroundExecution(refreshGate), [refreshGate]);
+  const beginForeground = useCallback((label: NonNullable<typeof pending>) => {
+    const token = executionCoordinator.begin(label);
+    if (!token) return;
+    actionTiming.current = { name: label, started: performance.now() };
+    setPendingState(label);
+    return token;
+  }, [executionCoordinator]);
+  const finishForeground = useCallback((token: ExecutionToken, keepFeedback = false) => {
+    if (executionCoordinator.finish(token, keepFeedback) && !keepFeedback) setPendingState(null);
+  }, [executionCoordinator]);
+  const clearTravelFeedback = useCallback((token: ExecutionToken | undefined) => {
+    if (executionCoordinator.clearFeedback(token)) setPendingState(null);
+  }, [executionCoordinator]);
   useLayoutEffect(() => {
     if (pending || !actionTiming.current) return;
     const { name, started } = actionTiming.current;
@@ -569,25 +339,10 @@ export function WorldClient({
   const [quickCommandMode, setQuickCommandMode] = useState<"quick" | "choose-exit" | "look" | "read" | "drop" | "take" | "loot" | "talk" | "attack" | "shop" | "buy" | "use" | "use-target" | "equip" | "unequip">("quick");
   const [quickUseItemId, setQuickUseItemId] = useState<string | null>(null);
   const [combatUseMenuOpen, setCombatUseMenuOpen] = useState(false);
-  const [entries, setEntries] = useState<ActivityEntry[]>([]);
+  const { entries, announcement, history: activityHistory } = useActivityHistory(historyLimit);
   const [collapsedQuestGroups, setCollapsedQuestGroups] = useState({ active: false, completed: false });
   const [collapsedQuestCards, setCollapsedQuestCards] = useState<Set<string>>(() => new Set());
-  const [activeDialogue, setActiveDialogue] = useState<DialogueProjection | null>(null);
-  const [dialogueModalOpen, setDialogueModalOpen] = useState(false);
-  const [activeInteractionTarget, setActiveInteractionTarget] = useState<ActivityLogTarget | null>(null);
-  const [activeMerchantCatalog, setActiveMerchantCatalog] = useState<MerchantCatalog | null>(null);
-  const [activeCraftingPrompt, setActiveCraftingPrompt] = useState<CraftingRecipeOption | null>(null);
-  const [dailyBoard, setDailyBoard] = useState<Awaited<ReturnType<MuddHttpClient["dailyBoard"]>> | null>(null);
-  const [dailyBoardContext, setDailyBoardContext] = useState<{
-    characterId: string;
-    locationId: string;
-    worldInstanceId: string;
-  } | null>(null);
-  const [dailyBoardLoading, setDailyBoardLoading] = useState(false);
-  const [dailyBoardError, setDailyBoardError] = useState("");
-  const [pendingDailyJobId, setPendingDailyJobId] = useState<string>();
-  const [inspectedCarriedItem, setInspectedCarriedItem] = useState<{ id: string; label: string; description: string }>();
-  const [inventoryInspectError, setInventoryInspectError] = useState("");
+  const [activeInteractionTarget, setActiveInteractionTarget] = useState<(ActivityLogTarget & { context?: IntentContext; entityKind?: EntityRef["kind"] }) | null>(null);
   const [leaving, setLeaving] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(() =>
     window.localStorage.getItem("mudd-theme") === "light" ? "light" : "dark"
@@ -603,51 +358,13 @@ export function WorldClient({
   const navMenuRef = useRef<HTMLDivElement>(null);
   const navMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const terminalHistoryRef = useRef<HTMLDivElement>(null);
-  const fishingTickBusyRef = useRef(false);
-  const woodcuttingTickBusyRef = useRef(false);
   const terminalFollowsLatestRef = useRef(true);
+  const [terminalFollowingLatest, setTerminalFollowingLatest] = useState(true);
+  const [terminalReadingAnchor, setTerminalReadingAnchor] = useState<string>();
+  const terminalReadingPosition = useRef<{ id: string; offset: number } | undefined>(undefined);
   const lastRoomLookIdRef = useRef<string | null>(null);
   const knownQuestObjectiveCompletionsRef = useRef<Set<string>>(new Set());
-  const knownInteractionStatusesRef = useRef<Map<string, string>>(new Map());
-  const knownPvpUpdateRef = useRef<string | null>(null);
-  const knownPartyRevisionRef = useRef<number | null>(null);
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
-  const dailyBoardRequestIdRef = useRef(0);
-  const dailyContextRef = useRef({
-    characterId: snapshot?.character?.characterId,
-    locationId: snapshot?.location?.locationId,
-    worldInstanceId,
-    boardIds: (snapshot?.dailyActivities?.boards ?? []).map((board) => board.id),
-  });
-  dailyContextRef.current = {
-    characterId: snapshot?.character?.characterId,
-    locationId: snapshot?.location?.locationId,
-    worldInstanceId,
-    boardIds: (snapshot?.dailyActivities?.boards ?? []).map((board) => board.id),
-  };
-  const dailyBoardIdsKey = dailyContextRef.current.boardIds.join("\u0000");
-  const displayedDailyBoard = dailyBoard && dailyBoardContext &&
-    dailyBoardContext.characterId === dailyContextRef.current.characterId &&
-    dailyBoardContext.locationId === dailyContextRef.current.locationId &&
-    dailyBoardContext.worldInstanceId === dailyContextRef.current.worldInstanceId &&
-    dailyContextRef.current.boardIds.includes(dailyBoard.boardId)
-    ? dailyBoard
-    : null;
-
-  useEffect(() => {
-    dailyBoardRequestIdRef.current += 1;
-    setDailyBoard(null);
-    setDailyBoardContext(null);
-    setDailyBoardError("");
-    setDailyBoardLoading(false);
-    setPendingDailyJobId(undefined);
-  }, [
-    snapshot?.character?.characterId,
-    snapshot?.location?.locationId,
-    worldInstanceId,
-    dailyBoardIdsKey,
-  ]);
-
   useEffect(() => {
     let active = true;
     setClassCatalogError(undefined);
@@ -662,7 +379,7 @@ export function WorldClient({
       }
     });
     return () => { active = false; };
-  }, [worldInstanceId]);
+  }, [client, worldInstanceId]);
 
   useEffect(() => {
     setClassChoiceId("");
@@ -706,14 +423,19 @@ export function WorldClient({
   const addEntry = useCallback((
     kind: ActivityEntry["kind"],
     text: string,
-    preserveScroll = false,
+    _preserveScroll = false,
     locationId = activeLocationIdRef.current,
   ) => {
-    terminalFollowsLatestRef.current = !preserveScroll;
+    // Receiving activity never changes the player's reading mode.
     const entry = makeEntry(kind, text, locationId);
-    setEntries((current) => [...current, entry]);
+    activityHistory.append(entry);
     return entry.id;
-  }, []);
+  }, [activityHistory]);
+
+  const {
+    partyInfo, teamCombatInfo, interactionInbox, refreshPartyState, refreshTeamCombat,
+    refreshInteractions, knownInteractionIds,
+  } = useSocialController({ client, snapshot, refreshGate, addEntry });
   const addNpcTerminalEvent = useCallback((message: RoomChatMessage) => {
     if (Number.isSafeInteger(message.id)) {
       const eventKey = `${worldInstanceId}:${message.id}`;
@@ -728,11 +450,13 @@ export function WorldClient({
       window.clearTimeout(terminalRoomRefreshTimerRef.current);
       terminalRoomRefreshTimerRef.current = window.setTimeout(() => {
         const characterId = activeCharacterIdRef.current;
-        if (!characterId || activeLocationIdRef.current !== message.roomId) return;
+        if (!characterId || activeLocationIdRef.current !== message.roomId || refreshGate.busy) return;
+        const epoch = refreshGate.capture();
         void client.look(characterId, undefined, { includeNpcDescriptions: true }).then((location) => {
+          if (!refreshGate.accepts(epoch)) return;
           setSnapshot((current) => {
             if (
-              !current ||
+              !refreshGate.accepts(epoch) || !current ||
               current.character?.characterId !== characterId ||
               current.location?.locationId !== message.roomId ||
               location.locationId !== message.roomId
@@ -768,16 +492,13 @@ export function WorldClient({
     if (fallbackIndex >= 0) {
       const [fallback] = optimisticNpcDepartureFallbacksRef.current.splice(fallbackIndex, 1);
       if (fallback) {
-        setEntries((current) => current.map((entry) =>
-          entry.id === fallback.entryId
-            ? { ...entry, text: `${message.speakerName}: ${message.text}` }
-            : entry,
-        ));
+        const entry = activityHistory.getSnapshot().entries.find((entry) => entry.id === fallback.entryId);
+        if (entry) activityHistory.replace(entry.id, { ...entry, text: `${message.speakerName}: ${message.text}` });
         return;
       }
     }
     addEntry("narration", `${message.speakerName}: ${message.text}`, true, message.roomId);
-  }, [addEntry, setSnapshot, worldInstanceId]);
+  }, [activityHistory, addEntry, client, refreshGate, setSnapshot, worldInstanceId]);
   useEffect(() => () => window.clearTimeout(terminalRoomRefreshTimerRef.current), []);
   useEffect(() => {
     optimisticNpcDepartureFallbacksRef.current = [];
@@ -788,7 +509,7 @@ export function WorldClient({
     const characterId = snapshot?.character?.characterId;
     if (!characterId) return;
     client.pendingActions.clearOutsideScope({ worldInstanceId, characterId });
-  }, [snapshot?.character?.characterId, worldInstanceId]);
+  }, [client.pendingActions, snapshot?.character?.characterId, worldInstanceId]);
 
   useEffect(() => {
     const characterId = snapshot?.character?.characterId;
@@ -803,12 +524,7 @@ export function WorldClient({
         (action.state === "acknowledged" || action.state === "uncertain")
       ) client.pendingActions.confirm(action.id);
     });
-  }, [
-    pendingActionSnapshot,
-    snapshot?.character?.characterId,
-    snapshot?.location?.locationId,
-    worldInstanceId,
-  ]);
+  }, [client.pendingActions, pendingActionSnapshot, snapshot?.character?.characterId, snapshot?.location?.locationId, worldInstanceId]);
 
   useEffect(() => {
     const characterId = snapshot?.character?.characterId;
@@ -847,7 +563,7 @@ export function WorldClient({
         client.pendingActions.confirm(action.id);
       }
     });
-  }, [addEntry, interactionInbox, pendingActionSnapshot, snapshot?.character?.characterId, worldInstanceId]);
+  }, [addEntry, client.pendingActions, interactionInbox, pendingActionSnapshot, snapshot?.character?.characterId, worldInstanceId]);
 
   const rememberCompletedQuestObjectives = useCallback((nextSnapshot: GameSnapshot) => {
     for (const key of completedQuestObjectiveKeys(nextSnapshot)) {
@@ -877,115 +593,54 @@ export function WorldClient({
       addEntry("narration", location.description, false, location.locationId),
     ];
   }, [addEntry]);
-  const rollbackOptimisticTravel = useCallback((commandId?: string) => {
-    const travel = optimisticTravelRef.current;
-    if (!travel || (commandId && travel.commandId !== commandId)) return;
-    const optimisticEntryIds = new Set(travel.entryIds);
-    setEntries((current) => current.filter((entry) => !optimisticEntryIds.has(entry.id)));
-    lastRoomLookIdRef.current = travel.fromLocationId;
-    optimisticTravelRef.current = null;
-    setOptimisticTravel(null);
-    setPending(null);
-  }, [setPending]);
-  const reconcileOptimisticTravel = useCallback((
-    location: NonNullable<GameSnapshot["location"]>,
-    commandId?: string,
-  ) => {
-    const travel = optimisticTravelRef.current;
-    if (!travel || (commandId && travel.commandId !== commandId)) return false;
-
-    if (location.locationId !== travel.preview.locationId) {
-      rollbackOptimisticTravel(travel.commandId);
-      addDefaultLook(location);
-      return true;
-    }
-
-    const appendMissingNpcDepartures = () => {
-      const now = Date.now();
-      const actualNpcIds = new Set((location.npcs ?? []).map((npc) => npc.id));
-      for (const npc of travel.preview.npcs ?? []) {
-        if (!npc.mobile || actualNpcIds.has(npc.id)) continue;
-        const wasAlreadyAnnounced = recentNpcDepartureAnnouncementsRef.current.some((announcement) =>
-          announcement.expiresAt >= now &&
-          announcement.worldInstanceId === worldInstanceId &&
-          announcement.locationId === location.locationId &&
-          announcement.npcName.toLocaleLowerCase() === npc.name.toLocaleLowerCase());
-        if (wasAlreadyAnnounced) continue;
-        const entryId = addEntry("narration", `${npc.name} leaves the room.`, false, location.locationId);
-        optimisticNpcDepartureFallbacksRef.current = [
-          ...optimisticNpcDepartureFallbacksRef.current.filter((fallback) => fallback.expiresAt >= now),
-          {
-            worldInstanceId,
-            locationId: location.locationId,
-            npcName: npc.name,
-            entryId,
-            expiresAt: now + 30_000,
-          },
-        ].slice(-32);
-      }
-    };
-
-    const optimisticDescription = travel.preview.description.trim();
-    const authoritativeDescription = location.description.trim();
-    let authoritativeRoomDetails: string;
-    if (authoritativeDescription === optimisticDescription) {
-      authoritativeRoomDetails = "";
-    } else if (authoritativeDescription.startsWith(`${optimisticDescription}\n\n`)) {
-      authoritativeRoomDetails = authoritativeDescription.slice(optimisticDescription.length).trim();
-    } else {
-      rollbackOptimisticTravel(travel.commandId);
-      addDefaultLook(location);
-      appendMissingNpcDepartures();
-      return true;
-    }
-
-    const previewRoomDetails = travel.preview.roomDetails?.trim() ?? "";
-    if (authoritativeRoomDetails !== previewRoomDetails) {
-      if (travel.roomDetailsEntryId) {
-        setEntries((current) => current.filter((entry) => entry.id !== travel.roomDetailsEntryId));
-      }
-      if (authoritativeRoomDetails) {
-        addEntry("narration", authoritativeRoomDetails, false, location.locationId);
-      }
-    }
-    appendMissingNpcDepartures();
-
-    optimisticTravelRef.current = null;
-    setOptimisticTravel(null);
-    setPending(null);
-    return true;
-  }, [addDefaultLook, addEntry, rollbackOptimisticTravel, setPending, worldInstanceId]);
-  useEffect(() => {
-    const travel = optimisticTravelRef.current;
-    const location = snapshot?.location;
-    if (
-      travel &&
-      location &&
-      location.locationId !== travel.fromLocationId
-    ) reconcileOptimisticTravel(location, travel.commandId);
-  }, [reconcileOptimisticTravel, snapshot?.location?.locationId]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     window.localStorage.setItem("mudd-theme", theme);
   }, [theme]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const history = terminalHistoryRef.current;
     if (screen !== "play" || !history) {
       setTerminalCanScrollDown(false);
       return;
     }
     if (terminalFollowsLatestRef.current) history.scrollTop = history.scrollHeight;
+    else if (terminalReadingPosition.current) {
+      const anchor = terminalReadingPosition.current;
+      const row = [...history.querySelectorAll<HTMLElement>("[data-activity-entry]")]
+        .find((row) => row.dataset.activityEntry === anchor.id);
+      if (row) history.scrollTop += row.getBoundingClientRect().top - history.getBoundingClientRect().top - anchor.offset;
+    }
     setTerminalCanScrollDown(history.scrollHeight - history.scrollTop - history.clientHeight > 32);
-  }, [entries, screen]);
+  }, [entries, screen, terminalReadingAnchor, terminalCanScrollDown]);
 
+  const handleHistoryWindowChange = useCallback((latest: boolean) => {
+    terminalFollowsLatestRef.current = latest;
+    setTerminalFollowingLatest(latest);
+    terminalReadingPosition.current = undefined;
+    setTerminalReadingAnchor(undefined);
+    setTerminalCanScrollDown(!latest);
+    const history = terminalHistoryRef.current;
+    if (history) history.scrollTop = latest ? history.scrollHeight : 0;
+    if (latest) requestAnimationFrame(() => {
+      const current = terminalHistoryRef.current;
+      if (current && terminalFollowsLatestRef.current) current.scrollTop = current.scrollHeight;
+    });
+  }, []);
   const scrollTerminalToLatest = useCallback(() => {
     const history = terminalHistoryRef.current;
     if (!history) return;
     terminalFollowsLatestRef.current = true;
+    setTerminalFollowingLatest(true);
+    terminalReadingPosition.current = undefined;
+    setTerminalReadingAnchor(undefined);
     history.scrollTop = history.scrollHeight;
     setTerminalCanScrollDown(false);
+    requestAnimationFrame(() => {
+      const current = terminalHistoryRef.current;
+      if (current && terminalFollowsLatestRef.current) current.scrollTop = current.scrollHeight;
+    });
   }, []);
 
   useEffect(() => {
@@ -997,10 +652,6 @@ export function WorldClient({
     window.addEventListener("hashchange", navigate);
     return () => window.removeEventListener("hashchange", navigate);
   }, []);
-
-  useEffect(() => {
-    client.setWorldInstanceId(worldInstanceId);
-  }, [worldInstanceId]);
 
   const loadGame = useCallback(async () => {
     const result = await loadSession();
@@ -1016,1510 +667,112 @@ export function WorldClient({
     void loadGame();
   }, [loadGame]);
 
-  const presenceCharacterId = snapshot?.character &&
-    snapshot.character.health?.current !== 0 &&
-    snapshot.character.combat?.status !== "defeat"
-    ? snapshot.character.characterId
-    : null;
 
-  useEffect(() => {
-    if (!presenceCharacterId) {
-      setInteractionInbox(null);
-      knownInteractionStatusesRef.current.clear();
-      return;
-    }
-    let active = true;
-    let requestRunning = false;
-    const refreshInteractions = async () => {
-      if (!active || document.visibilityState === "hidden" || requestRunning || refreshGate.busy) return;
-      const epoch = refreshGate.capture();
-      requestRunning = true;
-      try {
-        const inbox = await client.getInteractionInbox();
-        if (!active || !refreshGate.accepts(epoch)) return;
-        for (const request of inbox.requests) {
-          const previous = knownInteractionStatusesRef.current.get(request.requestId);
-          if (previous === undefined) {
-            if (request.status === "pending" && request.recipientCharacterId === presenceCharacterId) {
-              addEntry("system", `${request.initiatorName} challenges you. Use “accept ${request.requestId}” or “decline ${request.requestId}”.`, true);
-            }
-          } else if (previous !== request.status) {
-            const message = request.status === "accepted"
-              ? `${request.recipientName} accepted your challenge.`
-              : request.status === "declined"
-                ? `${request.recipientName} declined your challenge.`
-                : request.status === "expired"
-                  ? `The challenge to ${request.recipientName} expired.`
-                  : request.status === "cancelled"
-                    ? `The challenge with ${request.recipientName} was cancelled.`
-                    : "";
-            if (message && request.initiatorCharacterId === presenceCharacterId) addEntry("system", message, true);
-          }
-          knownInteractionStatusesRef.current.set(request.requestId, request.status);
-        }
-        const encounter = inbox.encounter;
-        const pvpUpdateKey = encounter ? `${encounter.encounterId}:${encounter.updatedAt}` : null;
-        if (encounter && pvpUpdateKey !== knownPvpUpdateRef.current) {
-          addEntry("narration", encounter.lastNarration, true);
-        }
-        knownPvpUpdateRef.current = pvpUpdateKey;
-        setInteractionInbox(inbox);
-      } catch {
-        // Keep the last known state; the normal game heartbeat reports connection health.
-      } finally {
-        requestRunning = false;
-      }
-    };
-    void refreshInteractions();
-    const stopInteractions = client.watchRealtime("interactions", refreshInteractions, 3_000, () => !refreshGate.busy);
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void refreshInteractions();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      active = false;
-      stopInteractions();
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [addEntry, presenceCharacterId, refreshGate]);
 
-  const refreshPartyState = useCallback(async (preserveTerminalScroll = false) => {
-    if (!presenceCharacterId) return null;
-    if (preserveTerminalScroll && refreshGate.busy) return null;
-    const epoch = refreshGate.capture();
-    const previousRevision = knownPartyRevisionRef.current;
-    const next = await client.getPartyInfo(presenceCharacterId, previousRevision ?? undefined);
-    if (preserveTerminalScroll && !refreshGate.accepts(epoch)) return null;
-    if (previousRevision !== null) {
-      for (const activity of next.activity) {
-        if (activity.playerId === snapshot?.player.id) continue;
-        const who = activity.displayName ?? "A player";
-        const message = activity.type === "joined"
-          ? `${who} joined the party.`
-          : activity.type === "left"
-            ? `${who} left the party.`
-            : activity.type === "closed"
-              ? `${who} closed the party.`
-              : `${who} formed a party.`;
-        addEntry("system", message, preserveTerminalScroll);
-      }
-    }
-    knownPartyRevisionRef.current = next.revision;
-    setPartyInfo(next);
-    return next;
-  }, [addEntry, presenceCharacterId, refreshGate, snapshot?.player.id]);
+  const {
+    activeDialogue, dialogueModalOpen, talkToNpc, chooseDialogueReply, closeNpcDialogue,
+    dismissForTravel: dismissDialogueForTravel,
+  } = useDialogueController({
+    client, snapshot, pending: pending !== null, beginForeground, finishForeground,
+    reconcileCommand, setSnapshot, setConnectionError, refreshGate, addEntry,
+    rememberCompletedQuestObjectives,
+  });
+  const {
+    activeMerchantCatalog, activeCraftingPrompt, browseMerchant, purchaseMerchantListing,
+    craftingCommand, selectCraftingQuantity, closeMerchant, closeCrafting,
+  } = useCommerceController({
+    client, snapshot, pending: pending !== null, beginForeground, finishForeground,
+    reconcileCommand, setSnapshot, setConnectionError, refreshGate, addEntry,
+  });
 
-  const refreshTeamCombat = useCallback(async () => {
-    if (!presenceCharacterId) return null;
-    const next = await client.getTeamCombatInfo(presenceCharacterId);
-    setTeamCombatInfo(next);
-    return next;
-  }, [presenceCharacterId]);
+  const travelHistory = useMemo(() => ({
+    remove(ids: readonly string[]) {
+      activityHistory.remove(ids);
+    },
+    resetLook(locationId: string) { lastRoomLookIdRef.current = locationId; },
+    beginOptimistic: (owner: string) => activityHistory.beginOptimistic(owner),
+    endOptimisticCreation: () => activityHistory.endOptimisticCreation(),
+    settle: (owner: string) => activityHistory.settle(owner),
+  }), [activityHistory]);
+  const travelNpcNarration = useMemo(() => ({
+    wasAnnounced(name: string, locationId: string, now: number) {
+      return recentNpcDepartureAnnouncementsRef.current.some((item) =>
+        item.expiresAt >= now && item.worldInstanceId === worldInstanceId &&
+        item.locationId === locationId && item.npcName.toLocaleLowerCase() === name.toLocaleLowerCase());
+    },
+    recordFallback(fallback: OptimisticNpcDepartureFallback) {
+      optimisticNpcDepartureFallbacksRef.current = [
+        ...optimisticNpcDepartureFallbacksRef.current.filter((item) => item.expiresAt >= Date.now()),
+        fallback,
+      ].slice(-32);
+    },
+  }), [worldInstanceId]);
+  const dismissTravelRoomFeatures = useCallback(() => {
+    dismissDialogueForTravel();
+    closeMerchant();
+  }, [dismissDialogueForTravel, closeMerchant]);
+  const { optimisticTravel, move } = useTravelController({
+    client, worldInstanceId, snapshot, pending: pending !== null,
+    beginForeground, finishForeground, clearTravelFeedback, setPendingState,
+    reconcileCommand, setSnapshot, setConnectionError, refreshTeamCombat,
+    announceNewQuestObjectives, dismissRoomFeatures: dismissTravelRoomFeatures,
+    addDefaultLook, addEntry, history: travelHistory, npcNarration: travelNpcNarration,
+  });
 
-  useEffect(() => {
-    if (!presenceCharacterId) {
-      setTeamCombatInfo(null);
-      return;
-    }
-    let active = true;
-    let requestRunning = false;
-    let lastChecked = 0;
-    const poll = async () => {
-      if (!active || requestRunning || document.visibilityState === "hidden" || refreshGate.busy) return;
-      if (!teamPollingActive.current && Date.now() - lastChecked < 6_000) return;
-      const epoch = refreshGate.capture();
-      lastChecked = Date.now();
-      requestRunning = true;
-      try {
-        const next = await client.getTeamCombatInfo(presenceCharacterId);
-        if (active && refreshGate.accepts(epoch)) setTeamCombatInfo(next);
-      } catch {
-        // Keep the last known encounter while the connection recovers.
-      } finally {
-        requestRunning = false;
-      }
-    };
-    void poll();
-    const stopTeam = client.watchRealtime("team", () => { lastChecked = 0; return poll(); }, 2_000,
-      () => !refreshGate.busy);
-    return () => {
-      active = false;
-      stopTeam();
-    };
-  }, [presenceCharacterId, refreshGate]);
-
-  useEffect(() => {
-    if (!presenceCharacterId) {
-      setPartyInfo(null);
-      knownPartyRevisionRef.current = null;
-      return;
-    }
-    knownPartyRevisionRef.current = null;
-    let active = true;
-    let requestRunning = false;
-    let lastChecked = 0;
-    const pollParty = async (force = false) => {
-      if (!active || document.visibilityState === "hidden" || requestRunning) return;
-      if (
-        !force &&
-        client.realtimeConnectionState !== "connected" &&
-        Date.now() - lastChecked < partyPollingIntervalRef.current
-      ) return;
-      requestRunning = true;
-      lastChecked = Date.now();
-      try {
-        await refreshPartyState(true);
-      } catch {
-        // Party notifications are optional; keep the last known terminal state.
-      } finally {
-        requestRunning = false;
-      }
-    };
-    void pollParty(true);
-    const stopParty = client.watchRealtime("party", pollParty, 3_000,
-      () => !refreshGate.busy);
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void pollParty(true);
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      active = false;
-      stopParty();
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [presenceCharacterId, refreshGate, refreshPartyState]);
 
   const refreshAfterMutation = useCallback(async (
     message: string,
     command?: { base: GameSnapshot; response: CommandResponse },
     announceQuestObjectives = false,
     traceId?: string,
+    accepts: () => boolean = () => true,
   ) => {
-    addEntry("system", message);
+    if (accepts()) addEntry("system", message);
     const nextSnapshot = command
-      ? (await reconcileCommand(command.base, command.response, traceId)).snapshot
+      ? (await reconcileCommand(command.base, command.response, traceId, accepts)).snapshot
       : await client.getGame(traceId);
+    if (!accepts()) return nextSnapshot;
     if (!command) setSnapshot(nextSnapshot);
     setConnectionError("");
     addDefaultLook(nextSnapshot.location);
     if (announceQuestObjectives) announceNewQuestObjectives(nextSnapshot);
     else rememberCompletedQuestObjectives(nextSnapshot);
     return nextSnapshot;
-  }, [addDefaultLook, addEntry, announceNewQuestObjectives, reconcileCommand, rememberCompletedQuestObjectives, setConnectionError, setSnapshot]);
+  }, [addDefaultLook, addEntry, announceNewQuestObjectives, client, reconcileCommand, rememberCompletedQuestObjectives, setConnectionError, setSnapshot]);
 
-  const fetchDailyBoard = useCallback(async (boardId: string) => {
-    const requestContext = { ...dailyContextRef.current };
-    if (!requestContext.characterId || !requestContext.locationId) {
-      const message = "Enter the world with a character before browsing daily postings.";
-      setDailyBoardError(message);
-      throw new Error(message);
-    }
-    if (!requestContext.boardIds.includes(boardId)) {
-      dailyBoardRequestIdRef.current += 1;
-      setDailyBoard(null);
-      setDailyBoardContext(null);
-      setDailyBoardError("");
-      setDailyBoardLoading(false);
-      return null;
-    }
-    const requestId = ++dailyBoardRequestIdRef.current;
-    setDailyBoardLoading(true);
-    setDailyBoardError("");
-    try {
-      const board = await client.dailyBoard(requestContext.characterId, boardId);
-      const latestContext = dailyContextRef.current;
-      if (
-        requestId !== dailyBoardRequestIdRef.current ||
-        latestContext.characterId !== requestContext.characterId ||
-        latestContext.locationId !== requestContext.locationId ||
-        latestContext.worldInstanceId !== requestContext.worldInstanceId ||
-        !latestContext.boardIds.includes(boardId)
-      ) return null;
-      if (!board) throw new Error("The bulletin returned no postings.");
-      setDailyBoard(board);
-      setDailyBoardContext({
-        characterId: requestContext.characterId,
-        locationId: requestContext.locationId,
-        worldInstanceId: requestContext.worldInstanceId,
-      });
-      return board;
-    } catch (error) {
-      if (requestId !== dailyBoardRequestIdRef.current) return null;
-      const message = error instanceof Error ? error.message : "The daily bulletin could not be reached.";
-      setDailyBoardError(message);
-      throw error;
-    } finally {
-      if (requestId === dailyBoardRequestIdRef.current) setDailyBoardLoading(false);
-    }
-  }, []);
+  const {
+    displayedDailyBoard, dailyBoardLoading, dailyBoardError, pendingDailyJobId,
+    fetchDailyBoard, openDailyBoard, performDailyJob, performSupplyGather,
+    handleDailyJobAction, closeDailyBoard,
+  } = useDailyController({
+    client, snapshot, pending: pending !== null, beginForeground, finishForeground,
+    reconcileCommand, setSnapshot, setConnectionError, refreshGate, addEntry,
+    worldInstanceId, refreshAfterMutation, loadGame,
+  });
+  const inventoryController = useInventoryController({
+    client, snapshot, pending: pending !== null, beginForeground, finishForeground,
+    reconcileCommand, setSnapshot, setConnectionError, refreshGate, addEntry,
+    announceNewQuestObjectives, refreshAfterMutation,
+  });
+  const {
+    inspect, inspectCarriedItem, readObject, takeObject, takeAllObjects, lootCorpse,
+    extinguishCampfire, dropObject, putObject, changeEquipment, performItemUse,
+    inspectedCarriedItem, inventoryInspectError,
+  } = inventoryController;
 
-  const openDailyBoard = useCallback(async (boardId?: string) => {
-    const characterId = snapshot?.character?.characterId;
-    const selectedBoardId = boardId ?? snapshot?.dailyActivities?.boards[0]?.id;
-    if (!characterId) {
-      addEntry("error", "Enter the world with a character before browsing daily postings.");
-      return null;
-    }
-    if (!selectedBoardId) {
-      addEntry("narration", "There is no daily bulletin available in this world.");
-      setDailyBoard(null);
-      return null;
-    }
-    try {
-      const board = await fetchDailyBoard(selectedBoardId);
-      if (!board) return null;
-      addEntry("system", `${board.name} — cycle ${board.cycle}.`);
-      const resetAt = new Date(board.resetsAt);
-      const remainingMs = Math.max(0, resetAt.getTime() - Date.now());
-      const resetHours = Math.floor(remainingMs / 3_600_000);
-      const resetMinutes = Math.floor((remainingMs % 3_600_000) / 60_000);
-      addEntry("narration", `Resets at ${resetAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} (${resetHours}h ${resetMinutes}m remaining).`);
-      for (const job of board.jobs) {
-        const supplyLabel = snapshot?.dailyActivities?.sources.find(
-          (source) => source.supply.typeId === job.supplyTypeId,
-        )?.supply.label ?? job.supplyTypeId;
-        const status = job.status === "available" ? "available" : job.status === "active" ? "in progress" : "completed";
-        addEntry(
-          "narration",
-          `${job.poster}: ${job.title}. Bring ${job.quantity} ${supplyLabel}; ${job.carried}/${job.quantity} carried. Status: ${status}. Reward: ${job.gold} gold and ${job.experience} XP.`,
-        );
-      }
-      return board;
-    } catch (error) {
-      addEntry("error", error instanceof Error ? error.message : "The daily bulletin could not be reached.");
-      return null;
-    }
-  }, [addEntry, fetchDailyBoard, snapshot?.character?.characterId, snapshot?.dailyActivities?.boards, snapshot?.dailyActivities?.sources]);
+  const { performFishingCast, cancelFishingCast,
+    continueAction: continueFishingCast,
+    active: activeFishingCast } = useFishingController({
+    client, snapshot, pending: pending !== null, beginForeground, finishForeground,
+    reconcileCommand, setSnapshot, setConnectionError, refreshGate, addEntry,
+  });
 
-  const performDailyJob = useCallback(async (
-    board: NonNullable<typeof dailyBoard>,
-    jobId: string,
-    action: "accept" | "deliver",
-  ) => {
-    if (!snapshot?.character || pending) return;
-    const job = board.jobs.find((candidate) => candidate.id === jobId);
-    if (!job) {
-      addEntry("error", "That posting is no longer on this bulletin.");
-      return;
-    }
-    setPending("daily");
-    setPendingDailyJobId(jobId);
-    try {
-      const response = await client.dailyJob(snapshot.character.characterId, snapshot.character.revision, {
-        boardId: board.boardId,
-        cycle: board.cycle,
-        jobId,
-        action,
-      });
-      let message = `Accepted “${job.title}” from ${job.poster}.`;
-      if (action === "deliver") {
-        const event = response.events?.find((candidate) => candidate.type === "character.daily_job_changed");
-        const payload = event?.payload;
-        const actualGold = payload && typeof payload === "object" && "gold" in payload && typeof payload.gold === "number"
-          ? payload.gold
-          : job.gold;
-        const actualExperience = payload && typeof payload === "object" && "experience" in payload && typeof payload.experience === "number"
-          ? payload.experience
-          : job.experience;
-        message = `Delivered “${job.title}” for ${actualGold} gold and ${actualExperience} XP.`;
-      }
-      const updatedSnapshot = await refreshAfterMutation(message, { base: snapshot, response });
-      const stillAtBoard = updatedSnapshot.character?.characterId === snapshot.character.characterId &&
-        updatedSnapshot.location?.locationId === snapshot.location?.locationId &&
-        updatedSnapshot.dailyActivities?.boards.some((candidate) => candidate.id === board.boardId);
-      if (stillAtBoard) {
-        try {
-          await fetchDailyBoard(board.boardId);
-        } catch {
-          // The command succeeded; the inline board exposes its own refresh error.
-        }
-      }
-    } catch (error) {
-      addEntry("error", error instanceof Error ? error.message : `You could not ${action} that posting.`);
-    } finally {
-      setPendingDailyJobId(undefined);
-      setPending(null);
-    }
-  }, [addEntry, fetchDailyBoard, pending, refreshAfterMutation, snapshot]);
-
-  const performSupplyGather = useCallback(async (sourceId: string, label: string) => {
-    if (!snapshot?.character || pending) return;
-    const cycle = snapshot.dailyActivities?.cycle;
-    if (!cycle) {
-      addEntry("error", "Daily supply gathering is not available right now.");
-      return;
-    }
-    setPending("gather");
-    try {
-      const response = await client.gatherSupply(snapshot.character.characterId, snapshot.character.revision, sourceId, cycle);
-      const updatedSnapshot = await refreshAfterMutation(`Gathered supplies at ${label}.`, { base: snapshot, response });
-      const stillAtBoard = dailyBoard && updatedSnapshot.character?.characterId === snapshot.character.characterId &&
-        updatedSnapshot.location?.locationId === snapshot.location?.locationId &&
-        updatedSnapshot.dailyActivities?.boards.some((candidate) => candidate.id === dailyBoard.boardId);
-      if (stillAtBoard && dailyBoard) {
-        try {
-          await fetchDailyBoard(dailyBoard.boardId);
-        } catch {
-          // A board refresh failure must not turn a successful gather into a failed action.
-        }
-      }
-    } catch (error) {
-      addEntry("error", error instanceof Error ? error.message : "You could not gather that supply.");
-    } finally {
-      setPending(null);
-    }
-  }, [addEntry, dailyBoard, fetchDailyBoard, pending, refreshAfterMutation, snapshot]);
-
-  const performFishingTick = useCallback(async (castId: string) => {
-    if (fishingTickBusyRef.current) return;
-    fishingTickBusyRef.current = true;
-    try {
-      const current = await client.getGame();
-      const character = current.character;
-      if (!character?.activeFishing || character.activeFishing.castId !== castId) {
-        setSnapshot(current);
-        return;
-      }
-      const result = await client.advanceFishingCast(character.characterId, castId, character.revision);
-      const event = result.events?.find((candidate) => candidate.type === "character.fishing_cast_advanced");
-      const payload = event?.payload;
-      await reconcileCommand(current, result);
-      setConnectionError("");
-      if (!payload || typeof payload !== "object" || !("status" in payload)) return;
-      const outcome = payload as {
-        status?: unknown;
-        item?: { label?: unknown; fishCatch?: { lengthCm?: unknown; weightGrams?: unknown; rarity?: unknown } };
-      };
-      if (outcome.status === "caught" && outcome.item) {
-        const fish = outcome.item;
-        addEntry("narration", `You caught a ${typeof fish.label === "string" ? fish.label : "fish"}!`);
-        if (typeof fish.fishCatch?.lengthCm === "number" && typeof fish.fishCatch?.weightGrams === "number") {
-          const rarity = typeof fish.fishCatch.rarity === "string"
-            ? `${fish.fishCatch.rarity.charAt(0).toLocaleUpperCase()}${fish.fishCatch.rarity.slice(1)} catch`
-            : "Catch";
-          addEntry("system", `${rarity}: ${fish.fishCatch.lengthCm} cm, ${fish.fishCatch.weightGrams} g.`);
-        }
-      } else if (outcome.status === "no-bite") {
-        addEntry("narration", "No bites. You reel in your line.");
-      } else if (outcome.status === "interrupted") {
-        addEntry("narration", "Your fishing is interrupted. You reel in your line.");
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "The fishing cast could not be advanced.";
-      if (message.includes("line is still in the water")) {
-        window.setTimeout(() => { void performFishingTick(castId); }, 1_000);
-      } else {
-        addEntry("error", message);
-        try {
-          const refreshed = await client.getGame();
-          setSnapshot(refreshed);
-          if (refreshed.character?.activeFishing?.castId === castId) {
-            window.setTimeout(() => { void performFishingTick(castId); }, 1_000);
-          }
-        } catch {
-          // The cast will be resumed from its persisted snapshot after reconnect.
-        }
-      }
-    } finally {
-      fishingTickBusyRef.current = false;
-    }
-  }, [addEntry, reconcileCommand, setConnectionError, setSnapshot]);
-
-  const performFishingCast = useCallback(async (rodItemId: string) => {
-    if (!snapshot?.character || pending) return;
-    setPending("use");
-    try {
-      const result = await client.startFishingCast(
-        snapshot.character.characterId,
-        rodItemId,
-        snapshot.character.revision,
-      );
-      await reconcileCommand(snapshot, result);
-      setConnectionError("");
-      const stoppedChopping = result.events?.some((event) =>
-        event.type === "character.woodcutting_action_advanced");
-      const restartedFishing = result.events?.some((event) =>
-        event.type === "character.fishing_cast_advanced");
-      addEntry(
-        "narration",
-        stoppedChopping
-          ? "You lower your axe, cast your line, and wait..."
-          : restartedFishing
-            ? "You reel in your line, cast again, and wait..."
-            : "You cast your line and wait...",
-      );
-    } catch (error) {
-      addEntry("error", error instanceof Error ? error.message : "You cannot fish here.");
-    } finally {
-      setPending(null);
-    }
-  }, [addEntry, pending, reconcileCommand, setConnectionError, setPending, snapshot]);
-
-  const cancelFishingCast = useCallback(async (castId: string) => {
-    const characterId = snapshot?.character?.characterId;
-    if (!characterId || pending) return;
-    setPending("use");
-    try {
-      let current = await client.getGame();
-      let character = current.character;
-      if (!character || character.activeFishing?.castId !== castId) {
-        setSnapshot(current);
-        return;
-      }
-      let response: CommandResponse;
-      try {
-        response = await client.cancelFishingCast(characterId, castId, character.revision);
-      } catch (error) {
-        if (!/revision|conflict/i.test(error instanceof Error ? error.message : "")) throw error;
-        current = await client.getGame();
-        character = current.character;
-        if (!character || character.activeFishing?.castId !== castId) {
-          setSnapshot(current);
-          return;
-        }
-        response = await client.cancelFishingCast(characterId, castId, character.revision);
-      }
-      await reconcileCommand(current, response);
-      setConnectionError("");
-      addEntry("narration", "You reel in your line and stop fishing.");
-    } catch (error) {
-      addEntry("error", error instanceof Error ? error.message : "The fishing cast could not be cancelled.");
-      try {
-        setSnapshot(await client.getGame());
-      } catch {
-        // Keep the persisted cast visible; the action can be retried after reconnecting.
-      }
-    } finally {
-      setPending(null);
-    }
-  }, [addEntry, pending, reconcileCommand, setConnectionError, setPending, setSnapshot, snapshot?.character?.characterId]);
-
-  const activeFishingCast = snapshot?.character?.activeFishing;
-  const fishingCastId = activeFishingCast?.castId;
-  const fishingStartedAt = activeFishingCast?.startedAt;
-  const fishingTicksCompleted = activeFishingCast?.ticksCompleted;
-  const fishingTickIntervalSeconds = activeFishingCast?.tickIntervalSeconds;
-  const continueFishingCast = useCallback((castId: string) => {
-    if (!activeFishingCast || activeFishingCast.castId !== castId) return;
-    const nextTickAt = Date.parse(activeFishingCast.startedAt) +
-      (activeFishingCast.ticksCompleted + 1) * activeFishingCast.tickIntervalSeconds * 1000;
-    window.setTimeout(
-      () => { void performFishingTick(castId); },
-      Math.max(0, nextTickAt - Date.now()),
-    );
-  }, [activeFishingCast, performFishingTick]);
-  useEffect(() => {
-    if (!fishingCastId || !fishingStartedAt || fishingTicksCompleted === undefined ||
-        fishingTickIntervalSeconds === undefined) return;
-    const nextTickAt = Date.parse(fishingStartedAt) +
-      (fishingTicksCompleted + 1) * fishingTickIntervalSeconds * 1000;
-    const tryDueTick = () => {
-      if (Date.now() >= nextTickAt) void performFishingTick(fishingCastId);
-    };
-    const firstTick = window.setTimeout(tryDueTick, Math.max(0, nextTickAt - Date.now()));
-    const recoveryTimer = window.setInterval(tryDueTick, 1_000);
-    return () => {
-      window.clearTimeout(firstTick);
-      window.clearInterval(recoveryTimer);
-    };
-  }, [
-    fishingCastId,
-    fishingStartedAt,
-    fishingTicksCompleted,
-    fishingTickIntervalSeconds,
-    performFishingTick,
-  ]);
-
-  const performWoodcuttingTick = useCallback(async (actionId: string) => {
-    if (woodcuttingTickBusyRef.current) return;
-    woodcuttingTickBusyRef.current = true;
-    try {
-      const current = await client.getGame();
-      const character = current.character;
-      if (!character?.activeWoodcutting || character.activeWoodcutting.actionId !== actionId) {
-        setSnapshot(current);
-        return;
-      }
-      const treeLabel = character.activeWoodcutting.treeLabel;
-      const result = await client.advanceWoodcutting(character.characterId, actionId, character.revision);
-      const event = result.events?.find((candidate) => candidate.type === "character.woodcutting_action_advanced");
-      const payload = event?.payload;
-      await reconcileCommand(current, result);
-      setConnectionError("");
-      if (!payload || typeof payload !== "object" || !("status" in payload)) return;
-      const outcome = payload as {
-        status?: unknown;
-        logLabel?: unknown;
-        skillExperienceAwarded?: unknown;
-        totalExperience?: unknown;
-        level?: unknown;
-        treeDepleted?: unknown;
-      };
-      if (outcome.status === "logged") {
-        const label = typeof outcome.logLabel === "string" ? outcome.logLabel : "logs";
-        addEntry("narration", `You cut a bundle of ${label}.`);
-        if (typeof outcome.skillExperienceAwarded === "number" &&
-            typeof outcome.totalExperience === "number" && typeof outcome.level === "number") {
-          addEntry("system", `Woodcutting +${outcome.skillExperienceAwarded} XP · Level ${outcome.level} · ${outcome.totalExperience} XP total.`);
-        }
-        if (outcome.treeDepleted === true) {
-          addEntry("narration", `You cut down the ${treeLabel}; only a stump remains.`);
-        }
-      } else if (outcome.status === "no-log") {
-        addEntry("narration", "You swing for ten seconds, but no logs come free.");
-      } else if (outcome.status === "tree-depleted") {
-        addEntry("narration", "Only a stump remains where the tree stood.");
-      } else if (outcome.status === "interrupted") {
-        addEntry("narration", "You stop chopping.");
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "The woodcutting action could not be advanced.";
-      if (message.includes("axe is still swinging")) {
-        window.setTimeout(() => { void performWoodcuttingTick(actionId); }, 1_000);
-      } else if (/revision|conflict/i.test(message)) {
-        try {
-          const refreshed = await client.getGame();
-          setSnapshot(refreshed);
-          if (refreshed.character?.activeWoodcutting?.actionId === actionId) {
-            window.setTimeout(() => { void performWoodcuttingTick(actionId); }, 250);
-          }
-        } catch {
-          // Refresh and resume the persisted action on the next connection update.
-        }
-      } else {
-        addEntry("error", message);
-        try {
-          const refreshed = await client.getGame();
-          setSnapshot(refreshed);
-          if (refreshed.character?.activeWoodcutting?.actionId === actionId) {
-            window.setTimeout(() => { void performWoodcuttingTick(actionId); }, 1_000);
-          }
-        } catch {
-          // The action resumes from its persisted character projection after reconnect.
-        }
-      }
-    } finally {
-      woodcuttingTickBusyRef.current = false;
-    }
-  }, [addEntry, reconcileCommand, setConnectionError, setSnapshot]);
-
-  const performWoodcuttingStart = useCallback(async (axeItemId: string, treeId: string) => {
-    if (!snapshot?.character || pending) return;
-    setPending("use");
-    try {
-      const result = await client.startWoodcutting(
-        snapshot.character.characterId,
-        axeItemId,
-        treeId,
-        snapshot.character.revision,
-      );
-      await reconcileCommand(snapshot, result);
-      setConnectionError("");
-      const stoppedFishing = result.events?.some((event) =>
-        event.type === "character.fishing_cast_advanced");
-      const restartedChopping = result.events?.some((event) =>
-        event.type === "character.woodcutting_action_advanced");
-      addEntry(
-        "narration",
-        stoppedFishing
-          ? "You reel in your line and begin swinging your axe at the tree..."
-          : restartedChopping
-            ? "You pause, then swing your axe at the tree again..."
-            : "You begin swinging your axe at the tree...",
-      );
-    } catch (error) {
-      addEntry("error", error instanceof Error ? error.message : "You cannot chop that tree.");
-    } finally {
-      setPending(null);
-    }
-  }, [addEntry, pending, reconcileCommand, setConnectionError, setPending, snapshot]);
-
-  const cancelWoodcuttingAction = useCallback(async (actionId: string) => {
-    const characterId = snapshot?.character?.characterId;
-    if (!characterId || pending) return;
-    setPending("use");
-    try {
-      let current = await client.getGame();
-      let character = current.character;
-      if (!character || character.activeWoodcutting?.actionId !== actionId) {
-        setSnapshot(current);
-        return;
-      }
-      let response: CommandResponse;
-      try {
-        response = await client.cancelWoodcutting(characterId, actionId, character.revision);
-      } catch (error) {
-        if (!/revision|conflict/i.test(error instanceof Error ? error.message : "")) throw error;
-        current = await client.getGame();
-        character = current.character;
-        if (!character || character.activeWoodcutting?.actionId !== actionId) {
-          setSnapshot(current);
-          return;
-        }
-        response = await client.cancelWoodcutting(characterId, actionId, character.revision);
-      }
-      await reconcileCommand(current, response);
-      setConnectionError("");
-      addEntry("narration", "You lower your axe and stop chopping.");
-    } catch (error) {
-      addEntry("error", error instanceof Error ? error.message : "The woodcutting action could not be cancelled.");
-      try {
-        setSnapshot(await client.getGame());
-      } catch {
-        // Keep the persisted action visible; it can be retried after reconnecting.
-      }
-    } finally {
-      setPending(null);
-    }
-  }, [addEntry, pending, reconcileCommand, setConnectionError, setPending, setSnapshot, snapshot?.character?.characterId]);
-
-  const activeWoodcutting = snapshot?.character?.activeWoodcutting;
-  const woodcuttingActionId = activeWoodcutting?.actionId;
-  const woodcuttingStartedAt = activeWoodcutting?.startedAt;
-  const woodcuttingTicksCompleted = activeWoodcutting?.ticksCompleted;
-  useEffect(() => {
-    if (!woodcuttingActionId) return;
-    const chopMessageTimer = window.setInterval(() => {
-      addEntry("narration", "Chop!");
-    }, 2_000);
-    return () => window.clearInterval(chopMessageTimer);
-  }, [addEntry, woodcuttingActionId]);
-
-  const continueWoodcutting = useCallback((actionId: string) => {
-    if (!activeWoodcutting || activeWoodcutting.actionId !== actionId) return;
-    const nextTickAt = Date.parse(activeWoodcutting.startedAt) +
-      (activeWoodcutting.ticksCompleted + 1) * 1000;
-    window.setTimeout(
-      () => { void performWoodcuttingTick(actionId); },
-      Math.max(0, nextTickAt - Date.now()),
-    );
-  }, [activeWoodcutting, performWoodcuttingTick]);
-  useEffect(() => {
-    if (!woodcuttingActionId || !woodcuttingStartedAt || woodcuttingTicksCompleted === undefined) return;
-    const nextTickAt = Date.parse(woodcuttingStartedAt) +
-      (woodcuttingTicksCompleted + 1) * 1000;
-    const tryDueTick = () => {
-      if (Date.now() >= nextTickAt) void performWoodcuttingTick(woodcuttingActionId);
-    };
-    const firstTick = window.setTimeout(tryDueTick, Math.max(0, nextTickAt - Date.now()));
-    const recoveryTimer = window.setInterval(tryDueTick, 1_000);
-    return () => {
-      window.clearTimeout(firstTick);
-      window.clearInterval(recoveryTimer);
-    };
-  }, [
-    woodcuttingActionId,
-    woodcuttingStartedAt,
-    woodcuttingTicksCompleted,
-    performWoodcuttingTick,
-  ]);
-
-  const handleDailyJobAction = useCallback((jobId: string, action: "accept" | "deliver") => {
-    if (displayedDailyBoard) void performDailyJob(displayedDailyBoard, jobId, action);
-  }, [displayedDailyBoard, performDailyJob]);
-
-  useEffect(() => {
-    if (!displayedDailyBoard) return;
-    const resetAt = Date.parse(displayedDailyBoard.resetsAt);
-    let timeout = 0;
-    const refreshAtReset = () => {
-      const remaining = resetAt - Date.now();
-      if (remaining > 0) {
-        timeout = window.setTimeout(refreshAtReset, Math.min(remaining + 100, 2_147_000_000));
-        return;
-      }
-      const current = dailyContextRef.current;
-      if (
-        current.characterId !== dailyBoardContext?.characterId ||
-        current.locationId !== dailyBoardContext?.locationId ||
-        current.worldInstanceId !== dailyBoardContext?.worldInstanceId ||
-        !current.boardIds.includes(displayedDailyBoard.boardId)
-      ) return;
-      void loadGame();
-      void fetchDailyBoard(displayedDailyBoard.boardId).catch(() => undefined);
-    };
-    timeout = window.setTimeout(refreshAtReset, Math.min(Math.max(0, resetAt - Date.now() + 100), 2_147_000_000));
-    return () => window.clearTimeout(timeout);
-  }, [dailyBoardContext, displayedDailyBoard?.boardId, displayedDailyBoard?.cycle, displayedDailyBoard?.resetsAt, fetchDailyBoard, loadGame]);
-
-  const closeDailyBoard = useCallback(() => {
-    dailyBoardRequestIdRef.current += 1;
-    setDailyBoard(null);
-    setDailyBoardContext(null);
-    setDailyBoardError("");
-    setDailyBoardLoading(false);
-  }, []);
-
-  const inspect = useCallback(async (target?: string) => {
-    if (!snapshot?.character || pending) return;
-    setPending("look");
-    try {
-      const location = await client.look(
-        snapshot.character.characterId,
-        undefined,
-        { includeNpcDescriptions: true },
-      );
-      setSnapshot((current) => current ? { ...current, location } : current);
-      if (!target) {
-        addEntry("location", location.title);
-        addEntry("narration", location.description);
-        return;
-      }
-      const npcMatches = findNpcMatches(target, location.npcs ?? []);
-      if (npcMatches.length === 1) {
-        const description = npcMatches[0]!.description;
-        if (!description) {
-          addEntry("error", `You cannot get a clear look at ${npcMatches[0]!.name} right now.`);
-          return;
-        }
-        addEntry("narration", description);
-        return;
-      }
-      if (npcMatches.length > 1) {
-        addEntry("error", `Which one do you mean: ${npcMatches.map((npc) => npc.name).join(", ")}?`);
-        return;
-      }
-      const inventoryObjects = (snapshot.character.inventory ?? []).map((item) => ({
-        ...item,
-        readable: false,
-        takeable: true,
-      }));
-      const matches = findObjectMatches(target, [...location.objects, ...inventoryObjects]);
-      if (matches.length === 0) {
-        addEntry("error", `You do not see anything called “${target}” here.`);
-      } else if (matches.length > 1) {
-        addEntry("error", `Which one do you mean: ${matches.map((object) => object.label).join(", ")}?`);
-      } else {
-        const object = await client.inspect(snapshot.character.characterId, matches[0]!.id);
-        addEntry("narration", object.description);
-      }
-    } catch (error) {
-      addEntry("error", error instanceof Error ? error.message : "You cannot get a clear look just now.");
-    } finally {
-      setPending(null);
-    }
-  }, [addEntry, pending, snapshot]);
-
-  const inspectCarriedItem = useCallback(async (item: NonNullable<GameSnapshot["character"]>["inventory"][number]) => {
-    if (!snapshot?.character || pending) return;
-    setPending("look");
-    setInventoryInspectError("");
-    try {
-      const inspected = await client.inspect(snapshot.character.characterId, item.id);
-      setInspectedCarriedItem(inspected);
-    } catch (error) {
-      setInventoryInspectError(error instanceof Error ? error.message : "You cannot inspect that item just now.");
-    } finally {
-      setPending(null);
-    }
-  }, [pending, snapshot]);
-
-  const readObject = useCallback(async (objectId: string) => {
-    if (!snapshot?.character || !snapshot.location || pending) return;
-    setPending("read");
-    try {
-      const readable = await client.read(
-        snapshot.character.characterId,
-        objectId,
-        snapshot.location.revision,
-      );
-      const nextSnapshot = await client.getGame();
-      setSnapshot(nextSnapshot);
-      setConnectionError("");
-      addEntry("narration", readable.text);
-      announceNewQuestObjectives(nextSnapshot);
-    } catch (error) {
-      addEntry("error", error instanceof Error ? error.message : "You cannot read that just now.");
-    } finally {
-      setPending(null);
-    }
-  }, [addEntry, announceNewQuestObjectives, pending, snapshot]);
-
-  const talkToNpc = useCallback(async (npcId: string, topic?: string) => {
-    if (!snapshot?.character || pending) return;
-    setPending("talk");
-    try {
-      const character = snapshot.character;
-      let dialogue = await client.talk(character.characterId, npcId, topic);
-      const progress = character.npcProgress.find((entry) => entry.npcId === npcId);
-      if (!topic && dialogue.choices.length === 0 && progress?.lastChoiceId) {
-        const response = await client.restartNpcDialogue(character.characterId, npcId, character.revision);
-        await reconcileCommand(snapshot, response);
-        setConnectionError("");
-        dialogue = await client.talk(character.characterId, npcId);
-      }
-      addEntry("narration", `${dialogue.npcName}: ${dialogue.text}`);
-      setActiveDialogue(dialogue);
-      setDialogueModalOpen((isOpen) => isOpen || dialogue.choices.length > 0);
-    } catch (error) {
-      addEntry("error", error instanceof Error ? error.message : "That person does not answer.");
-    } finally {
-      setPending(null);
-    }
-  }, [addEntry, pending, reconcileCommand, snapshot]);
-
-  const closeNpcDialogue = useCallback(async () => {
-    const dialogue = activeDialogue;
-    setDialogueModalOpen(false);
-    const character = snapshot?.character;
-    if (!dialogue || !character || pending) return;
-    const progress = character.npcProgress.find((entry) => entry.npcId === dialogue.npcId);
-    if (!progress?.lastChoiceId) return;
-
-    setActiveDialogue(null);
-    setPending("talk");
-    try {
-      await client.restartNpcDialogue(
-        character.characterId,
-        dialogue.npcId,
-        character.revision,
-      );
-      const nextSnapshot = await client.getGame();
-      setSnapshot(nextSnapshot);
-      setConnectionError("");
-      try {
-        setActiveDialogue(await client.talk(character.characterId, dialogue.npcId));
-      } catch {
-        setActiveDialogue(null);
-      }
-    } catch (error) {
-      addEntry("error", error instanceof Error ? error.message : "The conversation could not be restarted.");
-    } finally {
-      setPending(null);
-    }
-  }, [activeDialogue, addEntry, client, pending, snapshot]);
-
-  const chooseDialogueReply = useCallback(async (choiceId: string, announceChoice = true) => {
-    if (!snapshot?.character || !activeDialogue || pending) return;
-    const choice = activeDialogue.choices.find((candidate) => candidate.id === choiceId);
-    if (!choice) return;
-
-    setPending("talk");
-    if (announceChoice) addEntry("system", `> ${choice.label}`);
-    try {
-      const response = await client.chooseNpcDialogue(
-        snapshot.character.characterId,
-        activeDialogue.npcId,
-        choice.id,
-        snapshot.character.revision,
-      );
-      const [reconciliation, dialogue] = await Promise.all([
-        reconcileCommand(snapshot, response),
-        client.talk(snapshot.character.characterId, activeDialogue.npcId),
-      ]);
-      const nextSnapshot = reconciliation.snapshot;
-      rememberCompletedQuestObjectives(nextSnapshot);
-      setConnectionError("");
-      setActiveDialogue(dialogue);
-      setDialogueModalOpen((isOpen) => isOpen || dialogue.choices.length > 0);
-      addEntry("narration", `${dialogue.npcName}: ${dialogue.text}`);
-    } catch (error) {
-      addEntry("error", error instanceof Error ? error.message : "That reply is no longer available.");
-    } finally {
-      setPending(null);
-    }
-  }, [activeDialogue, addEntry, pending, reconcileCommand, rememberCompletedQuestObjectives, snapshot]);
-
-  const takeObject = useCallback(async (itemId: string, label: string) => {
-    if (!snapshot?.character || !snapshot.location || pending) return;
-    setPending("take");
-    try {
-      const response = await client.take(snapshot.character.characterId, itemId, snapshot.location.revision);
-      await refreshAfterMutation(`You pick up the ${label.toLocaleLowerCase()}.`, { base: snapshot, response });
-    } catch (error) {
-      addEntry("error", error instanceof Error ? error.message : "You cannot take that item just now.");
-    } finally {
-      setPending(null);
-    }
-  }, [addEntry, pending, refreshAfterMutation, snapshot]);
-
-  const extinguishCampfire = useCallback(async (campfireId: string) => {
-    if (!snapshot?.character || !snapshot.location || pending) return;
-    setPending("use");
-    try {
-      const response = await client.extinguishCampfire(
-        snapshot.character.characterId,
-        campfireId,
-        snapshot.character.revision,
-      );
-      await refreshAfterMutation("You extinguish the campfire.", { base: snapshot, response });
-    } catch (error) {
-      addEntry("error", error instanceof Error ? error.message : "You cannot extinguish that campfire.");
-    } finally {
-      setPending(null);
-    }
-  }, [addEntry, pending, refreshAfterMutation, snapshot]);
-
-  const takeAllObjects = useCallback(async () => {
-    if (!snapshot?.character || pending) return;
-    setPending("take");
-    try {
-      let latestSnapshot = await client.getGame();
-      let takenCount = 0;
-      const initialTakeables = (latestSnapshot.location?.objects ?? []).filter((object) => object.takeable);
-      if (!initialTakeables.length) {
-        addEntry("error", "There is nothing here you can take.");
-        return;
-      }
-
-      for (const item of initialTakeables) {
-        const location = latestSnapshot.location;
-        if (!location || !location.objects.some((object) => object.id === item.id && object.takeable)) continue;
-        const response = await client.take(snapshot.character.characterId, item.id, location.revision);
-        latestSnapshot = (await reconcileCommand(latestSnapshot, response)).snapshot;
-        setConnectionError("");
-        addEntry("narration", `You pick up the ${item.label.toLocaleLowerCase()}.`);
-        takenCount += 1;
-      }
-
-      if (!takenCount) addEntry("error", "There is nothing here you can take.");
-    } catch (error) {
-      addEntry("error", error instanceof Error ? error.message : "You cannot take those items just now.");
-      try {
-        const currentSnapshot = await client.getGame();
-        setSnapshot(currentSnapshot);
-        setConnectionError("");
-      } catch (refreshError) {
-        const message = refreshError instanceof Error ? refreshError.message : "The world could not be reached.";
-        setConnectionError(message);
-        addEntry("error", message);
-      }
-    } finally {
-      setPending(null);
-    }
-  }, [addEntry, pending, reconcileCommand, setConnectionError, setPending, setSnapshot, snapshot]);
-
-  const lootCorpse = useCallback(async (corpseId: string, corpseLabel: string) => {
-    if (!snapshot?.character || pending) return;
-    setPending("take");
-    try {
-      let latestSnapshot = await client.getGame();
-      setSnapshot(latestSnapshot);
-      setConnectionError("");
-      const location = latestSnapshot.location;
-      const corpse = location?.objects.find((object) =>
-        object.id === corpseId && object.containerKind === "corpse",
-      );
-      if (!location || !corpse) {
-        addEntry("error", `You do not see the ${corpseLabel.toLocaleLowerCase()} here.`);
-        return;
-      }
-
-      const initialContents = location.objects.filter((object) =>
-        object.containerId === corpse.id && object.takeable,
-      );
-      if (!initialContents.length) {
-        addEntry("narration", `The ${corpse.label.toLocaleLowerCase()} has nothing left to loot.`);
-        return;
-      }
-
-      let takenCount = 0;
-      for (const item of initialContents) {
-        const currentLocation = latestSnapshot.location;
-        if (!currentLocation?.objects.some((object) =>
-          object.id === item.id &&
-          object.containerId === corpse.id &&
-          object.takeable,
-        )) continue;
-
-        const response = await client.take(snapshot.character.characterId, item.id, currentLocation.revision);
-        latestSnapshot = (await reconcileCommand(latestSnapshot, response)).snapshot;
-        setConnectionError("");
-        addEntry("narration", `You pick up the ${item.label.toLocaleLowerCase()}.`);
-        takenCount += 1;
-      }
-
-      if (!takenCount) addEntry("narration", `The ${corpse.label.toLocaleLowerCase()} has nothing left to loot.`);
-    } catch (error) {
-      addEntry("error", error instanceof Error ? error.message : "You cannot loot that corpse just now.");
-      try {
-        const currentSnapshot = await client.getGame();
-        setSnapshot(currentSnapshot);
-        setConnectionError("");
-      } catch (refreshError) {
-        const message = refreshError instanceof Error ? refreshError.message : "The world could not be reached.";
-        setConnectionError(message);
-        addEntry("error", message);
-      }
-    } finally {
-      setPending(null);
-    }
-  }, [addEntry, pending, reconcileCommand, setConnectionError, setPending, setSnapshot, snapshot]);
-
-  const dropObject = useCallback(async (itemId: string, label: string) => {
-    if (!snapshot?.character || !snapshot.location || pending) return;
-    if (snapshot.character.inventory.find((item) => item.id === itemId)?.questBound) {
-      addEntry("error", "Quest items cannot be dropped.");
-      return;
-    }
-    setPending("drop");
-    try {
-      const response = await client.drop(snapshot.character.characterId, itemId, snapshot.location.revision);
-      await refreshAfterMutation(`You put down the ${label.toLocaleLowerCase()}.`, { base: snapshot, response });
-    } catch (error) {
-      addEntry("error", error instanceof Error ? error.message : "You cannot drop that item just now.");
-    } finally {
-      setPending(null);
-    }
-  }, [addEntry, pending, refreshAfterMutation, snapshot]);
-
-  const putObject = useCallback(async (
-    itemId: string,
-    itemLabel: string,
-    containerId: string,
-    containerLabel: string,
-  ) => {
-    if (!snapshot?.character || !snapshot.location || pending) return;
-    const item = snapshot.character.inventory.find((candidate) => candidate.id === itemId);
-    if (!item) return;
-    if (item.questBound) {
-      addEntry("error", "Quest items cannot be put away.");
-      return;
-    }
-    if (
-      characterHasEquippedItem(snapshot.character.equipment, itemId)
-    ) {
-      addEntry("error", "Unequip that item before putting it away.");
-      return;
-    }
-    setPending("put");
-    try {
-      const response = await client.put(
-        snapshot.character.characterId,
-        itemId,
-        containerId,
-        snapshot.location.revision,
-      );
-      await refreshAfterMutation(
-        `You put the ${itemLabel.toLocaleLowerCase()} in the ${containerLabel.toLocaleLowerCase()}.`,
-        { base: snapshot, response },
-      );
-    } catch (error) {
-      addEntry("error", error instanceof Error ? error.message : "You cannot put that item away just now.");
-    } finally {
-      setPending(null);
-    }
-  }, [addEntry, pending, refreshAfterMutation, snapshot]);
-
-  const changeEquipment = useCallback(async (
-    action: "equip" | "unequip",
-    itemOrSlot: string,
-  ) => {
-    if (!snapshot?.character || pending) return;
-    const item = action === "equip"
-      ? snapshot.character.inventory.find((candidate) => candidate.id === itemOrSlot)
-      : undefined;
-    const slot = action === "equip" ? item?.equipment?.slot : itemOrSlot as EquipmentSlot;
-    if (!slot) return;
-    setPending("equip");
-    try {
-      const response = action === "equip"
-        ? await client.equip(snapshot.character.characterId, item!.id, snapshot.character.revision)
-        : await client.unequip(snapshot.character.characterId, slot, snapshot.character.revision);
-      await reconcileCommand(snapshot, response);
-      setConnectionError("");
-      addEntry("narration", action === "equip"
-        ? `You equip the ${item!.label.toLocaleLowerCase()} as your ${slot}.`
-        : `You unequip your ${slot}.`);
-    } catch (error) {
-      addEntry("error", error instanceof Error ? error.message : "Your equipment could not be changed.");
-    } finally {
-      setPending(null);
-    }
-  }, [addEntry, pending, reconcileCommand, setConnectionError, setPending, snapshot]);
-
-  const performItemUse = useCallback(async (itemId: string, targetId: string) => {
-    if (!snapshot?.character || !snapshot.location || pending) return;
-    setPending("use");
-    try {
-      const result = await client.use(
-        snapshot.character.characterId,
-        itemId,
-        targetId,
-        snapshot.location.revision,
-      );
-      const nextSnapshot = await client.getGame();
-      setSnapshot(nextSnapshot);
-      setConnectionError("");
-      addEntry("narration", result.response);
-    } catch (error) {
-      addEntry("error", error instanceof Error ? error.message : "You cannot use that item here.");
-    } finally {
-      setPending(null);
-    }
-  }, [addEntry, pending, snapshot]);
-
-  const move = useCallback(async (exitId: string) => {
-    if (!snapshot?.character || !snapshot.location || pending) return;
-    const exit = snapshot.location.exits.find((item) => item.id === exitId);
-    if (!exit?.available) {
-      addEntry("error", "That way is not open from here.");
-      return;
-    }
-    const fromLocationId = snapshot.location.locationId;
-    const existingOptimisticTravel = optimisticTravelRef.current;
-    if (
-      existingOptimisticTravel &&
-      (existingOptimisticTravel.fromLocationId !== fromLocationId ||
-        existingOptimisticTravel.exitId !== exit.id)
-    ) return;
-    const characterId = snapshot.character.characterId;
-    const retryAction = client.pendingActions.getSnapshot().filter((action) =>
-      action.scope.worldInstanceId === worldInstanceId &&
-      action.scope.characterId === characterId &&
-      action.details.kind === "character.move" &&
-      action.details.fromLocationId === fromLocationId &&
-      action.details.exitId === exit.id &&
-      (action.state === "uncertain" || action.state === "acknowledged")
-    ).at(-1);
-    const commandId = (retryAction?.id ?? crypto.randomUUID()) as ReturnType<Crypto["randomUUID"]>;
-    const traceId = new URLSearchParams(window.location.search).get("muddTrace") === "1"
-      ? crypto.randomUUID()
-      : undefined;
-    const actionStartedAt = performance.now();
-    let snapshotReadyAt: number | undefined;
-    let projectionSource: "command-response" | "snapshot-fallback" | undefined;
-    const logMoveTrace = (outcome: "success" | "error" | "uncertain") => {
-      if (!traceId) return;
-      window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
-        const paintedAt = performance.now();
-        console.info("[mudd_perf_trace_action]", JSON.stringify({
-          traceId,
-          action: exit.roadId ? "character.road.step" : "character.move",
-          outcome,
-          commandAndProjectionMs: snapshotReadyAt === undefined
-            ? null
-            : Math.round((snapshotReadyAt - actionStartedAt) * 10) / 10,
-          projectionSource: projectionSource ?? null,
-          projectionToPaintMs: snapshotReadyAt === undefined
-            ? null
-            : Math.round((paintedAt - snapshotReadyAt) * 10) / 10,
-          actionToPaintMs: Math.round((paintedAt - actionStartedAt) * 10) / 10,
-        }));
-      }));
-    };
-    client.pendingActions.begin({
-      id: commandId,
-      scope: { worldInstanceId, characterId, roomId: fromLocationId },
-      details: retryAction?.details ?? {
-        kind: "character.move",
-        fromLocationId,
-        exitId: exit.id,
-        direction: exit.direction || exit.label,
-      },
-    });
-    if (exit.destinationPreview && !existingOptimisticTravel) {
-      const entryIds = addDefaultLook(exit.destinationPreview);
-      const roomDetails = exit.destinationPreview.roomDetails?.trim();
-      const roomDetailsEntryId = roomDetails
-        ? addEntry("narration", roomDetails, false, exit.destinationPreview.locationId)
-        : undefined;
-      if (roomDetailsEntryId) entryIds.push(roomDetailsEntryId);
-      const travel: OptimisticTravel = {
-        commandId,
-        exitId: exit.id,
-        fromLocationId,
-        preview: exit.destinationPreview,
-        entryIds,
-        ...(roomDetailsEntryId ? { roomDetailsEntryId } : {}),
-      };
-      optimisticTravelRef.current = travel;
-      setOptimisticTravel(travel);
-    }
-    setPending("move");
-    traceFirstFeedbackPaint(traceId, "character.move", actionStartedAt);
-    let commandAccepted = false;
-    try {
-      const response = exit.roadId
-        ? await client.roadStep(
-            snapshot.character.characterId,
-            exit.id,
-            snapshot.location.revision,
-            commandId,
-            traceId,
-            fromLocationId,
-          )
-        : await client.move(
-            snapshot.character.characterId,
-            exit.id,
-            snapshot.location.revision,
-            commandId,
-            traceId,
-            fromLocationId,
-          );
-      client.pendingActions.acknowledge(commandId);
-      commandAccepted = true;
-      const partyAmbush = response.events?.some((event) => event.type === "team.road_encounter_started");
-      const reconciliation = await reconcileCommand(snapshot, response, traceId);
-      const nextSnapshot = reconciliation.snapshot;
-      projectionSource = reconciliation.source;
-      snapshotReadyAt = traceId ? performance.now() : undefined;
-      setConnectionError("");
-      if (nextSnapshot.location?.locationId !== fromLocationId) {
-        const stoppedFishing = response.events?.some((event) =>
-          event.type === "character.fishing_cast_advanced");
-        const stoppedChopping = response.events?.some((event) =>
-          event.type === "character.woodcutting_action_advanced");
-        if (stoppedFishing) addEntry("narration", "You reel in your line before moving on.");
-        if (stoppedChopping) addEntry("narration", "You lower your axe before moving on.");
-        const reconciled = nextSnapshot.location
-          ? reconcileOptimisticTravel(nextSnapshot.location, commandId)
-          : false;
-        if (!reconciled) addDefaultLook(nextSnapshot.location);
-        announceNewQuestObjectives(nextSnapshot);
-        const currentAction = client.pendingActions.getSnapshot().find((action) => action.id === commandId);
-        if (currentAction?.state !== "confirmed") {
-          client.pendingActions.confirm(commandId);
-          if (partyAmbush) addEntry("system", "A roadside ambush interrupts your travel.");
-        }
-        if (partyAmbush) {
-          const nextTeamInfo = await refreshTeamCombat();
-          if (nextTeamInfo?.encounter) {
-            addEntry("narration", `${nextTeamInfo.encounter.lastNarration} Round ${nextTeamInfo.encounter.round}.`);
-          }
-        } else if (response.events?.some((event) => event.type === "character.combat_encounter_started")) {
-          addEntry("narration", nextSnapshot.character?.combat?.lastNarration ?? "A roadside opponent blocks your way.");
-        }
-        if (!dialogueModalOpen) setActiveDialogue(null);
-        setActiveMerchantCatalog(null);
-        logMoveTrace("success");
-      } else {
-        client.pendingActions.markUncertain(commandId, "Awaiting the authoritative room update.");
-        logMoveTrace("uncertain");
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to move.";
-      if (error instanceof MuddCommandError && error.code === "VERSION_CONFLICT" && !commandAccepted) {
-        client.pendingActions.clearWhere((action) => action.id === commandId);
-        try {
-          const refreshed = await client.getGame(traceId);
-          setSnapshot(refreshed);
-          setConnectionError("");
-          const actualLocation = refreshed.location;
-          if (
-            actualLocation &&
-            exit.destinationPreview &&
-            actualLocation.locationId === exit.destinationPreview.locationId
-          ) {
-            const reconciled = reconcileOptimisticTravel(actualLocation, commandId);
-            if (!reconciled) addDefaultLook(actualLocation);
-          } else {
-            rollbackOptimisticTravel(commandId);
-            if (actualLocation && actualLocation.locationId !== fromLocationId) {
-              addDefaultLook(actualLocation);
-            }
-          }
-          if (actualLocation && actualLocation.locationId !== fromLocationId) {
-            announceNewQuestObjectives(refreshed);
-            if (!dialogueModalOpen) setActiveDialogue(null);
-            setActiveMerchantCatalog(null);
-          }
-          logMoveTrace("error");
-        } catch {
-          rollbackOptimisticTravel(commandId);
-          logMoveTrace("uncertain");
-        }
-      } else if (isRejectedAction(error) && !commandAccepted) {
-        client.pendingActions.reject(commandId, message);
-        rollbackOptimisticTravel(commandId);
-        addEntry("error", message);
-        logMoveTrace("error");
-      } else {
-        client.pendingActions.markUncertain(commandId, "Awaiting the authoritative room update.");
-        if (!commandAccepted) rollbackOptimisticTravel(commandId);
-        logMoveTrace("uncertain");
-      }
-    } finally {
-      if (optimisticTravelRef.current?.commandId === commandId) {
-        // Let realtime and fallback snapshots reconcile the optimistic room while
-        // keeping other actions locked against the still-authoritative source room.
-        refreshGate.end();
-        setPendingState("move");
-      } else {
-        setPending(null);
-      }
-    }
-  }, [
-    addDefaultLook,
-    addEntry,
-    announceNewQuestObjectives,
-    dialogueModalOpen,
-    pending,
-    reconcileCommand,
-    reconcileOptimisticTravel,
-    refreshGate,
-    refreshTeamCombat,
-    rollbackOptimisticTravel,
-    setConnectionError,
-    setPending,
-    setSnapshot,
-    snapshot,
-    worldInstanceId,
-  ]);
-
-  const browseMerchant = useCallback(async (merchantNpcId: string) => {
-    if (!snapshot?.character || pending) return;
-    setPending("shop");
-    try {
-      const catalog = await client.getMerchantCatalog(snapshot.character.characterId, merchantNpcId);
-      setActiveMerchantCatalog(catalog);
-      addEntry("narration", `${catalog.merchantName} has the following goods for sale.`);
-    } catch (error) {
-      setActiveMerchantCatalog(null);
-      addEntry("error", error instanceof Error ? error.message : "You cannot browse that merchant’s goods.");
-    } finally {
-      setPending(null);
-    }
-  }, [addEntry, pending, snapshot]);
-
-  const purchaseMerchantListing = useCallback(async (listingId: string, recordCommand = false) => {
-    if (!snapshot?.character || !snapshot.location || !activeMerchantCatalog || pending) return;
-    const listing = activeMerchantCatalog.listings.find((candidate) => candidate.id === listingId);
-    if (!listing) return;
-    if (recordCommand) addEntry("system", `> buy ${listing.item.label.toLocaleLowerCase()}`);
-    setPending("buy");
-    try {
-      const response = await client.purchaseMerchantListing(
-        snapshot.character.characterId,
-        activeMerchantCatalog.merchantNpcId,
-        listing.id,
-        snapshot.location.revision,
-      );
-      const [, nextCatalog] = await Promise.all([
-        reconcileCommand(snapshot, response),
-        client.getMerchantCatalog(snapshot.character.characterId, activeMerchantCatalog.merchantNpcId),
-      ]);
-      setActiveMerchantCatalog(nextCatalog);
-      setConnectionError("");
-      addEntry(
-        "narration",
-        `You buy the ${listing.item.label.toLocaleLowerCase()} for ${listing.price} ${nextCatalog.currency.name}${listing.price === 1 ? "" : "s"}.`,
-      );
-    } catch (error) {
-      addEntry("error", error instanceof Error ? error.message : "The purchase could not be completed.");
-    } finally {
-      setPending(null);
-    }
-  }, [activeMerchantCatalog, addEntry, pending, reconcileCommand, snapshot]);
-
-  const performCrafting = useCallback(async (
-    recipeId: string,
-    outputLabel: string,
-    quantity: 1 | 5 | 10,
-    recordCommand = false,
-  ) => {
-    if (!snapshot?.character || pending) return false;
-    if (recordCommand) {
-      const choice = ([1, 5, 10] as const).indexOf(quantity) + 1;
-      addEntry("system", `> craft ${outputLabel.toLocaleLowerCase()} ${choice}`);
-    }
-    setPending("craft");
-    try {
-      const response = await client.craft(
-        snapshot.character.characterId,
-        snapshot.character.revision,
-        recipeId,
-        quantity,
-      );
-      addEntry("narration", `You craft ${quantity} × ${outputLabel.toLocaleLowerCase()}.`);
-      try {
-        await reconcileCommand(snapshot, response);
-      } catch {
-        setConnectionError("Crafting succeeded, but the character view could not refresh.");
-      }
-      return true;
-    } catch (error) {
-      addEntry("error", error instanceof Error ? error.message : "Crafting could not be completed.");
-      return false;
-    } finally {
-      setPending(null);
-    }
-  }, [addEntry, pending, reconcileCommand, snapshot]);
-
-  const craftingCommand = useCallback(async (rawTarget: string) => {
-    if (!snapshot?.character) {
-      addEntry("error", "Choose a character before crafting.");
-      return;
-    }
-    const targetParts = rawTarget.trim().split(/\s+/).filter(Boolean);
-    const lastPart = targetParts.at(-1);
-    const selection = lastPart && /^\d+$/.test(lastPart) ? Number(lastPart) : undefined;
-    if (selection !== undefined && (selection < 1 || selection > 3)) {
-      addEntry("error", "Choose option 1, 2, or 3. These make 1, 5, or 10 items.");
-      return;
-    }
-    const itemTarget = selection === undefined ? rawTarget.trim() : targetParts.slice(0, -1).join(" ");
-    if (selection !== undefined && !itemTarget) {
-      addEntry("error", "Name an item to craft before choosing a quantity.");
-      return;
-    }
-
-    try {
-      const catalog = await client.getCraftingCatalog(snapshot.character.characterId);
-      if (!itemTarget) {
-        if (catalog.recipes.length === 0) {
-          addEntry("narration", "Nothing is craftable with your current materials and Crafting level.");
-          return;
-        }
-        addEntry("narration", "You can craft:");
-        catalog.recipes.forEach((recipe) => {
-          addEntry("narration", `${recipe.outputLabel} — Crafting level ${recipe.requiredLevel}, ${recipe.experience} XP each`);
-        });
-        if (!catalog.atWorkbench) addEntry("narration", "Travel to a workbench to craft one of these items.");
-        return;
-      }
-      if (!catalog.atWorkbench) {
-        addEntry("error", "You need to be at a workbench to craft.");
-        return;
-      }
-      const normalizedTarget = itemTarget.toLocaleLowerCase();
-      const exactMatches = catalog.recipes.filter((recipe) =>
-        recipe.recipeId.toLocaleLowerCase() === normalizedTarget ||
-        recipe.outputLabel.toLocaleLowerCase() === normalizedTarget);
-      const matches = exactMatches.length > 0
-        ? exactMatches
-        : catalog.recipes.filter((recipe) =>
-          recipe.outputLabel.toLocaleLowerCase().includes(normalizedTarget));
-      if (matches.length === 0) {
-        addEntry("error", `You cannot craft “${itemTarget}” with your current materials and Crafting level.`);
-        return;
-      }
-      if (matches.length > 1) {
-        addEntry("narration", "Choose an item to craft:");
-        matches.forEach((recipe) => addEntry("narration", recipe.outputLabel));
-        return;
-      }
-      const recipe = matches[0]!;
-      if (selection !== undefined) {
-        const quantity = ([1, 5, 10] as const)[selection - 1]!;
-        if (recipe.maxCraftable < quantity) {
-          addEntry("error", `You have enough materials to craft at most ${recipe.maxCraftable}.`);
-          return;
-        }
-        await performCrafting(recipe.recipeId, recipe.outputLabel, quantity);
-        return;
-      }
-
-      addEntry("narration", "How many?");
-      addEntry("narration", `1) ${recipe.outputLabel} x1`);
-      addEntry("narration", `2) ${recipe.outputLabel} x5`);
-      addEntry("narration", `3) ${recipe.outputLabel} x10`);
-      setActiveCraftingPrompt(recipe);
-    } catch (error) {
-      addEntry("error", error instanceof Error ? error.message : "Unable to read the available crafting recipes.");
-    }
-  }, [addEntry, performCrafting, snapshot]);
-
-  const selectCraftingQuantity = useCallback(async (quantity: 1 | 5 | 10) => {
-    if (!activeCraftingPrompt) return;
-    const crafted = await performCrafting(
-      activeCraftingPrompt.recipeId,
-      activeCraftingPrompt.outputLabel,
-      quantity,
-      true,
-    );
-    if (crafted) setActiveCraftingPrompt(null);
-  }, [activeCraftingPrompt, performCrafting]);
+  const { performWoodcuttingStart, cancelWoodcuttingAction,
+    continueAction: continueWoodcutting,
+    active: activeWoodcutting } = useWoodcuttingController({
+    client, snapshot, pending: pending !== null, beginForeground, finishForeground,
+    reconcileCommand, setSnapshot, setConnectionError, refreshGate, addEntry,
+  });
 
   const performCombatAction = useCallback(async (
     action: "attack" | "defend" | "flee" | "use-item",
@@ -2543,12 +796,13 @@ export function WorldClient({
           : `> ${action}`;
       addEntry("system", commandText);
     }
-    setPending("combat");
+    const execution = beginForeground("combat");
+    if (!execution) return;
     try {
       let playerHasParty = Boolean(partyInfo?.party);
       if (!activeTeamEncounter && !activeEncounter && action === "attack" && targetNpcId) {
-        const currentParty = await client.getPartyInfo(snapshot.character.characterId);
-        setPartyInfo(currentParty);
+        const currentParty = await refreshPartyState();
+        if (!currentParty) return;
         playerHasParty = Boolean(currentParty.party);
       }
       let result;
@@ -2566,8 +820,8 @@ export function WorldClient({
           snapshot.character.revision,
         );
         if (!started.receipt.ok) throw new Error(started.receipt.message);
-        const startedInfo = await client.getTeamCombatInfo(snapshot.character.characterId);
-        setTeamCombatInfo(startedInfo);
+        const startedInfo = await refreshTeamCombat();
+        if (!startedInfo) return;
         activeTeamEncounter = startedInfo.encounter?.status === "active"
           ? startedInfo.encounter
           : undefined;
@@ -2597,7 +851,7 @@ export function WorldClient({
         refreshTeamCombat(),
       ]);
       const nextSnapshot = reconciliation.snapshot;
-      if (nextTeamInfo) setTeamCombatInfo(nextTeamInfo);
+
       setConnectionError("");
       const encounter = nextSnapshot.character?.combat;
       const teamEncounter = nextTeamInfo?.encounter;
@@ -2627,13 +881,13 @@ export function WorldClient({
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "The combat action could not be completed.");
     } finally {
-      setPending(null);
+      finishForeground(execution);
     }
-  }, [addEntry, partyInfo?.party, pending, reconcileCommand, refreshTeamCombat, snapshot, teamCombatInfo]);
+  }, [addEntry, beginForeground, client, finishForeground, partyInfo?.party, pending, reconcileCommand, refreshPartyState, refreshTeamCombat, setConnectionError, snapshot, teamCombatInfo?.encounter]);
 
   const performClassAbility = useCallback(async (abilityId: string) => {
     const game = snapshot;
-    const character = classCharacter(game?.character);
+    const character = game?.character;
     if (!game?.character || !character || !game.location || pending) return;
     const teamEncounter = teamCombatInfo?.encounter?.status === "active" ? teamCombatInfo.encounter : undefined;
     const soloEncounter = game.character.combat?.status === "active" ? game.character.combat : undefined;
@@ -2641,7 +895,8 @@ export function WorldClient({
       interactionInbox.encounter.participants.some((participant) => participant.characterId === game.character!.characterId)
       ? interactionInbox.encounter : undefined;
     if (!teamEncounter && !soloEncounter && !pvpEncounter) return;
-    setPending("combat");
+    const execution = beginForeground("combat");
+    if (!execution) return;
     try {
       const result = pvpEncounter
         ? await client.performPvpAction(game.character.characterId, pvpEncounter.encounterId, "ability", undefined, abilityId)
@@ -2657,11 +912,11 @@ export function WorldClient({
       const [reconciliation, nextTeamInfo, nextInbox] = await Promise.all([
         reconcileCommand(game, result),
         refreshTeamCombat(),
-        pvpEncounter ? client.getInteractionInbox() : Promise.resolve(interactionInbox),
+        pvpEncounter ? refreshInteractions() : Promise.resolve(interactionInbox),
       ]);
       const nextSnapshot = reconciliation.snapshot;
-      if (nextTeamInfo) setTeamCombatInfo(nextTeamInfo);
-      if (nextInbox) setInteractionInbox(nextInbox);
+
+
       const refreshedPvp = nextInbox?.encounter;
       const refreshedTeam = nextTeamInfo?.encounter;
       const refreshedSolo = nextSnapshot.character?.combat;
@@ -2675,13 +930,13 @@ export function WorldClient({
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "The class action could not be completed.");
     } finally {
-      setPending(null);
+      finishForeground(execution);
     }
-  }, [addEntry, interactionInbox, pending, reconcileCommand, refreshTeamCombat, snapshot, teamCombatInfo]);
+  }, [addEntry, beginForeground, client, finishForeground, interactionInbox, pending, reconcileCommand, refreshInteractions, refreshTeamCombat, setConnectionError, snapshot, teamCombatInfo?.encounter]);
 
   const adoptCharacterClass = useCallback(async () => {
     const game = snapshot;
-    const character = classCharacter(game?.character);
+    const character = game?.character;
     if (!game?.character || !character || character.characterClass || !classChoiceId || pending) return;
     if (snapshot?.character?.combat?.status === "active" || teamCombatInfo?.encounter?.status === "active" || interactionInbox?.encounter?.status === "active") {
       addEntry("error", "Class adoption is available only outside combat.");
@@ -2691,7 +946,8 @@ export function WorldClient({
       setConfirmClassAdoption(true);
       return;
     }
-    setPending("combat");
+    const execution = beginForeground("combat");
+    if (!execution) return;
     try {
       await client.chooseCharacterClass(
         game.character.characterId,
@@ -2706,9 +962,9 @@ export function WorldClient({
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "Class adoption could not be completed.");
     } finally {
-      setPending(null);
+      finishForeground(execution);
     }
-  }, [addEntry, classChoiceId, confirmClassAdoption, interactionInbox?.encounter?.status, pending, snapshot, teamCombatInfo?.encounter?.status]);
+  }, [addEntry, beginForeground, classChoiceId, client, confirmClassAdoption, finishForeground, interactionInbox?.encounter?.status, pending, setSnapshot, snapshot, teamCombatInfo?.encounter?.status]);
 
   const challengePlayer = useCallback(async (recipientCharacterId: string, recipientName: string) => {
     if (!snapshot?.character || pending) return;
@@ -2734,17 +990,18 @@ export function WorldClient({
         recipientCharacterId,
         recipientName,
         priorRequestIds: [...new Set([
-          ...knownInteractionStatusesRef.current.keys(),
+          ...knownInteractionIds(),
           ...(interactionInbox?.requests.map((request) => request.requestId) ?? []),
         ])],
       },
     });
-    setPending("combat");
+    const execution = beginForeground("combat");
+    if (!execution) return;
     traceFirstFeedbackPaint(traceId, "interaction.request", actionStartedAt);
     try {
       await client.requestInteraction(snapshot.character.characterId, recipientCharacterId, "pvp.challenge", commandId);
       client.pendingActions.acknowledge(commandId);
-      setInteractionInbox(await client.getInteractionInbox());
+      await refreshInteractions();
     } catch (error) {
       const message = error instanceof Error ? error.message : "The challenge could not be sent.";
       if (isRejectedAction(error)) {
@@ -2754,9 +1011,9 @@ export function WorldClient({
         client.pendingActions.markUncertain(commandId, "Challenge status is not confirmed yet.");
       }
     } finally {
-      setPending(null);
+      finishForeground(execution);
     }
-  }, [addEntry, interactionInbox, pending, snapshot, worldInstanceId]);
+  }, [addEntry, beginForeground, client, finishForeground, interactionInbox?.requests, knownInteractionIds, pending, refreshInteractions, snapshot?.character, worldInstanceId]);
 
   const respondToPlayerChallenge = useCallback(async (requestId: string, response: "accept" | "decline") => {
     if (!snapshot?.character || pending) return;
@@ -2785,13 +1042,14 @@ export function WorldClient({
         otherCharacterName: requestBefore?.initiatorName ?? "the other player",
       },
     });
-    setPending("combat");
+    const execution = beginForeground("combat");
+    if (!execution) return;
     traceFirstFeedbackPaint(traceId, "interaction.respond", actionStartedAt);
     try {
       await client.respondToInteraction(snapshot.character.characterId, requestId, response, commandId);
       client.pendingActions.acknowledge(commandId);
-      const inbox = await client.getInteractionInbox();
-      setInteractionInbox(inbox);
+      const inbox = await refreshInteractions();
+      if (!inbox) return;
       const request = inbox.requests.find((candidate) => candidate.requestId === requestId);
       if (request?.status === (response === "accept" ? "accepted" : "declined")) {
         client.pendingActions.confirm(commandId);
@@ -2808,9 +1066,9 @@ export function WorldClient({
         client.pendingActions.markUncertain(commandId, "Your response status is not confirmed yet.");
       }
     } finally {
-      setPending(null);
+      finishForeground(execution);
     }
-  }, [addEntry, interactionInbox, pending, snapshot, worldInstanceId]);
+  }, [addEntry, beginForeground, client, finishForeground, interactionInbox?.requests, pending, refreshInteractions, snapshot?.character, worldInstanceId]);
 
   const performPvpAction = useCallback(async (
     action: "attack" | "defend" | "flee" | "use-item",
@@ -2818,18 +1076,18 @@ export function WorldClient({
   ) => {
     const encounter = interactionInbox?.encounter;
     if (!snapshot?.character || !encounter || pending) return;
-    setPending("combat");
+    const execution = beginForeground("combat");
+    if (!execution) return;
     try {
       const result = await client.performPvpAction(snapshot.character.characterId, encounter.encounterId, action, itemId);
       const [inbox, reconciliation] = await Promise.all([
-        client.getInteractionInbox(),
+        refreshInteractions(),
         reconcileCommand(snapshot, result),
       ]);
       const nextSnapshot = reconciliation.snapshot;
-      setInteractionInbox(inbox);
+      if (!inbox) return;
       const nextEncounter = inbox.encounter;
       if (nextEncounter) {
-        knownPvpUpdateRef.current = `${nextEncounter.encounterId}:${nextEncounter.updatedAt}`;
         addEntry("narration", nextEncounter.lastNarration);
       }
       const notice = respawnNotice(result.events, nextSnapshot.location?.title ?? "the fountain");
@@ -2837,13 +1095,14 @@ export function WorldClient({
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "The combat action could not be completed.");
     } finally {
-      setPending(null);
+      finishForeground(execution);
     }
-  }, [addEntry, interactionInbox, pending, reconcileCommand, snapshot]);
+  }, [addEntry, beginForeground, client, finishForeground, interactionInbox?.encounter, pending, reconcileCommand, refreshInteractions, snapshot]);
 
   const performStaminaPostureChange = useCallback(async (posture: "rest" | "stand") => {
     if (!snapshot?.character || pending) return;
-    setPending(posture);
+    const execution = beginForeground(posture);
+    if (!execution) return;
     try {
       const response = posture === "rest"
         ? await client.rest(snapshot.character.characterId, snapshot.character.revision)
@@ -2856,16 +1115,17 @@ export function WorldClient({
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "You could not change your resting posture.");
     } finally {
-      setPending(null);
+      finishForeground(execution);
     }
-  }, [addEntry, pending, reconcileCommand, setConnectionError, setPending, snapshot]);
+  }, [snapshot, pending, beginForeground, client, reconcileCommand, setConnectionError, addEntry, finishForeground]);
 
   const performInnRest = useCallback(async () => {
     if (!snapshot?.character || !snapshot.location?.inn || pending) return;
     const inn = snapshot.location.inn;
     const previousHealth = snapshot.character.health;
     const previousResources = snapshot.character.resources;
-    setPending("rest");
+    const execution = beginForeground("rest");
+    if (!execution) return;
     try {
       const response = await client.restAtInn(snapshot.character.characterId, inn.id, snapshot.character.revision);
       const { snapshot: nextSnapshot } = await reconcileCommand(snapshot, response);
@@ -2889,733 +1149,76 @@ export function WorldClient({
     } catch (error) {
       addEntry("error", error instanceof Error ? error.message : "You could not rest at this inn.");
     } finally {
-      setPending(null);
+      finishForeground(execution);
     }
-  }, [addEntry, pending, reconcileCommand, setConnectionError, setPending, snapshot]);
+  }, [snapshot, pending, beginForeground, client, reconcileCommand, setConnectionError, addEntry, finishForeground]);
 
-  const executeCommand = useCallback(async (rawCommand: string) => {
-    const value = rawCommand.trim();
-    if (!value || pending) return;
-    const [verb, ...rest] = value.split(/\s+/);
-    const target = rest.join(" ").trim();
-    if (["accept", "decline"].includes(verb.toLowerCase())) {
-      addEntry("system", `> ${value}`);
-      if (!target) {
-        addEntry("error", `Choose a challenge ID: ${verb.toLowerCase()} <id>.`);
-        return;
-      }
-      const request = interactionInbox?.requests.find((candidate) =>
-        candidate.requestId === target &&
-        candidate.recipientCharacterId === snapshot?.character?.characterId &&
-        candidate.status === "pending");
-      if (!request) {
-        addEntry("error", "That pending challenge is not available to this character.");
-        return;
-      }
-      await respondToPlayerChallenge(target, verb.toLowerCase() as "accept" | "decline");
-      return;
-    }
-    if (verb.toLowerCase() === "help") {
-      addEntry("system", `> ${value}`);
-      for (const line of getCommandHelp(target)) addEntry("narration", line);
-      return;
-    }
-    if (verb.toLocaleLowerCase() === "craft") {
-      addEntry("system", `> ${value}`);
-      await craftingCommand(target);
-      return;
-    }
-    if (verb.toLocaleLowerCase() === "quests") {
-      addEntry("system", `> ${value}`);
-      const choices = activeDialogue?.choices ?? [];
-      if (!activeDialogue || choices.length === 0) {
-        addEntry("error", 'Talk to an NPC first with “talk <name>”; there are no dialogue choices to select.');
-        return;
-      }
-      if (!target) {
-        addEntry("narration", `Replies from ${activeDialogue.npcName}:`);
-        choices.forEach((choice, index) => addEntry("narration", `${index + 1}. ${choice.label}`));
-        addEntry("narration", "Choose a reply with “quests <number>”.");
-        return;
-      }
+  const dispatchIntent = useActionDispatch({
+    snapshot, pending: pending !== null,
+    listingIds: activeMerchantCatalog?.listings.map((listing) => listing.id) ?? [],
+    inventory: inventoryController, talk: talkToNpc, shop: browseMerchant,
+    buy: purchaseMerchantListing, fish: performFishingCast, chop: performWoodcuttingStart, move,
+    attack: (id) => performCombatAction("attack", id),
+    heal: (id) => performCombatAction("use-item", undefined, false, id), addEntry,
+  });
 
-      const index = /^\d+$/.test(target) ? Number(target) : 0;
-      const exactMatches = choices.filter(
-        (choice) => choice.label.toLocaleLowerCase() === target.toLocaleLowerCase(),
-      );
-      const choice = index > 0
-        ? choices[index - 1]
-        : exactMatches.length === 1
-          ? exactMatches[0]
-          : undefined;
-      if (!choice) {
-        addEntry("error", `Choose a number from 1 to ${choices.length}, or enter a reply exactly as shown. Type “quests” to list replies.`);
-        return;
-      }
-      await chooseDialogueReply(choice.id, false);
-      return;
-    }
-    if (verb.toLowerCase() === "jobs") {
-      addEntry("system", `> ${value}`);
-      const commandArgs = target.split(/\s+/).filter(Boolean);
-      const [subcommand = "browse", jobId] = commandArgs;
-      const normalized = subcommand.toLocaleLowerCase();
-      if (normalized === "help") {
-        for (const line of getCommandHelp("jobs")) addEntry("narration", line);
-        return;
-      }
-      const boardId = snapshot?.dailyActivities?.boards[0]?.id;
-      if (normalized === "browse" && (commandArgs.length === 0 || commandArgs.length === 1)) {
-        await openDailyBoard(boardId);
-        return;
-      }
-      if ((normalized !== "accept" && normalized !== "deliver") || commandArgs.length !== 2 || !jobId) {
-        addEntry("error", "Usage: jobs [browse|accept <id>|deliver <id>].");
-        return;
-      }
-      if (!boardId) {
-        addEntry("error", "There is no daily bulletin available in this world.");
-        return;
-      }
-      try {
-        const board = displayedDailyBoard?.boardId === boardId ? displayedDailyBoard : await fetchDailyBoard(boardId);
-        if (!board) throw new Error("The bulletin returned no postings.");
-        await performDailyJob(board, jobId, normalized);
-      } catch (error) {
-        addEntry("error", error instanceof Error ? error.message : "The daily posting could not be completed.");
-      }
-      return;
-    }
-    if (verb.toLowerCase() === "gather") {
-      addEntry("system", `> ${value}`);
-      const sources = (snapshot?.dailyActivities?.sources ?? [])
-        .filter((source) => source.locationId === snapshot?.location?.locationId);
-      if (!target) {
-        addEntry("error", "Choose a local source: gather <source-id or label>.");
-        return;
-      }
-      const matches = sources.filter((source) => {
-        const search = target.toLocaleLowerCase();
-        return source.id.toLocaleLowerCase() === search ||
-          source.label.toLocaleLowerCase() === search ||
-          source.label.toLocaleLowerCase().includes(search);
-      });
-      if (matches.length !== 1) {
-        addEntry("error", matches.length
-          ? `Which source do you mean: ${matches.map((source) => source.label).join(", ")}?`
-          : `There is no local supply source matching “${target}”.`);
-        return;
-      }
-      await performSupplyGather(matches[0]!.id, matches[0]!.label);
-      return;
-    }
-    if (verb.toLowerCase() === "party") {
-      addEntry("system", `> ${value}`);
-      const [subcommand = "info", ...args] = target.split(/\s+/).filter(Boolean);
-      const partyCommand = subcommand.toLocaleLowerCase();
-      if (partyCommand === "help") {
-        for (const line of getCommandHelp("party")) addEntry("narration", line);
-        return;
-      }
-      if (!snapshot?.character) {
-        addEntry("error", "Enter the world with a character before managing a party.");
-        return;
-      }
-      setPending("party");
-      try {
-        if (partyCommand === "list") {
-          const { parties } = await client.listParties(snapshot.character.characterId);
-          if (!parties.length) {
-            addEntry("narration", "There are no public parties available.");
-          } else {
-            for (const party of parties) {
-              addEntry("narration",
-                `${party.leaderName} — ${party.memberCount}/${party.maxMembers} members — ID ${party.groupId}${party.joinable ? "" : " (full)"}`);
-            }
-            addEntry("system", "Join with: party join <id>");
-          }
-        } else if (partyCommand === "quests" || (partyCommand === "quest" && args.length === 0)) {
-          const journal = await client.getPartyQuests(snapshot.character.characterId);
-          if (!journal.partyId) {
-            addEntry("narration", "Join a party to view shared quests.");
-          } else if (!journal.available.length && !journal.quests.length) {
-            addEntry("narration", "There are no party quests available.");
-          } else {
-            for (const quest of journal.quests) {
-              addEntry("narration", `${quest.title} (${quest.status}) — ${quest.summary}`);
-              for (const objective of quest.objectives) {
-                addEntry("narration", `${objective.completed ? "✓" : "·"} ${objective.progress}/${objective.required} ${objective.label}`);
-              }
-            }
-            for (const quest of journal.available) {
-              addEntry("narration", `${quest.title} — ${quest.summary} (start: party quest start ${quest.questId})`);
-            }
-          }
-        } else if (partyCommand === "quest") {
-          if (args.length !== 2 || args[0]?.toLocaleLowerCase() !== "start") {
-            throw new Error("Usage: party quest start <quest-id>");
-          }
-          await client.startPartyQuest(snapshot.character.characterId, args[1]!);
-          const journal = await client.getPartyQuests(snapshot.character.characterId);
-          const started = journal.quests.find((quest) => quest.questId === args[1]);
-          addEntry("narration", `Your party started ${started?.title ?? args[1]}.`);
-        } else if (partyCommand === "create") {
-          if (args.length) throw new Error("Usage: party create");
-          await client.createParty(snapshot.character.characterId);
-          const info = await refreshPartyState();
-          addEntry("narration", `Party created${info?.party ? ` (ID ${info.party.groupId})` : ""}.`);
-        } else if (partyCommand === "join") {
-          if (args.length !== 1) throw new Error("Usage: party join <id>");
-          await client.joinParty(snapshot.character.characterId, args[0]!);
-          const info = await refreshPartyState();
-          addEntry("narration", `You joined ${info?.party?.leaderName ?? "the party"}.`);
-        } else if (partyCommand === "info") {
-          if (args.length) throw new Error("Usage: party info");
-          const info = await refreshPartyState() ?? partyInfo;
-          if (!info?.party) {
-            addEntry("narration", "You are not in a party. Use “party list” to browse or “party create” to start one.");
-          } else {
-            addEntry("narration",
-              `${info.party.leaderName} leads party ${info.party.groupId} (${info.party.members.length}/${info.party.maxMembers}).`);
-            for (const member of info.party.members) {
-              addEntry("narration", `${member.displayName}${member.playerId === info.party.ownerPlayerId ? " (leader)" : ""}`);
-            }
-          }
-        } else if (partyCommand === "leave") {
-          if (args.length) throw new Error("Usage: party leave");
-          const before = await refreshPartyState();
-          await client.leaveParty(snapshot.character.characterId);
-          await refreshPartyState();
-          addEntry("narration", before?.party?.ownerPlayerId === snapshot.player.id
-            ? "You left and closed your party."
-            : "You left the party.");
-        } else if (partyCommand === "close") {
-          if (args.length) throw new Error("Usage: party close");
-          await client.closeParty(snapshot.character.characterId);
-          await refreshPartyState();
-          addEntry("narration", "You closed the party.");
-        } else {
-          throw new Error('Unknown party command. Try “party help”.');
-        }
-      } catch (error) {
-        addEntry("error", error instanceof Error ? error.message : "That party action could not be completed.");
-      } finally {
-        setPending(null);
-      }
-      return;
-    }
-    if (verb.toLowerCase() === "rest") {
-      addEntry("system", `> ${value}`);
-      if (target) {
-        addEntry("error", 'Use “inn rest” for the paid immediate inn service.');
-        return;
-      }
-      await performStaminaPostureChange("rest");
-      return;
-    }
-    if (verb.toLowerCase() === "stand") {
-      addEntry("system", `> ${value}`);
-      if (target) {
-        addEntry("error", "Use “stand” without a target.");
-        return;
-      }
-      await performStaminaPostureChange("stand");
-      return;
-    }
-    if (verb.toLowerCase() === "inn") {
-      addEntry("system", `> ${value}`);
-      if (target.toLocaleLowerCase() !== "rest") {
-        addEntry("error", 'Usage: inn rest — immediately restore health, stamina, and mana for the listed price.');
-        return;
-      }
-      if (!snapshot?.location?.inn) {
-        addEntry("error", "There is no priced inn service in this location.");
-        return;
-      }
-      await performInnRest();
-      return;
-    }
-    if (["attack", "defend", "flee"].includes(verb.toLowerCase())) {
-      const action = verb.toLowerCase() as "attack" | "defend" | "flee";
-      addEntry("system", `> ${value}`);
-      const activeEncounter = snapshot?.character?.combat?.status === "active"
-        ? snapshot.character.combat
-        : undefined;
-      const activeTeamEncounter = teamCombatInfo?.encounter?.status === "active"
-        ? teamCombatInfo.encounter
-        : undefined;
-      if (action === "attack" && !activeEncounter && !activeTeamEncounter) {
-        if (!target) {
-          addEntry("error", "Attack whom? Choose an available combatant or try “attack Practice Sentinel”.");
-          return;
-        }
-        const targets = (snapshot?.location?.npcs ?? []).filter((npc) => npc.canChallenge);
-        const matches = findNpcMatches(target, targets);
-        if (matches.length === 0) {
-          const playerMatches = (snapshot?.location?.occupants ?? [])
-            .filter((player) =>
-              player.id !== snapshot?.character?.characterId &&
-              player.displayName.toLocaleLowerCase().includes(target.toLocaleLowerCase()));
-          if (playerMatches.length === 1) {
-            await challengePlayer(playerMatches[0]!.id, playerMatches[0]!.displayName);
-            return;
-          }
-          if (playerMatches.length > 1) {
-            addEntry("error", `Which player do you mean: ${playerMatches.map((player) => player.displayName).join(", ")}?`);
-            return;
-          }
-          addEntry("error", `There is no available combatant called “${target}” here.`);
-          return;
-        }
-        if (matches.length > 1) {
-          addEntry("error", `Who do you mean: ${matches.map((npc) => npc.name).join(", ")}?`);
-          return;
-        }
-        await performCombatAction("attack", matches[0]!.id);
-        return;
-      }
-      if (!activeEncounter && !activeTeamEncounter) {
-        addEntry("error", "There is no active encounter. Choose an available combatant to attack first.");
-        return;
-      }
-      if (target) {
-        const activeOpponent = activeEncounter?.opponentName ??
-          activeTeamEncounter?.participants.find((participant) => participant.teamId !== "allies")?.displayName ??
-          "the opponent";
-        addEntry("error", `The active opponent is ${activeOpponent}; use “${action}” without a target.`);
-        return;
-      }
-      await performCombatAction(action);
-      return;
-    }
-    if (verb.toLowerCase() === "talk") {
-      addEntry("system", `> ${value}`);
-      if (!target) {
-        addEntry("error", "Talk to whom? Try “talk Mara”.");
-        return;
-      }
-      const aboutMatch = /^(.+?)\s+about(?:\s+(.+))?$/i.exec(target);
-      const npcTarget = aboutMatch?.[1]?.trim() || target;
-      const topic = aboutMatch?.[2]?.trim();
-      if (aboutMatch && !topic) {
-        addEntry("error", "Talk about what? Try “talk Mara about the tower”.");
-        return;
-      }
-      const matches = findNpcMatches(npcTarget, snapshot?.location?.npcs ?? []);
-      if (matches.length === 0) {
-        addEntry("error", `You do not see anyone called “${npcTarget}” here.`);
-        return;
-      }
-      if (matches.length > 1) {
-        addEntry("error", `Who do you mean: ${matches.map((npc) => npc.name).join(", ")}?`);
-        return;
-      }
-      await talkToNpc(matches[0]!.id, topic);
-      return;
-    }
-    if (verb.toLowerCase() === "shop") {
-      addEntry("system", `> ${value}`);
-      if (!target) {
-        addEntry("error", "Browse whose goods? Try “shop Sella”.");
-        return;
-      }
-      const matches = findNpcMatches(target, snapshot?.location?.npcs ?? []);
-      if (matches.length === 0) {
-        addEntry("error", `You do not see anyone called “${target}” here.`);
-        return;
-      }
-      if (matches.length > 1) {
-        addEntry("error", `Who do you mean: ${matches.map((npc) => npc.name).join(", ")}?`);
-        return;
-      }
-      await browseMerchant(matches[0]!.id);
-      return;
-    }
-    if (verb.toLowerCase() === "buy") {
-      addEntry("system", `> ${value}`);
-      if (!target) {
-        addEntry("error", "Buy what? Browse the shop, then try “buy lantern”.");
-        return;
-      }
-      if (!activeMerchantCatalog) {
-        addEntry("error", "Open a merchant’s catalog first with “shop <merchant>”.");
-        return;
-      }
-      const normalizedTarget = target.toLocaleLowerCase();
-      const exactMatch = activeMerchantCatalog.listings.find((listing) =>
-        listing.id.toLocaleLowerCase() === normalizedTarget ||
-        listing.item.label.toLocaleLowerCase() === normalizedTarget
-      );
-      const matches = exactMatch
-        ? [exactMatch]
-        : activeMerchantCatalog.listings.filter((listing) =>
-          listing.item.label.toLocaleLowerCase().includes(normalizedTarget)
-        );
-      if (matches.length === 0) {
-        addEntry("error", `The open catalog has no item called “${target}”.`);
-        return;
-      }
-      if (matches.length > 1) {
-        addEntry("error", `Which item do you mean: ${matches.map((listing) => listing.item.label).join(", ")}?`);
-        return;
-      }
-      await purchaseMerchantListing(matches[0]!.id);
-      return;
-    }
-    if (verb.toLowerCase() === "equip") {
-      addEntry("system", `> ${value}`);
-      if (!target) {
-        addEntry("error", "Equip what? Try “equip practice blade”.");
-        return;
-      }
-      const inventory = snapshot?.character?.inventory ?? [];
-      const matches = findObjectMatches(target, inventory.map((item) => ({
-        ...item, readable: false, takeable: true,
-      })));
-      if (matches.length !== 1) {
-        addEntry("error", matches.length
-          ? `Which item do you mean: ${matches.map((item) => item.label).join(", ")}?`
-          : `You are not carrying an item called “${target}”.`);
-        return;
-      }
-      const item = inventory.find((candidate) => candidate.id === matches[0]!.id);
-      if (!item?.equipment) {
-        addEntry("error", `The ${matches[0]!.label.toLocaleLowerCase()} cannot be equipped.`);
-        return;
-      }
-      await changeEquipment("equip", item.id);
-      return;
-    }
-    if (verb.toLowerCase() === "unequip") {
-      addEntry("system", `> ${value}`);
-      const slot = target.toLocaleLowerCase();
-      if (!EQUIPMENT_SLOTS.includes(slot as EquipmentSlot)) {
-        addEntry("error", `Unequip which slot? Choose ${EQUIPMENT_SLOTS.join(", ")}.`);
-        return;
-      }
-      await changeEquipment("unequip", slot as EquipmentSlot);
-      return;
-    }
-    if (verb.toLowerCase() === "look") {
-      addEntry("system", `> ${value}`);
-      const lookTarget = target.replace(/^at\s+/i, "").replace(/^the\s+/i, "").trim();
-      if (target && (!lookTarget || /^at$/i.test(target))) {
-        addEntry("error", "Look at what? Try “look at marker”.");
-        return;
-      }
-      await inspect(lookTarget || undefined);
-      return;
-    }
-    if (verb.toLowerCase() === "extinguish") {
-      addEntry("system", `> ${value}`);
-      const fireTarget = target.replace(/^(?:the|a|an)\s+/i, "").trim();
-      const campfires = (snapshot?.location?.objects ?? []).filter((object) =>
-        object.label.toLocaleLowerCase() === "campfire",
-      );
-      const matches = fireTarget
-        ? findObjectMatches(fireTarget, campfires)
-        : campfires;
-      if (matches.length === 0) {
-        addEntry("error", `There is no burning campfire called “${fireTarget || "campfire"}” here.`);
-        return;
-      }
-      if (matches.length > 1) {
-        addEntry("error", `Which campfire do you mean: ${matches.map((object) => object.label).join(", ")}?`);
-        return;
-      }
-      await extinguishCampfire(matches[0]!.id);
-      return;
-    }
-    if (verb.toLowerCase() === "read") {
-      addEntry("system", `> ${value}`);
-      if (!target) {
-        addEntry("error", "Read what? Try “read marker” or “read bulletin”.");
-        return;
-      }
-      const bulletinTarget = target.replace(/^the\s+/i, "").trim().toLocaleLowerCase();
-      if (/^(?:daily\s+)?(?:bulletin|notice)(?:\s+board)?$/.test(bulletinTarget)) {
-        const bulletin = snapshot?.dailyActivities?.boards[0];
-        if (!bulletin) {
-          addEntry("error", "There is no bulletin board here.");
-          return;
-        }
-        await openDailyBoard(bulletin.id);
-        return;
-      }
-      const readableObjects = (snapshot?.location?.objects ?? []).filter((object) => object.readable);
-      const matches = findObjectMatches(target, readableObjects);
-      if (matches.length === 0) {
-        addEntry("error", `There is nothing readable called “${target}” here.`);
-        return;
-      }
-      if (matches.length > 1) {
-        addEntry("error", `Which one do you mean: ${matches.map((object) => object.label).join(", ")}?`);
-        return;
-      }
-      await readObject(matches[0]!.id);
-      return;
-    }
-    if (verb.toLowerCase() === "loot") {
-      addEntry("system", `> ${value}`);
-      if (!target) {
-        addEntry("error", "Loot which corpse? Try “loot Practice Sentinel corpse”.");
-        return;
-      }
-      const corpses = (snapshot?.location?.objects ?? []).filter((object) =>
-        object.containerKind === "corpse",
-      );
-      const matches = findObjectMatches(target.replace(/^(?:the|a|an)\s+/i, ""), corpses);
-      if (matches.length === 0) {
-        addEntry("error", `There is no corpse called “${target}” here.`);
-        return;
-      }
-      if (matches.length > 1) {
-        addEntry("error", `Which corpse do you mean: ${matches.map((corpse) => corpse.label).join(", ")}?`);
-        return;
-      }
-      await lootCorpse(matches[0]!.id, matches[0]!.label);
-      return;
-    }
-    if (verb.toLowerCase() === "take" || verb.toLowerCase() === "get") {
-      addEntry("system", `> ${value}`);
-      if (!target) {
-        addEntry("error", "Take what? Try “get stone” or “get stone sack”.");
-        return;
-      }
-      if (target.toLocaleLowerCase() === "all") {
-        await takeAllObjects();
-        return;
-      }
-      const objects = snapshot?.location?.objects ?? [];
-      const takeables = objects.filter((object) => object.takeable);
-      const containers = objects.filter((object) => Boolean(object.containerKind));
-      const containerMatches = findItemContainerMatches(target, takeables, containers, true);
-      if (containerMatches.length > 1) {
-        addEntry("error", `Which item do you mean: ${containerMatches.map(({ item, container }) =>
-          `${item.label} in ${container.label}`,
-        ).join(", ")}?`);
-        return;
-      }
-      const matches = containerMatches.length === 1
-        ? [containerMatches[0]!.item]
-        : findObjectMatches(target.replace(/^(?:the|a|an)\s+/i, ""), objects);
-      if (matches.length === 0) {
-        addEntry("error", `There is nothing here you can take called “${target}”.`);
-        return;
-      }
-      if (matches.length > 1) {
-        addEntry("error", `Which one do you mean: ${matches.map((object) => object.label).join(", ")}?`);
-        return;
-      }
-      const object = matches[0]!;
-      if (!object.takeable) {
-        addEntry("error", `You cannot take the ${object.label.toLocaleLowerCase()}.`);
-        return;
-      }
-      await takeObject(object.id, object.label);
-      return;
-    }
-    if (verb.toLowerCase() === "put") {
-      addEntry("system", `> ${value}`);
-      if (!target) {
-        addEntry("error", "Put what where? Try “put stone sack”.");
-        return;
-      }
-      const containers = (snapshot?.location?.objects ?? []).filter((object) =>
-        Boolean(object.containerKind),
-      );
-      const inventory = (snapshot?.character?.inventory ?? []).map((item) => ({
-        ...item, readable: false, takeable: true,
-      }));
-      const matches = findItemContainerMatches(target, inventory, containers);
-      if (matches.length === 0) {
-        addEntry("error", `Name an item you carry and a container here, for example “put stone sack”.`);
-        return;
-      }
-      if (matches.length > 1) {
-        addEntry("error", `Which item and container do you mean: ${matches.map(({ item, container }) =>
-          `${item.label} in ${container.label}`,
-        ).join(", ")}?`);
-        return;
-      }
-      const { item, container } = matches[0]!;
-      await putObject(item.id, item.label, container.id, container.label);
-      return;
-    }
-    if (verb.toLowerCase() === "use") {
-      addEntry("system", `> ${value}`);
-      const activeEncounter = snapshot?.character?.combat?.status === "active"
-        ? snapshot.character.combat
-        : undefined;
-      if (activeEncounter) {
-        if (!target || /\s+on\s+/i.test(target)) {
-          addEntry("error", "During combat, use a healing item by name, for example “use Small healing draught”.");
-          return;
-        }
-        const carriedItems = snapshot?.character?.inventory ?? [];
-        const itemMatches = findObjectMatches(target.replace(/^(?:the|a|an)\s+/i, "").trim(), carriedItems);
-        if (itemMatches.length === 0) {
-          addEntry("error", `You are not carrying anything called “${target}”.`);
-          return;
-        }
-        if (itemMatches.length > 1) {
-          addEntry("error", `Which item do you mean: ${itemMatches.map((item) => item.label).join(", ")}?`);
-          return;
-        }
-        const item = itemMatches[0]!;
-        if (!item.consumable || item.equipment) {
-          addEntry("error", `${item.label} cannot be used as a combat item.`);
-          return;
-        }
-        await performCombatAction("use-item", undefined, false, item.id);
-        return;
-      }
-      const explicitUseMatch = /^(.+?)\s+on\s+(.+)$/i.exec(target);
-      const cleanedUseTarget = target.replace(/^(?:the|a|an)\s+/i, "").trim();
-      const carriedAxes = (snapshot?.character?.inventory ?? []).filter((item) => item.woodcuttingAxe);
-      let itemTarget = explicitUseMatch?.[1]?.replace(/^(?:the|a|an)\s+/i, "").trim();
-      let objectTarget = explicitUseMatch?.[2]?.replace(/^(?:the|a|an)\s+/i, "").trim();
-      if (!explicitUseMatch) {
-        const normalizedUseTarget = cleanedUseTarget.toLocaleLowerCase();
-        const matchingAxes = carriedAxes.filter((item) =>
-          normalizedUseTarget.startsWith(`${item.label.toLocaleLowerCase()} `),
-        );
-        const genericAxeTarget = /^axe\s+(.+)$/i.exec(cleanedUseTarget);
-        if (matchingAxes.length > 1) {
-          addEntry("error", `Which axe do you mean: ${matchingAxes.map((item) => item.label).join(", ")}?`);
-          return;
-        }
-        if (matchingAxes.length === 1) {
-          itemTarget = matchingAxes[0]!.label;
-          objectTarget = cleanedUseTarget.slice(itemTarget.length).trim();
-        } else if (genericAxeTarget) {
-          if (carriedAxes.length > 1) {
-            addEntry("error", `Which axe do you mean: ${carriedAxes.map((item) => item.label).join(", ")}?`);
-            return;
-          }
-          if (carriedAxes.length === 1) {
-            itemTarget = carriedAxes[0]!.label;
-            objectTarget = genericAxeTarget[1]!.trim();
-          }
-        }
-      }
-      if (!itemTarget || !objectTarget) {
-        const itemTarget = cleanedUseTarget;
-        let itemMatches = findObjectMatches(itemTarget, snapshot?.character?.inventory ?? []);
-        if (!itemMatches.length && itemTarget.replace(/\s+/g, "").toLocaleLowerCase() === "fishingrod") {
-          itemMatches = (snapshot?.character?.inventory ?? []).filter((item) => item.fishingRod);
-        }
-        if (itemMatches.length > 1) {
-          addEntry("error", `Which item do you mean: ${itemMatches.map((item) => item.label).join(", ")}?`);
-          return;
-        }
-        const item = itemMatches[0];
-        if (item?.consumable?.effect === "heal") {
-          await performCombatAction("use-item", undefined, false, item.id);
-          return;
-        }
-        if (item?.fishingRod) {
-          await performFishingCast(item.id);
-          return;
-        }
-        addEntry("error", "Use a healing item, a fishing rod at a marked spot, or an axe on a named tree (for example, “use Copper Axe pine”).");
-        return;
-      }
-      const carriedItems = (snapshot?.character?.inventory ?? []).map((item) => ({
-        ...item, readable: false, takeable: true,
-      }));
-      const axeMatches = findObjectMatches(
-        itemTarget,
-        carriedItems.filter((item) => item.woodcuttingAxe),
-      );
-      if (axeMatches.length) {
-        if (axeMatches.length > 1) {
-          addEntry("error", `Which axe do you mean: ${axeMatches.map((item) => item.label).join(", ")}?`);
-          return;
-        }
-        const treeTarget = objectTarget.replace(/\s+tree$/i, "").trim();
-        const treeMatches = findObjectMatches(treeTarget, snapshot?.availableWoodcuttingTrees ?? []);
-        if (treeMatches.length === 0) {
-          addEntry("error", `There is no tree called “${objectTarget}” here.`);
-          return;
-        }
-        if (treeMatches.length > 1) {
-          addEntry("error", `Which tree do you mean: ${treeMatches.map((tree) => tree.label).join(", ")}?`);
-          return;
-        }
-        await performWoodcuttingStart(axeMatches[0]!.id, treeMatches[0]!.id);
-        return;
-      }
-      const itemMatches = findObjectMatches(itemTarget, carriedItems);
-      if (itemMatches.length === 0) {
-        addEntry("error", `You are not carrying anything called “${itemTarget}”.`);
-        return;
-      }
-      if (itemMatches.length > 1) {
-        addEntry("error", `Which item do you mean: ${itemMatches.map((item) => item.label).join(", ")}?`);
-        return;
-      }
-      const targetMatches = findObjectMatches(objectTarget, snapshot?.location?.objects ?? []);
-      if (targetMatches.length === 0) {
-        addEntry("error", `There is no object called “${objectTarget}” in this room.`);
-        return;
-      }
-      if (targetMatches.length > 1) {
-        addEntry("error", `Which target do you mean: ${targetMatches.map((object) => object.label).join(", ")}?`);
-        return;
-      }
-      await performItemUse(itemMatches[0]!.id, targetMatches[0]!.id);
-      return;
-    }
-    if (verb.toLowerCase() === "drop") {
-      addEntry("system", `> ${value}`);
-      if (!target) {
-        addEntry("error", "Drop what? Try “drop stone”.");
-        return;
-      }
-      const inventory = snapshot?.character?.inventory ?? [];
-      const matches = findObjectMatches(target, inventory.map((item) => ({
-        ...item, readable: false, takeable: true,
-      })));
-      if (matches.length === 0) {
-        addEntry("error", `You are not carrying anything called “${target}”.`);
-        return;
-      }
-      if (matches.length > 1) {
-        addEntry("error", `Which one do you mean: ${matches.map((item) => item.label).join(", ")}?`);
-        return;
-      }
-      await dropObject(matches[0]!.id, matches[0]!.label);
-      return;
-    }
-    if (verb.toLowerCase() === "go" && target) {
-      const exits = snapshot?.location?.exits ?? [];
-      const matches = exits.filter((exit) => exit.available && (
-        exit.label.toLowerCase() === target.toLowerCase() ||
-        exit.direction?.toLowerCase() === target.toLowerCase()
-      ));
-      addEntry("system", `> ${value}`);
-      if (matches.length === 0) {
-        addEntry("error", `No available exit matches “${target}”.`);
-        return;
-      }
-      if (matches.length > 1) {
-        addEntry("error", `More than one exit leads ${target}. Choose one: ${matches.map((exit) => exit.label).join('; ')}.`);
-        return;
-      }
-      await move(matches[0]!.id);
-      return;
-    }
-    addEntry("system", `> ${value}`);
-    addEntry("error", 'Unknown command. Try "help" for the command list.');
-  }, [activeDialogue, addEntry, browseMerchant, changeEquipment, chooseDialogueReply, craftingCommand, dropObject, extinguishCampfire, lootCorpse, putObject, inspect, move, pending, purchaseMerchantListing, readObject, snapshot, takeAllObjects, takeObject, talkToNpc, performItemUse, performFishingCast, performWoodcuttingStart, activeMerchantCatalog, performCombatAction, performInnRest, performStaminaPostureChange, interactionInbox, respondToPlayerChallenge, challengePlayer, partyInfo, refreshPartyState, teamCombatInfo, openDailyBoard, fetchDailyBoard, performDailyJob, performSupplyGather, displayedDailyBoard]);
+  const executeCommand = useWorldCommands({
+    dispatchIntent,
+    addEntry,
+    interactionInbox,
+    respondToPlayerChallenge,
+    snapshot,
+    craftingCommand,
+    activeDialogue,
+    chooseDialogueReply,
+    openDailyBoard,
+    displayedDailyBoard,
+    fetchDailyBoard,
+    performDailyJob,
+    performSupplyGather,
+    beginForeground,
+    client,
+    refreshPartyState,
+    partyInfo,
+    finishForeground,
+    performStaminaPostureChange,
+    performInnRest,
+    teamCombatInfo,
+    performCombatAction,
+    challengePlayer,
+    talkToNpc,
+    browseMerchant,
+    activeMerchantCatalog,
+    purchaseMerchantListing,
+    changeEquipment,
+    inspect,
+    extinguishCampfire,
+    readObject,
+    lootCorpse,
+    takeObject,
+    takeAllObjects,
+    putObject,
+    performItemUse,
+    performFishingCast,
+    performWoodcuttingStart,
+    dropObject,
+    move,
+    pending: pending !== null,
+  });
 
-  const submitQuickCommand = useCallback((rawCommand: string) => {
+  const submitQuickCommand = useCallback((rawCommand: string | ActionIntent) => {
     setQuickCommandMode("quick");
     setQuickCommandPage(1);
     setQuickUseItemId(null);
-    void executeCommand(rawCommand);
-  }, [executeCommand]);
+    if (typeof rawCommand === "string") void executeCommand(rawCommand);
+    else void dispatchIntent(rawCommand);
+  }, [executeCommand, dispatchIntent]);
+  const submitEntityAction = (
+    kind: Exclude<ActionIntent["kind"], "put" | "use" | "chop" | "unequip">,
+    id: string, label: string, targetKind: EntityRef["kind"],
+    display = `${kind} ${label}`,
+  ) => submitQuickCommand({ kind, target: entityRef(id, label, targetKind), context: intentContext(snapshot), display });
+
 
   const submitCommand = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -3653,26 +1256,17 @@ export function WorldClient({
       const direction = exit.direction?.trim() || exit.label.trim();
       const isAmbiguous = (directionCounts.get(direction.toLowerCase()) ?? 0) > 1;
       const target = isAmbiguous ? exit.label.trim() : direction;
-      return { target, label: isAmbiguous ? exit.label.trim() : direction.toLowerCase() };
+      return { id: exit.id, target, label: isAmbiguous ? exit.label.trim() : direction.toLowerCase() };
     });
   }, [exits]);
   const quickLookTargets = useMemo(() => {
     return [
-      ...(snapshot?.location?.objects ?? []).map(({ id, label }) => ({ id, label })),
-      ...(snapshot?.location?.npcs ?? []).map(({ id, name }) => ({ id, label: name })),
+      ...(snapshot?.location?.objects ?? []).map(({ id, label }) => ({ id, label, kind: "object" as const })),
+      ...(snapshot?.location?.npcs ?? []).map(({ id, name }) => ({ id, label: name, kind: "npc" as const })),
     ];
   }, [snapshot?.location?.npcs, snapshot?.location?.objects]);
-  const quickTakeableObjects = useMemo(
-    () => (snapshot?.location?.objects ?? []).filter((object) => object.takeable),
-    [snapshot?.location?.objects],
-  );
-  const quickLootableCorpses = useMemo(() => {
-    const objects = snapshot?.location?.objects ?? [];
-    return objects.filter((corpse) =>
-      corpse.containerKind === "corpse" &&
-      objects.some((item) => item.containerId === corpse.id && item.takeable),
-    );
-  }, [snapshot?.location?.objects]);
+  const itemActions = useMemo(() => selectItemActions(snapshot), [snapshot]);
+  const { takeable: quickTakeableObjects, lootable: quickLootableCorpses } = itemActions;
   const challengeableNpcs = useMemo(
     () => (snapshot?.location?.npcs ?? []).filter((npc) => npc.canChallenge),
     [snapshot?.location?.npcs],
@@ -3711,47 +1305,19 @@ export function WorldClient({
     : undefined;
   const hasVisiblePvp = Boolean(visiblePvp);
   const isPvpTurn = visiblePvp?.turnCharacterId === snapshot?.character?.characterId;
-  const availableClassActions = classCharacter(snapshot?.character)?.availableClassActions ?? [];
-  const currentCharacterClass = classCharacter(snapshot?.character)?.characterClass;
-  useEffect(() => {
-    if (screen !== "play") return;
-
-    const handleMovementKeys = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
-      const target = event.target;
-      if (
-        target instanceof HTMLElement &&
-        (target.isContentEditable || target.closest("input, textarea, select, [contenteditable='true'], [role='textbox']"))
-      ) return;
-
-      let direction: "north" | "east" | "south" | "west" | "up" | "down" | undefined;
-      if (event.shiftKey) {
-        if (event.key === "ArrowUp") direction = "up";
-        else if (event.key === "ArrowDown") direction = "down";
-      } else {
-        if (event.key === "ArrowUp") direction = "north";
-        else if (event.key === "ArrowRight") direction = "east";
-        else if (event.key === "ArrowDown") direction = "south";
-        else if (event.key === "ArrowLeft") direction = "west";
-      }
-      if (!direction || !snapshot?.character || !snapshot.location || pending || isAnyCombatActive || hasVisiblePvp ||
-          snapshot.character.staminaRecovery.posture === "resting") return;
-
-      event.preventDefault();
-      const matchingExits = snapshot.location.exits.filter((exit) =>
-        exit.available && (exit.direction?.trim() || exit.label.trim()).toLocaleLowerCase() === direction
-      );
-      if (matchingExits.length > 1) {
-        setQuickCommandPage(1);
-        setQuickCommandMode("choose-exit");
-        return;
-      }
-      if (matchingExits[0]) void move(matchingExits[0].id);
-    };
-
-    document.addEventListener("keydown", handleMovementKeys);
-    return () => document.removeEventListener("keydown", handleMovementKeys);
-  }, [hasVisiblePvp, isAnyCombatActive, move, pending, screen, snapshot]);
+  const availableClassActions = snapshot?.character?.availableClassActions ?? [];
+  const currentCharacterClass = snapshot?.character?.characterClass;
+  const chooseKeyboardExit = useCallback(() => {
+    setQuickCommandPage(1);
+    setQuickCommandMode("choose-exit");
+  }, []);
+  useMovementShortcuts({
+    enabled: screen === "play" && !pending && !isAnyCombatActive && !hasVisiblePvp &&
+      snapshot?.character?.staminaRecovery.posture !== "resting",
+    modalOpen: dialogueModalOpen || Boolean(activeInteractionTarget || activeCraftingPrompt) ||
+      chatFullscreen || mapFullscreen || confirmClassAdoption,
+    snapshot, move, chooseExit: chooseKeyboardExit,
+  });
   useLayoutEffect(() => {
     if (!mobileCommandInputOpen) return;
     document.getElementById("focused-world-command")?.focus({ preventScroll: true });
@@ -3797,10 +1363,7 @@ export function WorldClient({
     const inventory = snapshot?.character?.inventory ?? [];
     const equipment = snapshot?.character?.equipment;
     const usableItemIds = new Set(quickUseItems.map((item) => item.id));
-    const woodcuttingLevel = snapshot?.character?.woodcutting?.level ?? 1;
-    const usableAxes = quickUseItems.filter((item) =>
-      item.woodcuttingAxe && woodcuttingLevel >= item.woodcuttingAxe.requiredLevel,
-    );
+    const usableAxes = selectUsableAxes(snapshot, quickUseItems);
 
     return [
       ...location.objects.map((object) => ({
@@ -3853,51 +1416,61 @@ export function WorldClient({
       }),
       { id: `room:${location.locationId}`, label: location.title, actions: [look] },
     ];
-  }, [quickUseItems, snapshot?.character?.equipment, snapshot?.character?.inventory, snapshot?.location]);
-  const performTerminalTargetAction = (target: ActivityLogTarget, actionId: string) => {
+  }, [quickUseItems, snapshot]);
+  const performTerminalTargetAction = (target: ActivityLogTarget & { context?: IntentContext; entityKind?: EntityRef["kind"] }, actionId: string) => {
     setActiveInteractionTarget(null);
-    const label = target.label;
+    const context = target.context ?? intentContext(snapshot);
+    const stale = () => addEntry("error", "That selection is no longer available. Choose it again.");
+    if (!sameIntentContext(context, snapshot)) { stale(); return; }
     if (target.id.startsWith("woodcutting-tree:") && actionId.startsWith("use-tree:")) {
       const treeId = target.id.slice("woodcutting-tree:".length);
       const axeId = actionId.slice("use-tree:".length);
-      const tree = snapshot?.availableWoodcuttingTrees?.find((candidate) => candidate.id === treeId);
       const axe = snapshot?.character?.inventory.find((candidate) => candidate.id === axeId);
-      if (!tree || !axe?.woodcuttingAxe) return;
-      submitQuickCommand(`use ${axe.label} on ${tree.label}`);
+      const tree = snapshot?.availableWoodcuttingTrees?.find((candidate) => candidate.id === treeId);
+      if (!axe || !tree) { stale(); return; }
+      submitQuickCommand({ kind: "chop", context,
+        item: entityRef(axe.id, axe.label, "inventory"), target: entityRef(tree.id, tree.label, "tree"),
+        display: `use ${axe.label} on ${tree.label}` });
       return;
     }
-    if (actionId === "use" && target.id.startsWith("inventory:")) {
-      const itemId = target.id.slice("inventory:".length);
-      const item = snapshot?.character?.inventory.find((candidate) => candidate.id === itemId);
-      if (!item) return;
+    const inventoryId = target.id.startsWith("inventory:") ? target.id.slice("inventory:".length) : undefined;
+    const item = snapshot?.character?.inventory.find((candidate) => candidate.id === inventoryId);
+    if (actionId === "use" && inventoryId) {
+      if (!item) { stale(); return; }
       if (item.fishingRod || item.consumable?.effect === "heal") {
-        submitQuickCommand(`use ${label}`);
+        submitQuickCommand({ kind: item.fishingRod ? "fish" : "heal", context,
+          target: entityRef(item.id, target.label, "inventory"), display: `use ${target.label}` });
       } else {
         setQuickUseItemId(item.id);
         setQuickCommandMode("use-target");
       }
       return;
     }
-    if (actionId === "extinguish") {
-      void extinguishCampfire(target.id);
+    if (actionId.startsWith("unequip-")) {
+      const slot = EQUIPMENT_SLOTS.find((slot) => actionId === `unequip-${slot}`);
+      if (slot && item) submitQuickCommand({ kind: "unequip", context, slot, itemId: item.id, display: `unequip ${slot}` });
+      else stale();
       return;
     }
-
-    const command = actionId === "look"
-      ? target.id.startsWith("room:") ? "look" : `look ${label}`
-      : actionId.startsWith("unequip-")
-        ? `unequip ${actionId.slice("unequip-".length)}`
-        : ["read", "take", "talk", "shop", "attack", "drop", "equip"].includes(actionId)
-          ? `${actionId} ${label}`
-          : undefined;
-    if (command) submitQuickCommand(command);
+    const roomId = target.id.startsWith("room:") ? target.id.slice("room:".length) : undefined;
+    const npc = snapshot?.location?.npcs?.find((npc) => npc.id === target.id);
+    const reference = entityRef(inventoryId ?? roomId ?? target.id, target.label,
+      target.entityKind ?? (inventoryId ? "inventory" : roomId ? "room" : npc ? "npc" : "object"));
+    const kind = (["look", "read", "take", "talk", "shop", "attack", "drop", "equip", "extinguish"] as const)
+      .find((kind) => kind === actionId);
+    if (kind) submitQuickCommand({ kind, context, target: reference,
+      display: kind === "look" && roomId ? "look" : `${kind} ${target.label}` });
   };
   const handleTerminalLookTarget = (target: ActivityLogTarget) => {
+    const entityKind: EntityRef["kind"] = target.id.startsWith("inventory:") ? "inventory"
+      : target.id.startsWith("room:") ? "room" : target.id.startsWith("woodcutting-tree:") ? "tree"
+      : snapshot?.location?.npcs?.some((npc) => npc.id === target.id) ? "npc" : "object";
+    const selection = { ...target, context: intentContext(snapshot), entityKind };
     if (target.actionDialogTitle || (target.actions?.length ?? 1) > 1) {
-      setActiveInteractionTarget(target);
+      setActiveInteractionTarget(selection);
       return;
     }
-    performTerminalTargetAction(target, target.actions?.[0]?.id ?? "look");
+    performTerminalTargetAction(selection, target.actions?.[0]?.id ?? "look");
   };
   const quickCommandItems = useMemo(() => {
     type QuickAction = {
@@ -3914,15 +1487,8 @@ export function WorldClient({
       mode: "look" | "read" | "drop" | "take" | "loot" | "talk" | "use" | "shop" | "buy" | "attack" | "equip" | "unequip",
       ariaLabel: string,
     ) => actions.push({ id, label: id, ariaLabel, opensMenu: true, onSelect: () => setQuickCommandMode(mode) });
-    const inventory = snapshot?.character?.inventory ?? [];
     const equipment = snapshot?.character?.equipment;
-    const unequippedInventory = inventory.filter((item) =>
-      item.questBound !== true &&
-      (!equipment || !characterHasEquippedItem(equipment, item.id)),
-    );
-    const gearToEquip = inventory.filter((item) => item.equipment &&
-      (!equipment || equipmentItemIdForSlot(equipment, item.equipment.slot) !== item.id));
-    const readableObjects = readableObjectsForQuickActions(snapshot);
+    const { droppable: unequippedInventory, equipable: gearToEquip, readable: readableObjects } = itemActions;
     const localSources = (snapshot?.dailyActivities?.sources ?? [])
       .filter((source) => source.locationId === snapshot?.location?.locationId);
     const dailyCycle = snapshot?.dailyActivities?.cycle;
@@ -4042,33 +1608,7 @@ export function WorldClient({
       onSelect: () => submitQuickCommand("help"),
     });
     return actions;
-  }, [
-    challengeableNpcs.length,
-    hasVisiblePvp,
-    isAnyCombatActive,
-    quickBuyListings.length,
-    quickShopNpcs.length,
-    quickTakeableObjects.length,
-    quickLootableCorpses,
-    quickUseItems.length,
-    setQuickCommandMode,
-    snapshot?.character?.inventory,
-    snapshot?.availableFishingSpots,
-    snapshot?.availableWoodcuttingTrees,
-    snapshot?.character?.equipment,
-    snapshot?.location?.npcs,
-    snapshot?.location?.objects,
-    snapshot?.location?.inn,
-    snapshot?.character?.health,
-    snapshot?.character?.resources,
-    snapshot?.character?.staminaRecovery.posture,
-    canFlee,
-    submitQuickCommand,
-    visibleCombat,
-    performSupplyGather,
-    performFishingCast,
-    pending,
-  ]);
+  }, [snapshot, itemActions, challengeableNpcs.length, hasVisiblePvp, isAnyCombatActive, quickBuyListings.length, quickShopNpcs.length, quickTakeableObjects.length, quickLootableCorpses, quickUseItems.length, setQuickCommandMode, canFlee, submitQuickCommand, visibleCombat, performSupplyGather]);
   const quickCommandPages = useMemo(() => {
     const pages: (typeof quickCommandItems)[] = [];
     for (let index = 0; index < quickCommandItems.length; index += quickCommandPageSize) {
@@ -4159,6 +1699,9 @@ export function WorldClient({
 
   return (
     <main className="focused-client" data-theme={theme}>
+      <div className="mudd-visually-hidden" role="status" aria-label="New activity" aria-live="polite" aria-atomic="true">
+        {announcement && <span key={announcement.sequence}>New activity received.</span>}
+      </div>
       <section
         className={`focused-content${screen === "play" && snapshot?.location && !isGameOver ? " focused-content--play" : ""}`}
         key={screen}
@@ -4230,7 +1773,7 @@ export function WorldClient({
                       )}
                     </div>
                     {(snapshot.character?.health || (snapshot.character?.wallet && snapshot.currency)) && (
-                      <ProjectedVitalReadout snapshot={snapshot} />
+                      <ProjectedVitalReadout snapshot={snapshot} client={client} />
                     )}
                     <div className="focused-terminal-history-shell">
                       <div
@@ -4243,13 +1786,30 @@ export function WorldClient({
                           const history = event.currentTarget;
                           const distanceFromLatest = history.scrollHeight - history.scrollTop - history.clientHeight;
                           terminalFollowsLatestRef.current = distanceFromLatest < 32;
+                          setTerminalFollowingLatest(terminalFollowsLatestRef.current);
+                          if (!terminalFollowsLatestRef.current) {
+                            const rows = [...history.querySelectorAll<HTMLElement>("[data-activity-entry]")];
+                            const top = history.getBoundingClientRect().top;
+                            const row = rows.find((row) => row.getBoundingClientRect().bottom > top) ?? rows[0];
+                            if (row?.dataset.activityEntry) {
+                              terminalReadingPosition.current = { id: row.dataset.activityEntry,
+                                offset: row.getBoundingClientRect().top - top };
+                              setTerminalReadingAnchor(row.dataset.activityEntry);
+                            }
+                          } else {
+                            terminalReadingPosition.current = undefined;
+                            setTerminalReadingAnchor(undefined);
+                          }
                           setTerminalCanScrollDown(distanceFromLatest > 32);
                         }}
                       >
                         {entries.length > 0 && (
-                          <ActivityLog
+                          <ActivityHistoryWindow
                             entries={entries}
                             label="Terminal transcript"
+                            followLatest={terminalFollowingLatest}
+                            readingAnchorId={terminalReadingAnchor}
+                            onWindowChange={handleHistoryWindowChange}
                             currentLocationId={optimisticTravel?.preview.locationId ?? snapshot.location?.locationId}
                             lookTargets={optimisticTravel ? [] : terminalLookTargets}
                             onLookTarget={handleTerminalLookTarget}
@@ -4281,7 +1841,7 @@ export function WorldClient({
                         <button
                           type="button"
                           className="focused-merchant-catalog__close"
-                          onClick={() => setActiveMerchantCatalog(null)}
+                          onClick={closeMerchant}
                           aria-label="Close merchant catalog"
                           disabled={pending !== null}
                         >
@@ -4571,10 +2131,9 @@ export function WorldClient({
                       {quickCommandMode === "equip" ? (
                         <>
                           <button type="button" className="focused-quick-command focused-quick-command--back" onClick={() => setQuickCommandMode("quick")} aria-label={quickReturnLabel} disabled={pending !== null}>‹</button>
-                          {(snapshot.character?.inventory ?? []).filter((item) => item.equipment &&
-                            equipmentItemIdForSlot(snapshot.character!.equipment, item.equipment.slot) !== item.id)
+                          {itemActions.equipable
                             .map((item) => (
-                            <button key={item.id} type="button" className="focused-quick-command" onClick={() => submitQuickCommand(`equip ${item.label}`)} aria-label={`Equip ${item.label}`} disabled={pending !== null}>{item.label.toLocaleLowerCase()}</button>
+                            <button key={item.id} type="button" className="focused-quick-command" onClick={() => submitEntityAction("equip", item.id, item.label, "inventory")} aria-label={`Equip ${item.label}`} disabled={pending !== null}>{item.label.toLocaleLowerCase()}</button>
                           ))}
                         </>
                       ) : quickCommandMode === "unequip" ? (
@@ -4583,7 +2142,7 @@ export function WorldClient({
                           {EQUIPMENT_SLOTS.filter((slot) =>
                             equipmentItemIdForSlot(snapshot.character!.equipment, slot),
                           ).map((slot) => (
-                            <button key={slot} type="button" className="focused-quick-command" onClick={() => submitQuickCommand(`unequip ${slot}`)} aria-label={`Unequip ${slot}`} disabled={pending !== null}>{slot}</button>
+                            <button key={slot} type="button" className="focused-quick-command" onClick={() => submitQuickCommand({ kind: "unequip", slot, itemId: equipmentItemIdForSlot(snapshot.character!.equipment, slot)!, context: intentContext(snapshot), display: `unequip ${slot}` })} aria-label={`Unequip ${slot}`} disabled={pending !== null}>{slot}</button>
                           ))}
                         </>
                       ) : quickCommandMode === "choose-exit" ? (
@@ -4602,7 +2161,7 @@ export function WorldClient({
                               key={direction.target}
                               type="button"
                               className="focused-quick-command"
-                              onClick={() => submitQuickCommand(`go ${direction.target}`)}
+                              onClick={() => submitEntityAction("go", direction.id, direction.target, "exit")}
                               aria-label={direction.label}
                               disabled={pending !== null}
                             >
@@ -4635,7 +2194,7 @@ export function WorldClient({
                               key={target.id}
                               type="button"
                               className="focused-quick-command"
-                              onClick={() => submitQuickCommand(`look at ${target.label}`)}
+                              onClick={() => submitEntityAction("look", target.id, target.label, target.kind, `look at ${target.label}`)}
                               aria-label={`Look at ${target.label}`}
                               disabled={pending !== null}
                             >
@@ -4674,7 +2233,7 @@ export function WorldClient({
                                   key={object.id}
                                   type="button"
                                   className="focused-quick-command"
-                                  onClick={() => submitQuickCommand(`read ${object.label}`)}
+                                  onClick={() => submitEntityAction("read", object.id, object.label, "object")}
                                   aria-label={`Read ${object.label}`}
                                   disabled={pending !== null}
                                 >
@@ -4695,19 +2254,13 @@ export function WorldClient({
                           >
                             ‹
                           </button>
-                          {(snapshot.character?.inventory ?? []).filter((item) =>
-                            item.questBound !== true &&
-                            !characterHasEquippedItem(snapshot.character!.equipment, item.id),
-                          ).length ? (
-                            (snapshot.character?.inventory ?? []).filter((item) =>
-                              item.questBound !== true &&
-                              !characterHasEquippedItem(snapshot.character!.equipment, item.id),
-                            ).map((item) => (
+                          {itemActions.droppable.length ? (
+                            itemActions.droppable.map((item) => (
                               <button
                                 key={item.id}
                                 type="button"
                                 className="focused-quick-command"
-                                onClick={() => submitQuickCommand(`drop ${item.label}`)}
+                                onClick={() => submitEntityAction("drop", item.id, item.label, "inventory")}
                                 aria-label={`Drop ${item.label}`}
                                 disabled={pending !== null}
                               >
@@ -4733,7 +2286,7 @@ export function WorldClient({
                                 key={corpse.id}
                                 type="button"
                                 className="focused-quick-command"
-                                onClick={() => submitQuickCommand(`loot ${corpse.label}`)}
+                                onClick={() => submitEntityAction("loot", corpse.id, corpse.label, "object")}
                                 aria-label={`Loot ${corpse.label}`}
                                 disabled={pending !== null}
                               >
@@ -4769,7 +2322,7 @@ export function WorldClient({
                                   key={object.id}
                                   type="button"
                                   className="focused-quick-command"
-                                  onClick={() => submitQuickCommand(`take ${object.label}`)}
+                                  onClick={() => submitEntityAction("take", object.id, object.label, "object")}
                                   aria-label={`Take ${object.label}`}
                                   disabled={pending !== null}
                                 >
@@ -4803,7 +2356,7 @@ export function WorldClient({
                                     setQuickUseItemId(item.id);
                                     setQuickCommandMode("use-target");
                                   } else if (item.consumable?.effect === "heal") {
-                                    submitQuickCommand(`use ${item.label}`);
+                                    submitEntityAction(item.fishingRod ? "fish" : "heal", item.id, item.label, "inventory", `use ${item.label}`);
                                   } else {
                                     setQuickUseItemId(item.id);
                                     setQuickCommandMode("use-target");
@@ -4846,11 +2399,13 @@ export function WorldClient({
                                 key={target.id}
                                 type="button"
                                 className="focused-quick-command"
-                                onClick={() => submitQuickCommand(
-                                  item.woodcuttingAxe
-                                    ? `use ${item.label} ${target.label}`
+                                onClick={() => submitQuickCommand({
+                                  kind: item.woodcuttingAxe ? "chop" : "use", context: intentContext(snapshot),
+                                  item: entityRef(item.id, item.label, "inventory"),
+                                  target: entityRef(target.id, target.label, item.woodcuttingAxe ? "tree" : "object"),
+                                  display: item.woodcuttingAxe ? `use ${item.label} ${target.label}`
                                     : `use ${item.label} on ${target.label}`,
-                                )}
+                                })}
                                 aria-label={`Use ${item.label} on ${target.label}`}
                                 disabled={pending !== null}
                               >
@@ -4879,7 +2434,7 @@ export function WorldClient({
                               key={npc.id}
                               type="button"
                               className="focused-quick-command"
-                              onClick={() => submitQuickCommand(`attack ${npc.name}`)}
+                              onClick={() => submitEntityAction("attack", npc.id, npc.name, "npc")}
                               aria-label={`Attack ${npc.name}`}
                               disabled={pending !== null}
                             >
@@ -4904,7 +2459,7 @@ export function WorldClient({
                                 key={npc.id}
                                 type="button"
                                 className="focused-quick-command"
-                                onClick={() => submitQuickCommand(`talk ${npc.name}`)}
+                                onClick={() => submitEntityAction("talk", npc.id, npc.name, "npc")}
                                 aria-label={`Talk to ${npc.name}`}
                                 disabled={pending !== null}
                               >
@@ -4929,7 +2484,7 @@ export function WorldClient({
                               key={npc.id}
                               type="button"
                               className="focused-quick-command"
-                              onClick={() => submitQuickCommand(`shop ${npc.name}`)}
+                              onClick={() => submitEntityAction("shop", npc.id, npc.name, "npc")}
                               aria-label={`Shop with ${npc.name}`}
                               disabled={pending !== null}
                             >
@@ -4954,7 +2509,7 @@ export function WorldClient({
                                 key={listing.id}
                                 type="button"
                                 className="focused-quick-command"
-                                onClick={() => submitQuickCommand(`buy ${listing.item.label}`)}
+                                onClick={() => submitEntityAction("buy", listing.id, listing.item.label, "listing")}
                                 aria-label={`Buy ${listing.item.label}`}
                                 disabled={pending !== null}
                               >
@@ -5058,7 +2613,7 @@ export function WorldClient({
                       }))}
                       busy={pending !== null}
                       onSelect={(quantity) => void selectCraftingQuantity(quantity)}
-                      onClose={() => setActiveCraftingPrompt(null)}
+                      onClose={closeCrafting}
                     />
                   )}
                   {dialogueModalOpen && activeDialogue ? (
@@ -5552,24 +3107,7 @@ export function WorldClient({
               <section className="focused-quest-journal focused-daily-journal" aria-labelledby="daily-journal-title">
                 <h2 id="daily-journal-title">Daily postings</h2>
                 {(() => {
-                  const character = snapshot?.character as (Omit<NonNullable<GameSnapshot["character"]>, "dailyJobs"> & {
-                    dailyJobs?: Array<{
-                      boardId: string;
-                      cycle: string;
-                      jobId: string;
-                      title: string;
-                      status: "active" | "completed";
-                      details?: {
-                        id: string;
-                        poster: string;
-                        title: string;
-                        supplyTypeId: string;
-                        quantity: number;
-                        gold: number;
-                        experience: number;
-                      };
-                    }>;
-                  }) | undefined;
+                  const character = snapshot?.character;
                   const jobs = character?.dailyJobs ?? [];
                   const today = new Date().toISOString().slice(0, 10);
                   if (!jobs.length) return <p className="focused-quest-empty">No daily postings accepted yet.</p>;
@@ -5610,7 +3148,7 @@ export function WorldClient({
               </section>
               <div className="focused-log">
                 {entries.length ? (
-                  <ActivityLog entries={[...entries].reverse()} label="Field notes" />
+                  <ActivityHistoryWindow entries={entries} reverse label="Field notes" />
                 ) : (
                   <p className="focused-feedback focused-feedback--empty">No activity this session. Actions and command results will appear here.</p>
                 )}

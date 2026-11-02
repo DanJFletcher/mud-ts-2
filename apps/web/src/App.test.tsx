@@ -1775,6 +1775,198 @@ beforeEach(() => {
 });
 
 describe('single-character world session client', () => {
+  it("uses the second carried item's ID when two quick actions share a label", async () => {
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation(async (path, init) => {
+      const response = await original(path, init);
+      if (path !== "/api/game") return response;
+      const body = await response.json();
+      body.character.inventory = ["twin-one", "twin-two"].map((id) => ({
+        id, typeId: "stone", label: "Twin stone", description: "A stone.", questBound: false,
+      }));
+      return json(body);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole("heading", { name: "Mossgate Clearing" });
+    clickQuickAction("Show items to drop");
+    fireEvent.click(screen.getAllByRole("button", { name: "Drop Twin stone" })[1]!);
+    await waitFor(() => {
+      const command = apiFetch.mock.calls.find(([path, init]) =>
+        path === "/api/commands" && JSON.parse(String(init?.body ?? "{}")).type === "character.drop");
+      expect(JSON.parse(String(command?.[1]?.body)).payload.itemId).toBe("twin-two");
+    });
+  });
+
+  it("uses the selected NPC ID when duplicate NPC names appear in quick actions", async () => {
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation(async (path, init) => {
+      const response = await original(path, init);
+      if (path !== "/api/game") return response;
+      const body = await response.json();
+      const mara = body.location.npcs.find((npc: { name: string }) => npc.name === "Mara");
+      body.location.npcs.push({ ...mara, id: "mara-two" });
+      return json(body);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole("heading", { name: "Mossgate Clearing" });
+    clickQuickAction("Show people to talk to");
+    fireEvent.click(screen.getAllByRole("button", { name: "Talk to Mara" })[1]!);
+    await waitFor(() => {
+      const query = apiFetch.mock.calls.find(([path, init]) =>
+        path === "/api/queries" && JSON.parse(String(init?.body ?? "{}")).type === "npc.talk");
+      expect(JSON.parse(String(query?.[1]?.body)).payload.npcId).toBe("mara-two");
+    });
+  });
+
+  it("does not act on a same-named replacement after a terminal selection becomes stale", async () => {
+    const original = apiFetch.getMockImplementation()!;
+    let replace = false;
+    apiFetch.mockImplementation(async (path, init) => {
+      const response = await original(path, init);
+      if (path !== "/api/game" || !replace) return response;
+      const body = await response.json();
+      body.location.objects = body.location.objects.map((object: { id: string }) =>
+        object.id === "mossgate-marker" ? { ...object, id: "replacement-marker" } : object);
+      return json(body);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole("heading", { name: "Mossgate Clearing" });
+    fireEvent.click(await screen.findByRole("button", { name: "Choose an action for Weathered marker in terminal" }));
+    const dialog = await screen.findByRole("dialog", { name: "Choose an action for Weathered marker" });
+    replace = true;
+    await act(async () => { window.dispatchEvent(new Event("pageshow")); });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Read" }));
+    await screen.findByText("That selection is no longer available. Choose it again.");
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === "/api/queries" && JSON.parse(String(init?.body ?? "{}")).type === "object.read")).toBe(false);
+  });
+
+  it("requests disambiguation instead of taking the first exact duplicate label", async () => {
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation(async (path, init) => {
+      const response = await original(path, init);
+      if (path !== "/api/game") return response;
+      const body = await response.json();
+      body.location.objects.push(...["twin-one", "twin-two"].map((id) => ({
+        id, label: "Twin stone", description: "A stone.", readable: false, takeable: true,
+      })));
+      return json(body);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole("heading", { name: "Mossgate Clearing" });
+    submitWorldCommand("take Twin stone");
+    await screen.findByText("Which one do you mean: Twin stone, Twin stone?");
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === "/api/commands" && JSON.parse(String(init?.body ?? "{}")).type === "character.take")).toBe(false);
+    submitWorldCommand("take twin-two");
+    await waitFor(() => {
+      const command = apiFetch.mock.calls.find(([path, init]) =>
+        path === "/api/commands" && JSON.parse(String(init?.body ?? "{}")).type === "character.take");
+      expect(JSON.parse(String(command?.[1]?.body)).payload.itemId).toBe("twin-two");
+    });
+  });
+
+  it("bounds mounted history, keeps an older window anchored, and reverses the shared notes view", async () => {
+    render(<WorldClient historyLimit={1000} onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole("heading", { name: "Mossgate Clearing" });
+    for (let i = 0; i < 10; i++) submitWorldCommand("help");
+    const history = screen.getByRole("region", { name: "Terminal output" });
+    const rows = () => within(history).getAllByRole("listitem");
+    expect(rows()).toHaveLength(200);
+    const announcement = screen.getByRole("status", { name: "New activity" }).firstElementChild;
+    fireEvent.click(within(history).getByRole("button", { name: "Older" }));
+    const anchor = rows()[0]!.getAttribute("data-activity-entry");
+    expect(screen.getByRole("status", { name: "New activity" }).firstElementChild).toBe(announcement);
+    submitWorldCommand("help");
+    expect(rows()[0]).toHaveAttribute("data-activity-entry", anchor);
+    fireEvent.click(within(history).getByRole("button", { name: "Latest" }));
+    const latest = rows().at(-1)!.getAttribute("data-activity-entry");
+    fireEvent.click(screen.getByRole("link", { name: "Info" }));
+    fireEvent.click(await screen.findByRole("link", { name: "Field notes" }));
+    const notes = await screen.findByRole("region", { name: "Field notes" });
+    expect(within(notes).getAllByRole("listitem")).toHaveLength(200);
+    expect(within(notes).getAllByRole("listitem")[0]).toHaveAttribute("data-activity-entry", latest);
+  });
+
+  it("shows an eviction notice when retained activity removes the older window anchor", async () => {
+    render(<WorldClient historyLimit={230} onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole("heading", { name: "Mossgate Clearing" });
+    for (let i = 0; i < 10; i++) submitWorldCommand("help");
+    const history = screen.getByRole("region", { name: "Terminal output" });
+    fireEvent.click(within(history).getByRole("button", { name: "Older" }));
+    submitWorldCommand("help");
+    expect(within(history).getByText(/Earlier activity is no longer retained/)).toBeVisible();
+    expect(within(history).getAllByRole("listitem")).toHaveLength(200);
+    fireEvent.click(within(history).getByRole("button", { name: "Latest" }));
+    expect(within(history).queryByText(/Earlier activity is no longer retained/)).not.toBeInTheDocument();
+  });
+
+  it("pins optimistic travel outside the settled budget and reapplies the limit after rollback", async () => {
+    const original = apiFetch.getMockImplementation()!;
+    let rejectMove!: () => void;
+    apiFetch.mockImplementation((path, init) => {
+      if (path === "/api/commands" && init?.body) {
+        const command = JSON.parse(String(init.body));
+        if (command.type === "character.move") return new Promise<Response>((resolve) => {
+          rejectMove = () => resolve(json({ receipt: { ok: false, commandId: command.commandId,
+            code: "RULE_VIOLATION", message: "Blocked", retryable: false } }));
+        });
+      }
+      return original(path, init);
+    });
+    render(<WorldClient historyLimit={1} onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole("heading", { name: "Mossgate Clearing" });
+    quickGo("north");
+    await waitFor(() => expect(rejectMove).toBeTypeOf("function"));
+    const history = screen.getByRole("region", { name: "Terminal output" });
+    expect(within(history).getAllByRole("listitem").length).toBeGreaterThan(1);
+    expect(history).toHaveTextContent("Glasswater Bridge");
+    await act(async () => { rejectMove(); });
+    await waitFor(() => expect(within(history).getAllByRole("listitem")).toHaveLength(1));
+    expect(history).not.toHaveTextContent("Glasswater Bridge");
+    expect(history).toHaveTextContent("Blocked");
+  });
+
+  it('starts only one take when the same control is clicked twice in one turn', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    clickQuickAction('Show items to take');
+    const button = screen.getByRole('button', { name: 'Take Loose stone' });
+    act(() => { button.click(); button.click(); });
+    await screen.findByText('You pick up the loose stone.');
+    const takes = apiFetch.mock.calls.filter(([path, init]) =>
+      path === '/api/commands' && init?.body &&
+      JSON.parse(String(init.body)).type === 'character.take');
+    expect(takes).toHaveLength(1);
+  });
+
+  it('isolates a deferred old-world load when the mounted world changes', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    let finishOld!: () => void;
+    apiFetch.mockImplementation(async (path, init) => {
+      const response = await original(path, init);
+      if (path === '/api/game' &&
+          new Headers(init?.headers).get('x-mudd-world-instance') === 'old-world') {
+        const body = await response.json();
+        body.location.title = 'Obsolete world';
+        body.location.shortName = 'Obsolete world';
+        await new Promise<void>((resolve) => { finishOld = resolve; });
+        return json(body);
+      }
+      return response;
+    });
+    const onLeaveWorld = vi.fn().mockResolvedValue(undefined);
+    const view = render(<WorldClient worldInstanceId="old-world" onLeaveWorld={onLeaveWorld} />);
+    await waitFor(() => expect(finishOld).toBeTypeOf('function'));
+    view.rerender(<WorldClient worldInstanceId="new-world" onLeaveWorld={onLeaveWorld} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    await act(async () => { finishOld(); });
+    expect(screen.queryByRole('heading', { name: 'Obsolete world' })).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Terminal output' })).not.toHaveTextContent('Obsolete world');
+    expect(apiFetch.mock.calls.some(([path, init]) => path === '/api/game' &&
+      new Headers(init?.headers).get('x-mudd-world-instance') === 'new-world')).toBe(true);
+  });
+
   it('renders a victory corpse and exposes its loot without fetching another game snapshot', async () => {
     await withFakeRealtimeSocket(async () => {
       combatEncounter = {
@@ -2054,6 +2246,48 @@ describe('single-character world session client', () => {
     await act(async () => { release(oldResponse); await delayed; });
     expect(screen.getByRole('heading', { name: 'Glasswater Bridge' })).toBeInTheDocument();
     timers.mockRestore();
+  });
+
+  it('allows a deferred confirmation refresh while acknowledged travel keeps controls locked', async () => {
+    const original = apiFetch.getMockImplementation()!;
+    let initial: GameSnapshot;
+    let destination: GameSnapshot;
+    let moving = false;
+    let confirming = false;
+    let confirm!: () => void;
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/commands' && init?.body &&
+          JSON.parse(String(init.body)).type === 'character.move') {
+        const response = await original(path, init);
+        destination = await (await original('/api/game', {})).json();
+        moving = true;
+        return response;
+      }
+      if (path === '/api/game') {
+        if (confirming) {
+          await new Promise<void>((resolve) => { confirm = resolve; });
+          return json(destination);
+        }
+        if (moving) return json(initial);
+        const response = await original(path, init);
+        initial = await response.json();
+        return json(initial);
+      }
+      return original(path, init);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    await act(async () => { quickGo('north'); });
+    const output = screen.getByRole('group', { name: 'Players in this room' });
+    await waitFor(() => expect(moving).toBe(true));
+    expect(output).toHaveAttribute('aria-busy', 'true');
+    confirming = true;
+    act(() => { window.dispatchEvent(new Event('pageshow')); });
+    await waitFor(() => expect(confirm).toBeTypeOf('function'));
+    expect(output).toHaveAttribute('aria-busy', 'true');
+    await act(async () => { confirm(); });
+    await waitFor(() => expect(output).toHaveAttribute('aria-busy', 'false'));
+    expect(screen.getByRole('heading', { name: 'Glasswater Bridge' })).toBeVisible();
   });
 
   it('reconciles an optimistic destination when the server reports another room', async () => {
@@ -2339,6 +2573,10 @@ describe('single-character world session client', () => {
         if (command.type === 'fishing.advance') {
           attempts += 1;
           if (attempts === 1) {
+            // The authoritative action timing, rather than error prose, explains
+            // why advancement was early (including client/server clock skew).
+            activeFishingCastState!.startedAt = new Date().toISOString();
+
             return Promise.resolve(json({ message: 'The line is still in the water.' }, 409));
           }
         }
@@ -4093,6 +4331,41 @@ describe('single-character world session client', () => {
     );
     expect(screen.queryByText('Bridge Watcher leaves the room.')).not.toBeInTheDocument();
   });
+
+  it.each(["dialogue", "interaction", "crafting"] as const)(
+    "suppresses movement on %s modal buttons and resumes it after dismissal",
+    async (kind) => {
+      craftingCatalog = {
+        skill: { level: 1, experienceHundredths: 0 }, atWorkbench: true,
+        recipes: [{ recipeId: "plank", outputTypeId: "plank", outputLabel: "Plank",
+          requiredLevel: 1, experience: 1, maxCraftable: 10 }],
+      };
+      render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+      await screen.findByRole("heading", { name: "Mossgate Clearing" });
+      if (kind === "dialogue") submitWorldCommand("talk Mara");
+      else if (kind === "crafting") submitWorldCommand("craft plank");
+      else fireEvent.click(await screen.findByRole("button", {
+        name: "Choose an action for Weathered marker in terminal",
+      }));
+      const title = kind === "dialogue" ? "Conversation with Mara"
+        : kind === "crafting" ? "How many?" : "Choose an action for Weathered marker";
+      const dialog = await screen.findByRole("dialog", { name: title });
+      const button = within(dialog).getAllByRole("button")[0]!;
+      button.focus();
+      const moves = () => apiFetch.mock.calls.filter(([path, init]) =>
+        path === "/api/commands" && JSON.parse(String(init?.body ?? "{}")).type === "character.move");
+      fireEvent.keyDown(button, { key: "ArrowUp" });
+      fireEvent.keyDown(button, { key: "ArrowUp", shiftKey: true });
+      expect(moves()).toHaveLength(0);
+      fireEvent.click(within(dialog).getByRole("button", {
+        name: kind === "dialogue" ? "Close conversation" : "Close",
+      }));
+      await waitFor(() => expect(dialog).not.toBeInTheDocument());
+      await act(async () => { fireEvent.keyDown(document, { key: "ArrowUp" }); });
+      await waitFor(() => expect(moves()).toHaveLength(1));
+      await screen.findByRole("heading", { name: "Glasswater Bridge" });
+    },
+  );
 
   it('uses arrow keys for cardinal movement but leaves command fields alone', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
