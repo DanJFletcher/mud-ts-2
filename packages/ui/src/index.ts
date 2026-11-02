@@ -47,3 +47,6 @@ export { DailyBoard } from './components/DailyBoard.js';
 export type { DailyBoardProps, DailyBoardJobView } from './components/DailyBoard.js';
 export { PendingActionStatus } from './components/PendingActionStatus.js';
 export type { PendingActionStatusProps, PendingActionStatusState } from './components/PendingActionStatus.js';
+
+export { ActivityHistoryWindow, ACTIVITY_WINDOW_LIMIT } from "./components/ActivityHistoryWindow.js";
+export type { ActivityHistoryWindowProps } from "./components/ActivityHistoryWindow.js";

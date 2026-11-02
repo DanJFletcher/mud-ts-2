@@ -61,6 +61,91 @@ function responseWithProjection(revision: number): CommandResponse {
 }
 
 describe("useGameSession", () => {
+  it("discards a deferred load and saved setters after world client replacement", async () => {
+    let resolve!: (snapshot: GameSnapshot) => void;
+    const old = createClient(() => new Promise((done) => { resolve = done; })).client;
+    const current = createSnapshot();
+    const next = createClient(async () => current).client;
+    const { result, rerender } = renderHook(({ client }) => useGameSession(client), {
+      initialProps: { client: old },
+    });
+    const saved = result.current;
+    let loading!: ReturnType<typeof saved.loadGame>;
+    act(() => { loading = saved.loadGame(); });
+    rerender({ client: next });
+    await act(async () => { await result.current.loadGame(); });
+    await act(async () => {
+      resolve({ ...current, player: { ...current.player, displayName: "Obsolete" } });
+      await loading;
+      saved.setSnapshot(null);
+      saved.setConnectionError("Old world failed");
+    });
+    expect(result.current.snapshot).toBe(current);
+    expect(result.current.connectionError).toBe("");
+  });
+
+  it("rejects character-owned callbacks and reconciliation after character replacement", async () => {
+    const first = createSnapshot();
+    let resolve!: (snapshot: GameSnapshot) => void;
+    const getGame = vi.fn().mockResolvedValueOnce(first)
+      .mockImplementationOnce(() => new Promise<GameSnapshot>((done) => { resolve = done; }));
+    const { client } = createClient(getGame);
+    const { result } = renderHook(() => useGameSession(client));
+    await act(async () => { await result.current.loadGame(); });
+    const saved = result.current;
+    let reconciliation!: ReturnType<typeof saved.reconcileCommand>;
+    act(() => { reconciliation = saved.reconcileCommand(first, {
+      receipt: { ok: true, commandId: "old", eventIds: [], newAggregateVersion: 2 },
+    }); });
+    const second = { ...first, character: { ...first.character!, characterId: "character-two" } };
+    act(() => { result.current.setSnapshot(second); });
+    await act(async () => {
+      resolve(first);
+      await reconciliation;
+      saved.setSnapshot(first);
+      saved.setConnectionError("Old character failed");
+    });
+    expect(result.current.snapshot).toBe(second);
+    expect(result.current.connectionError).toBe("");
+  });
+
+  it("invalidates callbacks on unmount without affecting a remounted session", async () => {
+    const snapshot = createSnapshot();
+    const { client } = createClient(async () => snapshot);
+    const old = renderHook(() => useGameSession(client));
+    const saved = old.result.current;
+    old.unmount();
+    const next = renderHook(() => useGameSession(client));
+    await act(async () => {
+      await next.result.current.loadGame();
+      saved.setSnapshot(null);
+      saved.setConnectionError("Unmounted");
+      expect(await saved.loadGame()).toEqual({ error: "This world session has ended." });
+    });
+    expect(next.result.current.snapshot).toBe(snapshot);
+    expect(next.result.current.connectionError).toBe("");
+  });
+
+  it("checks background acceptance again after a deferred command fallback", async () => {
+    const first = createSnapshot();
+    let resolve!: (value: GameSnapshot) => void;
+    const getGame = vi.fn().mockResolvedValueOnce(first).mockImplementationOnce(() =>
+      new Promise<GameSnapshot>((done) => { resolve = done; }));
+    const { client } = createClient(getGame);
+    const { result } = renderHook(() => useGameSession(client));
+    await act(async () => { await result.current.loadGame(); });
+    const epoch = result.current.refreshGate.capture();
+    let work!: ReturnType<typeof result.current.reconcileCommand>;
+    act(() => {
+      work = result.current.reconcileCommand(first, {
+        receipt: { ok: true, commandId: "background", eventIds: [], newAggregateVersion: 2 },
+      }, undefined, () => result.current.refreshGate.accepts(epoch));
+    });
+    act(() => { result.current.refreshGate.begin(); result.current.refreshGate.end(); });
+    await act(async () => { resolve({ ...first, player: { ...first.player, displayName: "Obsolete" } }); await work; });
+    expect(result.current.snapshot).toBe(first);
+  });
+
   it("loads and stores the initial game snapshot", async () => {
     const snapshot = createSnapshot();
     const getGame = vi.fn().mockResolvedValue(snapshot);

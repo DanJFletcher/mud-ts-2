@@ -20,7 +20,7 @@ export function WorldPlayPage({ worldId }: { worldId: string }) {
     {world ? <Link href={worldPath(worldId)}>Visit {world.name}</Link>
       : <LobbyBreadcrumbs items={[{ label: 'Worlds', href: '/worlds' }, { label: 'World not found' }]} />}</AccountShell>;
   return <>{error && <div role="alert" className="lobby-leave-error">{error}<Button disabled={leaving} onClick={() => setError('')}>Dismiss</Button></div>}
-    <WorldClient worldInstanceId={worldId} onLeaveWorld={async () => {
+    <WorldClient characterId={session.characterId} worldInstanceId={worldId} onLeaveWorld={async () => {
       if (leaving) return;
       setLeaving(true);
       try {

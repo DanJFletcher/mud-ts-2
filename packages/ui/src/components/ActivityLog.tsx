@@ -26,6 +26,7 @@ export interface ActivityLogProps {
   lookTargets?: readonly ActivityLogTarget[];
   onLookTarget?: (target: ActivityLogTarget) => void;
   actionsDisabled?: boolean;
+  live?: "polite" | "off";
 }
 
 const EMPTY_TARGETS: readonly ActivityLogTarget[] = [];
@@ -84,11 +85,12 @@ export function ActivityLog({
   lookTargets = EMPTY_TARGETS,
   onLookTarget,
   actionsDisabled = false,
+  live = "polite",
 }: ActivityLogProps) {
   const targetMatcher = useMemo(() => createTargetMatcher(lookTargets), [lookTargets]);
 
   return (
-    <section className="mudd-log" aria-label={label} aria-live="polite" aria-relevant="additions text">
+    <section className="mudd-log" aria-label={label} aria-live={live} aria-relevant="additions text">
       {entries.length === 0 ? (
         <p className="mudd-log__empty">Your journey begins here.</p>
       ) : (
@@ -127,7 +129,7 @@ export function ActivityLog({
               : entry.text;
 
             return (
-              <li className={`mudd-log__entry mudd-log__entry--${entry.kind}`} key={entry.id}>
+              <li className={`mudd-log__entry mudd-log__entry--${entry.kind}`} key={entry.id} data-activity-entry={entry.id}>
                 {content}
               </li>
             );

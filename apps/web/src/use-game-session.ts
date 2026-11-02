@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import {
   GameSnapshotSchema,
   MuddHttpClient,
@@ -36,18 +36,41 @@ type ActionRefreshControls = {
 };
 
 export function useGameSession(client: GameSessionClient) {
-  const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
+  const [snapshot, storeSnapshot] = useState<GameSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
-  const [connectionError, setConnectionError] = useState("");
+  const [connectionError, storeConnectionError] = useState("");
+  const lifetime = useRef({ client, characterId: snapshot?.character?.characterId, active: true });
+  const characterId = snapshot?.character?.characterId;
+  if (lifetime.current.client !== client ||
+      (characterId && lifetime.current.characterId && characterId !== lifetime.current.characterId)) {
+    lifetime.current.active = false;
+    lifetime.current = { client, characterId, active: true };
+  } else if (characterId) lifetime.current.characterId = characterId;
+  const owner = lifetime.current;
+  useEffect(() => {
+    owner.active = true;
+    return () => { owner.active = false; };
+  }, [owner]);
+  const setSnapshot = useCallback<Dispatch<SetStateAction<GameSnapshot | null>>>((next) => {
+    if (!owner.active) return;
+    storeSnapshot((current) => owner.active
+      ? typeof next === "function" ? next(current) : next
+      : current);
+  }, [owner]);
+  const setConnectionError = useCallback<Dispatch<SetStateAction<string>>>((next) => {
+    if (owner.active) storeConnectionError(next);
+  }, [owner]);
   const [presenceStale, setPresenceStale] = useState(false);
-  const actionRefreshGateRef = useRef(new ActionRefreshGate());
-  const refreshGate = useMemo<ActionRefreshControls>(() => ({
-    get busy() { return actionRefreshGateRef.current.busy; },
-    begin: () => actionRefreshGateRef.current.begin(),
-    end: () => actionRefreshGateRef.current.end(),
-    capture: () => actionRefreshGateRef.current.capture(),
-    accepts: (epoch) => actionRefreshGateRef.current.accepts(epoch),
-  }), []);
+  const refreshGate = useMemo<ActionRefreshControls>(() => {
+    const gate = new ActionRefreshGate();
+    return {
+      get busy() { return gate.busy; },
+      begin: () => { if (owner.active) gate.begin(); },
+      end: () => { if (owner.active) gate.end(); },
+      capture: () => gate.capture(),
+      accepts: (epoch) => owner.active && gate.accepts(epoch),
+    };
+  }, [owner]);
   const appliedCharacterRevisionRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
@@ -55,6 +78,7 @@ export function useGameSession(client: GameSessionClient) {
   }, [snapshot?.character?.revision]);
 
   const loadGame = useCallback(async (): Promise<GameLoadResult> => {
+    if (!owner.active) return { error: "This world session has ended." };
     setLoading(true);
     setConnectionError("");
     try {
@@ -66,25 +90,26 @@ export function useGameSession(client: GameSessionClient) {
       setConnectionError(message);
       return { error: message };
     } finally {
-      setLoading(false);
+      if (owner.active) setLoading(false);
     }
-  }, [client]);
+  }, [client, owner, setSnapshot, setConnectionError]);
 
   const reconcileCommand = useCallback(async (
     base: GameSnapshot,
     response: CommandResponse,
     traceId?: string,
+    accepts: () => boolean = () => true,
   ): Promise<CommandReconciliation> => {
     const projection = commandResultProjection(response, client.realtimeRevisionHint("character"));
     const nextSnapshot = projection
       ? { ...base, ...projection }
       : await client.getGame(traceId);
-    setSnapshot(nextSnapshot);
+    if (accepts()) setSnapshot(nextSnapshot);
     return {
       snapshot: nextSnapshot,
       source: projection ? "command-response" : "snapshot-fallback",
     };
-  }, [client]);
+  }, [client, setSnapshot]);
 
   const presenceCharacterId = snapshot?.character &&
     snapshot.character.health?.current !== 0 &&
@@ -110,7 +135,7 @@ export function useGameSession(client: GameSessionClient) {
         setSnapshot((current) => applyRoomPresence(current, presence));
         setPresenceStale(false);
       } catch {
-        if (active) setPresenceStale(true);
+        if (active && owner.active && refreshGate.accepts(epoch)) setPresenceStale(true);
       } finally {
         requestRunning = false;
       }
@@ -177,7 +202,7 @@ export function useGameSession(client: GameSessionClient) {
       document.removeEventListener("visibilitychange", refreshWhenVisible);
       window.removeEventListener("pageshow", refreshWhenVisible);
     };
-  }, [client, presenceCharacterId, refreshGate]);
+  }, [client, presenceCharacterId, refreshGate, owner, setSnapshot]);
 
   return {
     snapshot,

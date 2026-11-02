@@ -356,3 +356,7 @@
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
 }
+
+.mudd-history__retention, .mudd-history__range { color: var(--mudd-muted); font-size: 0.85rem; }
+.mudd-history__navigation { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-block: 0.5rem; }
+.mudd-history__notice { color: var(--mudd-muted); border-inline-start: 2px solid var(--mudd-warm); padding-inline-start: 0.85rem; }
