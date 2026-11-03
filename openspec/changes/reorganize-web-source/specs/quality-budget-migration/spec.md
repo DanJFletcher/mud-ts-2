@@ -35,6 +35,11 @@ The gate SHALL reject edited-rename budget migration when dependency identity is
 - **WHEN** module resolution or rename correspondence has multiple candidates or no supported candidate
 - **THEN** edited-rename budget migration fails closed
 
+#### Scenario: Unsupported loader is present beside static imports
+- **GIVEN** a renamed file contains dynamic imports, require calls or import globs whose dependency identity is not supported by the relocation proof
+- **WHEN** its static import paths change, even if the unsupported loader text stays unchanged
+- **THEN** edited-rename budget migration fails closed
+
 ### Requirement: Migration does not weaken quality enforcement
 Budget migration SHALL permit unchanged or decreased counts only. New rule allowances, count increases and duplicate transfers MUST fail. Changed-function numeric selection and typed/smell occurrence checks SHALL operate independently of budget migration without altered diff evidence or regenerated site identities.
 

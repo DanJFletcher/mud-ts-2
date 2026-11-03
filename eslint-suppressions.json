@@ -535,6 +535,14 @@
       "count": 3
     }
   },
+  "apps/web/src/lobby/WorldPlayPage.tsx": {
+    "complexity": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
   "apps/web/src/lobby/useLobby.ts": {
     "complexity": {
       "count": 1
@@ -546,12 +554,18 @@
       "count": 1
     }
   },
-  "apps/web/src/lobby/WorldPlayPage.tsx": {
+  "apps/web/src/world/WorldClient.tsx": {
     "complexity": {
-      "count": 1
+      "count": 9
     },
     "max-lines-per-function": {
+      "count": 50
+    },
+    "max-params": {
       "count": 2
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 8
     }
   },
   "apps/web/src/world/commands/intents.ts": {
@@ -804,63 +818,6 @@
       "count": 2
     }
   },
-  "apps/web/src/world/screens/npc-farewell.ts": {
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
-  "apps/web/src/world/screens/panels/dialog-focus.ts": {
-    "complexity": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
-  "apps/web/src/world/screens/panels/RoomChatPanel.test.tsx": {
-    "@typescript-eslint/no-misused-promises": {
-      "count": 8
-    }
-  },
-  "apps/web/src/world/screens/panels/RoomChatPanel.tsx": {
-    "complexity": {
-      "count": 3
-    },
-    "max-depth": {
-      "count": 2
-    },
-    "max-lines-per-function": {
-      "count": 20
-    },
-    "sonarjs/cognitive-complexity": {
-      "count": 3
-    }
-  },
-  "apps/web/src/world/screens/panels/TerminalPanel.tsx": {
-    "complexity": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 6
-    },
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
-  "apps/web/src/world/screens/panels/WorldMapPanel.tsx": {
-    "complexity": {
-      "count": 4
-    },
-    "max-depth": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 37
-    },
-    "sonarjs/cognitive-complexity": {
-      "count": 2
-    }
-  },
   "apps/web/src/world/screens/PlayScreen.tsx": {
     "complexity": {
       "count": 3
@@ -924,6 +881,63 @@
       "count": 2
     }
   },
+  "apps/web/src/world/screens/npc-farewell.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "apps/web/src/world/screens/panels/RoomChatPanel.test.tsx": {
+    "@typescript-eslint/no-misused-promises": {
+      "count": 8
+    }
+  },
+  "apps/web/src/world/screens/panels/RoomChatPanel.tsx": {
+    "complexity": {
+      "count": 3
+    },
+    "max-depth": {
+      "count": 2
+    },
+    "max-lines-per-function": {
+      "count": 20
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 3
+    }
+  },
+  "apps/web/src/world/screens/panels/TerminalPanel.tsx": {
+    "complexity": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 6
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
+    }
+  },
+  "apps/web/src/world/screens/panels/WorldMapPanel.tsx": {
+    "complexity": {
+      "count": 4
+    },
+    "max-depth": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 37
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 2
+    }
+  },
+  "apps/web/src/world/screens/panels/dialog-focus.ts": {
+    "complexity": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
   "apps/web/src/world/session/action-feedback.ts": {
     "max-lines-per-function": {
       "count": 3
@@ -955,20 +969,6 @@
   "apps/web/src/world/session/use-request-scope.ts": {
     "max-lines-per-function": {
       "count": 1
-    }
-  },
-  "apps/web/src/world/WorldClient.tsx": {
-    "complexity": {
-      "count": 9
-    },
-    "max-lines-per-function": {
-      "count": 50
-    },
-    "max-params": {
-      "count": 2
-    },
-    "sonarjs/cognitive-complexity": {
-      "count": 8
     }
   },
   "engine-contracts/src/character.ts": {
@@ -1590,11 +1590,6 @@
       "count": 1
     }
   },
-  "packages/ui/src/components/use-modal-dialog.ts": {
-    "max-lines-per-function": {
-      "count": 3
-    }
-  },
   "packages/ui/src/components/WorldCard.tsx": {
     "max-lines-per-function": {
       "count": 1
@@ -1608,6 +1603,11 @@
   "packages/ui/src/components/WorldHero.tsx": {
     "max-lines-per-function": {
       "count": 1
+    }
+  },
+  "packages/ui/src/components/use-modal-dialog.ts": {
+    "max-lines-per-function": {
+      "count": 3
     }
   },
   "packages/world-orraveth/src/content/dialogue.ts": {

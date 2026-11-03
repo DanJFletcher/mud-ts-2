@@ -49,6 +49,7 @@ for (const [name, options] of [
   ['destination collision', { beforePaths: ['apps/world/new.ts'] }],
   ['duplicate rename source', { files: [{ status: 'R090', oldPath: 'apps/old.ts', path: 'apps/duplicate.ts' }] }],
   ['dynamic import edit', { file: { before: 'const load = () => import("./helper.js");', after: 'const load = () => import("../helper.js");' } }],
+  ['unchanged unsupported loader', { file: { before: source + 'const load = () => import("./other.js");', after: source.replace('./helper.js', '../helper.js') + 'const load = () => import("./other.js");' } }],
   ['require edit', { file: { before: 'const load = require("./helper.js");', after: 'const load = require("../helper.js");' } }],
   ['glob edit', { file: { before: 'const load = import.meta.glob("./*.ts");', after: 'const load = import.meta.glob("../*.ts");' } }],
   ['parse failure', { file: { before: 'import {', after: 'import {' } }],

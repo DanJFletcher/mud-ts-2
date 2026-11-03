@@ -73,26 +73,6 @@
       "context": "function affectedChannels(change: RealtimeWakeup, client: GatewayClient): readonly RealtimeChannel[] | 'all' {\n  switch (change.kind) {\n    case 'character':\n      if (client.characterId === change.characterId) return 'all';\n      return change.roomId && client.roomId === change.roomId ? ['presence'] : [];\n    case 'room': return client.roomId === change.roomId ? ['presence', 'chat'] : [];\n    case 'interaction': return ['interactions'];\n    case 'party': return ['party'];\n    case 'team': return ['team'];\n    default: return [];\n  }\n}"
     },
     {
-      "path": "apps/web/src/AccountApp.test.tsx",
-      "rule": "@typescript-eslint/no-floating-promises",
-      "line": 196,
-      "column": 5,
-      "endLine": 196,
-      "endColumn": 44,
-      "anchor": "    act(() => mocks.routerPush('/worlds'));",
-      "context": "async () => {\n    open('/');\n    act(() => mocks.routerPush('/worlds'));\n    expect(await screen.findByRole('heading', { name: 'Explore worlds' })).toBeInTheDocument();\n    expect(location.pathname).toBe('/worlds');\n\n    act(() => mocks.routerReplace('/codex'));\n    expect(await screen.findByRole('heading', { name: 'Orraveth Codex' })).toBeInTheDocument();\n    expect(location.pathname).toBe('/codex');\n  }"
-    },
-    {
-      "path": "apps/web/src/AccountApp.test.tsx",
-      "rule": "@typescript-eslint/no-floating-promises",
-      "line": 200,
-      "column": 5,
-      "endLine": 200,
-      "endColumn": 46,
-      "anchor": "    act(() => mocks.routerReplace('/codex'));",
-      "context": "async () => {\n    open('/');\n    act(() => mocks.routerPush('/worlds'));\n    expect(await screen.findByRole('heading', { name: 'Explore worlds' })).toBeInTheDocument();\n    expect(location.pathname).toBe('/worlds');\n\n    act(() => mocks.routerReplace('/codex'));\n    expect(await screen.findByRole('heading', { name: 'Orraveth Codex' })).toBeInTheDocument();\n    expect(location.pathname).toBe('/codex');\n  }"
-    },
-    {
       "path": "apps/web/src/RoomChatPanel.test.tsx",
       "rule": "@typescript-eslint/no-misused-promises",
       "line": 160,
