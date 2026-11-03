@@ -31,7 +31,7 @@
 ## 5. Isolate gameplay keyboard behavior
 
 - [x] 5.1 Extract movement-shortcut handling with explicit modal/editable-context suppression; add regressions for arrow and Shift-arrow keys on dialogue, interaction, and crafting dialog buttons, verifying no movement is sent.
-- [ ] 5.2 Preserve post-dismissal, combat, resting, pending, and editable-input behavior; run focused keyboard integration tests and manually verify focus restoration and normal movement after closing dialogs.
+- [x] 5.2 Preserve post-dismissal, combat, resting, pending, and editable-input behavior; run focused keyboard integration tests and manually verify focus restoration and normal movement after closing dialogs.
 
 ## 6. Bound and present activity history
 

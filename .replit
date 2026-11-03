@@ -2,6 +2,7 @@ modules = ["nodejs-24", "python-base-3.13", "postgresql-16"]
 
 [nix]
 channel = "stable-25_05"
+packages = ["glib", "nspr", "nss", "atk", "at-spi2-core", "dbus", "xorg.libX11", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXext", "xorg.libXfixes", "xorg.libXrandr", "mesa", "xorg.libxcb", "libxkbcommon", "alsa-lib"]
 
 [workflows]
 runButton = "Project"
