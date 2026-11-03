@@ -55,7 +55,7 @@ Threshold and floor changes are ordinary policy changes, visible in the report a
 
 ## Coverage
 
-Server coverage bounds file-worker concurrency to four; instrumentation previously timed out a large-history database test when the host spawned 64 workers. Test timeouts and assertions are unchanged.
+Server coverage bounds file-worker concurrency to four and gives each instrumented test a 30-second execution budget. CI demonstrated that both large-history replay and room-by-room travel can exceed the normal five-second deadline under V8 coverage, even with four workers. Ordinary verification retains the default five-second deadline. These are behavioral tests, not latency benchmarks: all assertions and coverage floors remain enforced. The adapter regression executes a workload beyond five seconds, verifies the normal run still times out, and verifies incorrect assertions still fail under coverage.
 
 All nine workspaces have independent line, branch, function and statement minima in `quality-policy.json`. Vitest V8 includes the complete `src` production set and emits JSON summary, JSON details and text. Exclusions are declaration-only files, tests/specs/stories and test setup. Contracts retain Node tests: c8 includes all TS runtime sources, uses TypeScript source maps from compiled code, and emits equivalent Istanbul metrics. Runtime sources with no hits are included by both adapters. No aggregate average conceals another package's shortfall; missing or nonnumeric required metrics fail.
 

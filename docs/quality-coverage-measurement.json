@@ -9,7 +9,7 @@
     "DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55439/mudd_test npm run db:migrate",
     "DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55439/mudd_test MUDD_TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55439/mudd_test NODE_ENV=test TRUSTED_PROXY_HOPS=0 npm run test:coverage"
   ],
-  "note": "The final canonical command passed for all workspaces with PostgreSQL 16 integration tests enabled. Server coverage uses four workers to avoid 64-worker contention and local database-test timeouts; test deadlines and assertions were unchanged. The disposable local PostgreSQL database used temporary memory storage. This change supplies coverage reporting/source maps/exclusions required to reproduce these measurements. Execution selected Node 22.23.4 via npm exec --package=node@22 --.",
+  "note": "The final canonical command passed for all workspaces with PostgreSQL 16 integration tests enabled. Server coverage uses four workers to avoid 64-worker contention and local database-test timeouts; test deadlines and assertions were unchanged. The disposable local PostgreSQL database used temporary memory storage. This change supplies coverage reporting/source maps/exclusions required to reproduce these measurements. Execution selected Node 22.23.4 via npm exec --package=node@22 --. CI follow-up: the server coverage command now supplies a 30-second instrumentation budget after two tests exceeded the normal five-second deadline on GitHub runners with four workers. The recorded measurements precede that deadline-only adjustment; no sources, exclusions, assertions or coverage floors changed, and ordinary verification still uses its default deadline.",
   "measured": {
     "@mudd/contracts": {
       "path": "engine-contracts",
