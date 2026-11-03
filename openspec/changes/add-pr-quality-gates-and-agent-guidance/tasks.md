@@ -46,7 +46,7 @@ Implementation uses the repository's red/green/refactor discipline. Observe each
 
 - [x] 7.1 Run a fixture-backed end-to-end PR comparison proving strict changed-function compliance, untouched allowances, budget protection, coverage failures, and failure summaries together; record observed failing then passing cases.
 - [x] 7.2 Run relevant tooling tests, repository lint, type checking, tests, builds, and Storybook checks; record outcomes and any genuine execution blockers without weakening policy or treating gaps as completed verification.
-- [ ] 7.3 Run strict OpenSpec validation and review requirement-to-test/documentation coverage for both capabilities; verify all acceptance scenarios have evidence and all implementation artifacts are ready for review.
+- [x] 7.3 Run strict OpenSpec validation and review requirement-to-test/documentation coverage for both capabilities; verify all acceptance scenarios have evidence and all implementation artifacts are ready for review.
 
 ## Workflow follow-up
 
