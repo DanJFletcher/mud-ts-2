@@ -485,7 +485,7 @@ The West Gate is at (−2,0), so this gives 4 steps (gate → westbound → verg
 
 ### 5.4 Tests and guardrails
 
-- **Update `apps/server/src/orraveth-world.integration.test.ts`.** The location count is hard-coded at 72; the reachability, cardinal-direction and one-tile-offset checks already cover the new rooms.
+- **Update `apps/server/src/worlds/orraveth-world.integration.test.ts`.** The location count is hard-coded at 72; the reachability, cardinal-direction and one-tile-offset checks already cover the new rooms.
 - **Add a coordinate-uniqueness assertion** (no two overworld rooms at Z 0 share x/y). Nothing enforces this today, and this expansion more than doubles the room count.
 - **Add a road-travel test per new road:** step from junction to arrival with `character.road.step` and check the arrival room and `roadTravel.roadId`.
 - **Add a spoiler guard:** a test that scans player-facing strings (descriptions, readables, topics, greetings) for a short list of concealed-canon terms, such as the mill apparatus and the names of Severin Vale's agents once they're authored. Destination previews expose this text before arrival.

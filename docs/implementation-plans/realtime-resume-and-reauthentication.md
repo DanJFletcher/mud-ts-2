@@ -12,11 +12,11 @@
 - HTTP stays authoritative for all state.
 
 **Existing repo findings:**
-- **Sockets expire on a timer.** The gateway closes a socket when its view expires ([realtime-gateway.ts:70](../../apps/server/src/realtime-gateway.ts#L70)). For guests, that is 60 s after the last refresh ([index.ts:423](../../apps/server/src/index.ts#L423)). For signed-in players, it is the `exp` of the Clerk token in the upgrade request ([index.ts:424](../../apps/server/src/index.ts#L424)), which an open socket cannot refresh.
-- **Every connect triggers a full resync.** The first refresh after connecting sends `ready` and `resync_required` ([realtime-gateway.ts:73](../../apps/server/src/realtime-gateway.ts#L73)). The SDK then marks every watcher dirty ([realtime.ts:63](../../packages/client-sdk/src/realtime.ts#L63)), which costs about six HTTP refetches.
+- **Sockets expire on a timer.** The gateway closes a socket when its view expires ([realtime-gateway.ts:70](../../apps/server/src/realtime/realtime-gateway.ts#L70)). For guests, that is 60 s after the last refresh ([index.ts:423](../../apps/server/src/index.ts#L423)). For signed-in players, it is the `exp` of the Clerk token in the upgrade request ([index.ts:424](../../apps/server/src/index.ts#L424)), which an open socket cannot refresh.
+- **Every connect triggers a full resync.** The first refresh after connecting sends `ready` and `resync_required` ([realtime-gateway.ts:73](../../apps/server/src/realtime/realtime-gateway.ts#L73)). The SDK then marks every watcher dirty ([realtime.ts:63](../../packages/client-sdk/src/realtime.ts#L63)), which costs about six HTTP refetches.
 - **Every wakeup reruns the full view read** for all subscribed channels: identity, session, character stream, chat cursor, occupants, interactions, party and team ([index.ts:396](../../apps/server/src/index.ts#L396)).
 - **The client can't tell when a refetch is redundant.** `invalidate` frames carry only channel names, under strict v1 schemas ([engine-contracts/src/realtime.ts](../../engine-contracts/src/realtime.ts)). So the `character` watcher refetches `/api/game` after every move ([App.tsx:1044](../../apps/web/src/App.tsx#L1044)), even though the move response already carried that projection.
-- **Client frames are capped at 1 KiB** ([realtime-gateway.ts:105](../../apps/server/src/realtime-gateway.ts#L105), plus `maxPayload` in `index.ts`). A Clerk session token may not fit.
+- **Client frames are capped at 1 KiB** ([realtime-gateway.ts:105](../../apps/server/src/realtime/realtime-gateway.ts#L105), plus `maxPayload` in `index.ts`). A Clerk session token may not fit.
 - **The current ADRs constrain the protocol.** ADR 0035 requires every reconnect to begin with an explicit HTTP resync, and invalidations to carry no domain payload. ADR 0034 requires the gateway to re-authenticate before each view refresh.
 
 **Owning plugin/capability:** The realtime transport:

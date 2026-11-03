@@ -6,11 +6,11 @@
 
 **Existing repo findings:**
 
-- **Timer-driven settlement.** The stamina scheduler ticks once a second per world ([stamina-recovery-scheduler.ts:20](../../apps/server/src/stamina-recovery-scheduler.ts#L20)). For each tracked online session it reads the character stream. It dispatches `character.stamina.recover` ([stamina-recovery-scheduler.ts:73](../../apps/server/src/stamina-recovery-scheduler.ts#L73)) when two conditions hold:
+- **Timer-driven settlement.** The stamina scheduler ticks once a second per world ([stamina-recovery-scheduler.ts:20](../../apps/server/src/jobs/stamina-recovery-scheduler.ts#L20)). For each tracked online session it reads the character stream. It dispatches `character.stamina.recover` ([stamina-recovery-scheduler.ts:73](../../apps/server/src/jobs/stamina-recovery-scheduler.ts#L73)) when two conditions hold:
   - a vital is below its maximum;
-  - at least 1 s has passed since the last settlement ([stamina-recovery-scheduler.ts:69](../../apps/server/src/stamina-recovery-scheduler.ts#L69)).
+  - at least 1 s has passed since the last settlement ([stamina-recovery-scheduler.ts:69](../../apps/server/src/jobs/stamina-recovery-scheduler.ts#L69)).
 
-  Settlement stops at the session's last heartbeat ([stamina-recovery-scheduler.ts:54](../../apps/server/src/stamina-recovery-scheduler.ts#L54)). So these writes follow heartbeats: every 30 s, plus the heartbeats sent on presence invalidations.
+  Settlement stops at the session's last heartbeat ([stamina-recovery-scheduler.ts:54](../../apps/server/src/jobs/stamina-recovery-scheduler.ts#L54)). So these writes follow heartbeats: every 30 s, plus the heartbeats sent on presence invalidations.
 - **Why commands conflict.** Each settlement appends `character.vital_recovery_settled` ([character.ts:151](../../packages/plugins/src/character.ts#L151)). That bumps the revision the client sends as `expectedVersion`. A command sent before the client has refreshed fails with `VERSION_CONFLICT`.
   - Moves retry up to three times, and each retry costs a snapshot and a command ([client-sdk index.ts:1112](../../packages/client-sdk/src/index.ts#L1112)).
   - After a final conflict, the move handler refetches the snapshot once more ([App.tsx:2410](../../apps/web/src/App.tsx#L2410)).

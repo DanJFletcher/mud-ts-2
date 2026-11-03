@@ -22,7 +22,7 @@ import {
 } from '../db/schema.js';
 import { db } from '../db/client.js';
 import { retainCharacterReplayPrefix, replayCharacter } from '@mudd/engine-core';
-import { measureDatabaseOperation, measureStage } from '../performance.js';
+import { measureDatabaseOperation, measureStage } from '../app/performance.js';
 
 /**
  * The latest event of each stream. DISTINCT ON would read and sort every event

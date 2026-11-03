@@ -19,7 +19,7 @@ Run the migrations against a dedicated **localhost test database**, then:
 
 ```sh
 DATABASE_URL=postgresql://runner@127.0.0.1:55439/mudd_latency_test \
-MUDD_BENCHMARK_LOCAL=1 npx tsx apps/server/src/latency-benchmark.ts
+MUDD_BENCHMARK_LOCAL=1 npx tsx apps/server/src/benchmarks/latency-benchmark.ts
 ```
 
 The script rejects non-local hosts, databases not ending `_test`, and missing

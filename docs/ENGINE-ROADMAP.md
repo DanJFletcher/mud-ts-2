@@ -34,7 +34,7 @@ This roadmap does not authorize new gameplay or a broad refactor. It keeps curre
 | Plugin graph is deterministic and honest | Test dependency ordering, exact/caret supported ranges, invalid/unsupported range syntax, cycles, missing plugins/capabilities, declared capability mismatch, and duplicate registrations. |
 | PostgreSQL is the concurrency authority | Run migrations and the above persistence-critical concurrency/idempotency cases against an isolated PostgreSQL test database in CI. Never substitute an unspecified development or production database. |
 
-The first three historical regression tests are already present in `RoomChatPanel.test.tsx`, `npc-room-announcement.integration.test.ts`, and `engine.test.ts`. The remaining rows identify coverage to preserve or add when touching those boundaries; the shared-item row is gated on ADR approval.
+The first three historical regression tests are already present in `RoomChatPanel.test.tsx`, `apps/server/src/app/__tests__/rooms.integration.test.ts`, and `engine.test.ts`. The remaining rows identify coverage to preserve or add when touching those boundaries; the shared-item row is gated on ADR approval.
 
 ## Components and decisions to preserve
 
