@@ -8,7 +8,7 @@ import {
   recordDatabasePoolWait,
   recordDatabaseQueryFinish,
   recordDatabaseQueryStart,
-} from '../performance.js';
+} from '../app/performance.js';
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error('DATABASE_URL is required to run the MUDD server.');

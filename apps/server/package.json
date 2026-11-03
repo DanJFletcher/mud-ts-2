@@ -10,7 +10,7 @@
     "db:migrate:runtime": "node dist/db/migrate.js",
     "db:guest-cleanup:runtime": "node dist/db/run-guest-cleanup.js",
     "db:legacy-corpse-cleanup:runtime": "node dist/db/run-legacy-corpse-cleanup.js",
-    "benchmark:db:readonly": "tsx src/read-only-db-benchmark.ts",
+    "benchmark:db:readonly": "tsx src/benchmarks/read-only-db-benchmark.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",

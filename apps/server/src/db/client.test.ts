@@ -60,7 +60,7 @@ vi.mock('drizzle-orm/node-postgres', () => ({
   drizzle: databaseMocks.drizzle,
 }));
 
-vi.mock('../performance.js', () => ({
+vi.mock('../app/performance.js', () => ({
   databaseMeasurementContext: databaseMocks.databaseMeasurementContext,
   recordDatabaseConnectionOpened: databaseMocks.recordDatabaseConnectionOpened,
   recordDatabasePoolWait: databaseMocks.recordDatabasePoolWait,

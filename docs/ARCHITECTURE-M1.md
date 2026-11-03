@@ -39,3 +39,7 @@ One TypeScript monorepo runs a server and a mobile-first PWA. Account identity c
 ## Verification
 
 Run contract, engine/plugin, SDK, UI, server, and PWA tests; type checks; lint; migration application against an isolated PostgreSQL database; production builds; and a Storybook build. CI provisions PostgreSQL for the real event-store integration tests.
+
+## Server source organization
+
+See [Server module ownership](./server-structure.md) for feature folders, composition boundaries, integration scenario coverage, and resource ownership.
