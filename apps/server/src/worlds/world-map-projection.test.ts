@@ -732,6 +732,9 @@ describe('Orraveth Bellwold road travel', () => {
       };
 
       await move('square-to-shop', 'orraveth-quest-to-anwen');
+      const beforeAnwenTown = await loadCharacter();
+      await client.chooseNpcDialogue(characterId, 'anwen-marr', 'anwen-marr-about-bellwold',
+        beforeAnwenTown.revision, 'church-ask-town-before-acceptance');
       const initialAnwenDialogue = await client.talk(characterId, 'anwen-marr');
       expect(initialAnwenDialogue.choices.map(({ id }) => id)).toContain('ask-anwen-about-church-sword');
       const atShop = await loadCharacter();
@@ -743,6 +746,12 @@ describe('Orraveth Bellwold road travel', () => {
         'orraveth-accept-church-sword-quest',
       );
       expect(questAccepted.receipt.ok).toBe(true);
+      const incompleteChurch = await loadCharacter();
+      expect((await client.talk(characterId, 'anwen-marr')).choices.map(({ id }) => id))
+        .not.toContain('return-church-sword-to-anwen');
+      await expect(client.chooseNpcDialogue(characterId, 'anwen-marr', 'return-church-sword-to-anwen',
+        incompleteChurch.revision, 'church-premature-turn-in')).rejects.toThrow();
+      expect((await loadCharacter()).revision).toBe(incompleteChurch.revision);
       await move('shop-to-square', 'orraveth-quest-return-to-square');
 
       await move('square-to-south-common', 'orraveth-road-to-south-common');
@@ -836,6 +845,9 @@ describe('Orraveth Bellwold road travel', () => {
       await move('mill-to-tower-road', 'orraveth-road-back-to-tower-road');
       await move('tower-road-to-square', 'orraveth-road-back-to-square-from-tower-road');
       await move('square-to-shop', 'orraveth-return-reliquary-sword');
+      expect((await loadCharacter()).npcProgress.find(({ npcId }) => npcId === 'anwen-marr')?.progressFlagIds)
+        .toContain('anwen-marr-asked-about-town');
+      const recoveredSword = (await loadCharacter()).inventory.find(({ id }) => id === 'bellwold-reliquary-sword');
       const readyToTurnIn = await client.talk(characterId, 'anwen-marr');
       expect(readyToTurnIn.choices.map(({ id }) => id)).toContain('return-church-sword-to-anwen');
       const atTurnIn = await loadCharacter();
@@ -858,6 +870,7 @@ describe('Orraveth Bellwold road travel', () => {
       const rewardedCharacter = await loadCharacter();
       expect(rewardedCharacter.wallet).toMatchObject({ currencyId: 'gold', balance: 20 });
       expect(rewardedCharacter.inventory.filter(({ id }) => id === 'bellwold-reliquary-sword')).toHaveLength(1);
+      expect(rewardedCharacter.inventory.find(({ id }) => id === 'bellwold-reliquary-sword')).toEqual(recoveredSword);
       expect(rewardedCharacter.inventory.find(({ id }) => id === 'bellwold-reliquary-sword')).toMatchObject({
         questBound: true,
         equipment: { slot: 'weapon', attackBonus: 2 },
@@ -869,6 +882,18 @@ describe('Orraveth Bellwold road travel', () => {
         (event) => event.type === 'character.quest_rewarded'
           && (event.payload as { questId?: string }).questId === 'bellwold-church-sword',
       )?.payload).toMatchObject({ itemIds: ['bellwold-reliquary-sword'], amount: 20 });
+      const restarted = await client.restartNpcDialogue(characterId, 'anwen-marr', rewardedCharacter.revision,
+        'church-restart-after-reward');
+      expect(restarted.receipt.ok).toBe(true);
+      const afterRestart = await loadCharacter();
+      const resumedChoices = (await client.talk(characterId, 'anwen-marr')).choices.map(({ id }) => id);
+      expect(resumedChoices).not.toContain('ask-anwen-about-church-sword');
+      expect(resumedChoices).not.toContain('return-church-sword-to-anwen');
+      await expect(client.chooseNpcDialogue(characterId, 'anwen-marr', 'return-church-sword-to-anwen',
+        afterRestart.revision, 'church-retry-after-restart')).rejects.toThrow();
+      expect((await loadCharacter()).wallet.balance).toBe(20);
+      expect((await store.readStream(ORRAVETH_WORLD_INSTANCE_ID, characterId))
+        .filter(({ type }) => type === 'character.quest_rewarded')).toHaveLength(1);
       await move('shop-to-square', 'orraveth-quest-return-to-square-after-turn-in');
       await move('square-to-inn', 'orraveth-road-to-inn');
       await move('inn-to-west-gate', 'orraveth-road-to-west-gate');

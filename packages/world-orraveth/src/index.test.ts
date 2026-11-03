@@ -15,6 +15,11 @@ describe('Orraveth world pack', () => {
     expect(ORRAVETH_WORLD_INSTANCE_ID).toBe('orraveth-bellwold-instance');
   });
 
+  it('has globally unique resident identities across static and mobile NPCs', () => {
+    const ids = orravethWorld.locations.flatMap((location) => (location.npcs ?? []).map(({ id }) => id));
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
   it('keeps the authored Bellwold gathering and woodcutting content connected', () => {
     expect(orravethWorld.locations.some((location) => location.id === 'bellwold-market-square')).toBe(true);
     expect(orravethWorld.dailyBoards.some((board) => board.locationId === 'bellwold-south-common')).toBe(true);

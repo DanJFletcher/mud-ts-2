@@ -27,7 +27,7 @@ describe('Bellwold Phase 3', () => {
     const npcs = orravethWorld.locations.filter(({ id }) => /^(mosswake-|thornmere-|ashcombe-)/.test(id))
       .flatMap((location) => location.npcs ?? []);
     expect(npcs.map(({ name }) => name)).toEqual(['Tavin Reed', 'Herbalist', 'Nessa Valeen', 'Oren Kest', 'Cartwright']);
-    expect(orravethWorld.packVersion).toBe('1.21.0');
+    expect(orravethWorld.packVersion).toBe('1.21.1');
     expect(orravethWorld.locations[0]?.id).toBe('bellwold-market-square');
   });
 
