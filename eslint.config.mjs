@@ -26,6 +26,14 @@ export default tseslint.config(
     },
   },
   {
+    files: ['**/*.{ts,tsx,js,mjs,cjs}'],
+    ignores: ['**/*.{test,spec,stories}.{ts,tsx,js,mjs,cjs}', '**/tests/**', '**/__tests__/**'],
+    rules: {
+      'max-lines-per-function': ['error', { max: 5, skipBlankLines: true, skipComments: true }],
+      'max-params': ['error', { max: 4 }],
+    },
+  },
+  {
     files: ['**/*.{js,mjs,cjs}'],
     languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },

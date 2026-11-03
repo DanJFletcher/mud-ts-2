@@ -1,0 +1,1017 @@
+{
+  "apps/server/src/app/bootstrap.ts": {
+    "max-lines-per-function": {
+      "count": 4
+    }
+  },
+  "apps/server/src/app/character-replay.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "apps/server/src/app/create-app.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "apps/server/src/app/http-fallbacks.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/server/src/app/http.ts": {
+    "max-lines-per-function": {
+      "count": 4
+    }
+  },
+  "apps/server/src/app/middleware/clerk-proxy-middleware.ts": {
+    "max-lines-per-function": {
+      "count": 6
+    }
+  },
+  "apps/server/src/app/performance.ts": {
+    "max-lines-per-function": {
+      "count": 9
+    }
+  },
+  "apps/server/src/app/process-signals.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "apps/server/src/app/request-security.ts": {
+    "max-lines-per-function": {
+      "count": 11
+    }
+  },
+  "apps/server/src/app/server-config.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "apps/server/src/app/web-serving.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/server/src/auth/character-authorization.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/server/src/auth/e2e-auth-mode.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "apps/server/src/auth/request-context.ts": {
+    "max-lines-per-function": {
+      "count": 5
+    }
+  },
+  "apps/server/src/auth/request-identity-cache.ts": {
+    "max-lines-per-function": {
+      "count": 9
+    }
+  },
+  "apps/server/src/auth/routes.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/server/src/auth/session-service.ts": {
+    "max-lines-per-function": {
+      "count": 17
+    }
+  },
+  "apps/server/src/benchmarks/latency-benchmark.ts": {
+    "max-lines-per-function": {
+      "count": 4
+    }
+  },
+  "apps/server/src/benchmarks/read-only-db-benchmark.ts": {
+    "max-lines-per-function": {
+      "count": 5
+    }
+  },
+  "apps/server/src/benchmarks/room-read-benchmark.ts": {
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "apps/server/src/db/client.ts": {
+    "max-lines-per-function": {
+      "count": 6
+    }
+  },
+  "apps/server/src/db/legacy-corpse-cleanup.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/server/src/db/run-legacy-corpse-cleanup.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "apps/server/src/db/schema.ts": {
+    "max-lines-per-function": {
+      "count": 7
+    }
+  },
+  "apps/server/src/jobs/autonomous-npc-scheduler.ts": {
+    "max-lines-per-function": {
+      "count": 7
+    }
+  },
+  "apps/server/src/jobs/effect-processing.ts": {
+    "max-lines-per-function": {
+      "count": 5
+    }
+  },
+  "apps/server/src/jobs/interaction-maintenance.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/server/src/jobs/object-lifecycle-scheduler.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/server/src/jobs/runtime-schedulers.ts": {
+    "max-lines-per-function": {
+      "count": 6
+    }
+  },
+  "apps/server/src/jobs/stamina-recovery-scheduler.ts": {
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "apps/server/src/persistence/postgres-event-store.ts": {
+    "max-lines-per-function": {
+      "count": 57
+    },
+    "max-params": {
+      "count": 1
+    }
+  },
+  "apps/server/src/realtime/realtime-gateway.ts": {
+    "max-lines-per-function": {
+      "count": 6
+    }
+  },
+  "apps/server/src/realtime/realtime-notifications.ts": {
+    "max-lines-per-function": {
+      "count": 4
+    }
+  },
+  "apps/server/src/realtime/subscription-views.ts": {
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "apps/server/src/rooms/combat-presence-plugin.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/server/src/rooms/npc-announcer.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/server/src/rooms/npc-chat-reactor.ts": {
+    "max-lines-per-function": {
+      "count": 4
+    }
+  },
+  "apps/server/src/rooms/room-chat-service.ts": {
+    "max-lines-per-function": {
+      "count": 14
+    }
+  },
+  "apps/server/src/rooms/room-presence-projection.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "apps/server/src/rooms/room-presence-service.ts": {
+    "max-lines-per-function": {
+      "count": 8
+    },
+    "max-params": {
+      "count": 1
+    }
+  },
+  "apps/server/src/rooms/routes.ts": {
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "apps/server/src/rooms/world-event-effects-plugin.ts": {
+    "max-lines-per-function": {
+      "count": 6
+    }
+  },
+  "apps/server/src/worlds/game-snapshot.ts": {
+    "max-lines-per-function": {
+      "count": 8
+    },
+    "max-params": {
+      "count": 3
+    }
+  },
+  "apps/server/src/worlds/location-group-projection.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "apps/server/src/worlds/location-group-store.ts": {
+    "max-lines-per-function": {
+      "count": 12
+    }
+  },
+  "apps/server/src/worlds/routes/characters.ts": {
+    "max-lines-per-function": {
+      "count": 4
+    }
+  },
+  "apps/server/src/worlds/routes/commands.ts": {
+    "max-lines-per-function": {
+      "count": 6
+    }
+  },
+  "apps/server/src/worlds/routes/game.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/server/src/worlds/routes/interactions.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/server/src/worlds/routes/queries.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/server/src/worlds/routes/sessions.ts": {
+    "max-lines-per-function": {
+      "count": 6
+    }
+  },
+  "apps/server/src/worlds/woodcutting-room-projection.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "apps/server/src/worlds/world-activity.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/server/src/worlds/world-entry.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/server/src/worlds/world-map-projection.ts": {
+    "max-lines-per-function": {
+      "count": 6
+    }
+  },
+  "apps/server/src/worlds/world-registry.ts": {
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "apps/server/src/worlds/world-wallet-policy.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "apps/web/src/AccountApp.tsx": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/web/src/App.tsx": {
+    "max-lines-per-function": {
+      "count": 50
+    },
+    "max-params": {
+      "count": 2
+    }
+  },
+  "apps/web/src/RoomChatPanel.tsx": {
+    "max-lines-per-function": {
+      "count": 20
+    }
+  },
+  "apps/web/src/TerminalPanel.tsx": {
+    "max-lines-per-function": {
+      "count": 6
+    }
+  },
+  "apps/web/src/WorldMapPanel.tsx": {
+    "max-lines-per-function": {
+      "count": 37
+    }
+  },
+  "apps/web/src/codex/CodexScreen.tsx": {
+    "max-lines-per-function": {
+      "count": 9
+    }
+  },
+  "apps/web/src/codex/content.ts": {
+    "max-lines-per-function": {
+      "count": 5
+    }
+  },
+  "apps/web/src/command-projection.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "apps/web/src/commands/intents.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/web/src/commands/metadata.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/web/src/commands/targets.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/web/src/commands/use-action-dispatch.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/web/src/commands/use-world-commands.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/web/src/dialog-focus.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "apps/web/src/features/combat/use-combat-controller.ts": {
+    "max-lines-per-function": {
+      "count": 12
+    }
+  },
+  "apps/web/src/features/commerce/use-commerce-controller.ts": {
+    "max-lines-per-function": {
+      "count": 6
+    }
+  },
+  "apps/web/src/features/daily/use-daily-controller.ts": {
+    "max-lines-per-function": {
+      "count": 9
+    },
+    "max-params": {
+      "count": 1
+    }
+  },
+  "apps/web/src/features/dialogue/use-dialogue-controller.ts": {
+    "max-lines-per-function": {
+      "count": 4
+    }
+  },
+  "apps/web/src/features/gathering/action-scheduler.ts": {
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "apps/web/src/features/gathering/gathering-run.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/web/src/features/gathering/use-fishing-controller.ts": {
+    "max-lines-per-function": {
+      "count": 4
+    }
+  },
+  "apps/web/src/features/gathering/use-gathering-run.ts": {
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "apps/web/src/features/gathering/use-woodcutting-controller.ts": {
+    "max-lines-per-function": {
+      "count": 4
+    }
+  },
+  "apps/web/src/features/history/activity-history.ts": {
+    "max-lines-per-function": {
+      "count": 5
+    }
+  },
+  "apps/web/src/features/inventory/action-selectors.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/web/src/features/inventory/use-inventory-controller.ts": {
+    "max-lines-per-function": {
+      "count": 12
+    }
+  },
+  "apps/web/src/features/keyboard/use-movement-shortcuts.ts": {
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "apps/web/src/features/navigation/world-navigation.ts": {
+    "max-lines-per-function": {
+      "count": 5
+    }
+  },
+  "apps/web/src/features/session/action-feedback.ts": {
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "apps/web/src/features/session/foreground-execution.ts": {
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "apps/web/src/features/session/request-scope.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "apps/web/src/features/session/use-request-scope.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "apps/web/src/features/social/use-social-controller.ts": {
+    "max-lines-per-function": {
+      "count": 9
+    }
+  },
+  "apps/web/src/features/travel/use-travel-controller.ts": {
+    "max-lines-per-function": {
+      "count": 10
+    }
+  },
+  "apps/web/src/lobby/AccountShell.tsx": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/web/src/lobby/AuthPages.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "apps/web/src/lobby/CharacterCard.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "apps/web/src/lobby/CharacterDetailPage.tsx": {
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "apps/web/src/lobby/LobbyPage.tsx": {
+    "max-lines-per-function": {
+      "count": 8
+    }
+  },
+  "apps/web/src/lobby/PublicHomePage.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "apps/web/src/lobby/PwaInstallAction.tsx": {
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "apps/web/src/lobby/WorldPlayPage.tsx": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/web/src/lobby/useLobby.ts": {
+    "max-lines-per-function": {
+      "count": 5
+    },
+    "max-params": {
+      "count": 1
+    }
+  },
+  "apps/web/src/npc-farewell.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "apps/web/src/screens/CodexPage.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "apps/web/src/screens/CombatPanel.tsx": {
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "apps/web/src/screens/FieldNotesScreen.tsx": {
+    "max-lines-per-function": {
+      "count": 8
+    }
+  },
+  "apps/web/src/screens/InfoTabs.tsx": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/web/src/screens/InventoryScreen.tsx": {
+    "max-lines-per-function": {
+      "count": 4
+    }
+  },
+  "apps/web/src/screens/MerchantPanel.tsx": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/web/src/screens/PlayScreen.tsx": {
+    "max-lines-per-function": {
+      "count": 5
+    }
+  },
+  "apps/web/src/screens/QuickCommands.tsx": {
+    "max-lines-per-function": {
+      "count": 17
+    },
+    "max-params": {
+      "count": 1
+    }
+  },
+  "apps/web/src/screens/StatsScreen.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "apps/web/src/screens/VitalsScreen.tsx": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/web/src/screens/WorldDialogs.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "apps/web/src/screens/WorldNavigation.tsx": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/web/src/use-game-session.ts": {
+    "max-lines-per-function": {
+      "count": 13
+    }
+  },
+  "engine-contracts/src/character.ts": {
+    "max-lines-per-function": {
+      "count": 4
+    }
+  },
+  "engine-contracts/src/classes.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "engine-contracts/src/combat.ts": {
+    "max-lines-per-function": {
+      "count": 4
+    }
+  },
+  "engine-contracts/src/commerce.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "engine-contracts/src/crafting.ts": {
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "engine-contracts/src/fishing.ts": {
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "engine-contracts/src/health.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "engine-contracts/src/interactions.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "engine-contracts/src/location-groups.ts": {
+    "max-lines-per-function": {
+      "count": 5
+    }
+  },
+  "engine-contracts/src/quests.ts": {
+    "max-lines-per-function": {
+      "count": 10
+    }
+  },
+  "engine-contracts/src/stamina.ts": {
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "engine-contracts/src/team-combat.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "engine-contracts/src/world-items.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "engine-contracts/src/world-map-data.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "engine-contracts/src/world.ts": {
+    "max-lines-per-function": {
+      "count": 21
+    }
+  },
+  "packages/client-sdk/src/index.ts": {
+    "max-lines-per-function": {
+      "count": 65
+    },
+    "max-params": {
+      "count": 12
+    }
+  },
+  "packages/client-sdk/src/pending-actions.ts": {
+    "max-lines-per-function": {
+      "count": 7
+    }
+  },
+  "packages/client-sdk/src/realtime.ts": {
+    "max-lines-per-function": {
+      "count": 8
+    }
+  },
+  "packages/engine-core/src/engine.ts": {
+    "max-lines-per-function": {
+      "count": 24
+    },
+    "max-params": {
+      "count": 2
+    }
+  },
+  "packages/engine-core/src/incremental-projection.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "packages/engine-core/src/memory-event-store.ts": {
+    "max-lines-per-function": {
+      "count": 16
+    }
+  },
+  "packages/engine-core/src/quest-projection.ts": {
+    "max-lines-per-function": {
+      "count": 10
+    },
+    "max-params": {
+      "count": 1
+    }
+  },
+  "packages/engine-core/src/replay.ts": {
+    "max-lines-per-function": {
+      "count": 9
+    }
+  },
+  "packages/plugins/src/autonomous-npcs.ts": {
+    "max-lines-per-function": {
+      "count": 11
+    }
+  },
+  "packages/plugins/src/character-stats.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "packages/plugins/src/character.ts": {
+    "max-lines-per-function": {
+      "count": 49
+    }
+  },
+  "packages/plugins/src/classes.ts": {
+    "max-lines-per-function": {
+      "count": 5
+    }
+  },
+  "packages/plugins/src/combat-loot.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/plugins/src/combat.ts": {
+    "max-lines-per-function": {
+      "count": 6
+    }
+  },
+  "packages/plugins/src/corpse-lifecycle.ts": {
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "packages/plugins/src/crafting.ts": {
+    "max-lines-per-function": {
+      "count": 9
+    }
+  },
+  "packages/plugins/src/daily-jobs.ts": {
+    "max-lines-per-function": {
+      "count": 6
+    }
+  },
+  "packages/plugins/src/fishing.ts": {
+    "max-lines-per-function": {
+      "count": 7
+    }
+  },
+  "packages/plugins/src/groups.ts": {
+    "max-lines-per-function": {
+      "count": 8
+    }
+  },
+  "packages/plugins/src/interactions.ts": {
+    "max-lines-per-function": {
+      "count": 8
+    }
+  },
+  "packages/plugins/src/location-groups.ts": {
+    "max-lines-per-function": {
+      "count": 26
+    }
+  },
+  "packages/plugins/src/location-state.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "packages/plugins/src/merchant.ts": {
+    "max-lines-per-function": {
+      "count": 5
+    }
+  },
+  "packages/plugins/src/movement.ts": {
+    "max-lines-per-function": {
+      "count": 3
+    },
+    "max-params": {
+      "count": 1
+    }
+  },
+  "packages/plugins/src/npc-dialogue.ts": {
+    "max-lines-per-function": {
+      "count": 13
+    },
+    "max-params": {
+      "count": 1
+    }
+  },
+  "packages/plugins/src/object-lifecycle.ts": {
+    "max-lines-per-function": {
+      "count": 8
+    }
+  },
+  "packages/plugins/src/parties.ts": {
+    "max-lines-per-function": {
+      "count": 10
+    }
+  },
+  "packages/plugins/src/party-combat-policy.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "packages/plugins/src/party-quests.ts": {
+    "max-lines-per-function": {
+      "count": 14
+    }
+  },
+  "packages/plugins/src/pvp-combat.ts": {
+    "max-lines-per-function": {
+      "count": 10
+    },
+    "max-params": {
+      "count": 1
+    }
+  },
+  "packages/plugins/src/quest-branches.ts": {
+    "max-lines-per-function": {
+      "count": 6
+    },
+    "max-params": {
+      "count": 1
+    }
+  },
+  "packages/plugins/src/respawn.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    },
+    "max-params": {
+      "count": 1
+    }
+  },
+  "packages/plugins/src/road-travel.ts": {
+    "max-lines-per-function": {
+      "count": 4
+    }
+  },
+  "packages/plugins/src/room-announcements.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/plugins/src/team-combat.ts": {
+    "max-lines-per-function": {
+      "count": 19
+    }
+  },
+  "packages/plugins/src/temporary-campfires.ts": {
+    "max-lines-per-function": {
+      "count": 7
+    }
+  },
+  "packages/plugins/src/timed-action-interruption.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/plugins/src/woodcutting.ts": {
+    "max-lines-per-function": {
+      "count": 10
+    }
+  },
+  "packages/plugins/src/world-items.ts": {
+    "max-lines-per-function": {
+      "count": 13
+    }
+  },
+  "packages/ui/src/components/ActivityHistoryWindow.tsx": {
+    "max-lines-per-function": {
+      "count": 4
+    }
+  },
+  "packages/ui/src/components/ActivityLog.tsx": {
+    "max-lines-per-function": {
+      "count": 5
+    }
+  },
+  "packages/ui/src/components/Breadcrumbs.tsx": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "packages/ui/src/components/CharacterEntryCard.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/ui/src/components/CharacterEntryCardSkeleton.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/ui/src/components/ClassAbilityList.tsx": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "packages/ui/src/components/ClassChoice.tsx": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "packages/ui/src/components/CraftingQuantityDialog.tsx": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "packages/ui/src/components/DailyBoard.tsx": {
+    "max-lines-per-function": {
+      "count": 4
+    }
+  },
+  "packages/ui/src/components/DisclosureButton.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/ui/src/components/InteractionOptionsDialog.tsx": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "packages/ui/src/components/NavigationControls.tsx": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "packages/ui/src/components/NpcDialogueDialog.tsx": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "packages/ui/src/components/Panel.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/ui/src/components/PendingActionStatus.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/ui/src/components/RoomDescription.tsx": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "packages/ui/src/components/Skeleton.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/ui/src/components/StaminaStatus.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/ui/src/components/TextInput.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/ui/src/components/WorldCard.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/ui/src/components/WorldCardSkeleton.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/ui/src/components/WorldHero.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/ui/src/components/use-modal-dialog.ts": {
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "packages/world-orraveth/src/content/dialogue.ts": {
+    "max-lines-per-function": {
+      "count": 4
+    }
+  },
+  "packages/world-orraveth/src/content/encounters.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/world-orraveth/src/content/locations.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  }
+}
