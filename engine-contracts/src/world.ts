@@ -527,6 +527,18 @@ export const LocationDefinitionSchema = z.object({
   inn: InnDefinitionSchema.optional(),
 }).strict();
 
+function duplicateAuthoredNpcIds(locations: readonly { npcs?: readonly { id: string }[] }[]) {
+  const seen = new Set<string>();
+  const duplicates: { id: string; locationIndex: number; npcIndex: number }[] = [];
+  locations.forEach((location, locationIndex) => {
+    (location.npcs ?? []).forEach((npc, npcIndex) => {
+      if (seen.has(npc.id)) duplicates.push({ id: npc.id, locationIndex, npcIndex });
+      seen.add(npc.id);
+    });
+  });
+  return duplicates;
+}
+
 export const WorldPackDraftSchema = z.object({
   formatVersion: ContractVersionSchema,
   packId: IdSchema,
@@ -660,6 +672,13 @@ export const WorldPackDraftSchema = z.object({
   const npcIds = new Set(world.locations.flatMap((location) =>
     (location.npcs ?? []).map((npc) => npc.id),
   ));
+  for (const { id, locationIndex, npcIndex } of duplicateAuthoredNpcIds(world.locations)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['locations', locationIndex, 'npcs', npcIndex, 'id'],
+      message: `Duplicate authored NPC ID ${id}.`,
+    });
+  }
   for (const [roadIndex, road] of world.roads.entries()) {
     if (roadIds.has(road.id)) {
       context.addIssue({
@@ -719,18 +738,9 @@ export const WorldPackDraftSchema = z.object({
       }
     }
   }
-  const movementNpcIds = new Set<string>();
   for (const [locationIndex, location] of world.locations.entries()) {
     for (const [npcIndex, npc] of (location.npcs ?? []).entries()) {
       if (!npc.movement) continue;
-      if (movementNpcIds.has(npc.id)) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['locations', locationIndex, 'npcs', npcIndex, 'movement'],
-          message: `Mobile NPC ID ${npc.id} must be unique in the world.`,
-        });
-      }
-      movementNpcIds.add(npc.id);
       if (npc.combatProfile) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
@@ -1086,6 +1096,9 @@ export type WorldMapProjection = z.infer<typeof WorldMapProjectionSchema>;
 
 export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
   const errors: string[] = [];
+  for (const { id } of duplicateAuthoredNpcIds(pack.locations)) {
+    errors.push(`Duplicate authored NPC ID ${id}.`);
+  }
   const ids = new Set(pack.locations.map((room) => room.id));
   const boardsById = new Map<string, typeof pack.dailyBoards>();
   for (const board of pack.dailyBoards) {
@@ -1119,7 +1132,7 @@ export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
     if (innIds.has(inn.id)) errors.push(`Duplicate inn ID ${inn.id}`);
     innIds.add(inn.id);
   }
-  for (const { npc, location } of shopNpcs) {
+  for (const { npc } of shopNpcs) {
     for (const listing of npc.shop?.listings ?? []) {
       if (merchantListingIds.has(listing.id)) errors.push(`Duplicate merchant listing ID ${listing.id}`);
       merchantListingIds.add(listing.id);
@@ -1127,9 +1140,6 @@ export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
         errors.push(`Duplicate merchant item ID ${listing.item.id}`);
       }
       merchantItemIds.add(listing.item.id);
-      if (location.npcs?.filter((candidate) => candidate.id === npc.id).length !== 1) {
-        errors.push(`Merchant NPC ID ${npc.id} must be unique within its location`);
-      }
     }
   }
   const combatLootSources = [

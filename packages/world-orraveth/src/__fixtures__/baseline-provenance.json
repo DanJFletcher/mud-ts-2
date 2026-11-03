@@ -1,0 +1,6 @@
+{
+  "source": "packages/world-orraveth/src/index.ts",
+  "sourceSha256": "7ed00624943c8acab8e4b281772748ac5c02559f65e75e1823787707efdf51de",
+  "packSha256": "9f1cf89075eff132f9e29275dfbe1a9421094e155ab6a744428ab010f44f1ce4",
+  "captureCommand": "npm run build --workspace @mudd/contracts && npm run build --workspace @mudd/world-orraveth && node --input-type=module -e \"import {writeFileSync} from 'node:fs'; import {orravethWorld} from './packages/world-orraveth/dist/index.js'; writeFileSync('packages/world-orraveth/src/__fixtures__/pre-refactor-world.json', JSON.stringify(orravethWorld,null,2)+'\\n');\""
+}

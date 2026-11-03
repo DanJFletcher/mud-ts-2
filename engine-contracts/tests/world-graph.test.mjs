@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { WorldPackDraftSchema } from '../dist/src/index.js';
+import { WorldPackDraftSchema, validateDraftWorldGraph } from '../dist/src/index.js';
 
 const combatProfile = { maxHealth: 8, attackDamage: 2 };
 const mobileNpc = (id, movement, extra = {}) => ({
@@ -181,7 +181,7 @@ test('world pack validation reports cross-reference and uniqueness failures toge
     'Fishing spot IDs must be unique.',
     'Duplicate location group ID district.',
     'Road road cannot visit the same location more than once.',
-    'Mobile NPC ID mobile must be unique in the world.',
+    'Duplicate authored NPC ID mobile.',
     'Combatant NPC guard cannot have autonomous movement.',
     'Location room-a has duplicate state IDs.',
     'Exit bad-exit must start at its containing location.',
@@ -191,4 +191,71 @@ test('world pack validation reports cross-reference and uniqueness failures toge
   ]) {
     assert.ok(messages.includes(expected), `Expected world validation to report: ${expected}`);
   }
+});
+
+function identityWorld() {
+  return WorldPackDraftSchema.parse({
+    formatVersion: 1, packId: 'npc-identity', packVersion: '1', displayName: 'Identity checks',
+    locations: ['a', 'b'].map((id, index) => ({
+      id, name: id, description: 'A room.',
+      exits: [{ id: `${id}-exit`, fromLocationId: id, toLocationId: index ? 'a' : 'b', label: 'Passage' }],
+      npcs: [mobileNpc(`resident-${id}`)],
+    })),
+  });
+}
+
+for (const [firstMobile, secondMobile, sameRoom] of [
+  [false, false, false], [false, true, false], [true, false, false],
+  [true, true, false], [false, false, true],
+]) {
+  test(`NPC identity rejects duplicates: mobile=${firstMobile}/${secondMobile}, sameRoom=${sameRoom}`, () => {
+    const world = identityWorld();
+    const first = world.locations[0].npcs[0];
+    const second = world.locations[1].npcs[0];
+    second.id = first.id;
+    const movement = { strategy: 'wander', intervalMs: 60_000, allowedLocationIds: ['a', 'b'] };
+    if (firstMobile) first.movement = structuredClone(movement);
+    if (secondMobile) second.movement = structuredClone(movement);
+    if (sameRoom) {
+      world.locations[0].npcs.push(second);
+      world.locations[1].npcs = [];
+    }
+    const parsed = WorldPackDraftSchema.safeParse(world);
+    assert.equal(parsed.success, false);
+    const issue = parsed.error.issues.find(({ message }) => message === `Duplicate authored NPC ID ${first.id}.`);
+    assert.ok(issue);
+    assert.deepEqual(issue.path, ['locations', sameRoom ? 0 : 1, 'npcs', sameRoom ? 1 : 0, 'id']);
+    assert.deepEqual(validateDraftWorldGraph(world), [`Duplicate authored NPC ID ${first.id}.`]);
+  });
+}
+
+test('NPC identity accepts distinct IDs, repeated names, empty rooms and independent packs', () => {
+  const world = identityWorld();
+  const first = world.locations[0].npcs[0];
+  world.locations[1].npcs[0] = { ...structuredClone(first), id: 'different' };
+  assert.equal(WorldPackDraftSchema.safeParse(world).success, true);
+  assert.deepEqual(validateDraftWorldGraph(world), []);
+  const independent = structuredClone(world);
+  independent.packId = 'independent-pack';
+  assert.equal(WorldPackDraftSchema.safeParse(independent).success, true);
+  assert.deepEqual(validateDraftWorldGraph(independent), []);
+  world.locations[0].npcs = [];
+  delete world.locations[1].npcs;
+  assert.equal(WorldPackDraftSchema.safeParse(world).success, true);
+  assert.deepEqual(validateDraftWorldGraph(world), []);
+});
+
+test('NPC identity retains encounter collision and invalid movement checks', () => {
+  const world = identityWorld();
+  world.roads = [{ id: 'road', name: 'Road', locationIds: ['a', 'b'], encounterChancePercent: 10,
+    encounters: [{ id: 'resident-a', name: 'Encounter', combatProfile }] }];
+  world.locations[0].exits[0].roadId = 'road';
+  world.locations[0].npcs[0].movement = {
+    strategy: 'wander', intervalMs: 60_000, allowedLocationIds: ['a', 'missing'],
+  };
+  const result = WorldPackDraftSchema.safeParse(world);
+  assert.equal(result.success, false);
+  const messages = result.error.issues.map(({ message }) => message);
+  assert.ok(messages.includes('Road encounter ID resident-a conflicts with an authored NPC ID.'));
+  assert.ok(messages.includes('The movement plan for resident-a references a location not present in the world.'));
 });

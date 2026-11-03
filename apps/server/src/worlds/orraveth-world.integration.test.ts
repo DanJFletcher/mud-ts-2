@@ -61,10 +61,12 @@ function makeHarness(options: Readonly<{
   world?: typeof orravethWorld;
   includeCombat?: boolean;
   includeRoadTravel?: boolean;
+  store?: InMemoryEventStore;
+  idPrefix?: string;
 }> = {}) {
   let id = 0;
   const owners = new Map<string, string>();
-  const store = new InMemoryEventStore();
+  const store = options.store ?? new InMemoryEventStore();
   const world = options.world ?? orravethWorld;
   const engine = new EngineHost(
     [
@@ -89,7 +91,7 @@ function makeHarness(options: Readonly<{
       ownsCharacter: async (session, characterId) => owners.get(characterId) === session.playerId,
     },
     world,
-    () => `orraveth-test-id-${++id}`,
+    () => `${options.idPrefix ?? 'orraveth-test-id'}-${++id}`,
     options.now,
     options.rng,
   );
@@ -130,6 +132,36 @@ function makeHarness(options: Readonly<{
 }
 
 describe('Orraveth Bellwold settlement', () => {
+  it('routes ferry-stage and guild questions through the authoritative dialogue projection', async () => {
+    const warehouse = orravethWorld.locations.find(({ id }) => id === 'rillford-warehouse-row')!;
+    const h = makeHarness({ world: { ...orravethWorld,
+      locations: [warehouse, ...orravethWorld.locations.filter(({ id }) => id !== warehouse.id)] } });
+    await h.engine.start();
+    try {
+      const created = await h.dispatch(undefined, {
+        type: 'character.create', version: 1, commandId: 'boatman-create',
+        payload: { name: 'River Traveler', classId: 'orraveth.scout' },
+      });
+      const characterId = (created.events.find(({ type }) => type === 'character.created')!.payload as
+        { characterId: string }).characterId;
+      h.owners.set(characterId, h.session.playerId);
+      const boatman = warehouse.npcs!.find(({ id }) => id === 'rillford-independent-boatman')!;
+      for (const [topic, topicId] of [
+        ['ferry stage', 'passage'], ['ferry', 'passage'], ['ferry guild', 'ferry'],
+        ['ferry dispute', 'ferry'], ['Silverfin', 'silverfin'], ['passage', 'passage'], ['current', 'river'],
+      ]) {
+        const result = await h.engine.query({
+          type: 'npc.talk', version: 1, queryId: `boatman-${topic.replaceAll(' ', '-')}`, worldInstanceId: ORRAVETH_WORLD_INSTANCE_ID,
+          characterId, payload: { npcId: boatman.id, topic },
+        }, h.session);
+        if (!result.ok) throw new Error(result.message);
+        expect(NpcDialogueProjectionSchema.parse(result.value).text)
+          .toBe(boatman.topics.find(({ id }) => id === topicId)!.response);
+      }
+    } finally {
+      await h.engine.stop();
+    }
+  });
   for (const [fromId, fromState, toId, allowed] of [
     ['mosswake-landing', undefined, 'mosswake-channel', false],
     ['mosswake-channel', undefined, 'mosswake-open-water', false],
@@ -1559,7 +1591,7 @@ describe('Orraveth Bellwold settlement', () => {
   });
 
   it('supports a complete server-authoritative exploration, dialogue, quest, and replay flow', async () => {
-    const h = makeHarness();
+    let h = makeHarness();
     await h.engine.start();
     try {
       const created = await h.dispatch(undefined, {
@@ -1657,8 +1689,16 @@ describe('Orraveth Bellwold settlement', () => {
 
       await move('square-to-shop');
       expect((await talkToAnwen('Age of Measures')).text).toContain('Age of Measures');
+      const beforeTownQuestion = await h.loadCharacter(characterId);
+      await h.dispatch(characterId, {
+        type: 'npc.dialogue.choose', version: 1, commandId: 'mill-ask-town-before-quest',
+        expectedVersion: beforeTownQuestion.revision,
+        payload: { npcId: 'anwen-marr', choiceId: 'anwen-marr-about-bellwold' },
+      });
       const introduction = await talkToAnwen();
-      expect(introduction.choices.map(({ id }) => id)).toContain('ask-anwen-about-mill');
+      expect(introduction.choices.map(({ id }) => id)).toEqual(expect.arrayContaining([
+        'ask-anwen-about-mill', 'ask-anwen-about-church-sword', 'anwen-marr-scale-readings',
+      ]));
       const characterAtShop = await h.loadCharacter(characterId);
       const accepted = await h.dispatch(characterId, {
         type: 'npc.dialogue.choose',
@@ -1668,6 +1708,26 @@ describe('Orraveth Bellwold settlement', () => {
         payload: { npcId: 'anwen-marr', choiceId: 'ask-anwen-about-mill' },
       });
       expect(accepted.events.map(({ type }) => type)).toContain('quest.accepted');
+      // Also exercise the opposite order: accept the quest, then enter small talk.
+      const beforeActiveRestart = await h.loadCharacter(characterId);
+      await h.dispatch(characterId, {
+        type: 'npc.dialogue.restart', version: 1, commandId: 'mill-restart-active-conversation',
+        expectedVersion: beforeActiveRestart.revision, payload: { npcId: 'anwen-marr' },
+      });
+      const beforeActiveTown = await h.loadCharacter(characterId);
+      await h.dispatch(characterId, {
+        type: 'npc.dialogue.choose', version: 1, commandId: 'mill-ask-town-after-acceptance',
+        expectedVersion: beforeActiveTown.revision,
+        payload: { npcId: 'anwen-marr', choiceId: 'anwen-marr-about-bellwold' },
+      });
+      const beforeIncompleteTurnIn = await h.loadCharacter(characterId);
+      expect((await talkToAnwen()).choices.map(({ id }) => id)).not.toContain('report-mill-ledger');
+      await expect(h.dispatch(characterId, {
+        type: 'npc.dialogue.choose', version: 1, commandId: 'mill-premature-turn-in',
+        expectedVersion: beforeIncompleteTurnIn.revision,
+        payload: { npcId: 'anwen-marr', choiceId: 'report-mill-ledger' },
+      })).rejects.toThrow();
+      expect((await h.loadCharacter(characterId)).revision).toBe(beforeIncompleteTurnIn.revision);
 
       await move('shop-to-square');
       await move('square-to-tower-road');
@@ -1708,6 +1768,15 @@ describe('Orraveth Bellwold settlement', () => {
       await move('mill-to-tower-road');
       await move('tower-road-to-square');
       await move('square-to-shop');
+      // Replay the saved progress before projecting the eligible turn-in choice.
+      const persistedStore = h.store;
+      await h.engine.stop();
+      h = makeHarness({ store: persistedStore, idPrefix: 'resumed-mill' });
+      h.owners.set(characterId, h.session.playerId);
+      await h.engine.start();
+      const savedProgress = await h.loadCharacter(characterId);
+      expect(savedProgress.npcProgress.find(({ npcId }) => npcId === 'anwen-marr')?.progressFlagIds)
+        .toContain('anwen-marr-asked-about-town');
       const readyToReport = await talkToAnwen();
       expect(readyToReport.choices.map(({ id }) => id)).toContain('report-mill-ledger');
       const atShopAgain = await h.loadCharacter(characterId);
@@ -1719,6 +1788,21 @@ describe('Orraveth Bellwold settlement', () => {
         payload: { npcId: 'anwen-marr', choiceId: 'report-mill-ledger' },
       });
       expect(completed.events.map(({ type }) => type)).toContain('quest.completed');
+      const completedCharacter = await h.loadCharacter(characterId);
+      await h.dispatch(characterId, {
+        type: 'npc.dialogue.restart', version: 1, commandId: 'mill-restart-after-completion',
+        expectedVersion: completedCharacter.revision, payload: { npcId: 'anwen-marr' },
+      });
+      expect((await talkToAnwen()).choices.map(({ id }) => id))
+        .not.toEqual(expect.arrayContaining(['ask-anwen-about-mill']));
+      const restartedCharacter = await h.loadCharacter(characterId);
+      const countBeforeRetry = (await h.store.readStream(ORRAVETH_WORLD_INSTANCE_ID, characterId)).length;
+      await expect(h.dispatch(characterId, {
+        type: 'npc.dialogue.choose', version: 1, commandId: 'mill-repeat-completion',
+        expectedVersion: restartedCharacter.revision,
+        payload: { npcId: 'anwen-marr', choiceId: 'report-mill-ledger' },
+      })).rejects.toThrow();
+      expect((await h.store.readStream(ORRAVETH_WORLD_INSTANCE_ID, characterId)).length).toBe(countBeforeRetry);
 
       const replayed = await h.loadCharacter(characterId);
       expect(replayed.locationId).toBe('marrs-general-goods');
@@ -2018,6 +2102,11 @@ describe('Orraveth Bellwold settlement', () => {
         requiresProgressFlagIds?.includes(townFlagId),
       )).toBe(true);
       for (const questChoice of choices.filter(({ questAction }) => Boolean(questAction))) {
+        if (npcId === 'anwen-marr') {
+          expect(questChoice.hideAfterProgressFlagIds).not.toContain(townFlagId);
+          expect(questChoice.requiresProgressFlagIds).not.toContain(townFlagId);
+          continue;
+        }
         expect(
           questChoice.hideAfterProgressFlagIds?.includes(townFlagId)
             || questChoice.requiresProgressFlagIds?.includes(townFlagId),
