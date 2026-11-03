@@ -1,36 +1,75 @@
 # Verification
 
-## Baseline
+## Outcome and scope
 
-- Branch: `refactor/reorganize-web-source`, created after fetching origin and confirming main/origin/main at `85058f89e85031a7b7f4ceca59ed4bbef693aac0` (0 ahead/0 behind).
-- Fresh worktree dependency setup: `npm ci --ignore-scripts` completed. Initial web tests/typecheck could not resolve unbuilt workspace exports; this was an environment/setup failure, not a behavior regression or TDD red observation.
-- `npm run build`: passed before production edits, including web production/PWA output. Existing large-chunk warning remains.
-- `npm run test --workspace @mudd/web`: passed before production edits, 28 files / 532 tests, 46.65 seconds.
-- `npm run typecheck --workspace @mudd/web`: passed before production edits.
-- Runtime observed: Node 23.4.0; npm reported engine-range warnings during install. Chromium and Docker are available. No runtime or lockfile changes made.
+Implemented the application-area layout, explicit common session contracts, ordered CSS extraction and verified import-only suppression-budget migration. Shared UI APIs, protocol, gameplay authority and stylesheet loading policy are unchanged. No other change's tasks or historical planning artifacts were edited.
 
-## Implementation evidence
+The branch was created after fetching origin and confirming main/origin/main at `85058f89e85031a7b7f4ceca59ed4bbef693aac0` (0 ahead/0 behind). This is the explicit PR-quality base. Source verification checkpoint: `f9fd1d4`; subsequent completion-record edits are documentation only.
 
-Other changes' manual verification tasks remain untouched.
+## Observed test-first evidence
 
-- Isolated CSS browser suite after extraction: 6/6 passed. Checks cover recovery ownership, account and standalone Codex independence, both host palettes, shared focus and reduced motion.
-- `MUDD_COMPARE_STYLE_BASELINE=1 npm run test:e2e`: 8/8 passed (16.5s) after stylesheet extraction and session contract extraction. Computed appearance matched all 20 pre-edit area/theme/viewport cases; before/after screenshots were captured. Manual screenshot inspection is not claimed.
-- `npm run test --workspace @mudd/web -- src/use-game-session.test.tsx src/action-refresh-gate.test.ts src/command-projection.test.ts src/features`: 12 files / 58 tests passed after session-contract extraction. Web typecheck passed afterward.
-- `npm run typecheck`: passed across the repository.
-- `npm run lint`: completed with 0 errors / 405 warnings. No suppression or policy records changed.
-- `npm run build --workspace @mudd/web`: passed after CSS extraction; world JavaScript and Codex remain separate chunks, Codex retains its own CSS chunk, and world CSS remains in the eager app stylesheet.
+- Before production edits, web behavior coverage passed: 28 files / 532 tests. Web typechecking passed. These establish refactor protection, not a new-behavior red cycle.
+- Isolated browser test **world recovery actions wrap with spacing without account CSS** failed because computed display was `block`, expected `flex`. Account and standalone Codex checks passed without world CSS. Moving the unchanged recovery rule to world-owned CSS made the same test pass. Full-app recovery states later matched the original rule's flex/wrap/8px-gap layout in both viewports/themes, with visible Retry/Characters controls.
+- **Suppression counts follow an import-only rename whose dependency keeps its identity** failed because the destination was treated as a new allowance, then passed after the narrow budget proof.
+- The full-gate migration test failed before historical-inventory wiring, then passed after wiring tracked base/head paths into budget comparison.
+- Adversarial dependency-destination collision and unchanged unsupported-loader tests each exposed a fail-open case before their production fixes, then passed afterward. Existing numeric selection and site-ledger tests remained intact.
+- Account routing and Codex composition were locally refactored under existing passing behavior coverage. Account navigation tests now await their React updates. No red/green claim is made for these behavior-preserving edits.
 
-## Scope decision before module moves
+## Automated results
 
-The existing budget remapper in [baselines.mjs](../../../scripts/quality/baselines.mjs) permits path remapping only when a Git comparison reports `unchanged: true`. Its focused test explicitly rejects identical counts remapped across a rename with edits. Verified with `node --test --test-name-pattern='budget additions' scripts/quality/enforcement.test.mjs`: 1/1 passed.
+| Check | Actual result |
+| --- | --- |
+| `npm run test --workspace @mudd/web` after moves | 28 files / 532 tests passed |
+| Focused account/entry tests before moves | 2 files / 56 tests passed |
+| Focused session/feature tests after contract extraction | 12 files / 58 tests passed |
+| `npm run quality:test` after final guard | 63 tests passed |
+| `npx playwright test --config apps/web/style-tests/playwright.config.ts` | 6 tests passed |
+| `MUDD_COMPARE_STYLE_BASELINE=1 npm run test:e2e`, sequential final run | 9 tests passed, 32.7 seconds |
+| `npm run typecheck` | All workspaces passed |
+| `npm run lint` and supported lint pruning | 0 errors / 405 warnings; existing warnings remain |
+| Production builds | Passed; separate world JavaScript/Codex assets and eager app CSS retained |
+| `npm run test:coverage` with isolated PostgreSQL and normal authentication mode | All nine workspaces passed |
+| `npm run quality:pr -- --base 85058f89e85031a7b7f4ceca59ed4bbef693aac0 --head HEAD` at source checkpoint | Passed, no failures |
+| `openspec validate reorganize-web-source --strict` | Passed |
 
-Moving the planned legacy modules requires relative-import edits, so carrying their suppression counts to their destination paths would fail this rule. No such moves, baseline increases, policy changes or gate bypasses have been made. User decision requested: narrowly tested import-only rename support, staged preparatory changes before a later reorganization, or broader legacy refactoring to remove the allowances. This is additional scope beyond the current design; implementation of the module moves waits for that decision.
+All nine coverage floors passed. Measured web coverage: lines 96.82%, branches 83.30%, functions 96.49%, statements 91.66%. The full PR gate independently validates every workspace metric; no floor, exclusion or policy threshold changed.
 
-Remaining verification includes normal-app recovery-state comparison, full fullscreen/control review, final source moves and quality checks, and service-worker-enabled smoke checks. Current code keeps existing world theme persistence owners and the original loading policy.
+Budget migration applies only to unique Git renames with identical source outside supported relative static module specifiers and corresponding historical dependencies. Unchanged specifier text is also resolved. Unsupported loaders, copies, ambiguous/substituted dependencies and other edits fail closed. Numeric selection and site identity enforcement are unchanged. The first real gate run correctly refused the WorldClient transfer when Git could not identify the locally refactored Codex dependency; preserving more existing Codex JSX restored an actual R077 correspondence without relaxing the proof.
 
-- Browser baseline: corrected a new-test heading expectation and a flex-item computed-display expectation before production edits. Rerun `MUDD_RECORD_STYLE_BASELINE=1 npm run test:e2e` passed 8/8 tests in 17.7s; 20 screenshots and computed-style JSON files captured under `/tmp/mudd-web-style-evidence`. Initial existing fishing case timed out on readonly command input; passed on rerun without production/test changes to that case.
-- CSS red: isolated world recovery assertion expected display:flex but observed block without account CSS; account and standalone Codex characterization checks passed. After moving the unchanged recovery rule to gameplay CSS, the identical check passed: isolated suite 3/3 green (1.5s). Normal application recovery comparison remains pending.
+`npm run quality:prune` removed two obsolete account-test sites (25 -> 23). Lint budget keys follow proved moves; obsolete account/Codex length allowances and account-test floating-promise allowances were removed. No counts increased and no ledger identities were regenerated.
 
-- Expanded route/theme E2E comparison: 8/8 passed (21.5s), including actual world exit, SPA Codex entry after world play, return to lobby after lazy Codex, persisted preference and theme toggle.
-- Complete web suite after this implementation slice: 28 files / 532 tests passed (47.58s).
-- Review: no production function bodies or signatures changed; contract declarations accept at most four parameters. No new or modified classes. Existing large world/session functions remain local debt; no numeric gate bypass or baseline modification was used. CSS cleanup is limited to verified ownership and ordered extraction.
+## Browser evidence and scenario mapping
+
+Pre-edit baselines captured public home, lobby, standalone Codex, world play and embedded Codex at 390px/1280px in light/dark themes: 20 screenshots and computed-style records. The final E2E run compares computed appearance with those records and captures after screenshots. Evidence is under `/tmp/mudd-web-style-evidence`; override using `MUDD_STYLE_EVIDENCE`. These are local QA outputs, not committed golden images.
+
+| Spec scenario | Verification |
+| --- | --- |
+| Account/lobby without world styles | Isolated account-control browser test; shared foundations focus/reduced-motion check |
+| World recovery without account styles | Observed isolated red/green test; real full-app unavailable-world states across viewport/theme matrix |
+| Standalone encyclopedia without world styles | Isolated Codex-control browser test |
+| Theme survives world entry/exit | Real character entry, exit, persisted-theme and toggle assertions in area-appearance tests |
+| Encyclopedia follows host palette | Isolated light/dark palette tests and standalone/embedded appearance comparison |
+| Return after lazy encyclopedia loading | Actual SPA navigation from Codex back to lobby in area-appearance tests |
+| Standalone encyclopedia after world exit | Actual world exit then SPA Codex entry compared with direct-load baseline |
+| Visible keyboard focus and reduced motion | Isolated browser focus/reduced-motion assertions; existing modal/keyboard behavior suites |
+| Supported import relocation and moved dependency | Focused migration matrix and full-gate fixture |
+| Substitution, unchanged-string retargeting and ambiguous dependency | Adversarial migration tests |
+| Non-import edits, copies and unsupported loaders | Rejection matrix, including unchanged unsupported-loader red/green regression |
+| Count growth and duplicate transfer | Existing enforcement tests plus migration-specific count tests |
+| Numeric and site checks remain independent | Same-line function-selection regression and existing site-context/ledger tests |
+
+Browser checks also cover terminal/map/chat fullscreen, terminal disclosure, room-message controls, actual recovery controls and existing shared-component adaptations. No shared UI API change was necessary, so additional Storybook implementation/build work was not applicable. The separate service-worker-enabled test updates registration and reloads the public shell offline; normal gameplay E2E continues to block service workers. It makes no offline multiplayer promise.
+
+A manual mobile before/after screenshot spot check found consistent layout. Vital text differed with live projection timing, so pixel-identical content is not claimed. No full manual screen-reader audit was performed; this change introduces no new controls and does not complete another change's outstanding manual accessibility work.
+
+## Review and process notes
+
+- New/edited production functions were checked by the explicit-base gate; no numeric disables or allowance increases were used. Six existing web classes were reviewed separately: 8–60 nonblank/noncomment lines, all below 100.
+- Account provider/navigation, scroll behavior and Codex loading composition received focused local refactoring where required. Existing world/session function bodies remain intact across their moves. Common and gathering controller options use the explicit session contract; specialized travel/social options retain their existing hook-derived types rather than expanding this work into controller rewrites.
+- Session infrastructure has no dependency on feature implementations. Generic UI stays in the UI package; app code still consumes SDK authority. Module names and colocated tests make ownership clearer without introducing runtime wrappers.
+- Remaining local debt includes the broad WorldClient composition and an existing room-chat effect-dependency warning. Neither was hidden by this reorganization.
+- Fresh dependency installation initially left workspace exports unbuilt; tests/typecheck could not resolve them until the production build completed. This was setup failure, not TDD red evidence.
+- Runtime observed: Node 23.4.0. npm reported engine-range warnings; no runtime configuration or lockfile change was made.
+- One initial existing fishing E2E timeout did not repeat on the subsequent clean baseline. New capture tests needed a heading expectation correction, a flex-item computed-display correction, and reselecting the character before testing recovery after leaving a world. Assertions were corrected to the actual intended public states; production behavior was not changed to satisfy those setup mistakes.
+- The first coverage wrapper inherited E2E authentication and failed server-auth expectations. Normal authentication mode corrected the setup and all workspace coverage passed. Overlapping builds invalidated one intermediate browser run; the sequential final browser run passed.
+- Automatic approval review briefly stopped a command because of a usage limit; work resumed on the user's continuation. No approval check was bypassed.
