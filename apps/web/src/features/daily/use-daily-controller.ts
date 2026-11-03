@@ -11,7 +11,9 @@ export function useDailyController({
   client, snapshot, pending, beginForeground, finishForeground, refreshGate, addEntry,
   worldInstanceId, refreshAfterMutation, loadGame,
 }: ControllerOptions & { worldInstanceId: string; refreshAfterMutation: MutationRefresh; loadGame(): Promise<void> }) {
-  const identity = roomContext(snapshot) + JSON.stringify(snapshot?.dailyActivities?.boards.map((board) => board.id));
+  const readableActionsKey = JSON.stringify(snapshot?.location?.objects.filter((object) => object.readable)
+    .map((object) => [object.id, object.readAction ?? null]));
+  const identity = roomContext(snapshot) + JSON.stringify(snapshot?.dailyActivities?.boards.map((board) => board.id)) + readableActionsKey;
   const scope = useRequestScope(identity, refreshGate, client);
   const mutationScope = useRequestScope(identity, refreshGate, client);
   const [dailyBoard, setDailyBoard] = useState<Awaited<ReturnType<MuddHttpClient["dailyBoard"]>> | null>(null);
@@ -20,6 +22,7 @@ export function useDailyController({
     locationId: string;
     worldInstanceId: string;
   } | null>(null);
+  const [activeDailyBoardId, setActiveDailyBoardId] = useState<string>();
   const [dailyBoardLoading, setDailyBoardLoading] = useState(false);
   const [dailyBoardError, setDailyBoardError] = useState("");
   const [pendingDailyJobId, setPendingDailyJobId] = useState<string>();
@@ -49,6 +52,7 @@ export function useDailyController({
     dailyBoardRequestIdRef.current += 1;
     setDailyBoard(null);
     setDailyBoardContext(null);
+    setActiveDailyBoardId(undefined);
     setDailyBoardError("");
     setDailyBoardLoading(false);
     setPendingDailyJobId(undefined);
@@ -57,6 +61,7 @@ export function useDailyController({
     snapshot?.location?.locationId,
     worldInstanceId,
     dailyBoardIdsKey,
+    readableActionsKey,
   ]);
 
   const fetchDailyBoard = useCallback(async (boardId: string) => {
@@ -70,6 +75,7 @@ export function useDailyController({
       dailyBoardRequestIdRef.current += 1;
       setDailyBoard(null);
       setDailyBoardContext(null);
+      setActiveDailyBoardId(undefined);
       setDailyBoardError("");
       setDailyBoardLoading(false);
       return null;
@@ -77,6 +83,8 @@ export function useDailyController({
     const accepts = scope.begin(true);
     if (!accepts) return null;
     const requestId = ++dailyBoardRequestIdRef.current;
+    setActiveDailyBoardId(boardId);
+    setDailyBoard((previous) => previous?.boardId === boardId ? previous : null);
     setDailyBoardLoading(true);
     setDailyBoardError("");
     try {
@@ -275,13 +283,14 @@ export function useDailyController({
     dailyBoardRequestIdRef.current += 1;
     setDailyBoard(null);
     setDailyBoardContext(null);
+    setActiveDailyBoardId(undefined);
     setDailyBoardError("");
     setDailyBoardLoading(false);
     setPendingDailyJobId(undefined);
   }, [scope, mutationScope]);
 
 
-  return { displayedDailyBoard, dailyBoardLoading, dailyBoardError, pendingDailyJobId,
+  return { displayedDailyBoard, activeDailyBoardId, dailyBoardLoading, dailyBoardError, pendingDailyJobId,
     fetchDailyBoard, openDailyBoard, performDailyJob, performSupplyGather,
     handleDailyJobAction, closeDailyBoard };
 }

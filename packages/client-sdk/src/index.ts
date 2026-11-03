@@ -4,6 +4,8 @@ import {
   COMMAND_PROJECTION_HEADER,
   GAME_COMMAND_PROJECTION,
   REALTIME_PROTOCOL_VERSION,
+  READABLE_ACTIONS_HEADER,
+  READABLE_ACTIONS_VERSION,
 } from '@mudd/contracts';
 import {
   DailyBoardQuerySchema, DailyBoardProjectionSchema, DailyJobCommandSchema, GatherSupplyCommandSchema, SupplySourceDefinitionSchema,
@@ -201,6 +203,8 @@ export interface ClientOptions {
    * Servers that predate it ignore the request.
    */
   commandProjection?: typeof GAME_COMMAND_PROJECTION;
+  /** Request typed readable affordances; older servers may omit them. */
+  readableActions?: boolean;
 }
 
 type RequestTrace = {
@@ -1236,6 +1240,7 @@ export class MuddHttpClient {
         headers: {
           'content-type': 'application/json',
           'x-mudd-world-instance': this.options.worldInstanceId,
+          ...(this.options.readableActions ? { [READABLE_ACTIONS_HEADER]: READABLE_ACTIONS_VERSION } : {}),
           ...(trace ? {
             'x-mudd-trace-id': trace.id,
             'x-mudd-trace-phase': trace.phase,

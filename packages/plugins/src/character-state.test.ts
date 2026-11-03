@@ -1728,6 +1728,27 @@ describe('character inventory commands', () => {
 });
 
 describe('character location and object queries', () => {
+  it('preserves readable actions in default and nondefault location views', async () => {
+    const player = character();
+    const { queries } = captureCommands(player);
+    const context = commandContext(player);
+    const room = context.world.locations.find((entry) => entry.id === player.locationId)!;
+    room.readables = [
+      { id: 'linked', label: 'Board', description: 'Jobs.', text: 'Fallback.',
+        readAction: { type: 'daily-board', boardId: 'jobs' } },
+      { id: 'ordinary', label: 'Sign', description: 'A sign.', text: 'Words.' },
+    ];
+    room.states = [{ id: 'default', name: 'Default view' }, { id: 'alternate', name: 'Another view' }];
+    room.defaultStateId = 'default';
+    for (const locationStateId of [undefined, 'alternate']) {
+      const view = await queries.get('location.describe')!({ characterId: player.characterId, payload: {} },
+        { ...context, characterProjection: character({ locationStateId }) }) as { objects: Array<{ id: string; readAction?: unknown }> };
+      expect(view.objects.find((object) => object.id === 'linked')?.readAction)
+        .toEqual({ type: 'daily-board', boardId: 'jobs' });
+      expect(view.objects.find((object) => object.id === 'ordinary')).not.toHaveProperty('readAction');
+    }
+  });
+
   it('projects room contents, NPC detail, exits, and adjacent-room previews', async () => {
     const roomItem = { id: 'lost-glove', label: 'Lost glove', description: 'A wool glove.' };
     const corpseItem = { id: 'bandit-note', label: 'Bandit note', description: 'A folded note.' };

@@ -322,6 +322,7 @@ function currentLocation(includeNpcDescriptions = false) {
           : 'Mara is here, watching the northern trail.\n\nPractice Sentinel is here, lifting its padded arms in a steady rhythm.',
         ...availableWoodcuttingTrees.map((tree) => `A ${tree.label.replace(/\s+tree$/i, '')} tree stands beside the path.`),
         ...(campfireVisible ? ['A Campfire crackles nearby.'] : []),
+        ...(dailyFeatureEnabled && bulletinReadableObject ? ['A Bulletin board holds current notices.'] : []),
         ...(currentRoomMentionsInventory && woodcuttingAxeCarried ? ['Your Copper Axe catches the light.'] : []),
       ].join('\n\n')
       : room === 'market'
@@ -391,6 +392,7 @@ function currentLocation(includeNpcDescriptions = false) {
       }] : []),
       ...(dailyFeatureEnabled && bulletinReadableObject ? [{
         id: 'reedbank-bulletin-object',
+        readAction: { type: 'daily-board', boardId: 'reedbank-board' },
         label: 'Bulletin board',
         description: 'A plank board holds handwritten notices.',
         readable: true,
@@ -1839,6 +1841,8 @@ describe('single-character world session client', () => {
     await screen.findByText("That selection is no longer available. Choose it again.");
     expect(apiFetch.mock.calls.some(([path, init]) =>
       path === "/api/queries" && JSON.parse(String(init?.body ?? "{}")).type === "object.read")).toBe(false);
+    expect(apiFetch.mock.calls.some(([path, init]) =>
+      path === "/api/commands" && JSON.parse(String(init?.body ?? "{}")).type === "character.read")).toBe(false);
   });
 
   it("requests disambiguation instead of taking the first exact duplicate label", async () => {
@@ -7515,6 +7519,84 @@ describe('single-character world session client', () => {
     expect(within(board).getByRole('button', { name: 'Accept' })).toBeEnabled();
     expect(dailyJobStatus).toBe('available');
     expect(acceptAttempts).toBe(1);
+  });
+
+  it.each(['chooser', 'read reedbank-bulletin-object', 'read Bulletin board'])('opens daily postings through %s with the exact linked board', async (input) => {
+    dailyFeatureEnabled = true;
+    bulletinReadableObject = true;
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    if (input === 'chooser') {
+      fireEvent.click(await screen.findByRole('button', { name: 'Choose an action for Bulletin board in terminal' }));
+      const chooser = await screen.findByRole('dialog', { name: 'Choose an action for Bulletin board' });
+      fireEvent.click(within(chooser).getByRole('button', { name: 'Read' }));
+      expect(chooser).not.toBeInTheDocument();
+    } else submitWorldCommand(input);
+    expect(await screen.findByRole('region', { name: 'Reedbank Bulletin' })).toBeVisible();
+    const query = apiFetch.mock.calls.find(([path, init]) => path === '/api/queries' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'daily.board');
+    expect(JSON.parse(String(query?.[1]?.body)).payload.boardId).toBe('reedbank-board');
+    expect(apiFetch.mock.calls.some(([path, init]) => path === '/api/commands' &&
+      JSON.parse(String(init?.body ?? '{}')).type === 'character.read')).toBe(false);
+  });
+
+  it('rejects an association changed while its object chooser is open', async () => {
+    dailyFeatureEnabled = true;
+    bulletinReadableObject = true;
+    let replace = false;
+    const original = apiFetch.getMockImplementation()!;
+    apiFetch.mockImplementation(async (path, init) => {
+      const response = await original(path, init);
+      if (path !== '/api/game' || !replace) return response;
+      const body = await response.json();
+      body.dailyActivities.boards.push({ id: 'replacement-board', name: 'Other postings' });
+      body.location.objects.find((object: { id: string }) => object.id === 'reedbank-bulletin-object')
+        .readAction.boardId = 'replacement-board';
+      return json(body);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Choose an action for Bulletin board in terminal' }));
+    const chooser = await screen.findByRole('dialog', { name: 'Choose an action for Bulletin board' });
+    replace = true;
+    await act(async () => { window.dispatchEvent(new Event('pageshow')); });
+    fireEvent.click(within(chooser).getByRole('button', { name: 'Read' }));
+    await screen.findByText('That selection is no longer available. Choose it again.');
+    expect(dailyBoardQueryCount).toBe(0);
+  });
+
+  it('retries the selected second board rather than opening the first board', async () => {
+    dailyFeatureEnabled = true;
+    bulletinReadableObject = true;
+    const original = apiFetch.getMockImplementation()!;
+    const boardIds: string[] = [];
+    apiFetch.mockImplementation(async (path, init) => {
+      const query = JSON.parse(String(init?.body ?? '{}'));
+      if (path === '/api/queries' && query.type === 'daily.board') {
+        boardIds.push(query.payload.boardId);
+        if (boardIds.length === 1) return json({ ok: false, message: 'Second board failed.' });
+        const response = await original(path, { ...init, body: JSON.stringify({ ...query,
+          payload: { ...query.payload, boardId: 'reedbank-board' } }) });
+        const body = await response.json();
+        body.value.boardId = query.payload.boardId;
+        body.value.name = 'Second Bulletin';
+        return json(body);
+      }
+      const response = await original(path, init);
+      if (path !== '/api/game') return response;
+      const body = await response.json();
+      body.dailyActivities.boards.push({ id: 'second-board', name: 'Second Bulletin' });
+      return json(body);
+    });
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    clickQuickAction('Show readable objects');
+    fireEvent.click(screen.getByRole('button', { name: 'Read Second Bulletin' }));
+    const board = await screen.findByRole('region', { name: 'Second Bulletin' });
+    expect(await within(board).findByRole('alert')).toHaveTextContent('Second board failed.');
+    fireEvent.click(within(board).getByRole('button', { name: 'Retry' }));
+    await within(board).findByText('Bring river mint');
+    expect(boardIds).toEqual(['second-board', 'second-board']);
   });
 
   it('lists the bulletin in read quick actions and supports accepting and delivering jobs', async () => {

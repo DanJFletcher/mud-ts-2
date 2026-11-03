@@ -21,6 +21,7 @@ type Options = {
   move(id: string): Promise<void>;
   attack(id: string): Promise<void>;
   heal(id: string): Promise<void>;
+  openDailyBoard(id: string): Promise<unknown>;
   addEntry(kind: "error" | "system", text: string): string;
 };
 /** Selected IDs are checked against the current view and never re-resolved by label. */
@@ -35,12 +36,29 @@ export function useActionDispatch(options: Options) {
       addEntry("error", "That selection is no longer available. Choose it again.");
       return;
     }
+    const object = intent.kind === "read"
+      ? snapshot?.location?.objects.find((item) => item.id === intent.target.id) : undefined;
+    if (intent.kind === "read" && (!object?.readable ||
+      ("readAction" in intent.target && JSON.stringify(intent.target.readAction) !== JSON.stringify(object.readAction ?? null)) ||
+      (object.readAction?.type === "daily-board" &&
+        !snapshot?.dailyActivities?.boards.some((board) => board.id === object.readAction?.boardId)))) {
+      addEntry("error", "That selection is no longer available. Choose it again.");
+      return;
+    }
     if (intent.display) addEntry("system", `> ${intent.display}`);
     switch (intent.kind) {
       case "look": return inventory.inspect(intent.target.kind === "room" ? undefined : intent.target.label, intent.target);
       case "take": return inventory.takeObject(intent.target.id, intent.target.label);
       case "drop": return inventory.dropObject(intent.target.id, intent.target.label);
-      case "read": return inventory.readObject(intent.target.id);
+      case "read":
+        if (object?.readAction?.type === "daily-board") {
+          await options.openDailyBoard(object.readAction.boardId);
+          return;
+        }
+        return inventory.readObject(intent.target.id);
+      case "read-board":
+        await options.openDailyBoard(intent.target.id);
+        return;
       case "equip": return inventory.changeEquipment("equip", intent.target.id);
       case "unequip": return inventory.changeEquipment("unequip", intent.slot);
       case "loot": return inventory.lootCorpse(intent.target.id, intent.target.label);

@@ -80,11 +80,20 @@ export const MapPositionSchema = z.object({
   }
 });
 
+/** Semantic resource affordances; presentation remains client-owned. */
+export const ReadActionSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('daily-board'), boardId: IdSchema }).strict(),
+]);
+export type ReadAction = z.infer<typeof ReadActionSchema>;
+export const READABLE_ACTIONS_HEADER = 'x-mudd-readable-actions';
+export const READABLE_ACTIONS_VERSION = '1';
+
 export const ReadableObjectDefinitionSchema = z.object({
   id: IdSchema,
   label: z.string().min(1).max(120),
   description: z.string().min(1).max(1000),
   text: z.string().min(1).max(4000),
+  readAction: ReadActionSchema.optional(),
 }).strict();
 
 export const TakeableObjectDefinitionSchema = z.object({
@@ -971,6 +980,7 @@ export const LocationProjectionSchema = z.object({
     label: z.string().min(1).max(120),
     description: z.string().min(1).max(1000),
     readable: z.boolean(),
+    readAction: ReadActionSchema.optional(),
     takeable: z.boolean(),
     containerId: IdSchema.optional(),
     containerKind: ContainerKindSchema.optional(),
@@ -1077,6 +1087,12 @@ export type WorldMapProjection = z.infer<typeof WorldMapProjectionSchema>;
 export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
   const errors: string[] = [];
   const ids = new Set(pack.locations.map((room) => room.id));
+  const boardsById = new Map<string, typeof pack.dailyBoards>();
+  for (const board of pack.dailyBoards) {
+    const group = boardsById.get(board.id) ?? [];
+    group.push(board);
+    boardsById.set(board.id, group);
+  }
   const allTakeables = pack.locations.flatMap((room) => [
     ...(room.takeables ?? []),
     ...(room.containers ?? []).flatMap((container) => container.contents),
@@ -1136,6 +1152,16 @@ export function validateDraftWorldGraph(pack: WorldPackDraft): string[] {
   const exits = new Set<string>();
   const itemUseIds = new Set<string>();
   for (const room of pack.locations) {
+    for (const readable of room.readables ?? []) {
+      if (readable.readAction?.type !== 'daily-board') continue;
+      const boardId = readable.readAction.boardId;
+      const matches = boardsById.get(boardId) ?? [];
+      if (matches.length !== 1) {
+        errors.push(`Readable ${readable.id} in ${room.id} references ${matches.length ? 'duplicate' : 'missing'} daily board ${boardId}`);
+      } else if (matches[0]!.locationId !== room.id) {
+        errors.push(`Readable ${readable.id} in ${room.id} references daily board ${boardId} in another location`);
+      }
+    }
     if (room.requiredVisitedLocationId && !ids.has(room.requiredVisitedLocationId)) {
       errors.push(`Location ${room.id} requires missing visited location ${room.requiredVisitedLocationId}`);
     }

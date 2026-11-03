@@ -117,6 +117,7 @@ function WorldSession({ client: suppliedClient, ...props }: WorldClientProps & {
     worldInstanceId: props.worldInstanceId,
     basePath: import.meta.env.BASE_URL,
     commandProjection: "game",
+    readableActions: true,
   }));
   const client = suppliedClient ?? ownedClient;
   const session = useGameSession(client);
@@ -205,6 +206,7 @@ function WorldFeatures({
   const { entries, announcement, history: activityHistory } = useActivityHistory(historyLimit);
   const [collapsedQuestGroups, setCollapsedQuestGroups] = useState({ active: false, completed: false });
   const [collapsedQuestCards, setCollapsedQuestCards] = useState<Set<string>>(() => new Set());
+  const selectedReadAction = useRef<EntityRef["readAction"]>(undefined);
   const [activeInteractionTarget, setActiveInteractionTarget] = useState<(ActivityLogTarget & { context?: IntentContext; entityKind?: EntityRef["kind"]; }) | null>(null);
   const [leaving, setLeaving] = useState(false);
   const { screen, theme, menuOpen, setMenuOpen, contentRef, navMenuRef, navMenuTriggerRef, toggleTheme } = useWorldNavigation();
@@ -556,7 +558,7 @@ function WorldFeatures({
   }, [addDefaultLook, addEntry, announceNewQuestObjectives, client, reconcileCommand, rememberCompletedQuestObjectives, setConnectionError, setSnapshot]);
 
   const {
-    displayedDailyBoard, dailyBoardLoading, dailyBoardError, pendingDailyJobId,
+    displayedDailyBoard, activeDailyBoardId, dailyBoardLoading, dailyBoardError, pendingDailyJobId,
     fetchDailyBoard, openDailyBoard, performDailyJob, performSupplyGather,
     handleDailyJobAction, closeDailyBoard,
   } = useDailyController({
@@ -594,7 +596,7 @@ function WorldFeatures({
   });
 
   const dispatchIntent = useActionDispatch({
-    snapshot, pending: pending !== null,
+    snapshot, pending: pending !== null, openDailyBoard,
     listingIds: activeMerchantCatalog?.listings.map((listing) => listing.id) ?? [],
     inventory: inventoryController, talk: talkToNpc, shop: browseMerchant,
     buy: purchaseMerchantListing, fish: performFishingCast, chop: performWoodcuttingStart, move,
@@ -657,7 +659,9 @@ function WorldFeatures({
     kind: Exclude<ActionIntent["kind"], "put" | "use" | "chop" | "unequip">,
     id: string, label: string, targetKind: EntityRef["kind"],
     display = `${kind} ${label}`,
-  ) => submitQuickCommand({ kind, target: entityRef(id, label, targetKind), context: intentContext(snapshot), display });
+  ) => submitQuickCommand({ kind, target: entityRef(id, label, targetKind,
+    kind === "read" ? snapshot?.location?.objects.find((object) => object.id === id)?.readAction ?? null : undefined),
+    context: intentContext(snapshot), display });
 
   const submitCommand = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -748,7 +752,7 @@ function WorldFeatures({
   useMovementShortcuts({
     enabled: screen === "play" && !pending && !isAnyCombatActive && !hasVisiblePvp &&
       snapshot?.character?.staminaRecovery.posture !== "resting",
-    modalOpen: dialogueModalOpen || Boolean(activeInteractionTarget || activeCraftingPrompt) ||
+    modalOpen: Boolean(displayedDailyBoard || dailyBoardLoading || dailyBoardError) || dialogueModalOpen || Boolean(activeInteractionTarget || activeCraftingPrompt) ||
       chatFullscreen || mapFullscreen || confirmClassAdoption,
     snapshot, move, chooseExit: chooseKeyboardExit,
   });
@@ -893,7 +897,8 @@ function WorldFeatures({
     const roomId = target.id.startsWith("room:") ? target.id.slice("room:".length) : undefined;
     const npc = snapshot?.location?.npcs?.find((npc) => npc.id === target.id);
     const reference = entityRef(inventoryId ?? roomId ?? target.id, target.label,
-      target.entityKind ?? (inventoryId ? "inventory" : roomId ? "room" : npc ? "npc" : "object"));
+      target.entityKind ?? (inventoryId ? "inventory" : roomId ? "room" : npc ? "npc" : "object"),
+      actionId === "read" ? selectedReadAction.current : undefined);
     const kind = (["look", "read", "take", "talk", "shop", "attack", "drop", "equip", "extinguish"] as const)
       .find((kind) => kind === actionId);
     if (kind) submitQuickCommand({
@@ -906,6 +911,8 @@ function WorldFeatures({
       : target.id.startsWith("room:") ? "room" : target.id.startsWith("woodcutting-tree:") ? "tree"
         : snapshot?.location?.npcs?.some((npc) => npc.id === target.id) ? "npc" : "object";
     const selection = { ...target, context: intentContext(snapshot), entityKind };
+    selectedReadAction.current = entityKind === "object"
+      ? snapshot?.location?.objects.find((object) => object.id === target.id)?.readAction ?? null : undefined;
     if (target.actionDialogTitle || (target.actions?.length ?? 1) > 1) {
       setActiveInteractionTarget(selection);
       return;
@@ -1179,7 +1186,7 @@ function WorldFeatures({
             session={{ loading, snapshot, connectionError, loadGame, handleLeaveWorld, leaving, optimisticTravel, pending, presenceStale, client, worldInstanceId }}
             history={{ terminalHistoryRef, terminalFollowsLatestRef, setTerminalFollowingLatest, terminalReadingPosition, setTerminalReadingAnchor, setTerminalCanScrollDown, entries, terminalFollowingLatest, terminalReadingAnchor, handleHistoryWindowChange, terminalLookTargets, handleTerminalLookTarget, terminalCanScrollDown, scrollTerminalToLatest }}
             gathering={{ activeWoodcutting, continueWoodcutting, cancelWoodcuttingAction, activeFishingCast, continueFishingCast, cancelFishingCast }}
-            daily={{ displayedDailyBoard, dailyBoardLoading, dailyBoardError, pendingDailyJobId, fetchDailyBoard, closeDailyBoard, handleDailyJobAction }}
+            daily={{ displayedDailyBoard, activeDailyBoardId, dailyBoardLoading, dailyBoardError, pendingDailyJobId, fetchDailyBoard, closeDailyBoard, handleDailyJobAction }}
             slots={{ merchantPanel, combatPanel, quickCommands, dialogs }}
             view={{ terminalExpandRequest, isMobileViewport, isAnyCombatActive, visiblePvp, activeMerchantCatalog, foregroundPendingAction, mobileCommandInputOpen, exits, move, setQuickCommandPage, setQuickCommandMode, chatFullscreen, handleChatFullscreenChange, addNpcTerminalEvent, submitCommand, command, setCommand, mapFullscreen, handleMapFullscreenChange }}
           />

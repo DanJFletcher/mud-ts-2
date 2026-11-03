@@ -23,6 +23,24 @@ function snapshot() {
   });
 }
 describe("pure command intent parsing", () => {
+  it('resolves read IDs, names and aliases through explicit metadata with ambiguity protection', () => {
+    const view = snapshot();
+    view.dailyActivities = { cycle: '2026-10-23', boards: [{ id: 'jobs', name: 'Local jobs' }], sources: [] };
+    view.location!.objects.push({ id: 'notice', label: 'Bulletin board', description: 'Jobs', readable: true,
+      takeable: false, readAction: { type: 'daily-board', boardId: 'jobs' } });
+    for (const text of ['read notice', 'read Bulletin board']) {
+      expect(parseWorldCommand(text, view)).toMatchObject({ kind: 'read', target: { id: 'notice',
+        readAction: { type: 'daily-board', boardId: 'jobs' } } });
+    }
+    for (const text of ['read bulletin', 'read board', 'read the notice board', 'read daily bulletin']) {
+      expect(parseWorldCommand(text, view)).toMatchObject({ kind: 'read-board', target: { id: 'jobs' } });
+    }
+    view.dailyActivities.boards.push({ id: 'second', name: 'Local jobs' });
+    expect(parseWorldCommand('read board', view)?.kind).toBe('error');
+    view.location!.objects.push({ ...view.location!.objects.at(-1)!, id: 'unrelated', readAction: undefined });
+    expect(parseWorldCommand('read Bulletin board', view)?.kind).toBe('error');
+    expect(parseWorldCommand('read unrelated', view)).toMatchObject({ kind: 'read', target: { id: 'unrelated', readAction: null } });
+  });
   it.each([
     ["first", ["first"]], ["loose stone", ["loose stone"]], ["stone", ["first", "second"]],
     ["missing", []],

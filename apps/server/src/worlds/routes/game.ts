@@ -1,4 +1,6 @@
 import { type ServerDependencies } from '../../app/dependencies.js';
+import { READABLE_ACTIONS_HEADER } from '@mudd/contracts';
+import { locationForClient } from '../location-client-projection.js';
 
 export function registerGameRoutes(app: import('express').Express, dependencies: Pick<
   ServerDependencies,
@@ -34,6 +36,7 @@ export function registerGameRoutes(app: import('express').Express, dependencies:
           }
           : {}),
         ...projection.value,
+        location: locationForClient(projection.value.location, req.get(READABLE_ACTIONS_HEADER)),
       });
     } catch (error) {
       next(error);

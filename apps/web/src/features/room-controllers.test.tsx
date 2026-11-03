@@ -116,6 +116,28 @@ describe("room feature request ownership", () => {
     expect(options.addEntry).not.toHaveBeenCalled();
   });
 
+  it('discards a pending board response when the readable association changes in the same room', async () => {
+    const options = fixture();
+    options.snapshot!.dailyActivities = { cycle: '2026-11-02',
+      boards: [{ id: 'one', name: 'One' }, { id: 'two', name: 'Two' }], sources: [] };
+    options.snapshot!.location!.objects = [{ id: 'notice', label: 'Board', description: 'Board',
+      readable: true, takeable: false, readAction: { type: 'daily-board', boardId: 'one' } }];
+    let complete!: (value: Awaited<ReturnType<MuddHttpClient['dailyBoard']>>) => void;
+    vi.spyOn(options.client, 'dailyBoard').mockImplementation(() => new Promise((done) => { complete = done; }));
+    const { result, rerender } = renderHook((props) => useDailyController({ ...props,
+      worldInstanceId: 'world', refreshAfterMutation: vi.fn(), loadGame: vi.fn() }), { initialProps: options });
+    let work!: ReturnType<typeof result.current.openDailyBoard>;
+    act(() => { work = result.current.openDailyBoard('one'); });
+    const changed = structuredClone(options.snapshot!);
+    changed.location!.objects[0]!.readAction = { type: 'daily-board', boardId: 'two' };
+    rerender({ ...options, snapshot: changed });
+    await act(async () => { complete({ boardId: 'one', name: 'Obsolete', cycle: '2026-11-02',
+      resetsAt: '2026-11-03T00:00:00.000Z', jobs: [] }); await work; });
+    expect(result.current.displayedDailyBoard).toBeNull();
+    expect(result.current.activeDailyBoardId).toBeUndefined();
+    expect(options.addEntry).not.toHaveBeenCalled();
+  });
+
   it("ignores a delayed daily board and its errors after room replacement", async () => {
     const options = fixture();
     options.snapshot = { ...options.snapshot!, dailyActivities: {
