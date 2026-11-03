@@ -1356,8 +1356,9 @@ export const characterPlugin: EnginePlugin = {
           roomDescription ? [roomDescription] : [],
         );
         const objects = includeObjects ? [
-          ...(room.readables ?? []).map(({ id, label, description }) => ({
+          ...(room.readables ?? []).map(({ id, label, description, readAction }) => ({
             id, label, description, readable: true, takeable: false,
+            ...(readAction ? { readAction } : {}),
           })),
           ...roomTakeables.map(({ id, label, description }) => ({
             id, label, description, readable: false, takeable: true,

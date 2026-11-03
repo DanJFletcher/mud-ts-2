@@ -1,13 +1,13 @@
 import type { GameSnapshot } from "@mudd/client-sdk";
-import type { EquipmentSlot } from "@mudd/contracts";
+import type { ReadAction, EquipmentSlot } from "@mudd/contracts";
 import { parseCommandHeader } from "./metadata.js";
 import { findItemContainerMatches, findNpcMatches, findObjectMatches } from "./targets.js";
 
-export type EntityRef = { id: string; label: string; kind: "object" | "inventory" | "npc" | "exit" | "listing" | "tree" | "room" };
+export type EntityRef = { id: string; label: string; kind: "object" | "inventory" | "npc" | "exit" | "listing" | "tree" | "room" | "board"; readAction?: ReadAction | null };
 export type IntentContext = { worldId?: string; characterId?: string; locationId?: string };
 type Scoped = { context: IntentContext; display?: string };
 export type ActionIntent = Scoped & (
-  | { kind: "look" | "take" | "drop" | "read" | "equip" | "loot" | "talk" | "shop" | "attack" | "buy" | "extinguish" | "go" | "fish" | "heal"; target: EntityRef }
+  | { kind: "read-board" | "look" | "take" | "drop" | "read" | "equip" | "loot" | "talk" | "shop" | "attack" | "buy" | "extinguish" | "go" | "fish" | "heal"; target: EntityRef }
   | { kind: "put" | "use" | "chop"; item: EntityRef; target: EntityRef }
   | { kind: "unequip"; slot: EquipmentSlot; itemId: string }
 );
@@ -16,8 +16,8 @@ export function intentContext(snapshot: GameSnapshot | null): IntentContext {
   return { worldId: snapshot?.character?.worldInstanceId, characterId: snapshot?.character?.characterId,
     locationId: snapshot?.location?.locationId };
 }
-export function entityRef(id: string, label: string, kind: EntityRef["kind"]): EntityRef {
-  return { id, label, kind };
+export function entityRef(id: string, label: string, kind: EntityRef["kind"], readAction?: ReadAction | null): EntityRef {
+  return { id, label, kind, ...(readAction !== undefined ? { readAction } : {}) };
 }
 export function sameIntentContext(context: IntentContext, snapshot: GameSnapshot | null): boolean {
   const current = intentContext(snapshot);
@@ -32,6 +32,7 @@ export function entityAvailable(target: EntityRef, snapshot: GameSnapshot | null
     case "exit": return Boolean(snapshot?.location?.exits.some((exit) => exit.id === target.id && exit.available));
     case "listing": return listingIds.includes(target.id);
     case "tree": return Boolean(snapshot?.availableWoodcuttingTrees?.some((tree) => tree.id === target.id));
+    case "board": return Boolean(snapshot?.dailyActivities?.boards.some((board) => board.id === target.id));
     case "room": return snapshot?.location?.locationId === target.id;
   }
 }
@@ -91,11 +92,27 @@ export function parseWorldCommand(input: string, snapshot: GameSnapshot | null):
       return item && (header.verb !== "equip" || item.equipment)
         ? make(header.verb, objectRef(item, "inventory")) : text;
     }
-    case "read": case "loot": case "extinguish": {
-      // Bulletin aliases retain their feature-specific interpretation.
-      if (header.verb === "read" && /^(?:(?:daily|notice|bulletin) )?(?:bulletin|board|bulletin board)$/i.test(header.target)) return text;
+    case "read": {
+      const readables = objects.filter((object) => object.readable);
+      const normalized = header.target.trim().toLocaleLowerCase();
+      const exactIds = readables.filter((object) => object.id.toLocaleLowerCase() === normalized);
+      const exactLabels = readables.filter((object) => object.label.toLocaleLowerCase() === normalized);
+      const exact = exactIds.length ? exactIds : exactLabels;
+      const fail = (message: string) => ({ kind: "error" as const, value: header.value, message });
+      if (!exact.length && /^(?:the\s+)?(?:(?:daily\s+)?(?:bulletin|notice)(?:\s+board)?|board)$/i.test(normalized)) {
+        const boards = snapshot.dailyActivities?.boards ?? [];
+        if (boards.length !== 1) return fail(boards.length
+          ? "Which bulletin board do you mean? Choose a specific board."
+          : "There is no bulletin board here.");
+        return make("read-board", entityRef(boards[0]!.id, boards[0]!.name, "board"));
+      }
+      const matches = exact.length ? exact : findObjectMatches(header.target, readables);
+      if (matches.length > 1) return fail(`Which one do you mean: ${matches.map((object) => object.label).join(", ")}?`);
+      const object = matches[0];
+      return object ? make("read", entityRef(object.id, object.label, "object", object.readAction ?? null)) : text;
+    }
+    case "loot": case "extinguish": {
       const item = unique(findObjectMatches(header.target, objects));
-      if (header.verb === "read" && !item?.readable) return text;
       if (header.verb === "loot" && item?.containerKind !== "corpse") return text;
       return item ? make(header.verb, objectRef(item, "object")) : text;
     }

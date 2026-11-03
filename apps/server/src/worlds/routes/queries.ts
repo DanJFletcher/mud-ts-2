@@ -1,4 +1,6 @@
 import { WorldQuerySchema } from '../world-query-schema.js';
+import { READABLE_ACTIONS_HEADER, LocationProjectionSchema } from '@mudd/contracts';
+import { locationForClient } from '../location-client-projection.js';
 import { type ServerDependencies } from '../../app/dependencies.js';
 import { replayCharacter } from '../../app/character-replay.js';
 
@@ -62,7 +64,7 @@ export function registerQueryRoutes(app: import('express').Express, dependencies
           locationGroupCatalog.groups,
           { locationId: character.locationId, occupants },
         );
-        return res.json({ ...result, value });
+        return res.json({ ...result, value: locationForClient(value, req.get(READABLE_ACTIONS_HEADER)) });
       }
       const status = result.ok
         ? 200
@@ -75,6 +77,9 @@ export function registerQueryRoutes(app: import('express').Express, dependencies
               : 403;
       return res.status(status).json({
         ...result,
+        ...(result.ok && describesLocation ? {
+          value: locationForClient(LocationProjectionSchema.parse(result.value), req.get(READABLE_ACTIONS_HEADER)),
+        } : {}),
         ...(!result.ok && result.code === 'INTERNAL_ERROR'
           ? { requestId: result.correlationId ?? res.locals.requestId }
           : {}),

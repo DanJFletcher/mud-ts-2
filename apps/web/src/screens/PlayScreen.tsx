@@ -149,6 +149,7 @@ export interface PlayScreenProps {
   };
   daily: {
     displayedDailyBoard: ReturnType<typeof useDailyController>["displayedDailyBoard"];
+    activeDailyBoardId?: string;
     dailyBoardLoading: boolean;
     dailyBoardError: string;
     pendingDailyJobId: string | undefined;
@@ -188,7 +189,7 @@ export function PlayScreen({ session, history, gathering, daily, slots, view }: 
   const { loading, snapshot, connectionError, loadGame, handleLeaveWorld, leaving, optimisticTravel, pending, presenceStale, client, worldInstanceId } = session;
   const { terminalHistoryRef, terminalFollowsLatestRef, setTerminalFollowingLatest, terminalReadingPosition, setTerminalReadingAnchor, setTerminalCanScrollDown, entries, terminalFollowingLatest, terminalReadingAnchor, handleHistoryWindowChange, terminalLookTargets, handleTerminalLookTarget, terminalCanScrollDown, scrollTerminalToLatest } = history;
   const { activeWoodcutting, continueWoodcutting, cancelWoodcuttingAction, activeFishingCast, continueFishingCast, cancelFishingCast } = gathering;
-  const { displayedDailyBoard, dailyBoardLoading, dailyBoardError, pendingDailyJobId, fetchDailyBoard, closeDailyBoard, handleDailyJobAction } = daily;
+  const { displayedDailyBoard, activeDailyBoardId, dailyBoardLoading, dailyBoardError, pendingDailyJobId, fetchDailyBoard, closeDailyBoard, handleDailyJobAction } = daily;
   const { merchantPanel, combatPanel, quickCommands, dialogs } = slots;
   const { terminalExpandRequest, isMobileViewport, isAnyCombatActive, visiblePvp, activeMerchantCatalog, foregroundPendingAction, mobileCommandInputOpen, exits, move, setQuickCommandPage, setQuickCommandMode, chatFullscreen, handleChatFullscreenChange, addNpcTerminalEvent, submitCommand, command, setCommand, mapFullscreen, handleMapFullscreenChange } = view;
   return (<div className="focused-screen focused-screen--play" aria-label="Play">
@@ -362,7 +363,7 @@ export function PlayScreen({ session, history, gathering, daily, slots, view }: 
           {!mobileCommandInputOpen && !isAnyCombatActive && !visiblePvp && <>{quickCommands}</>}
           {(displayedDailyBoard || dailyBoardLoading || dailyBoardError) && (
             <DailyBoard
-              name={displayedDailyBoard?.name ?? snapshot?.dailyActivities?.boards[0]?.name ?? "Daily bulletin"}
+              name={displayedDailyBoard?.name ?? snapshot?.dailyActivities?.boards.find((board) => board.id === activeDailyBoardId)?.name ?? "Daily bulletin"}
               cycle={displayedDailyBoard?.cycle ?? snapshot?.dailyActivities?.cycle ?? "today"}
               resetsAt={displayedDailyBoard?.resetsAt}
               jobs={(displayedDailyBoard?.jobs ?? []).map((job) => ({
@@ -376,7 +377,7 @@ export function PlayScreen({ session, history, gathering, daily, slots, view }: 
               loading={dailyBoardLoading}
               error={dailyBoardError || undefined}
               onRetry={() => {
-                const boardId = displayedDailyBoard?.boardId ?? snapshot?.dailyActivities?.boards[0]?.id;
+                const boardId = displayedDailyBoard?.boardId ?? activeDailyBoardId;
                 if (boardId) void fetchDailyBoard(boardId).catch(() => undefined);
               }}
               onClose={closeDailyBoard}

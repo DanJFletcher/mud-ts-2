@@ -55,6 +55,44 @@ test('guest creates a character, explores, and can leave and re-enter the world'
   await expect(page.getByRole('heading', { name: 'Willowshade Track' })).toBeVisible();
 });
 
+test('Orraveth bulletin Read opens the linked postings and preserves legacy HTTP clients', async ({ page }) => {
+  await createGuestWorld(page, 'orraveth-bellwold-instance', 'E2E Bulletin Reader');
+  await page.getByRole('navigation', { name: 'Quick navigation' }).getByRole('button', { name: 'South', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Bellwold South Common' })).toBeVisible();
+  const queries: string[] = [];
+  page.on('request', (request) => {
+    if (request.url().endsWith('/api/queries') && request.postDataJSON()?.type === 'daily.board') {
+      queries.push(request.postDataJSON().payload.boardId);
+    }
+  });
+  await page.getByRole('button', { name: 'Choose an action for Bulletin board in terminal' }).click();
+  const chooser = page.getByRole('dialog', { name: 'Choose an action for Bulletin board' });
+  await chooser.getByRole('button', { name: 'Read', exact: true }).click();
+  const board = page.getByRole('dialog', { name: 'South Common bulletin board' });
+  await expect(board).toBeVisible();
+  await expect(board.getByRole('button', { name: 'Accept', exact: true }).first()).toBeVisible();
+  expect(queries).toEqual(['bellwold-notice-board']);
+  await board.getByRole('button', { name: 'Accept', exact: true }).first().click();
+  await expect(board.getByText('In progress')).toBeVisible();
+  await board.getByRole('button', { name: 'Close', exact: true }).focus();
+  await page.keyboard.press('ArrowUp');
+  await expect(page.getByRole('heading', { name: 'Bellwold South Common' })).toBeVisible();
+  for (const version of [undefined, '1', '2']) {
+    const response = await page.request.get('/api/game', { headers: {
+      'x-mudd-world-instance': 'orraveth-bellwold-instance', ...(version ? { 'x-mudd-readable-actions': version } : {}),
+    } });
+    expect(response.ok()).toBe(true);
+    const object = (await response.json()).location.objects.find((entry: { id: string }) => entry.id === 'bellwold-daily-notice');
+    expect(object.readAction).toEqual(version === '1' ? { type: 'daily-board', boardId: 'bellwold-notice-board' } : undefined);
+  }
+  await board.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(board).toBeHidden();
+  await page.getByRole('button', { name: 'Choose an action for Bulletin board in terminal' }).click();
+  await chooser.getByRole('button', { name: 'Look', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Terminal output' })).toContainText('A broad plank board holds handwritten notices');
+  expect(queries.every((id) => id === 'bellwold-notice-board')).toBe(true);
+});
+
 test('mobile history stays bounded and navigation does not replay activity announcements', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await createGuestWorld(page);

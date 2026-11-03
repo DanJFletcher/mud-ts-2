@@ -509,16 +509,6 @@ export function useWorldCommands({
         addEntry("error", "Read what? Try “read marker” or “read bulletin”.");
         return;
       }
-      const bulletinTarget = target.replace(/^the\s+/i, "").trim().toLocaleLowerCase();
-      if (/^(?:daily\s+)?(?:bulletin|notice)(?:\s+board)?$/.test(bulletinTarget)) {
-        const bulletin = snapshot?.dailyActivities?.boards[0];
-        if (!bulletin) {
-          addEntry("error", "There is no bulletin board here.");
-          return;
-        }
-        await openDailyBoard(bulletin.id);
-        return;
-      }
       const readableObjects = (snapshot?.location?.objects ?? []).filter((object) => object.readable);
       const matches = findObjectMatches(target, readableObjects);
       if (matches.length === 0) {

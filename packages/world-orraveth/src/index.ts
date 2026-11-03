@@ -951,6 +951,7 @@ const content = {
     'bellwold-south-common': {
       readables: [{
         id: 'bellwold-daily-notice', label: 'Bulletin board',
+        readAction: { type: 'daily-board', boardId: 'bellwold-notice-board' },
         description: 'A broad plank board holds handwritten notices in uneven rows.',
         text: 'Residents post daily jobs and requests here. Read the bulletin to see current postings and rewards. Accept a posting, then follow its instructions to complete it. New postings appear with each daily refresh.',
       }],

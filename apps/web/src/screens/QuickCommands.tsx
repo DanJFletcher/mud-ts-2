@@ -188,18 +188,15 @@ export function QuickCommands({ selection, targets, pagination, actions, view }:
           {snapshot?.dailyActivities?.boards[0] ||
             (snapshot?.location?.objects ?? []).some((object) => object.readable) ? (
             <>
-              {snapshot?.dailyActivities?.boards[0] && (
-                <button
-                  key={snapshot.dailyActivities.boards[0].id}
-                  type="button"
-                  className="focused-quick-command"
-                  onClick={() => submitQuickCommand("read bulletin")}
-                  aria-label="Read bulletin"
-                  disabled={pending !== null}
-                >
-                  bulletin
+              {(snapshot.dailyActivities?.boards ?? []).map((board) => (
+                <button key={board.id} type="button" className="focused-quick-command"
+                  onClick={() => submitQuickCommand({ kind: "read-board", context: intentContext(snapshot),
+                    target: entityRef(board.id, board.name, "board"), display: "read " + board.name })}
+                  aria-label={snapshot.dailyActivities!.boards.length === 1 ? "Read bulletin" : "Read " + board.name}
+                  disabled={pending !== null}>
+                  {snapshot.dailyActivities!.boards.length === 1 ? "bulletin" : board.name}
                 </button>
-              )}
+              ))}
               {readableObjectsForQuickActions(snapshot).map((object) => (
                 <button
                   key={object.id}

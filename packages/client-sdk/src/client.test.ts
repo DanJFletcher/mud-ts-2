@@ -25,6 +25,33 @@ import {
 } from '@mudd/contracts';
 
 describe('client-side vital projection', () => {
+  it('negotiates read actions on game, look, command and fallback requests only when enabled', async () => {
+    const location = { worldInstanceId: DEMO_WORLD_INSTANCE_ID, locationId: 'room', revision: 0,
+      title: 'Room', shortName: 'Room', qualifiedName: 'Room', locationGroups: [], description: 'Room',
+      exits: [], occupants: [], objects: [{ id: 'board', label: 'Board', description: 'Board', readable: true,
+        takeable: false, readAction: { type: 'daily-board', boardId: 'jobs' } }] };
+    for (const enabled of [false, true]) {
+      const headers: Headers[] = [];
+      let legacy = false;
+      const fetcher: typeof fetch = async (input, init) => {
+        headers.push(new Headers(init?.headers));
+        const view = legacy ? { ...location, objects: location.objects.map(({ readAction: _action, ...object }) => object) } : location;
+        return Response.json(String(input) === '/api/game' ? { player: { id: 'player', displayName: 'Player' }, location: view }
+          : String(input) === '/api/queries' ? { ok: true, value: view }
+            : { receipt: { ok: true, commandId: 'rest', eventIds: [], newAggregateVersion: 3 }, streamId: 'character', events: [] });
+      };
+      const client = new MuddHttpClient({ worldInstanceId: DEMO_WORLD_INSTANCE_ID, fetcher,
+        readableActions: enabled, commandProjection: 'game' });
+      expect((await client.getGame()).location?.objects[0]?.readAction).toEqual(location.objects[0].readAction);
+      expect((await client.look('character')).objects[0]?.readAction).toEqual(location.objects[0].readAction);
+      const response = await client.rest('character', 2, 'rest');
+      expect(response).not.toHaveProperty('gameProjection');
+      legacy = true;
+      expect((await client.getGame()).location?.objects[0]).not.toHaveProperty('readAction');
+      expect(headers.map((value) => value.get('x-mudd-readable-actions'))).toEqual(Array(4).fill(enabled ? '1' : null));
+      expect(headers[2]?.get('x-mudd-command-projection')).toBe('game');
+    }
+  });
   it('uses server time to correct clock skew and projects from the recovery anchor', async () => {
     vi.useFakeTimers();
     const clientNow = new Date('2026-10-30T12:00:00.000Z');

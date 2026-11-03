@@ -3,6 +3,13 @@ import { validateDraftWorldGraph } from '@mudd/contracts';
 import { orravethWorld, ORRAVETH_WORLD_INSTANCE_ID } from './index.js';
 
 describe('Orraveth world pack', () => {
+  it('links the existing South Common readable to its exact local daily board', () => {
+    const room = orravethWorld.locations.find((location) => location.id === 'bellwold-south-common')!;
+    const readable = room.readables?.find((object) => object.id === 'bellwold-daily-notice');
+    expect(readable).toMatchObject({ label: 'Bulletin board',
+      readAction: { type: 'daily-board', boardId: 'bellwold-notice-board' } });
+    expect(orravethWorld.dailyBoards.find((board) => board.id === readable?.readAction?.boardId)?.locationId).toBe(room.id);
+  });
   it('has a valid world graph and stable world identity', () => {
     expect(validateDraftWorldGraph(orravethWorld)).toEqual([]);
     expect(ORRAVETH_WORLD_INSTANCE_ID).toBe('orraveth-bellwold-instance');

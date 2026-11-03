@@ -1,4 +1,6 @@
 import { measureStage, measureDatabaseOperation } from '../../app/performance.js';
+import { READABLE_ACTIONS_HEADER } from '@mudd/contracts';
+import { locationForClient } from '../location-client-projection.js';
 import { and, eq } from 'drizzle-orm';
 import { ArchiveCharacterCommandSchema, COMMAND_PROJECTION_HEADER, GAME_COMMAND_PROJECTION, CreateCharacterCommandSchema, RestoreCharacterCommandSchema, RenameCharacterCommandSchema, PvpEncounterProjectionSchema, PartyInfoProjectionSchema, TeamCombatInfoProjectionSchema } from '@mudd/contracts';
 import { interactionStreamId, projectCharacterInteractions } from '@mudd/core-plugins';
@@ -272,8 +274,12 @@ export function registerCommandRoutes(app: import('express').Express, dependenci
         }
         return res.json({
           ...dispatched,
-          ...(projection && projectionRequested ? { gameProjection: projection } : {}),
-          ...(projection && !projectionRequested ? { movementProjection: projection } : {}),
+          ...(projection ? {
+            [projectionRequested ? 'gameProjection' : 'movementProjection']: {
+              ...projection,
+              location: locationForClient(projection.location, req.get(READABLE_ACTIONS_HEADER)),
+            },
+          } : {}),
         });
       } catch (error) {
         next(error);

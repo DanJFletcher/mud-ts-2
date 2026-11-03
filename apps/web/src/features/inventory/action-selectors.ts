@@ -2,16 +2,11 @@ import type { GameSnapshot } from "@mudd/client-sdk";
 import { characterHasEquippedItem, equipmentItemIdForSlot } from "@mudd/contracts";
 
 export function readableObjectsForQuickActions(snapshot: GameSnapshot | null | undefined) {
-  const bulletin = snapshot?.dailyActivities?.boards[0];
-  const aliases = ["bulletin", "bulletin board", "daily bulletin", "daily bulletin board", "notice", "notice board"];
-  return (snapshot?.location?.objects ?? []).filter((object) => {
-    if (!object.readable) return false;
-    if (!bulletin) return true;
-    const label = object.label.trim().toLocaleLowerCase().replace(/\s+/g, " ");
-    const boardName = bulletin.name.trim().toLocaleLowerCase().replace(/\s+/g, " ");
-    return label !== boardName && !aliases.includes(label);
-  });
+  const boardIds = new Set(snapshot?.dailyActivities?.boards.map((board) => board.id));
+  return (snapshot?.location?.objects ?? []).filter((object) => object.readable &&
+    !(object.readAction?.type === "daily-board" && boardIds.has(object.readAction.boardId)));
 }
+
 export function selectItemActions(snapshot: GameSnapshot | null) {
   const inventory = snapshot?.character?.inventory ?? [];
   const equipment = snapshot?.character?.equipment;
