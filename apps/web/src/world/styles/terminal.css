@@ -1,0 +1,611 @@
+.focused-terminal {
+  --terminal-surface: #1d2a23;
+  --terminal-inset: #243329;
+  --terminal-border: #43594a;
+  --terminal-text: #e7eee4;
+  --terminal-muted: #b5c1b4;
+  --terminal-accent: #a6c9a9;
+  --terminal-warm: #dfb27d;
+  display: flex;
+  height: min(58dvh, 500px);
+  min-height: 360px;
+  max-height: 520px;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+  border-color: var(--terminal-border);
+  border-top-color: var(--terminal-accent);
+  color: var(--terminal-text);
+  background: var(--terminal-surface);
+  font-family: "DM Mono", monospace;
+  box-shadow: 0 16px 34px rgb(19 30 23 / 20%);
+}
+
+.focused-client[data-theme="dark"] .focused-terminal {
+  --terminal-surface: #17211b;
+  --terminal-inset: #202d24;
+  --terminal-border: #3b5142;
+  --terminal-text: #e8eee5;
+  --terminal-muted: #aab9aa;
+  --terminal-accent: #a6c9a9;
+  --terminal-warm: #dfb27d;
+}
+
+.focused-terminal--collapsed {
+  height: auto;
+  min-height: 0;
+  max-height: none;
+}
+
+.focused-terminal-room {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 9px 17px;
+  border-bottom: 1px solid var(--terminal-border);
+}
+
+@media (max-width: 699px) {
+  .focused-terminal-room {
+    padding: 0;
+    border-bottom: 0;
+  }
+}
+
+.focused-terminal-location {
+  min-width: 0;
+  flex: 1 1 auto;
+  margin: 0;
+  color: var(--terminal-text);
+  font: 500 1rem/1.4 "DM Mono", monospace;
+  letter-spacing: .02em;
+  overflow-wrap: anywhere;
+}
+
+.focused-terminal-toggle,
+.focused-terminal-fullscreen-button {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  color: var(--terminal-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.focused-terminal-toggle.mudd-disclosure-button {
+  position: relative;
+  min-height: 40px;
+  padding: 0;
+  border: 0;
+  text-align: center;
+}
+
+.focused-terminal-toggle:hover,
+.focused-terminal-fullscreen-button:hover {
+  color: var(--terminal-text);
+  background: color-mix(in srgb, var(--terminal-accent) 10%, transparent);
+}
+
+.focused-terminal-toggle:focus-visible,
+.focused-terminal-fullscreen-button:focus-visible {
+  outline: 2px solid var(--terminal-accent);
+  outline-offset: -2px;
+}
+
+.focused-panel-disclosure-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.focused-terminal-toggle .mudd-disclosure-button__indicator,
+.focused-world-map__button.mudd-disclosure-button .mudd-disclosure-button__indicator,
+.focused-room-chat__collapse-button .mudd-disclosure-button__indicator {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.focused-terminal--fullscreen {
+  position: fixed;
+  z-index: 1002;
+  inset: 0;
+  width: 100%;
+  height: 100dvh;
+  min-height: 100dvh;
+  max-height: 100dvh;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  border: 0;
+  border-radius: 0;
+  background: var(--terminal-surface);
+  touch-action: pan-y;
+  animation: focused-terminal-enter 240ms cubic-bezier(.2, .8, .2, 1) both;
+}
+
+.focused-terminal--closing {
+  animation: focused-terminal-exit 240ms cubic-bezier(.4, 0, .6, 1) both;
+}
+
+.focused-terminal--fullscreen .focused-terminal-room {
+  min-height: 52px;
+  padding: 4px 12px;
+}
+
+.focused-terminal--fullscreen .focused-terminal-location {
+  font-size: 1.1rem;
+}
+
+.focused-terminal--fullscreen .focused-terminal-body {
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+@keyframes focused-terminal-enter {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes focused-terminal-exit {
+  from { transform: translateY(0); }
+  to { transform: translateY(-100%); }
+}
+
+.focused-terminal-body {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.focused-terminal--collapsed .focused-terminal-body {
+  display: none;
+}
+
+.focused-room-presence {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 5px 16px;
+  border-bottom: 1px solid var(--terminal-border);
+  color: var(--terminal-muted);
+  font: 500 .58rem/1.3 "DM Mono", monospace;
+}
+
+.focused-room-presence > span:first-of-type {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.focused-room-presence__status {
+  margin-left: auto;
+  color: var(--mudd-error);
+}
+
+.focused-terminal-vitals {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px clamp(12px, 4vw, 18px);
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--terminal-border);
+  color: var(--terminal-muted);
+  font: 500 .58rem/1.3 "DM Mono", monospace;
+  letter-spacing: .05em;
+}
+
+.focused-terminal-vital {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.focused-terminal-history-shell {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  border-bottom: 1px solid var(--terminal-border);
+}
+
+.focused-terminal-history {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--terminal-border) transparent;
+  padding: 9px 16px 48px;
+  outline-offset: -3px;
+}
+
+.focused-terminal-scroll-latest {
+  position: absolute;
+  z-index: 2;
+  right: 14px;
+  bottom: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid var(--terminal-border);
+  border-radius: 999px;
+  color: var(--terminal-text);
+  background: color-mix(in srgb, var(--terminal-surface) 94%, transparent);
+  box-shadow: 0 3px 12px rgb(0 0 0 / 22%);
+  font: 500 .68rem/1 "DM Mono", monospace;
+  cursor: pointer;
+}
+
+.focused-terminal-scroll-latest:hover {
+  border-color: var(--terminal-warm);
+}
+
+.focused-terminal-scroll-latest:focus-visible {
+  outline: 2px solid var(--terminal-warm);
+  outline-offset: 2px;
+}
+
+.focused-terminal-history .mudd-log {
+  min-height: 100%;
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.focused-terminal-history .mudd-log__entries { gap: 8px; }
+.focused-terminal-history .mudd-log__entry {
+  padding: 0 0 0 11px;
+  border-left: 1px solid var(--terminal-border);
+  color: var(--terminal-text);
+  font: 400 .76rem/1.55 "DM Mono", monospace;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+.focused-terminal-history .mudd-log__entry--system {
+  border-color: var(--terminal-warm);
+  color: var(--terminal-muted);
+}
+
+.focused-terminal-history .mudd-log__entry--location {
+  border-color: var(--terminal-warm);
+  color: var(--terminal-warm);
+  font-size: .84rem;
+  font-weight: 600;
+}
+
+.focused-terminal-history .mudd-log__entry--error {
+  border-color: var(--mudd-error);
+  color: #f1a69a;
+}
+
+.focused-terminal .focused-command {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 8px 13px 13px;
+  border: 0;
+  border-radius: 0;
+  background: var(--terminal-inset);
+}
+.focused-command--mobile-open { display: block; }
+
+.focused-timed-action {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 13px;
+  border-bottom: 1px solid var(--terminal-border);
+  background: var(--terminal-inset);
+  color: var(--terminal-muted);
+  font: 400 .7rem/1.3 "DM Mono", monospace;
+}
+
+.focused-timed-action > span {
+  flex: 1 1 auto;
+}
+
+.focused-timed-action__button {
+  min-width: 54px;
+}
+
+.focused-terminal .focused-quick-commands {
+  display: flex;
+  min-height: 40px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 13px;
+  border-bottom: 1px solid var(--terminal-border);
+  background: var(--terminal-inset);
+}
+
+.focused-terminal-dialogue {
+  flex: 0 0 auto;
+  overflow-x: auto;
+  border-top: 1px solid var(--terminal-line);
+  padding: .4rem .6rem;
+  background: var(--terminal-inset);
+  scrollbar-width: thin;
+}
+
+.focused-terminal-dialogue__choices {
+  display: flex;
+  width: max-content;
+  min-width: 100%;
+  align-items: center;
+  gap: .45rem;
+}
+
+.focused-merchant-catalog {
+  display: flex;
+  max-height: min(30vh, 220px);
+  flex: 0 0 auto;
+  flex-direction: column;
+  overflow: hidden;
+  border-block: 1px solid var(--terminal-line);
+  background: var(--terminal-inset);
+}
+
+.focused-merchant-catalog__header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  padding: .45rem .65rem;
+  border-bottom: 1px solid var(--terminal-line);
+  color: var(--terminal-text);
+  font: 500 .72rem/1.25 "DM Mono", monospace;
+}
+
+.focused-merchant-catalog__header > div {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: .45rem .8rem;
+}
+
+.focused-merchant-catalog__header span,
+.focused-merchant-catalog__item span {
+  color: var(--terminal-muted);
+  font-size: .67rem;
+}
+
+.focused-merchant-catalog__close {
+  width: 1.7rem;
+  height: 1.7rem;
+  flex: 0 0 auto;
+  border: 1px solid var(--terminal-border);
+  border-radius: .35rem;
+  background: transparent;
+  color: var(--terminal-text);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.focused-merchant-catalog__list {
+  display: grid;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.focused-merchant-catalog__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .7rem;
+  padding: .45rem .65rem;
+  border-bottom: 1px solid var(--terminal-line);
+}
+
+.focused-merchant-catalog__item:last-child {
+  border-bottom: 0;
+}
+
+.focused-merchant-catalog__item > div {
+  display: grid;
+  min-width: 0;
+  gap: .15rem;
+  color: var(--terminal-text);
+  font: 500 .7rem/1.3 "DM Mono", monospace;
+}
+
+.focused-merchant-catalog__item span {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.focused-merchant-catalog__item .focused-quick-command {
+  min-width: 4rem;
+  flex: 0 0 auto;
+}
+
+.focused-terminal-combat {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  flex: 0 0 auto;
+  gap: .55rem;
+  padding: .65rem;
+  border-top: 1px solid var(--terminal-line);
+  background: var(--terminal-inset);
+}
+
+.focused-terminal-combat__status {
+  display: grid;
+  min-width: 0;
+  gap: .15rem;
+  color: var(--terminal-text);
+  font: 500 .7rem/1.3 "DM Mono", monospace;
+}
+
+.focused-terminal-combat__status span {
+  overflow: hidden;
+  color: var(--terminal-muted);
+  text-overflow: ellipsis;
+}
+
+.focused-terminal-combat__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 0;
+  gap: .5rem;
+}
+
+.focused-terminal-combat__actions .focused-combat-action {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  padding: .55rem .45rem;
+  text-align: center;
+  white-space: normal;
+}
+
+.focused-terminal-combat__items {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .5rem;
+  padding-top: .15rem;
+}
+
+.focused-terminal-combat__items .focused-combat-action {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: .55rem .45rem;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+.focused-quick-commands__label {
+  flex: 0 0 auto;
+  color: var(--terminal-muted);
+  font: 500 .62rem/1.2 "DM Mono", monospace;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 540px) {
+  .focused-terminal-combat {
+    align-items: stretch;
+  }
+
+  .focused-terminal-combat__actions {
+    width: 100%;
+  }
+}
+
+.focused-quick-commands__actions {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.focused-quick-command {
+  display: inline-flex;
+  min-width: 40px;
+  min-height: 30px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid var(--terminal-border);
+  border-radius: 6px;
+  padding: 3px 9px;
+  color: var(--terminal-text);
+  background: var(--terminal-surface);
+  font: 500 .72rem/1.2 "DM Mono", monospace;
+  cursor: pointer;
+}
+
+.focused-quick-command:hover:not(:disabled) {
+  border-color: var(--terminal-accent);
+  color: var(--terminal-accent);
+}
+
+.focused-quick-command:focus-visible {
+  outline: 2px solid var(--terminal-accent);
+  outline-offset: 2px;
+}
+
+.focused-quick-command:disabled {
+  cursor: wait;
+  opacity: .55;
+}
+
+.focused-quick-command--back {
+  min-width: 38px;
+  padding-inline: 6px;
+  font-size: 1rem;
+}
+
+.focused-quick-command--next {
+  min-width: 38px;
+  margin-left: auto;
+  padding-inline: 6px;
+  font-size: 1rem;
+}
+
+.focused-quick-commands__empty {
+  color: var(--terminal-muted);
+  font: 400 .68rem/1.3 "DM Mono", monospace;
+}
+
+.focused-terminal .focused-command-form .mudd-input {
+  border-color: var(--terminal-border);
+  color: var(--terminal-text);
+  background: var(--terminal-surface);
+}
+
+.focused-terminal .focused-command-form .mudd-button {
+  border-color: var(--terminal-border);
+  color: var(--terminal-text);
+  background: #34483a;
+}
+
+.focused-coordinate {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--mudd-muted);
+  font: 500 .67rem/1.3 "DM Mono", monospace;
+  letter-spacing: .03em;
+}
+
+.focused-coordinate i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--mudd-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mudd-accent) 15%, transparent);
+}

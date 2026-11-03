@@ -1,0 +1,31 @@
+.focused-client {
+  --mudd-bg: #e8e8dc;
+  --mudd-surface: #f4f2e7;
+  --mudd-surface-raised: #fbf9ef;
+  --mudd-text: #263b32;
+  --mudd-muted: #68776c;
+  --mudd-border: #c9d0bf;
+  --mudd-accent: #486653;
+  --mudd-accent-strong: #304b3a;
+  --mudd-accent-contrast: #f4f2e7;
+  --mudd-warm: #c08c4e;
+  --mudd-error: #a34f43;
+  --mudd-shadow: 0 14px 32px rgb(43 59 46 / 7%);
+  color-scheme: light;
+}
+
+.focused-client[data-theme="dark"] {
+  color-scheme: dark;
+  --mudd-bg: #1d2924;
+  --mudd-surface: #25332c;
+  --mudd-surface-raised: #2d3c34;
+  --mudd-text: #e9ede2;
+  --mudd-muted: #a5b2a5;
+  --mudd-border: #43564a;
+  --mudd-accent: #a4c4a7;
+  --mudd-accent-strong: #c0d9bf;
+  --mudd-accent-contrast: #1d2924;
+  --mudd-warm: #deb47d;
+  --mudd-error: #e89583;
+  --mudd-shadow: 0 14px 34px rgb(0 0 0 / 18%);
+}

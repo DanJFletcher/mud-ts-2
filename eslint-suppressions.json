@@ -458,74 +458,6 @@
       "count": 1
     }
   },
-  "apps/web/src/AccountApp.test.tsx": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 2
-    }
-  },
-  "apps/web/src/AccountApp.tsx": {
-    "max-lines-per-function": {
-      "count": 2
-    }
-  },
-  "apps/web/src/App.tsx": {
-    "complexity": {
-      "count": 9
-    },
-    "max-lines-per-function": {
-      "count": 50
-    },
-    "max-params": {
-      "count": 2
-    },
-    "sonarjs/cognitive-complexity": {
-      "count": 8
-    }
-  },
-  "apps/web/src/RoomChatPanel.test.tsx": {
-    "@typescript-eslint/no-misused-promises": {
-      "count": 8
-    }
-  },
-  "apps/web/src/RoomChatPanel.tsx": {
-    "complexity": {
-      "count": 3
-    },
-    "max-depth": {
-      "count": 2
-    },
-    "max-lines-per-function": {
-      "count": 20
-    },
-    "sonarjs/cognitive-complexity": {
-      "count": 3
-    }
-  },
-  "apps/web/src/TerminalPanel.tsx": {
-    "complexity": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 6
-    },
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
-  "apps/web/src/WorldMapPanel.tsx": {
-    "complexity": {
-      "count": 4
-    },
-    "max-depth": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 37
-    },
-    "sonarjs/cognitive-complexity": {
-      "count": 2
-    }
-  },
   "apps/web/src/codex/CodexScreen.tsx": {
     "complexity": {
       "count": 5
@@ -543,246 +475,6 @@
     },
     "sonarjs/cognitive-complexity": {
       "count": 1
-    }
-  },
-  "apps/web/src/command-projection.ts": {
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
-  "apps/web/src/commands/intents.ts": {
-    "complexity": {
-      "count": 2
-    },
-    "max-lines-per-function": {
-      "count": 2
-    },
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
-  "apps/web/src/commands/metadata.ts": {
-    "max-lines-per-function": {
-      "count": 2
-    }
-  },
-  "apps/web/src/commands/targets.ts": {
-    "max-depth": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 2
-    },
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
-  "apps/web/src/commands/use-action-dispatch.ts": {
-    "complexity": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 2
-    },
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
-  "apps/web/src/commands/use-world-commands.ts": {
-    "complexity": {
-      "count": 1
-    },
-    "max-depth": {
-      "count": 18
-    },
-    "max-lines-per-function": {
-      "count": 2
-    },
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
-  "apps/web/src/dialog-focus.ts": {
-    "complexity": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
-  "apps/web/src/features/combat/use-combat-controller.ts": {
-    "complexity": {
-      "count": 8
-    },
-    "max-lines-per-function": {
-      "count": 12
-    },
-    "sonarjs/cognitive-complexity": {
-      "count": 3
-    }
-  },
-  "apps/web/src/features/commerce/use-commerce-controller.ts": {
-    "complexity": {
-      "count": 3
-    },
-    "max-lines-per-function": {
-      "count": 6
-    },
-    "sonarjs/cognitive-complexity": {
-      "count": 3
-    }
-  },
-  "apps/web/src/features/daily/use-daily-controller.ts": {
-    "complexity": {
-      "count": 5
-    },
-    "max-lines-per-function": {
-      "count": 9
-    },
-    "max-params": {
-      "count": 1
-    },
-    "sonarjs/cognitive-complexity": {
-      "count": 4
-    }
-  },
-  "apps/web/src/features/dialogue/use-dialogue-controller.ts": {
-    "complexity": {
-      "count": 3
-    },
-    "max-lines-per-function": {
-      "count": 4
-    },
-    "sonarjs/cognitive-complexity": {
-      "count": 3
-    }
-  },
-  "apps/web/src/features/gathering/action-scheduler.ts": {
-    "max-lines-per-function": {
-      "count": 3
-    }
-  },
-  "apps/web/src/features/gathering/gathering-run.ts": {
-    "complexity": {
-      "count": 1
-    },
-    "max-depth": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 2
-    },
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
-  "apps/web/src/features/gathering/use-fishing-controller.ts": {
-    "complexity": {
-      "count": 3
-    },
-    "max-lines-per-function": {
-      "count": 4
-    },
-    "sonarjs/cognitive-complexity": {
-      "count": 3
-    }
-  },
-  "apps/web/src/features/gathering/use-gathering-run.ts": {
-    "max-lines-per-function": {
-      "count": 3
-    }
-  },
-  "apps/web/src/features/gathering/use-woodcutting-controller.ts": {
-    "complexity": {
-      "count": 3
-    },
-    "max-lines-per-function": {
-      "count": 4
-    },
-    "sonarjs/cognitive-complexity": {
-      "count": 3
-    }
-  },
-  "apps/web/src/features/history/activity-history.ts": {
-    "max-lines-per-function": {
-      "count": 5
-    }
-  },
-  "apps/web/src/features/inventory/action-selectors.ts": {
-    "max-lines-per-function": {
-      "count": 2
-    }
-  },
-  "apps/web/src/features/inventory/use-inventory-controller.ts": {
-    "complexity": {
-      "count": 10
-    },
-    "max-lines-per-function": {
-      "count": 12
-    },
-    "sonarjs/cognitive-complexity": {
-      "count": 6
-    }
-  },
-  "apps/web/src/features/keyboard/use-movement-shortcuts.ts": {
-    "complexity": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 3
-    }
-  },
-  "apps/web/src/features/navigation/world-navigation.ts": {
-    "max-lines-per-function": {
-      "count": 5
-    }
-  },
-  "apps/web/src/features/session/action-feedback.ts": {
-    "max-lines-per-function": {
-      "count": 3
-    }
-  },
-  "apps/web/src/features/session/foreground-execution.ts": {
-    "max-lines-per-function": {
-      "count": 3
-    }
-  },
-  "apps/web/src/features/session/request-scope.ts": {
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
-  "apps/web/src/features/session/use-request-scope.ts": {
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
-  "apps/web/src/features/social/use-social-controller.ts": {
-    "complexity": {
-      "count": 3
-    },
-    "max-depth": {
-      "count": 2
-    },
-    "max-lines-per-function": {
-      "count": 9
-    },
-    "sonarjs/cognitive-complexity": {
-      "count": 2
-    }
-  },
-  "apps/web/src/features/travel/use-travel-controller.ts": {
-    "complexity": {
-      "count": 2
-    },
-    "max-depth": {
-      "count": 9
-    },
-    "max-lines-per-function": {
-      "count": 10
-    },
-    "sonarjs/cognitive-complexity": {
-      "count": 2
     }
   },
   "apps/web/src/lobby/AccountShell.tsx": {
@@ -843,14 +535,6 @@
       "count": 3
     }
   },
-  "apps/web/src/lobby/WorldPlayPage.tsx": {
-    "complexity": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 2
-    }
-  },
   "apps/web/src/lobby/useLobby.ts": {
     "complexity": {
       "count": 1
@@ -862,17 +546,222 @@
       "count": 1
     }
   },
-  "apps/web/src/npc-farewell.ts": {
+  "apps/web/src/lobby/WorldPlayPage.tsx": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/web/src/world/commands/intents.ts": {
+    "complexity": {
+      "count": 2
+    },
+    "max-lines-per-function": {
+      "count": 2
+    },
+    "sonarjs/cognitive-complexity": {
       "count": 1
     }
   },
-  "apps/web/src/screens/CodexPage.tsx": {
+  "apps/web/src/world/commands/metadata.ts": {
     "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/web/src/world/commands/targets.ts": {
+    "max-depth": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 2
+    },
+    "sonarjs/cognitive-complexity": {
       "count": 1
     }
   },
-  "apps/web/src/screens/CombatPanel.tsx": {
+  "apps/web/src/world/commands/use-action-dispatch.ts": {
+    "complexity": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 2
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
+    }
+  },
+  "apps/web/src/world/commands/use-world-commands.ts": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 18
+    },
+    "max-lines-per-function": {
+      "count": 2
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
+    }
+  },
+  "apps/web/src/world/features/combat/use-combat-controller.ts": {
+    "complexity": {
+      "count": 8
+    },
+    "max-lines-per-function": {
+      "count": 12
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 3
+    }
+  },
+  "apps/web/src/world/features/commerce/use-commerce-controller.ts": {
+    "complexity": {
+      "count": 3
+    },
+    "max-lines-per-function": {
+      "count": 6
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 3
+    }
+  },
+  "apps/web/src/world/features/daily/use-daily-controller.ts": {
+    "complexity": {
+      "count": 5
+    },
+    "max-lines-per-function": {
+      "count": 9
+    },
+    "max-params": {
+      "count": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 4
+    }
+  },
+  "apps/web/src/world/features/dialogue/use-dialogue-controller.ts": {
+    "complexity": {
+      "count": 3
+    },
+    "max-lines-per-function": {
+      "count": 4
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 3
+    }
+  },
+  "apps/web/src/world/features/gathering/action-scheduler.ts": {
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "apps/web/src/world/features/gathering/gathering-run.ts": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 2
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
+    }
+  },
+  "apps/web/src/world/features/gathering/use-fishing-controller.ts": {
+    "complexity": {
+      "count": 3
+    },
+    "max-lines-per-function": {
+      "count": 4
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 3
+    }
+  },
+  "apps/web/src/world/features/gathering/use-gathering-run.ts": {
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "apps/web/src/world/features/gathering/use-woodcutting-controller.ts": {
+    "complexity": {
+      "count": 3
+    },
+    "max-lines-per-function": {
+      "count": 4
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 3
+    }
+  },
+  "apps/web/src/world/features/history/activity-history.ts": {
+    "max-lines-per-function": {
+      "count": 5
+    }
+  },
+  "apps/web/src/world/features/inventory/action-selectors.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "apps/web/src/world/features/inventory/use-inventory-controller.ts": {
+    "complexity": {
+      "count": 10
+    },
+    "max-lines-per-function": {
+      "count": 12
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 6
+    }
+  },
+  "apps/web/src/world/features/keyboard/use-movement-shortcuts.ts": {
+    "complexity": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "apps/web/src/world/features/navigation/world-navigation.ts": {
+    "max-lines-per-function": {
+      "count": 5
+    }
+  },
+  "apps/web/src/world/features/social/use-social-controller.ts": {
+    "complexity": {
+      "count": 3
+    },
+    "max-depth": {
+      "count": 2
+    },
+    "max-lines-per-function": {
+      "count": 9
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 2
+    }
+  },
+  "apps/web/src/world/features/travel/use-travel-controller.ts": {
+    "complexity": {
+      "count": 2
+    },
+    "max-depth": {
+      "count": 9
+    },
+    "max-lines-per-function": {
+      "count": 10
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 2
+    }
+  },
+  "apps/web/src/world/screens/CombatPanel.tsx": {
     "complexity": {
       "count": 1
     },
@@ -883,7 +772,7 @@
       "count": 1
     }
   },
-  "apps/web/src/screens/FieldNotesScreen.tsx": {
+  "apps/web/src/world/screens/FieldNotesScreen.tsx": {
     "complexity": {
       "count": 2
     },
@@ -894,12 +783,12 @@
       "count": 1
     }
   },
-  "apps/web/src/screens/InfoTabs.tsx": {
+  "apps/web/src/world/screens/InfoTabs.tsx": {
     "max-lines-per-function": {
       "count": 2
     }
   },
-  "apps/web/src/screens/InventoryScreen.tsx": {
+  "apps/web/src/world/screens/InventoryScreen.tsx": {
     "complexity": {
       "count": 2
     },
@@ -910,12 +799,69 @@
       "count": 1
     }
   },
-  "apps/web/src/screens/MerchantPanel.tsx": {
+  "apps/web/src/world/screens/MerchantPanel.tsx": {
     "max-lines-per-function": {
       "count": 2
     }
   },
-  "apps/web/src/screens/PlayScreen.tsx": {
+  "apps/web/src/world/screens/npc-farewell.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "apps/web/src/world/screens/panels/dialog-focus.ts": {
+    "complexity": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "apps/web/src/world/screens/panels/RoomChatPanel.test.tsx": {
+    "@typescript-eslint/no-misused-promises": {
+      "count": 8
+    }
+  },
+  "apps/web/src/world/screens/panels/RoomChatPanel.tsx": {
+    "complexity": {
+      "count": 3
+    },
+    "max-depth": {
+      "count": 2
+    },
+    "max-lines-per-function": {
+      "count": 20
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 3
+    }
+  },
+  "apps/web/src/world/screens/panels/TerminalPanel.tsx": {
+    "complexity": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 6
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
+    }
+  },
+  "apps/web/src/world/screens/panels/WorldMapPanel.tsx": {
+    "complexity": {
+      "count": 4
+    },
+    "max-depth": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 37
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 2
+    }
+  },
+  "apps/web/src/world/screens/PlayScreen.tsx": {
     "complexity": {
       "count": 3
     },
@@ -926,7 +872,7 @@
       "count": 2
     }
   },
-  "apps/web/src/screens/QuickCommands.tsx": {
+  "apps/web/src/world/screens/QuickCommands.tsx": {
     "complexity": {
       "count": 2
     },
@@ -943,7 +889,7 @@
       "count": 1
     }
   },
-  "apps/web/src/screens/StatsScreen.tsx": {
+  "apps/web/src/world/screens/StatsScreen.tsx": {
     "complexity": {
       "count": 1
     },
@@ -954,7 +900,7 @@
       "count": 1
     }
   },
-  "apps/web/src/screens/VitalsScreen.tsx": {
+  "apps/web/src/world/screens/VitalsScreen.tsx": {
     "complexity": {
       "count": 1
     },
@@ -965,12 +911,12 @@
       "count": 1
     }
   },
-  "apps/web/src/screens/WorldDialogs.tsx": {
+  "apps/web/src/world/screens/WorldDialogs.tsx": {
     "max-lines-per-function": {
       "count": 1
     }
   },
-  "apps/web/src/screens/WorldNavigation.tsx": {
+  "apps/web/src/world/screens/WorldNavigation.tsx": {
     "complexity": {
       "count": 1
     },
@@ -978,12 +924,51 @@
       "count": 2
     }
   },
-  "apps/web/src/use-game-session.ts": {
+  "apps/web/src/world/session/action-feedback.ts": {
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "apps/web/src/world/session/command-projection.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "apps/web/src/world/session/foreground-execution.ts": {
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "apps/web/src/world/session/request-scope.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "apps/web/src/world/session/use-game-session.ts": {
     "complexity": {
       "count": 2
     },
     "max-lines-per-function": {
       "count": 13
+    }
+  },
+  "apps/web/src/world/session/use-request-scope.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "apps/web/src/world/WorldClient.tsx": {
+    "complexity": {
+      "count": 9
+    },
+    "max-lines-per-function": {
+      "count": 50
+    },
+    "max-params": {
+      "count": 2
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 8
     }
   },
   "engine-contracts/src/character.ts": {
@@ -1605,6 +1590,11 @@
       "count": 1
     }
   },
+  "packages/ui/src/components/use-modal-dialog.ts": {
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
   "packages/ui/src/components/WorldCard.tsx": {
     "max-lines-per-function": {
       "count": 1
@@ -1618,11 +1608,6 @@
   "packages/ui/src/components/WorldHero.tsx": {
     "max-lines-per-function": {
       "count": 1
-    }
-  },
-  "packages/ui/src/components/use-modal-dialog.ts": {
-    "max-lines-per-function": {
-      "count": 3
     }
   },
   "packages/world-orraveth/src/content/dialogue.ts": {

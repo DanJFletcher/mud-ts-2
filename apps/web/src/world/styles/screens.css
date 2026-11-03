@@ -1,0 +1,474 @@
+.focused-command {
+  padding: 12px;
+  border: 1px solid var(--mudd-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--mudd-surface) 74%, transparent);
+}
+
+.focused-command-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.focused-command-form .mudd-field { min-width: 0; }
+.focused-command-form .mudd-field__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.focused-command-form .mudd-input {
+  min-height: 44px;
+  border-radius: 8px;
+  background: var(--mudd-surface-raised);
+  font: 500 .85rem "DM Mono", monospace;
+}
+.focused-command-form .mudd-button { min-height: 44px; border-radius: 8px; }
+.focused-shortcuts { display: flex; gap: 7px; align-items: center; margin-top: 8px; }
+.focused-shortcuts button {
+  min-height: 30px;
+  border: 0;
+  padding: 3px 0;
+  color: var(--mudd-accent);
+  background: transparent;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font: 500 .72rem "DM Mono", monospace;
+  cursor: pointer;
+}
+.focused-shortcuts span { color: var(--mudd-muted); font: .7rem "DM Mono", monospace; }
+
+.focused-feedback {
+  display: grid;
+  grid-template-columns: 6px minmax(0,1fr);
+  align-items: start;
+  gap: 9px;
+  padding: 11px 13px;
+  border-left: 2px solid var(--mudd-warm);
+  color: var(--mudd-muted);
+  background: color-mix(in srgb, var(--mudd-warm) 7%, var(--mudd-surface));
+  font-size: .78rem;
+  line-height: 1.45;
+}
+.focused-feedback > i { width: 5px; height: 5px; margin-top: 5px; border-radius: 50%; background: var(--mudd-warm); }
+.focused-feedback p { margin: 0; }
+.focused-feedback--error { border-color: var(--mudd-error); }
+.focused-feedback--error > i { background: var(--mudd-error); }
+.focused-feedback--empty { display: block; border-color: var(--mudd-border); }
+
+.focused-card {
+  padding: 18px;
+  border: 1px solid var(--mudd-border);
+  border-radius: 12px;
+  background: var(--mudd-surface);
+  box-shadow: var(--mudd-shadow);
+}
+
+.focused-identity {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 2px 0 18px;
+  border-bottom: 1px solid var(--mudd-border);
+}
+.focused-avatar {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--mudd-accent-contrast);
+  background: var(--mudd-accent);
+  font: 600 1.25rem "Literata", Georgia, serif;
+}
+.focused-identity-name { margin: 0; font: 600 1.35rem/1.2 "Literata", Georgia, serif; }
+.focused-identity-label { margin: 4px 0 0; color: var(--mudd-muted); font-size: .83rem; }
+.focused-details { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding-top: 17px; }
+.focused-detail { display: grid; gap: 5px; }
+.focused-detail--wide { grid-column: 1 / -1; }
+.focused-detail span { color: var(--mudd-muted); font: 500 .65rem "DM Mono", monospace; letter-spacing: .1em; text-transform: uppercase; }
+.focused-detail strong { font-size: .9rem; font-weight: 600; }
+.focused-stat-section { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--mudd-border); }
+.focused-stat-section h2 { margin: 0 0 9px; color: var(--mudd-muted); font: 500 .7rem "DM Mono", monospace; letter-spacing: .12em; text-transform: uppercase; }
+.focused-stat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 18px; }
+.focused-stat { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: 8px; }
+.focused-stat span { overflow-wrap: anywhere; color: var(--mudd-muted); font-size: .82rem; }
+.focused-stat strong { flex-shrink: 0; font-size: .84rem; font-weight: 500; text-align: right; }
+.focused-vitals { display: grid; gap: 14px; padding-top: 18px; }
+.focused-vital { display: grid; gap: 7px; }
+.focused-vital-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.focused-vital-heading span { color: var(--mudd-accent); font: 500 .8rem "DM Mono", monospace; letter-spacing: .06em; }
+.focused-vital-heading strong { color: var(--mudd-muted); font: 500 .76rem "DM Mono", monospace; }
+.focused-vital-meter { height: 8px; overflow: hidden; border-radius: 999px; background: var(--mudd-border); }
+.focused-vital-meter > span { display: block; height: 100%; border-radius: inherit; background: var(--mudd-accent); transition: width 180ms ease; }
+.focused-inventory { display: flex; flex-wrap: wrap; gap: 8px; }
+.focused-inventory-entry { display: flex; flex-wrap: wrap; gap: 6px; }
+.focused-inventory-label { align-self: center; }
+.focused-item-tag { align-self: center; color: var(--mudd-muted); font: 500 .68rem "DM Mono", monospace; text-transform: uppercase; }
+.focused-equipment { display: grid; gap: 8px; }
+.focused-equipment-slot { display: flex; align-items: center; gap: 10px; }
+.focused-equipment-slot > span { min-width: 52px; }
+.focused-equipment-slot strong { flex: 1; }
+.focused-inventory-item {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--mudd-border);
+  border-radius: 999px;
+  color: var(--mudd-ink);
+  background: var(--mudd-surface);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.focused-inventory-item:disabled { cursor: wait; opacity: .65; }
+.focused-inventory-item:focus-visible { outline: 2px solid var(--mudd-accent); outline-offset: 2px; }
+.focused-inventory--compact { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; border-top: 1px solid var(--mudd-border); }
+.focused-inventory-entry--compact { display: flex; min-width: 0; flex-wrap: nowrap; align-items: center; gap: 6px; border-bottom: 1px solid var(--mudd-border); }
+.focused-inventory-item--compact {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+}
+.focused-inventory-item--compact:hover:not(:disabled) { background: color-mix(in srgb, var(--mudd-accent) 7%, transparent); }
+.focused-inventory-item--compact:disabled { cursor: wait; }
+.focused-inventory-name { min-width: 0; overflow-wrap: anywhere; }
+.focused-inventory-meta { flex: 0 0 auto; color: var(--mudd-muted); font: 500 .7rem/1 "DM Mono", monospace; white-space: nowrap; }
+.focused-item-tag--compact { flex: 0 0 auto; padding: 0 6px; }
+.focused-inventory-description { display: grid; gap: 4px; margin: 2px 0 0; color: var(--mudd-muted); font-size: .88rem; line-height: 1.5; }
+.focused-inventory-description strong { color: var(--mudd-ink); }
+.focused-inventory-error { margin: 0; color: var(--mudd-danger); font-size: .85rem; }
+.focused-note { margin: 0; padding-top: 16px; color: var(--mudd-muted); font-size: .88rem; line-height: 1.6; }
+
+.focused-notes-layout { display: grid; gap: 16px; min-height: 0; }
+.focused-quest-journal {
+  padding: 16px;
+  border: 1px solid var(--mudd-border);
+  border-radius: 12px;
+  background: var(--mudd-surface);
+}
+.focused-quest-journal > h2 {
+  margin: 0 0 12px;
+  color: var(--mudd-text);
+  font-family: var(--mudd-display-font);
+  font-size: 1.1rem;
+}
+.focused-quest-group { display: grid; gap: 8px; margin-top: 14px; }
+.focused-quest-group-title { margin: 0; font-size: .9rem; }
+.focused-client .focused-quest-group-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--mudd-border);
+  border-radius: 8px;
+  color: var(--mudd-text);
+  background: var(--mudd-bg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.focused-client .focused-quest-group-toggle:focus-visible { outline: 2px solid var(--mudd-accent); outline-offset: 2px; }
+.focused-quest-group-content { display: grid; gap: 8px; }
+.focused-quest-group-content[hidden] { display: none; }
+.focused-quest-list { display: grid; gap: 10px; }
+.focused-quest-card {
+  padding: 12px;
+  border: 1px solid var(--mudd-border);
+  border-radius: 9px;
+  background: var(--mudd-bg);
+}
+.focused-quest-item-heading { margin: 0; }
+.focused-client .focused-quest-toggle {
+  width: 100%;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border: 0;
+  color: var(--mudd-text);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.focused-client .focused-quest-toggle:focus-visible { outline: 2px solid var(--mudd-accent); outline-offset: 2px; }
+.focused-quest-title { min-width: 0; flex: 1; font-size: .98rem; font-weight: 600; }
+.focused-quest-content { margin-top: 8px; }
+.focused-quest-content[hidden] { display: none; }
+.focused-quest-status {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border: 1px solid var(--mudd-border);
+  border-radius: 999px;
+  color: var(--mudd-muted);
+  font-size: .68rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.focused-quest-status--active { color: var(--mudd-warm); border-color: var(--mudd-warm); }
+.focused-quest-summary { margin: 8px 0 10px; color: var(--mudd-muted); font-size: .84rem; line-height: 1.5; }
+.focused-quest-objectives { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.focused-quest-objective { display: flex; align-items: flex-start; gap: 8px; color: var(--mudd-text); font-size: .84rem; line-height: 1.45; }
+.focused-quest-objective > span:first-child { width: 1rem; flex: 0 0 1rem; color: var(--mudd-muted); text-align: center; }
+.focused-quest-objective--complete { color: var(--mudd-muted); }
+.focused-quest-objective--complete > span:first-child { color: var(--mudd-warm); }
+.focused-quest-empty { margin: 0; color: var(--mudd-muted); font-size: .86rem; }
+.focused-daily-journal { padding-top: 13px; }
+.focused-daily-journal > h2 { margin-bottom: 8px; }
+.focused-daily-journal__list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.focused-daily-journal__item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 9px; border: 1px solid var(--mudd-border); border-radius: 7px; background: var(--mudd-bg); color: var(--mudd-text); font-size: .83rem; }
+.focused-daily-journal__item > span:first-child { display: grid; gap: 2px; min-width: 0; }
+.focused-daily-journal__item small { color: var(--mudd-muted); font: 400 .65rem/1.3 "DM Mono", monospace; }
+.focused-quest-status--expired { color: var(--mudd-danger); border-color: var(--mudd-danger); }
+.focused-daily-status { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 11px; border-top: 1px solid var(--mudd-border); color: var(--mudd-muted); font-size: .78rem; }
+.focused-daily-status p { margin: 0; }
+.focused-daily-status [role="alert"] { color: var(--mudd-danger); }
+.focused-daily-status .mudd-button { min-height: 2rem; padding: .35rem .7rem; border-radius: 6px; font-size: .72rem; }
+
+.focused-log { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.focused-log .mudd-log {
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.focused-log .mudd-log__entries { gap: 0; }
+.focused-log .mudd-log__entry {
+  position: relative;
+  min-height: 52px;
+  padding: 12px 12px 12px 31px;
+  border: 0;
+  border-bottom: 1px solid var(--mudd-border);
+  color: var(--mudd-text);
+  font-size: .86rem;
+  line-height: 1.5;
+}
+.focused-log .mudd-log__entry:before {
+  position: absolute;
+  top: 19px;
+  left: 9px;
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--mudd-accent);
+  border-radius: 50%;
+  content: "";
+}
+.focused-log .mudd-log__entry--system { color: var(--mudd-muted); }
+.focused-log .mudd-log__entry--system:before { border-color: var(--mudd-warm); background: var(--mudd-warm); }
+.focused-log .mudd-log__entry--error { color: var(--mudd-error); }
+.focused-log .mudd-log__entry--error:before { border-color: var(--mudd-error); background: var(--mudd-error); }
+.focused-log .mudd-log__empty {
+  padding: 22px 16px;
+  border: 1px dashed var(--mudd-border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--mudd-surface) 70%, transparent);
+  text-align: center;
+}
+
+.focused-info-tabs {
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--mudd-border);
+}
+.focused-info-tabs::-webkit-scrollbar { display: none; }
+.focused-info-tab {
+  display: flex;
+  min-width: max-content;
+  flex: 1 0 auto;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border-bottom: 2px solid transparent;
+  color: var(--mudd-muted);
+  font: 600 .76rem/1.2 "DM Sans", system-ui, sans-serif;
+  text-align: center;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.focused-info-tab[aria-current="page"] {
+  border-bottom-color: var(--mudd-accent-strong);
+  color: var(--mudd-accent-strong);
+}
+.focused-info-tab:focus-visible {
+  outline: 3px solid var(--mudd-warm);
+  outline-offset: -3px;
+}
+
+.focused-bottom-nav {
+  position: fixed;
+  z-index: 10;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  min-height: calc(64px + env(safe-area-inset-bottom));
+  padding: 6px 10px calc(6px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--mudd-border);
+  background: color-mix(in srgb, var(--mudd-surface) 94%, transparent);
+  backdrop-filter: blur(14px);
+}
+.focused-tab {
+  text-decoration: none;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 50px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  color: var(--mudd-muted);
+  background: transparent;
+  font: 500 .66rem/1 "DM Mono", monospace;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.focused-tab svg { width: 19px; height: 19px; }
+.focused-tab[aria-current="page"],
+.focused-tab[aria-pressed="true"] { color: var(--mudd-accent-strong); background: color-mix(in srgb, var(--mudd-accent) 10%, transparent); }
+.focused-tab:focus-visible { outline: 3px solid var(--mudd-warm); outline-offset: -2px; }
+.focused-type-tab { display: none; }
+.focused-nav-menu { position: relative; display: grid; min-width: 0; }
+.focused-nav-menu__trigger { width: 100%; appearance: none; }
+.focused-nav-menu__trigger[aria-expanded="true"] { color: var(--mudd-accent-strong); background: color-mix(in srgb, var(--mudd-accent) 10%, transparent); }
+.focused-nav-menu__panel {
+  position: absolute;
+  z-index: 20;
+  right: 0;
+  bottom: calc(100% + 8px);
+  display: grid;
+  width: min(272px, calc(100vw - 24px));
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--mudd-border);
+  border-radius: 12px;
+  background: var(--mudd-surface-raised);
+  box-shadow: var(--mudd-shadow);
+}
+.focused-nav-menu__panel[hidden] { display: none; }
+.focused-nav-menu__brand {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px 8px;
+  border-bottom: 1px solid var(--mudd-border);
+  color: var(--mudd-text);
+  font: 600 .72rem/1 "DM Mono", monospace;
+  letter-spacing: .14em;
+}
+.focused-nav-menu__action {
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--mudd-text);
+  background: transparent;
+  font: 500 .82rem/1.2 "DM Sans", system-ui, sans-serif;
+  text-align: left;
+}
+.focused-nav-menu__action:hover:not(:disabled) { background: color-mix(in srgb, var(--mudd-accent) 10%, transparent); }
+.focused-nav-menu__action:focus-visible { outline: 3px solid var(--mudd-warm); outline-offset: -2px; }
+.focused-nav-menu__action svg { flex: 0 0 auto; }
+.focused-content:focus { outline: none; }
+
+@media (max-width: 699px) {
+  .focused-bottom-nav--with-type { grid-template-columns: repeat(4, 1fr); }
+  .focused-type-tab { display: grid; }
+  .focused-command--mobile-hidden { display: none; }
+  .focused-command-form { grid-template-columns: minmax(0, 1fr); }
+  .focused-command-form > .mudd-button { display: none; }
+  .focused-content--play {
+    position: fixed;
+    z-index: 5;
+    inset: env(safe-area-inset-top, 0px) 0 calc(64px + env(safe-area-inset-bottom, 0px));
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+    animation: none;
+  }
+  .focused-content--play .focused-screen--play {
+    height: 100%;
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    gap: 0;
+  }
+  .focused-content--play .focused-screen--play > .focused-terminal {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    max-height: none;
+    border-radius: 0;
+    border-right: 0;
+    border-left: 0;
+    box-shadow: none;
+  }
+  .focused-content--play .focused-terminal--collapsed {
+    height: 100%;
+    min-height: 0;
+    max-height: none;
+  }
+  .focused-content--play .focused-terminal--collapsed .focused-terminal-body {
+    display: flex;
+  }
+}
+
+.focused-loading { min-height: 300px; display: grid; align-content: center; gap: 13px; padding: 20px; }
+.focused-arrival { display: grid; gap: 16px; }
+.focused-arrival-copy { margin: 0; color: var(--mudd-muted); line-height: 1.55; }
+.focused-arrival-form { display: grid; gap: 12px; }
+.focused-arrival-form .mudd-button { min-height: 48px; }
+.focused-connection { display: grid; justify-items: start; gap: 12px; }
+.focused-connection .mudd-panel__title { margin-bottom: 0; }
+
+@media (min-width: 700px) {
+  .focused-client { padding-inline: 28px; padding-bottom: 28px; }
+  .focused-content { padding-top: 12px; }
+  .focused-screen--play { grid-template-columns: minmax(0, 1.2fr) minmax(260px, .8fr); align-items: start; gap: 14px; }
+  .focused-screen--play .focused-screen-heading,
+  .focused-screen--play .focused-feedback { grid-column: 1 / -1; }
+  .focused-room { grid-row: span 2; }
+  .focused-bottom-nav {
+    position: relative;
+    width: min(100%, 880px);
+    min-height: 54px;
+    margin: 0 auto;
+    padding: 4px;
+    border: 1px solid var(--mudd-border);
+    border-radius: 12px;
+    background: var(--mudd-surface);
+  }
+  .focused-tab { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 8px; min-height: 44px; font-size: .72rem; }
+  .focused-type-tab { display: none; }
+}
+
+@media (max-width: 360px) {
+  .focused-client { padding-right: 12px; padding-left: 12px; }
+  .focused-content { padding-top: 8px; }
+  .focused-room { padding: 19px 16px 16px; }
+  .focused-command { padding: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .focused-content { animation: none; }
+}

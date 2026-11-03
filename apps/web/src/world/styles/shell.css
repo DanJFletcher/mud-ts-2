@@ -1,0 +1,98 @@
+.focused-session-recovery-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+.focused-client {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  color: var(--mudd-text);
+  background:
+    linear-gradient(90deg, transparent 0 11px, rgb(72 102 83 / 4%) 11px 12px, transparent 12px),
+    var(--mudd-bg);
+  padding: 0 16px calc(78px + env(safe-area-inset-bottom));
+  font-family: "DM Sans", system-ui, sans-serif;
+}
+
+.focused-client .focused-topbar {
+  width: min(100%, 880px);
+  min-height: 50px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--mudd-border);
+}
+
+.focused-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--mudd-text);
+  font: 600 .8rem/1 "DM Mono", monospace;
+  letter-spacing: .15em;
+}
+
+.focused-brand-mark {
+  width: 9px;
+  height: 9px;
+  border: 1px solid var(--mudd-warm);
+  transform: rotate(45deg);
+}
+
+.focused-theme-toggle { min-width: 44px; min-height: 44px; padding: 8px; }
+.focused-theme-toggle span { display: none; }
+
+.focused-content {
+  width: min(100%, 880px);
+  margin: 0 auto;
+  flex: 1;
+  padding: 8px 0 16px;
+  touch-action: pan-y;
+  animation: focused-enter 220ms ease both;
+}
+
+@keyframes focused-enter {
+  from { opacity: .65; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.focused-screen { display: grid; gap: 14px; }
+.focused-screen-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 2px 0 3px;
+}
+
+.focused-kicker {
+  color: var(--mudd-accent);
+  font: 500 .68rem/1.35 "DM Mono", monospace;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.focused-screen-title {
+  margin: 4px 0 0;
+  font: 600 1.55rem/1.12 "Literata", Georgia, serif;
+  letter-spacing: -.035em;
+}
+
+.focused-room {
+  position: relative;
+  padding: 22px 20px 18px;
+  border: 1px solid var(--mudd-border);
+  border-top: 3px solid var(--mudd-accent);
+  border-radius: 5px 5px 14px 14px;
+  background: var(--mudd-surface);
+  box-shadow: var(--mudd-shadow);
+}
+
+.focused-room:before {
+  position: absolute;
+  content: "";
+  top: -3px;
+  right: 20px;
+  width: 34px;
+  height: 3px;
+  background: var(--mudd-warm);
+}

@@ -53,7 +53,13 @@ function report(context, checks) {
 }
 function compareBudgets(context, rollout) {
   const before = baseJson(context, 'eslint-suppressions.json', {}), after = JSON.parse(readFileSync(resolve(context.cwd, 'eslint-suppressions.json'), 'utf8'));
-  return budgetChanges(before, after, context.comparison.files).map(change => ({ ...change, failure: change.failure && !(rollout && newRules.includes(change.rule)) }));
+  return budgetChanges(before, after, context.comparison.files, budgetTrees(context)).map(change => ({ ...change, failure: change.failure && !(rollout && newRules.includes(change.rule)) }));
+}
+function budgetTrees(context) {
+  return { beforePaths: trackedPaths(context.cwd, context.comparison.base), afterPaths: trackedPaths(context.cwd, context.comparison.head) };
+}
+function trackedPaths(cwd, revision) {
+  return new Set(git(cwd, ['ls-tree', '-r', '--name-only', '-z', revision]).split('\0').filter(Boolean));
 }
 export function baseJson(context, path, fallback) {
   const exists = git(context.cwd, ['ls-tree', '--name-only', context.comparison.base, '--', path]).trim();
