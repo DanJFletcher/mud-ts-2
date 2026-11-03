@@ -20,6 +20,22 @@ async function createGuestWorld(
   })).toBeVisible();
 }
 
+async function clickQuickAction(page: Page, name: string) {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const action = page.getByRole('button', { name, exact: true });
+    if (await action.count()) {
+      await action.click();
+      return;
+    }
+    const group = page.getByRole('group', { name: /^Quick commands, page \d+$/ });
+    const currentPage = Number((await group.getAttribute('aria-label'))?.match(/page (\d+)/)?.[1] ?? 1);
+    const nextPage = page.getByRole('button', { name: `Show quick actions page ${currentPage + 1}` });
+    if (!await nextPage.count()) break;
+    await nextPage.click();
+  }
+  throw new Error(`Quick action "${name}" is not available.`);
+}
+
 test('guest creates a character, explores, and can leave and re-enter the world', async ({ page }) => {
   await createGuestWorld(page);
   const marker = page.getByRole('button', {
@@ -151,8 +167,8 @@ test('guest can obtain a fishing rod and cancel a cast', async ({ page }) => {
     await expect(page.getByRole('heading', { name: destination })).toBeVisible();
   }
 
-  await command.fill('use old rod');
-  await command.press('Enter');
+  await clickQuickAction(page, 'Show items to use');
+  await page.getByRole('button', { name: /Use .* to fish at Lower Rill Bridge/ }).click();
   const fishing = page.getByRole('region', { name: 'Fishing in progress' });
   await expect(fishing).toBeVisible();
   await fishing.getByRole('button', { name: 'Stop' }).click();

@@ -4371,6 +4371,67 @@ describe('single-character world session client', () => {
     },
   );
 
+  it.each(["active combat", "resting posture"] as const)(
+    "suppresses movement shortcuts during %s",
+    async (restriction) => {
+      if (restriction === "active combat") {
+        combatEncounter = {
+          encounterId: "keyboard-combat",
+          locationId: "mossgate-clearing",
+          opponentNpcId: "mossgate-training-sentinel",
+          opponentName: "Practice Sentinel",
+          round: 1,
+          playerHealth: 10,
+          playerMaxHealth: 10,
+          opponentHealth: 4,
+          opponentMaxHealth: 4,
+          status: "active",
+          lastAction: "attack",
+          lastNarration: "The sentinel waits.",
+        };
+      } else {
+        staminaPosture = "resting";
+      }
+      render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+      await screen.findByRole("heading", { name: "Mossgate Clearing" });
+
+      fireEvent.keyDown(document, { key: "ArrowUp" });
+
+      expect(apiFetch.mock.calls.filter(([path, init]) =>
+        path === "/api/commands" && init?.body &&
+        JSON.parse(String(init.body)).type === "character.move",
+      )).toHaveLength(0);
+    },
+  );
+
+  it("suppresses another movement shortcut while the first move is pending", async () => {
+    const original = apiFetch.getMockImplementation()!;
+    let releaseMove: (() => Promise<void>) | undefined;
+    apiFetch.mockImplementation((path, init) => {
+      if (path === "/api/commands" && init?.body &&
+          JSON.parse(String(init.body)).type === "character.move") {
+        return new Promise<Response>((resolve) => {
+          releaseMove = async () => { resolve(await original(path, init)); };
+        });
+      }
+      return original(path, init);
+    });
+    const movementRequests = () => apiFetch.mock.calls.filter(([path, init]) =>
+      path === "/api/commands" && init?.body &&
+      JSON.parse(String(init.body)).type === "character.move",
+    );
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole("heading", { name: "Mossgate Clearing" });
+
+    fireEvent.keyDown(document, { key: "ArrowUp" });
+    await waitFor(() => expect(releaseMove).toBeTypeOf("function"));
+    fireEvent.keyDown(document, { key: "ArrowRight" });
+    expect(movementRequests()).toHaveLength(1);
+
+    await act(async () => { await releaseMove?.(); });
+    await screen.findByRole("heading", { name: "Glasswater Bridge" });
+  });
+
   it('uses arrow keys for cardinal movement but leaves command fields alone', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
