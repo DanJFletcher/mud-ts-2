@@ -1,0 +1,87 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { writeFileSync, mkdirSync, symlinkSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { repository } from './tests/repository.mjs';
+import { runQuality } from './gate.mjs';
+const policy={version:1,functions:{complexity:10,cognitive:10,depth:3,lines:5,parameters:4},coverage:{fixture:{path:'apps',lines:80,branches:80,functions:80,statements:80}}};
+function fixture(t) {
+ const r=repository(t,{'quality-policy.json':JSON.stringify(policy),'quality-sites.json':'{"version":1,"sites":[]}','eslint-suppressions.json':'{}','.gitignore':'node_modules\ncoverage/\napps/coverage/\n','eslint.config.mjs':`export { default } from ${JSON.stringify(resolve('eslint.config.mjs'))};`});
+ symlinkSync(resolve('node_modules'),join(r.cwd,'node_modules'),'dir');
+ mkdirSync(join(r.cwd,'apps/coverage'),{recursive:true});
+ writeFileSync(join(r.cwd,'apps/coverage/coverage-summary.json'),JSON.stringify({total:Object.fromEntries(['lines','branches','functions','statements'].map(metric=>[metric,{pct:80}]))}));
+ return r;
+}
+test('end-to-end comparison passes docs, fails new over-limit code and baseline growth, then passes compliant code',async t=>{
+ const r=fixture(t);writeFileSync(join(r.cwd,'README.md'),'docs');let head=r.commit();
+ let report=await runQuality({cwd:r.cwd,base:r.base,head});
+ assert.equal(report.status,'passed',JSON.stringify(report));assert.equal(report.base,r.base);assert.equal(report.selected.length,0);
+ writeFileSync(join(r.cwd,'apps/example.mjs'),'export function tooLong() {\n'+ '  console.log(1);\n'.repeat(8)+'}\n');head=r.commit();
+ report=await runQuality({cwd:r.cwd,base:r.base,head});assert.equal(report.status,'failed');
+ assert.ok(report.failures.some(f=>f.rule==='max-lines-per-function'&&f.measured===10));
+ writeFileSync(join(r.cwd,'apps/example.mjs'),'export const good = () => 1;\n');head=r.commit();
+ report=await runQuality({cwd:r.cwd,base:r.base,head});assert.equal(report.status,'passed');
+ writeFileSync(join(r.cwd,'eslint-suppressions.json'),'{"apps/example.mjs":{"max-params":{"count":1}}}');head=r.commit();
+ report=await runQuality({cwd:r.cwd,base:r.base,head});assert.equal(report.status,'failed');assert.ok(report.baselineChanges.some(c=>c.failure));
+ writeFileSync(join(r.cwd,'apps/coverage/coverage-summary.json'),'{"total":{}}');
+ report=await runQuality({cwd:r.cwd,base:r.base,head});assert.ok(report.coverage.some(c=>c.failure));
+});
+test('missing history, dirty source, missing reports and malformed policy are analysis/configuration errors',async t=>{
+ const r=fixture(t);
+ assert.equal((await runQuality({cwd:r.cwd,base:'missing'})).status,'error');
+ writeFileSync(join(r.cwd,'quality-policy.json'),'{}');
+ const report=await runQuality({cwd:r.cwd,base:r.base});assert.equal(report.status,'error');
+});
+test('site occurrence identity survives line shifts across successive PRs without transferring to copies',async t=>{
+ const {siteRecord}=await import('./baselines.mjs');
+ const r=fixture(t);const source='export const difference = x => x - x;\n';
+ writeFileSync(join(r.cwd,'apps/legacy.mjs'),source);const original=r.commit();
+ const site=siteRecord('apps/legacy.mjs',{ruleId:'sonarjs/no-identical-expressions',line:1,column:source.indexOf('x - x')+1,endLine:1,endColumn:source.indexOf('x - x')+6},source);
+ writeFileSync(join(r.cwd,'quality-sites.json'),JSON.stringify({version:1,revision:original,sites:[site]}));const base=r.commit();
+ writeFileSync(join(r.cwd,'apps/legacy.mjs'),'// heading\n'+source);const first=r.commit();
+ let report=await runQuality({cwd:r.cwd,base,head:first});assert.equal(report.status,'passed',JSON.stringify(report));
+ writeFileSync(join(r.cwd,'README.md'),'second PR');const second=r.commit();
+ report=await runQuality({cwd:r.cwd,base:first,head:second});assert.equal(report.status,'passed',JSON.stringify(report));
+ writeFileSync(join(r.cwd,'apps/legacy.mjs'),'// heading\n'+source+'export const copy = x => x - x;\n');const copied=r.commit();
+ report=await runQuality({cwd:r.cwd,base:second,head:copied});assert.equal(report.status,'failed');
+});
+test('local CLI emits reports with success, threshold failure and missing-history exit codes',async t=>{
+ const {spawnSync}=await import('node:child_process');
+ const {readFileSync,rmSync}=await import('node:fs');
+ const r=fixture(t),cli=resolve('scripts/quality/cli.mjs');
+ const run=base=>spawnSync(process.execPath,[cli,'--base',base],{cwd:r.cwd,env:{...process.env,GITHUB_STEP_SUMMARY:''},encoding:'utf8'});
+ const initial=run(r.base);assert.equal(initial.status,0,initial.stdout+initial.stderr);
+ assert.equal(JSON.parse(readFileSync(join(r.cwd,'coverage/pr-quality.json'))).status,'passed');
+ assert.equal(run('missing').status,2);
+ writeFileSync(join(r.cwd,'apps/coverage/coverage-summary.json'),'{"total":{}}');
+ assert.equal(run(r.base).status,1);
+ rmSync(join(r.cwd,'apps/coverage/coverage-summary.json'));
+ const missing=await runQuality({cwd:r.cwd,base:r.base});assert.equal(missing.status,'error');assert.match(missing.error,/coverage-summary/);assert.equal(missing.head,r.base);assert.equal(missing.base,r.base);
+ writeFileSync(join(r.cwd,'quality-policy.json'),'{}');r.commit();
+ const malformed=await runQuality({cwd:r.cwd,base:r.base});assert.equal(malformed.status,'error');assert.match(malformed.error,/Required/);
+});
+test('an ordinary PR cannot reseed new typed/smell allowances or hide them with inline disables',async t=>{
+ const {siteRecord}=await import('./baselines.mjs');
+ const r=fixture(t),source='/* eslint-disable */\nexport const bad = x => x - x;\n';
+ writeFileSync(join(r.cwd,'apps/new.mjs'),source);
+ const site=siteRecord('apps/new.mjs',{ruleId:'sonarjs/no-identical-expressions',line:2,column:24},source);
+ writeFileSync(join(r.cwd,'quality-sites.json'),JSON.stringify({version:1,sites:[site]}));const head=r.commit();
+ const report=await runQuality({cwd:r.cwd,base:r.base,head});
+ assert.equal(report.status,'failed');assert.ok(report.baselineChanges.some(change=>change.failure));assert.ok(report.findings.some(finding=>finding.rule==='sonarjs/no-identical-expressions'));
+});
+test('integrated PR keeps untouched numeric debt while enforcing changed functions, budgets, coverage and failure summaries',async t=>{
+ const {summary}=await import('./report.mjs');const r=fixture(t);
+ const legacy='export function legacy() {\n'+'  console.log(1);\n'.repeat(8)+'}\n';
+ writeFileSync(join(r.cwd,'apps/functions.mjs'),legacy+'export const current = () => 1;\n');
+ writeFileSync(join(r.cwd,'eslint-suppressions.json'),'{"apps/functions.mjs":{"max-lines-per-function":{"count":1}}}');const base=r.commit();
+ writeFileSync(join(r.cwd,'apps/functions.mjs'),legacy+'export const current = () => 2;\n');let head=r.commit();
+ let report=await runQuality({cwd:r.cwd,base,head});assert.equal(report.status,'passed',JSON.stringify(report));assert.ok(report.selected.every(fn=>fn.name!=='legacy'));
+ writeFileSync(join(r.cwd,'apps/functions.mjs'),'export const legacy = () => 1;\n'+legacy.replace('legacy','current'));head=r.commit();
+ report=await runQuality({cwd:r.cwd,base,head});assert.equal(report.status,'failed');assert.ok(report.numeric.some(f=>f.function==='current'));
+ writeFileSync(join(r.cwd,'eslint-suppressions.json'),'{"apps/functions.mjs":{"max-lines-per-function":{"count":2}}}');head=r.commit();
+ writeFileSync(join(r.cwd,'apps/coverage/coverage-summary.json'),JSON.stringify({total:{lines:{pct:80},branches:{pct:79},functions:{pct:80},statements:{pct:80}}}));
+ report=await runQuality({cwd:r.cwd,base,head});assert.ok(report.baselineChanges.some(c=>c.failure));assert.ok(report.coverage.some(c=>c.failure));assert.match(summary(report),/"measured": 10/);assert.match(summary(report),/"metric": "branches"/);
+ writeFileSync(join(r.cwd,'apps/functions.mjs'),'export const legacy = () => 1;\nexport const current = () => 2;\n');writeFileSync(join(r.cwd,'eslint-suppressions.json'),'{}');head=r.commit();
+ writeFileSync(join(r.cwd,'apps/coverage/coverage-summary.json'),JSON.stringify({total:Object.fromEntries(['lines','branches','functions','statements'].map(m=>[m,{pct:80}]))}));
+ report=await runQuality({cwd:r.cwd,base,head});assert.equal(report.status,'passed');assert.ok(report.baselineChanges.some(c=>!c.failure&&c.after===0));
+});

@@ -1,0 +1,20 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { parse } from 'yaml';
+test('PR check uses actual base/head with full history and leaves push verification independent',()=>{
+ const workflow=parse(readFileSync('.github/workflows/ci.yml','utf8'));
+ const quality=workflow.jobs.quality;
+ assert.equal(quality?.name,'PR quality');
+ assert.equal(quality.if,"github.event_name == 'pull_request'");
+ const checkout=quality.steps.find(step=>step.uses?.startsWith('actions/checkout@'));
+ assert.equal(checkout.with['fetch-depth'],0);
+ assert.equal(checkout.with.ref,'${{ github.event.pull_request.head.sha }}');
+ assert.equal(quality.env.PR_BASE_SHA,'${{ github.event.pull_request.base.sha }}');
+ assert.equal(quality.env.PR_HEAD_SHA,'${{ github.event.pull_request.head.sha }}');
+ assert.ok(quality.steps.some(step=>step.run?.includes('--base "$PR_BASE_SHA" --head "$PR_HEAD_SHA"')));
+ assert.ok(quality.steps.some(step=>step.uses?.startsWith('actions/upload-artifact@')&&step.if==='failure()'));
+ for(const command of ['npm test','npm run typecheck','npm run lint','npm run build','npm run storybook:build']) assert.ok(workflow.jobs.verify.steps.some(step=>step.run===command));
+ assert.equal(workflow.jobs.verify.if,undefined);
+ assert.ok(workflow.on.push!==undefined&&workflow.on.pull_request!==undefined);
+});

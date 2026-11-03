@@ -6,8 +6,9 @@ export default defineConfig({
     exclude: ['**/node_modules/**', '**/dist/**'],
     coverage: {
       provider: 'v8',
+      reporter: ['text', 'json-summary', 'json'],
       include: ['src/**/*.ts'],
-      exclude: ['src/**/*.test.ts'],
+      exclude: ['src/**/*.d.ts', 'src/**/*.{test,spec,stories}.{ts,tsx}', 'src/**/tests/**', 'src/**/__tests__/**', 'src/test-setup.ts'],
     },
   },
 });

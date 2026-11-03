@@ -1,0 +1,30 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+
+test('server coverage permits instrumented workloads beyond the normal deadline and still checks assertions', t => {
+  const directory = mkdtempSync(join(tmpdir(), 'server-coverage-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  mkdirSync(join(directory, 'src'));
+  writeFileSync(join(directory, 'package.json'), '{"type":"module"}');
+  writeFileSync(join(directory, 'src/value.js'), 'export const value = 42;\n');
+  writeFileSync(join(directory, 'vitest.config.mjs'), "export default { test: { coverage: { provider: 'v8', include: ['src/**/*.js'], reporter: ['json-summary'] } } };\n");
+  const source = 'import { test, expect } from "vitest"; import { value } from "./src/value.js"; test("instrumented workload", async () => { await new Promise(resolve => setTimeout(resolve, 5100)); expect(value).toBe(42); });\n';
+  writeFileSync(join(directory, 'workload.test.js'), source);
+  const command = JSON.parse(readFileSync('package.json')).scripts['test:coverage'];
+  const flags = command.split('npm run test --workspace @mudd/server -- ')[1].split(' && ')[0].split(' ');
+  const run = args => spawnSync(process.execPath, [resolve('node_modules/vitest/vitest.mjs'), 'run', ...args], { cwd: directory, encoding: 'utf8', env: { ...process.env, NODE_PATH: resolve('node_modules') } });
+  const covered = run(flags);
+  assert.equal(covered.status, 0, covered.stdout + covered.stderr);
+  assert.equal(JSON.parse(readFileSync(join(directory, 'coverage/coverage-summary.json'))).total.lines.pct, 100);
+  const ordinary = run([]);
+  assert.notEqual(ordinary.status, 0);
+  assert.match(ordinary.stdout + ordinary.stderr, /timed out in 5000ms/);
+  writeFileSync(join(directory, 'workload.test.js'), source.replace('5100', '1').replace('toBe(42)', 'toBe(0)'));
+  const incorrect = run(flags);
+  assert.notEqual(incorrect.status, 0);
+  assert.match(incorrect.stdout + incorrect.stderr, /expected 42 to be/);
+});

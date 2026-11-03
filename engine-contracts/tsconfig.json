@@ -10,8 +10,15 @@
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "sourceMap": true
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "originals", "dist"]
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "originals",
+    "dist"
+  ]
 }

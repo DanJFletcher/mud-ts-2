@@ -44,3 +44,65 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm run storybook:build
+
+  quality:
+    name: PR quality
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mudd_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mudd_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/mudd_test
+      MUDD_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/mudd_test
+      NODE_ENV: test
+      TRUSTED_PROXY_HOPS: "0"
+      PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Resolve lockfile packages from the public npm registry
+        run: sed -i 's#http://package-firewall.replit.internal/npm/#https://registry.npmjs.org/#g' package-lock.json
+      - run: npm ci
+        id: install
+      - name: Restore the reviewed lockfile after registry substitution
+        if: always() && steps.install.outcome == 'success'
+        run: git restore package-lock.json
+      - run: npm run db:migrate
+      - run: npm run quality:test
+      - run: npm run test:coverage
+      - name: Compare PR quality
+        if: always() && steps.install.outcome == 'success'
+        run: npm run quality:pr -- --base "$PR_BASE_SHA" --head "$PR_HEAD_SHA"
+      - name: Upload quality diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-quality-diagnostics
+          if-no-files-found: warn
+          path: |
+            coverage/pr-quality.json
+            coverage/pr-quality.md
+            **/coverage/coverage-summary.json
+            **/coverage/coverage-final.json

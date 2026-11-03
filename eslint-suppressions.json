@@ -1,4 +1,14 @@
 {
+  "apps/server/src/app/__tests__/game-commands-queries.integration.test.ts": {
+    "sonarjs/no-identical-functions": {
+      "count": 3
+    }
+  },
+  "apps/server/src/app/__tests__/world-sessions.integration.test.ts": {
+    "sonarjs/no-identical-functions": {
+      "count": 1
+    }
+  },
   "apps/server/src/app/bootstrap.ts": {
     "max-lines-per-function": {
       "count": 4
@@ -20,6 +30,9 @@
     }
   },
   "apps/server/src/app/http.ts": {
+    "complexity": {
+      "count": 2
+    },
     "max-lines-per-function": {
       "count": 4
     }
@@ -40,6 +53,9 @@
     }
   },
   "apps/server/src/app/request-security.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 11
     }
@@ -80,23 +96,47 @@
     }
   },
   "apps/server/src/auth/session-service.ts": {
+    "complexity": {
+      "count": 2
+    },
+    "max-depth": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 17
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 2
     }
   },
   "apps/server/src/benchmarks/latency-benchmark.ts": {
+    "max-depth": {
+      "count": 4
+    },
     "max-lines-per-function": {
       "count": 4
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "apps/server/src/benchmarks/read-only-db-benchmark.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 5
     }
   },
   "apps/server/src/benchmarks/room-read-benchmark.ts": {
+    "max-depth": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 3
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "apps/server/src/db/client.ts": {
@@ -105,8 +145,17 @@
     }
   },
   "apps/server/src/db/legacy-corpse-cleanup.ts": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 2
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "apps/server/src/db/run-legacy-corpse-cleanup.ts": {
@@ -120,8 +169,17 @@
     }
   },
   "apps/server/src/jobs/autonomous-npc-scheduler.ts": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 3
+    },
     "max-lines-per-function": {
       "count": 7
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "apps/server/src/jobs/effect-processing.ts": {
@@ -130,13 +188,31 @@
     }
   },
   "apps/server/src/jobs/interaction-maintenance.ts": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 2
+    },
     "max-lines-per-function": {
       "count": 2
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "apps/server/src/jobs/object-lifecycle-scheduler.ts": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 2
+    },
     "max-lines-per-function": {
       "count": 2
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "apps/server/src/jobs/runtime-schedulers.ts": {
@@ -145,21 +221,56 @@
     }
   },
   "apps/server/src/jobs/stamina-recovery-scheduler.ts": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 8
+    },
     "max-lines-per-function": {
       "count": 3
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "apps/server/src/persistence/postgres-event-store.ts": {
+    "@typescript-eslint/switch-exhaustiveness-check": {
+      "count": 1
+    },
+    "complexity": {
+      "count": 5
+    },
     "max-lines-per-function": {
       "count": 57
     },
     "max-params": {
       "count": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 4
+    }
+  },
+  "apps/server/src/persistence/postgres-event-store.unit.test.ts": {
+    "sonarjs/no-identical-functions": {
+      "count": 1
     }
   },
   "apps/server/src/realtime/realtime-gateway.ts": {
+    "@typescript-eslint/switch-exhaustiveness-check": {
+      "count": 1
+    },
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 6
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "apps/server/src/realtime/realtime-notifications.ts": {
@@ -168,8 +279,14 @@
     }
   },
   "apps/server/src/realtime/subscription-views.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 3
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "apps/server/src/rooms/combat-presence-plugin.ts": {
@@ -188,16 +305,25 @@
     }
   },
   "apps/server/src/rooms/room-chat-service.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 14
     }
   },
   "apps/server/src/rooms/room-presence-projection.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 1
     }
   },
   "apps/server/src/rooms/room-presence-service.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 8
     },
@@ -206,21 +332,36 @@
     }
   },
   "apps/server/src/rooms/routes.ts": {
+    "complexity": {
+      "count": 2
+    },
     "max-lines-per-function": {
       "count": 3
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "apps/server/src/rooms/world-event-effects-plugin.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 6
     }
   },
   "apps/server/src/worlds/game-snapshot.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 8
     },
     "max-params": {
       "count": 3
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "apps/server/src/worlds/location-group-projection.ts": {
@@ -239,8 +380,17 @@
     }
   },
   "apps/server/src/worlds/routes/commands.ts": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 4
+    },
     "max-lines-per-function": {
       "count": 6
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "apps/server/src/worlds/routes/game.ts": {
@@ -254,13 +404,25 @@
     }
   },
   "apps/server/src/worlds/routes/queries.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 2
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "apps/server/src/worlds/routes/sessions.ts": {
+    "complexity": {
+      "count": 2
+    },
     "max-lines-per-function": {
       "count": 6
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "apps/server/src/worlds/woodcutting-room-projection.ts": {
@@ -279,6 +441,9 @@
     }
   },
   "apps/server/src/worlds/world-map-projection.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 6
     }
@@ -293,42 +458,91 @@
       "count": 1
     }
   },
+  "apps/web/src/AccountApp.test.tsx": {
+    "@typescript-eslint/no-floating-promises": {
+      "count": 2
+    }
+  },
   "apps/web/src/AccountApp.tsx": {
     "max-lines-per-function": {
       "count": 2
     }
   },
   "apps/web/src/App.tsx": {
+    "complexity": {
+      "count": 9
+    },
     "max-lines-per-function": {
       "count": 50
     },
     "max-params": {
       "count": 2
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 8
+    }
+  },
+  "apps/web/src/RoomChatPanel.test.tsx": {
+    "@typescript-eslint/no-misused-promises": {
+      "count": 8
     }
   },
   "apps/web/src/RoomChatPanel.tsx": {
+    "complexity": {
+      "count": 3
+    },
+    "max-depth": {
+      "count": 2
+    },
     "max-lines-per-function": {
       "count": 20
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 3
     }
   },
   "apps/web/src/TerminalPanel.tsx": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 6
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "apps/web/src/WorldMapPanel.tsx": {
+    "complexity": {
+      "count": 4
+    },
+    "max-depth": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 37
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 2
     }
   },
   "apps/web/src/codex/CodexScreen.tsx": {
+    "complexity": {
+      "count": 5
+    },
     "max-lines-per-function": {
       "count": 9
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 2
     }
   },
   "apps/web/src/codex/content.ts": {
     "max-lines-per-function": {
       "count": 5
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "apps/web/src/command-projection.ts": {
@@ -337,8 +551,14 @@
     }
   },
   "apps/web/src/commands/intents.ts": {
+    "complexity": {
+      "count": 2
+    },
     "max-lines-per-function": {
       "count": 2
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "apps/web/src/commands/metadata.ts": {
@@ -347,46 +567,94 @@
     }
   },
   "apps/web/src/commands/targets.ts": {
+    "max-depth": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 2
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "apps/web/src/commands/use-action-dispatch.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 2
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "apps/web/src/commands/use-world-commands.ts": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 18
+    },
     "max-lines-per-function": {
       "count": 2
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "apps/web/src/dialog-focus.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 1
     }
   },
   "apps/web/src/features/combat/use-combat-controller.ts": {
+    "complexity": {
+      "count": 8
+    },
     "max-lines-per-function": {
       "count": 12
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 3
     }
   },
   "apps/web/src/features/commerce/use-commerce-controller.ts": {
+    "complexity": {
+      "count": 3
+    },
     "max-lines-per-function": {
       "count": 6
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 3
     }
   },
   "apps/web/src/features/daily/use-daily-controller.ts": {
+    "complexity": {
+      "count": 5
+    },
     "max-lines-per-function": {
       "count": 9
     },
     "max-params": {
       "count": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 4
     }
   },
   "apps/web/src/features/dialogue/use-dialogue-controller.ts": {
+    "complexity": {
+      "count": 3
+    },
     "max-lines-per-function": {
       "count": 4
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 3
     }
   },
   "apps/web/src/features/gathering/action-scheduler.ts": {
@@ -395,13 +663,28 @@
     }
   },
   "apps/web/src/features/gathering/gathering-run.ts": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 2
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "apps/web/src/features/gathering/use-fishing-controller.ts": {
+    "complexity": {
+      "count": 3
+    },
     "max-lines-per-function": {
       "count": 4
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 3
     }
   },
   "apps/web/src/features/gathering/use-gathering-run.ts": {
@@ -410,8 +693,14 @@
     }
   },
   "apps/web/src/features/gathering/use-woodcutting-controller.ts": {
+    "complexity": {
+      "count": 3
+    },
     "max-lines-per-function": {
       "count": 4
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 3
     }
   },
   "apps/web/src/features/history/activity-history.ts": {
@@ -425,11 +714,20 @@
     }
   },
   "apps/web/src/features/inventory/use-inventory-controller.ts": {
+    "complexity": {
+      "count": 10
+    },
     "max-lines-per-function": {
       "count": 12
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 6
     }
   },
   "apps/web/src/features/keyboard/use-movement-shortcuts.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 3
     }
@@ -460,13 +758,31 @@
     }
   },
   "apps/web/src/features/social/use-social-controller.ts": {
+    "complexity": {
+      "count": 3
+    },
+    "max-depth": {
+      "count": 2
+    },
     "max-lines-per-function": {
       "count": 9
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 2
     }
   },
   "apps/web/src/features/travel/use-travel-controller.ts": {
+    "complexity": {
+      "count": 2
+    },
+    "max-depth": {
+      "count": 9
+    },
     "max-lines-per-function": {
       "count": 10
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 2
     }
   },
   "apps/web/src/lobby/AccountShell.tsx": {
@@ -480,23 +796,46 @@
     }
   },
   "apps/web/src/lobby/CharacterCard.tsx": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
+      "count": 1
+    },
+    "sonarjs/cognitive-complexity": {
       "count": 1
     }
   },
   "apps/web/src/lobby/CharacterDetailPage.tsx": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 3
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "apps/web/src/lobby/LobbyPage.tsx": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 8
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "apps/web/src/lobby/PublicHomePage.tsx": {
     "max-lines-per-function": {
       "count": 1
+    }
+  },
+  "apps/web/src/lobby/PwaInstallAction.test.tsx": {
+    "@typescript-eslint/no-floating-promises": {
+      "count": 4
     }
   },
   "apps/web/src/lobby/PwaInstallAction.tsx": {
@@ -505,11 +844,17 @@
     }
   },
   "apps/web/src/lobby/WorldPlayPage.tsx": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 2
     }
   },
   "apps/web/src/lobby/useLobby.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 5
     },
@@ -528,13 +873,25 @@
     }
   },
   "apps/web/src/screens/CombatPanel.tsx": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 3
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "apps/web/src/screens/FieldNotesScreen.tsx": {
+    "complexity": {
+      "count": 2
+    },
     "max-lines-per-function": {
       "count": 8
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "apps/web/src/screens/InfoTabs.tsx": {
@@ -543,8 +900,14 @@
     }
   },
   "apps/web/src/screens/InventoryScreen.tsx": {
+    "complexity": {
+      "count": 2
+    },
     "max-lines-per-function": {
       "count": 4
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "apps/web/src/screens/MerchantPanel.tsx": {
@@ -553,26 +916,53 @@
     }
   },
   "apps/web/src/screens/PlayScreen.tsx": {
+    "complexity": {
+      "count": 3
+    },
     "max-lines-per-function": {
       "count": 5
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 2
     }
   },
   "apps/web/src/screens/QuickCommands.tsx": {
+    "complexity": {
+      "count": 2
+    },
     "max-lines-per-function": {
       "count": 17
     },
     "max-params": {
       "count": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
+    },
+    "sonarjs/no-duplicated-branches": {
+      "count": 1
     }
   },
   "apps/web/src/screens/StatsScreen.tsx": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
+      "count": 1
+    },
+    "sonarjs/cognitive-complexity": {
       "count": 1
     }
   },
   "apps/web/src/screens/VitalsScreen.tsx": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 2
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "apps/web/src/screens/WorldDialogs.tsx": {
@@ -581,16 +971,25 @@
     }
   },
   "apps/web/src/screens/WorldNavigation.tsx": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 2
     }
   },
   "apps/web/src/use-game-session.ts": {
+    "complexity": {
+      "count": 2
+    },
     "max-lines-per-function": {
       "count": 13
     }
   },
   "engine-contracts/src/character.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 4
     }
@@ -601,8 +1000,14 @@
     }
   },
   "engine-contracts/src/combat.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 4
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "engine-contracts/src/commerce.ts": {
@@ -616,6 +1021,9 @@
     }
   },
   "engine-contracts/src/fishing.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 3
     }
@@ -636,8 +1044,14 @@
     }
   },
   "engine-contracts/src/quests.ts": {
+    "complexity": {
+      "count": 2
+    },
     "max-lines-per-function": {
       "count": 10
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 2
     }
   },
   "engine-contracts/src/stamina.ts": {
@@ -658,19 +1072,42 @@
   "engine-contracts/src/world-map-data.ts": {
     "max-lines-per-function": {
       "count": 2
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "engine-contracts/src/world.ts": {
+    "complexity": {
+      "count": 3
+    },
+    "max-depth": {
+      "count": 20
+    },
     "max-lines-per-function": {
       "count": 21
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 2
+    }
+  },
+  "packages/client-sdk/src/client.test.ts": {
+    "sonarjs/no-identical-functions": {
+      "count": 3
     }
   },
   "packages/client-sdk/src/index.ts": {
+    "complexity": {
+      "count": 2
+    },
     "max-lines-per-function": {
       "count": 65
     },
     "max-params": {
       "count": 12
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 2
     }
   },
   "packages/client-sdk/src/pending-actions.ts": {
@@ -679,16 +1116,31 @@
     }
   },
   "packages/client-sdk/src/realtime.ts": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 3
+    },
     "max-lines-per-function": {
       "count": 8
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "packages/engine-core/src/engine.ts": {
+    "complexity": {
+      "count": 5
+    },
     "max-lines-per-function": {
       "count": 24
     },
     "max-params": {
       "count": 2
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 3
     }
   },
   "packages/engine-core/src/incremental-projection.ts": {
@@ -697,26 +1149,50 @@
     }
   },
   "packages/engine-core/src/memory-event-store.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 16
     }
   },
   "packages/engine-core/src/quest-projection.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 10
     },
     "max-params": {
       "count": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "packages/engine-core/src/replay.ts": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 4
+    },
     "max-lines-per-function": {
       "count": 9
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "packages/plugins/src/autonomous-npcs.ts": {
+    "complexity": {
+      "count": 2
+    },
     "max-lines-per-function": {
       "count": 11
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 2
     }
   },
   "packages/plugins/src/character-stats.ts": {
@@ -725,13 +1201,25 @@
     }
   },
   "packages/plugins/src/character.ts": {
+    "complexity": {
+      "count": 11
+    },
     "max-lines-per-function": {
       "count": 49
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 6
     }
   },
   "packages/plugins/src/classes.ts": {
+    "complexity": {
+      "count": 3
+    },
     "max-lines-per-function": {
       "count": 5
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "packages/plugins/src/combat-loot.ts": {
@@ -740,38 +1228,83 @@
     }
   },
   "packages/plugins/src/combat.ts": {
+    "complexity": {
+      "count": 3
+    },
     "max-lines-per-function": {
       "count": 6
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 2
     }
   },
   "packages/plugins/src/corpse-lifecycle.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 3
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "packages/plugins/src/crafting.ts": {
+    "complexity": {
+      "count": 2
+    },
     "max-lines-per-function": {
       "count": 9
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "packages/plugins/src/daily-jobs.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 6
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "packages/plugins/src/fishing.ts": {
+    "complexity": {
+      "count": 2
+    },
     "max-lines-per-function": {
       "count": 7
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "packages/plugins/src/groups.ts": {
+    "complexity": {
+      "count": 2
+    },
     "max-lines-per-function": {
       "count": 8
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "packages/plugins/src/interactions.ts": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 8
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 2
     }
   },
   "packages/plugins/src/location-groups.ts": {
@@ -785,29 +1318,53 @@
     }
   },
   "packages/plugins/src/merchant.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 5
     }
   },
   "packages/plugins/src/movement.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 3
     },
     "max-params": {
       "count": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "packages/plugins/src/npc-dialogue.ts": {
+    "complexity": {
+      "count": 4
+    },
+    "max-depth": {
+      "count": 4
+    },
     "max-lines-per-function": {
       "count": 13
     },
     "max-params": {
       "count": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 2
     }
   },
   "packages/plugins/src/object-lifecycle.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 8
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "packages/plugins/src/parties.ts": {
@@ -816,21 +1373,36 @@
     }
   },
   "packages/plugins/src/party-combat-policy.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 2
     }
   },
   "packages/plugins/src/party-quests.ts": {
+    "complexity": {
+      "count": 3
+    },
     "max-lines-per-function": {
       "count": 14
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 3
     }
   },
   "packages/plugins/src/pvp-combat.ts": {
+    "complexity": {
+      "count": 4
+    },
     "max-lines-per-function": {
       "count": 10
     },
     "max-params": {
       "count": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 3
     }
   },
   "packages/plugins/src/quest-branches.ts": {
@@ -842,6 +1414,9 @@
     }
   },
   "packages/plugins/src/respawn.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 2
     },
@@ -850,8 +1425,14 @@
     }
   },
   "packages/plugins/src/road-travel.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 4
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "packages/plugins/src/room-announcements.ts": {
@@ -860,11 +1441,23 @@
     }
   },
   "packages/plugins/src/team-combat.ts": {
+    "complexity": {
+      "count": 5
+    },
+    "max-depth": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 19
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 2
     }
   },
   "packages/plugins/src/temporary-campfires.ts": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 7
     }
@@ -875,21 +1468,45 @@
     }
   },
   "packages/plugins/src/woodcutting.ts": {
+    "complexity": {
+      "count": 2
+    },
     "max-lines-per-function": {
       "count": 10
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "packages/plugins/src/world-items.ts": {
+    "complexity": {
+      "count": 3
+    },
+    "max-depth": {
+      "count": 7
+    },
     "max-lines-per-function": {
       "count": 13
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 2
     }
   },
   "packages/ui/src/components/ActivityHistoryWindow.tsx": {
+    "complexity": {
+      "count": 3
+    },
     "max-lines-per-function": {
       "count": 4
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "packages/ui/src/components/ActivityLog.tsx": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 5
     }
@@ -900,6 +1517,9 @@
     }
   },
   "packages/ui/src/components/CharacterEntryCard.tsx": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 1
     }
@@ -925,8 +1545,14 @@
     }
   },
   "packages/ui/src/components/DailyBoard.tsx": {
+    "complexity": {
+      "count": 1
+    },
     "max-lines-per-function": {
       "count": 4
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
     }
   },
   "packages/ui/src/components/DisclosureButton.tsx": {
