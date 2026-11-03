@@ -1,0 +1,13 @@
+import { readFileSync, writeFileSync } from 'node:fs';
+import { repositoryFindings } from './analysis.mjs';
+import { comparison } from './git.mjs';
+import { validateLedger } from './baselines.mjs';
+import { migratedSites } from './gate-sites.mjs';
+import { pruneSites } from './pruning.mjs';
+const cwd = process.cwd();
+const ledger = validateLedger(JSON.parse(readFileSync('quality-sites.json', 'utf8')));
+const changes = comparison(cwd, ledger.revision, 'HEAD');
+const findings = (await repositoryFindings(cwd)).flatMap(result => migratedSites(result, cwd));
+const pruned = pruneSites(ledger, findings, { cwd, comparison: changes });
+writeFileSync('quality-sites.json', JSON.stringify(pruned, null, 2) + '\n');
+console.log(`Site allowances: ${ledger.sites.length} -> ${pruned.sites.length}; no allowances added`);

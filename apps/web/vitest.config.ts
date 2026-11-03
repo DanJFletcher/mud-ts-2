@@ -12,8 +12,9 @@ export default defineConfig({
     isolate: true,
     coverage: {
       provider: 'v8',
+      reporter: ['text', 'json-summary', 'json'],
       include: ['src/**/*.{ts,tsx}'],
-      exclude: ['src/**/*.test.{ts,tsx}', 'src/**/*.stories.{ts,tsx}', 'src/test-setup.ts'],
+      exclude: ['src/**/*.d.ts', 'src/**/*.{test,spec,stories}.{ts,tsx}', 'src/**/tests/**', 'src/**/__tests__/**', 'src/test-setup.ts'],
     },
   },
 });

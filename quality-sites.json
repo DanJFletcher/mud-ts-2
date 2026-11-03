@@ -1,0 +1,256 @@
+{
+  "version": 1,
+  "revision": "4ff85e146780e37359566527058ed38a40deb666",
+  "sites": [
+    {
+      "path": "apps/server/src/app/__tests__/game-commands-queries.integration.test.ts",
+      "rule": "sonarjs/no-identical-functions",
+      "line": 44,
+      "column": 41,
+      "endLine": 44,
+      "endColumn": 43,
+      "anchor": "    const postCommand = (body: unknown) => fetch(`${harness.baseUrl}/api/commands`, {",
+      "context": "(body: unknown) => fetch(`${harness.baseUrl}/api/commands`, {\n      method: 'POST',\n      headers: {\n        'content-type': 'application/json',\n        'x-test-user': 'alice',\n      },\n      body: JSON.stringify(body),\n    })"
+    },
+    {
+      "path": "apps/server/src/app/__tests__/game-commands-queries.integration.test.ts",
+      "rule": "sonarjs/no-identical-functions",
+      "line": 174,
+      "column": 41,
+      "endLine": 174,
+      "endColumn": 43,
+      "anchor": "    const postCommand = (body: unknown) => fetch(`${harness.baseUrl}/api/commands`, {",
+      "context": "(body: unknown) => fetch(`${harness.baseUrl}/api/commands`, {\n      method: 'POST',\n      headers: {\n        'content-type': 'application/json',\n        'x-test-user': 'alice',\n      },\n      body: JSON.stringify(body),\n    })"
+    },
+    {
+      "path": "apps/server/src/app/__tests__/game-commands-queries.integration.test.ts",
+      "rule": "sonarjs/no-identical-functions",
+      "line": 807,
+      "column": 41,
+      "endLine": 807,
+      "endColumn": 43,
+      "anchor": "    const postCommand = (body: unknown) => fetch(`${harness.baseUrl}/api/commands`, {",
+      "context": "(body: unknown) => fetch(`${harness.baseUrl}/api/commands`, {\n      method: 'POST',\n      headers: {\n        'content-type': 'application/json',\n        'x-test-user': 'alice',\n      },\n      body: JSON.stringify(body),\n    })"
+    },
+    {
+      "path": "apps/server/src/app/__tests__/world-sessions.integration.test.ts",
+      "rule": "sonarjs/no-identical-functions",
+      "line": 133,
+      "column": 41,
+      "endLine": 133,
+      "endColumn": 43,
+      "anchor": "    const postSession = (body: unknown) => fetch(`${harness.baseUrl}/api/world-session`, {",
+      "context": "(body: unknown) => fetch(`${harness.baseUrl}/api/world-session`, {\n      method: 'POST',\n      headers: {\n        'content-type': 'application/json',\n        'x-test-user': 'alice',\n      },\n      body: JSON.stringify(body),\n    })"
+    },
+    {
+      "path": "apps/server/src/persistence/postgres-event-store.ts",
+      "rule": "@typescript-eslint/switch-exhaustiveness-check",
+      "line": 632,
+      "column": 13,
+      "endLine": 632,
+      "endColumn": 25,
+      "anchor": "    switch (row?.outcome) {",
+      "context": "private async appendInOneCall(request: AppendRequest): Promise<AppendOutcome | undefined> {\n    if (!this.singleCallAppend) return undefined;\n    const writes = [\n      { streamId: request.streamId, expectedVersion: request.expectedVersion, events: request.events },\n      ...(request.companions ?? []),\n    ];\n    // Malformed requests keep the transaction path, which reports them as before.\n    if (new Set(writes.map((write) => write.streamId)).size !== writes.length) return undefined;\n    if (writes.some((write) => write.events.length === 0)) return undefined;\n    if (writes.some((write) => write.events.some((event) => SIDE_TABLE_EVENT_TYPES.has(event.type)))) {\n      return undefined;\n    }\n\n    const committedAt = new Date().toISOString();\n    const stored = writes.map((write) => ({\n      ...write,\n      events: write.events.map((event, index): StoredGameEvent => ({\n        ...event,\n        eventId: globalThis.crypto.randomUUID(),\n        worldInstanceId: request.worldInstanceId,\n        streamId: write.streamId,\n        aggregateId: write.streamId,\n        aggregateVersion: write.expectedVersion + index + 1,\n        causationCommandId: request.commandId,\n        actorId: request.actorId,\n        occurredAt: committedAt,\n        tick: write.expectedVersion + index + 1,\n      })),\n    }));\n\n    const roomStates = [];\n    for (const write of stored) {\n      if (!CHARACTER_STREAM_ID.test(write.streamId)) continue;\n      const cached = this.streamCache.get(this.streamKey(request.worldInstanceId, write.streamId));\n      if (cached?.revision !== write.expectedVersion) return undefined;\n      const history = [...cached.events, ...write.events];\n      retainCharacterReplayPrefix(history, cached.events);\n      const state = replayCharacter(history);\n      if (!state) return undefined;\n      const row = roomCharacterStateRow(request.worldInstanceId, write.streamId, state);\n      roomStates.push({ character_id: row.characterId, location_id: row.locationId, revision: row.revision, state: row.state });\n    }\n\n    const [primary, ...companions] = stored;\n    const appended = primary!.events;\n    const receipt: Extract<CommandReceipt, { ok: true }> = {\n      ok: true,\n      commandId: request.commandId,\n      eventIds: appended.map((event) => event.eventId),\n      newAggregateVersion: appended.at(-1)!.aggregateVersion,\n    };\n    const checks = [...(request.companions ?? []), ...(request.guards ?? [])];\n    const effectKeyPrefix = commandEffectKeyPrefix(request.worldInstanceId, request.actorId, request.commandId);\n    const payload = {\n      worldInstanceId: request.worldInstanceId,\n      actorId: request.actorId,\n      commandId: request.commandId,\n      payloadHash: request.payloadHash,\n      streamId: request.streamId,\n      expectedVersion: request.expectedVersion,\n      lockStreamIds: [...new Set([...writes.map((write) => write.streamId), ...checks.map((check) => check.streamId)])],\n      checks: checks.map(({ streamId, expectedVersion }) => ({ streamId, expectedVersion })),\n      events: [...companions, primary!].flatMap((write) => write.events.map((event) => ({\n        event_id: event.eventId,\n        stream_id: event.streamId,\n        stream_version: event.aggregateVersion,\n        type: event.type,\n        contract_version: event.version,\n        payload: event.payload,\n        occurred_at: event.occurredAt,\n        tick: event.tick,\n      }))),\n      receipt,\n      receiptEvents: appended,\n      effects: (request.effects ?? []).map((effect, index) => ({\n        id: globalThis.crypto.randomUUID(),\n        effect_type: effect.type,\n        effect_version: effect.version,\n        payload: effect.payload,\n        dedupe_key: `${effectKeyPrefix}${index}`,\n      })),\n      roomStates,\n    };\n\n    const result = await measureDatabaseOperation('event_store.command_append', () =>\n      measureStage('event_store.append.single_call', () =>\n        db.execute(sql`SELECT * FROM mudd_append_command_v1(${JSON.stringify(payload)}::jsonb)`)));\n    const row = result.rows[0] as SingleCallAppendRow | undefined;\n    switch (row?.outcome) {\n      case 'prior':\n        return row.prior_payload_hash === request.payloadHash\n          ? {\n              kind: 'duplicate',\n              streamId: row.prior_stream_id!,\n              events: row.prior_events as StoredGameEvent[],\n              receipt: row.prior_receipt as CommandReceipt & { ok: true },\n            }\n          : {\n              kind: 'conflict',\n              streamId: row.prior_stream_id!,\n              events: row.prior_events as StoredGameEvent[],\n              receipt: conflict(request.commandId, 'Command ID was already used with a different payload.', 'INVALID_COMMAND'),\n            };\n      case 'guard_conflict':\n        return { kind: 'conflict', streamId: request.streamId, events: [],\n          receipt: conflict(request.commandId, 'An observed stream changed. Refresh and try again.') };\n      case 'version_conflict':\n        return {\n          kind: 'conflict',\n          streamId: request.streamId,\n          events: [],\n          receipt: conflict(request.commandId, `Expected revision ${request.expectedVersion}; current revision is ${row.current_revision}.`),\n        };\n      case 'committed':\n        return { kind: 'committed', streamId: request.streamId, events: appended, receipt };\n      default:\n        throw new Error('Command append returned no recognizable outcome.');\n    }\n  }"
+    },
+    {
+      "path": "apps/server/src/persistence/postgres-event-store.unit.test.ts",
+      "rule": "sonarjs/no-identical-functions",
+      "line": 294,
+      "column": 30,
+      "endLine": 294,
+      "endColumn": 32,
+      "anchor": "    const revisionQuery = () => ({",
+      "context": "() => ({\n      from: () => ({\n        where: () => ({\n          orderBy: () => ({ limit: async () => [{ revision: 1 }] }),\n        }),\n      }),\n    })"
+    },
+    {
+      "path": "apps/server/src/realtime/realtime-gateway.ts",
+      "rule": "@typescript-eslint/switch-exhaustiveness-check",
+      "line": 30,
+      "column": 11,
+      "endLine": 30,
+      "endColumn": 22,
+      "anchor": "  switch (change.kind) {",
+      "context": "function affectedChannels(change: RealtimeWakeup, client: GatewayClient): readonly RealtimeChannel[] | 'all' {\n  switch (change.kind) {\n    case 'character':\n      if (client.characterId === change.characterId) return 'all';\n      return change.roomId && client.roomId === change.roomId ? ['presence'] : [];\n    case 'room': return client.roomId === change.roomId ? ['presence', 'chat'] : [];\n    case 'interaction': return ['interactions'];\n    case 'party': return ['party'];\n    case 'team': return ['team'];\n    default: return [];\n  }\n}"
+    },
+    {
+      "path": "apps/web/src/AccountApp.test.tsx",
+      "rule": "@typescript-eslint/no-floating-promises",
+      "line": 196,
+      "column": 5,
+      "endLine": 196,
+      "endColumn": 44,
+      "anchor": "    act(() => mocks.routerPush('/worlds'));",
+      "context": "async () => {\n    open('/');\n    act(() => mocks.routerPush('/worlds'));\n    expect(await screen.findByRole('heading', { name: 'Explore worlds' })).toBeInTheDocument();\n    expect(location.pathname).toBe('/worlds');\n\n    act(() => mocks.routerReplace('/codex'));\n    expect(await screen.findByRole('heading', { name: 'Orraveth Codex' })).toBeInTheDocument();\n    expect(location.pathname).toBe('/codex');\n  }"
+    },
+    {
+      "path": "apps/web/src/AccountApp.test.tsx",
+      "rule": "@typescript-eslint/no-floating-promises",
+      "line": 200,
+      "column": 5,
+      "endLine": 200,
+      "endColumn": 46,
+      "anchor": "    act(() => mocks.routerReplace('/codex'));",
+      "context": "async () => {\n    open('/');\n    act(() => mocks.routerPush('/worlds'));\n    expect(await screen.findByRole('heading', { name: 'Explore worlds' })).toBeInTheDocument();\n    expect(location.pathname).toBe('/worlds');\n\n    act(() => mocks.routerReplace('/codex'));\n    expect(await screen.findByRole('heading', { name: 'Orraveth Codex' })).toBeInTheDocument();\n    expect(location.pathname).toBe('/codex');\n  }"
+    },
+    {
+      "path": "apps/web/src/RoomChatPanel.test.tsx",
+      "rule": "@typescript-eslint/no-misused-promises",
+      "line": 160,
+      "column": 38,
+      "endLine": 160,
+      "endColumn": 109,
+      "anchor": "    fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => { releaseRequest = resolve; }));",
+      "context": "() => new Promise<Response>((resolve) => { releaseRequest = resolve; })"
+    },
+    {
+      "path": "apps/web/src/RoomChatPanel.test.tsx",
+      "rule": "@typescript-eslint/no-misused-promises",
+      "line": 193,
+      "column": 38,
+      "endLine": 193,
+      "endColumn": 116,
+      "anchor": "    fetchMock.mockImplementationOnce(() => new Promise<Response>((_resolve, reject) => { rejectRequest = reject; }));",
+      "context": "() => new Promise<Response>((_resolve, reject) => { rejectRequest = reject; })"
+    },
+    {
+      "path": "apps/web/src/RoomChatPanel.test.tsx",
+      "rule": "@typescript-eslint/no-misused-promises",
+      "line": 216,
+      "column": 38,
+      "endLine": 216,
+      "endColumn": 60,
+      "anchor": "    fetchMock.mockImplementationOnce(async () => response());",
+      "context": "async () => response()"
+    },
+    {
+      "path": "apps/web/src/RoomChatPanel.test.tsx",
+      "rule": "@typescript-eslint/no-misused-promises",
+      "line": 547,
+      "column": 34,
+      "endLine": 555,
+      "endColumn": 6,
+      "anchor": "    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {",
+      "context": "async (input: RequestInfo | URL, init?: RequestInit) => {\n      if (init?.method === 'POST') {\n        return new Response(JSON.stringify({ message: 'That message is too long.' }), {\n          status: 400,\n          headers: { 'content-type': 'application/json' },\n        });\n      }\n      return originalFetch(input, init);\n    }"
+    },
+    {
+      "path": "apps/web/src/RoomChatPanel.test.tsx",
+      "rule": "@typescript-eslint/no-misused-promises",
+      "line": 576,
+      "column": 34,
+      "endLine": 579,
+      "endColumn": 6,
+      "anchor": "    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {",
+      "context": "async (input: RequestInfo | URL, init?: RequestInit) => {\n      if (init?.method === 'POST') throw new Error('Network unavailable.');\n      return originalFetch(input, init);\n    }"
+    },
+    {
+      "path": "apps/web/src/RoomChatPanel.test.tsx",
+      "rule": "@typescript-eslint/no-misused-promises",
+      "line": 593,
+      "column": 34,
+      "endLine": 607,
+      "endColumn": 6,
+      "anchor": "    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {",
+      "context": "async (input: RequestInfo | URL, init?: RequestInit) => {\n      if (init?.method === 'POST') {\n        return Response.json({\n          message: {\n            id: 30,\n            roomId: 'different-room',\n            speakerType: 'player',\n            speakerName: 'Fern',\n            text: 'Is anyone there?',\n            createdAt: '2026-10-18T12:00:03.000Z',\n          },\n        }, { status: 201 });\n      }\n      return originalFetch(input, init);\n    }"
+    },
+    {
+      "path": "apps/web/src/RoomChatPanel.test.tsx",
+      "rule": "@typescript-eslint/no-misused-promises",
+      "line": 631,
+      "column": 34,
+      "endLine": 636,
+      "endColumn": 6,
+      "anchor": "    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {",
+      "context": "(input: RequestInfo | URL, init?: RequestInit) => {\n      if (init?.method === 'POST') {\n        return new Promise<Response>((resolve) => { resolvePost = resolve; });\n      }\n      return Promise.resolve(originalFetch(input, init));\n    }"
+    },
+    {
+      "path": "apps/web/src/RoomChatPanel.test.tsx",
+      "rule": "@typescript-eslint/no-misused-promises",
+      "line": 679,
+      "column": 34,
+      "endLine": 684,
+      "endColumn": 6,
+      "anchor": "    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {",
+      "context": "(input: RequestInfo | URL, init?: RequestInit) => {\n      if (init?.method === 'POST') {\n        return new Promise<Response>((resolve) => { resolvePost = resolve; });\n      }\n      return Promise.resolve(originalFetch(input, init));\n    }"
+    },
+    {
+      "path": "apps/web/src/lobby/PwaInstallAction.test.tsx",
+      "rule": "@typescript-eslint/no-floating-promises",
+      "line": 16,
+      "column": 5,
+      "endLine": 16,
+      "endColumn": 44,
+      "anchor": "    act(() => window.dispatchEvent(event));",
+      "context": "async () => {\n    const prompt = vi.fn().mockResolvedValue(undefined);\n    const event = new Event('beforeinstallprompt') as Event & {\n      prompt: () => Promise<void>;\n      userChoice: Promise<{ outcome: 'accepted'; platform: string }>;\n    };\n    event.prompt = prompt;\n    event.userChoice = Promise.resolve({ outcome: 'accepted', platform: 'web' });\n\n    render(<PwaInstallAction />);\n    act(() => window.dispatchEvent(event));\n    fireEvent.click(screen.getByRole('button', { name: 'Install MUDD' }));\n\n    await waitFor(() => expect(prompt).toHaveBeenCalledOnce());\n    await waitFor(() => expect(screen.queryByRole('button', { name: 'Install MUDD' })).not.toBeInTheDocument());\n  }"
+    },
+    {
+      "path": "apps/web/src/lobby/PwaInstallAction.test.tsx",
+      "rule": "@typescript-eslint/no-floating-promises",
+      "line": 38,
+      "column": 5,
+      "endLine": 38,
+      "endColumn": 44,
+      "anchor": "    act(() => window.dispatchEvent(event));",
+      "context": "async () => {\n    const event = new Event('beforeinstallprompt') as Event & {\n      prompt: () => Promise<void>;\n      userChoice: Promise<{ outcome: 'dismissed'; platform: string }>;\n    };\n    event.prompt = vi.fn().mockResolvedValue(undefined);\n    event.userChoice = Promise.resolve({ outcome: 'dismissed', platform: 'web' });\n    render(<PwaInstallAction />);\n\n    act(() => window.dispatchEvent(event));\n    fireEvent.click(screen.getByRole('button', { name: 'Install MUDD' }));\n\n    expect(await screen.findByRole('status')).toHaveTextContent('Choose Install app or Add to Home Screen');\n  }"
+    },
+    {
+      "path": "apps/web/src/lobby/PwaInstallAction.test.tsx",
+      "rule": "@typescript-eslint/no-floating-promises",
+      "line": 53,
+      "column": 5,
+      "endLine": 53,
+      "endColumn": 53,
+      "anchor": "    act(() => window.dispatchEvent(rejectedPrompt));",
+      "context": "async () => {\n    const rejectedPrompt = new Event('beforeinstallprompt') as Event & {\n      prompt: () => Promise<void>;\n      userChoice: Promise<{ outcome: 'accepted'; platform: string }>;\n    };\n    rejectedPrompt.prompt = vi.fn().mockRejectedValue(new Error('Install prompt failed.'));\n    rejectedPrompt.userChoice = Promise.resolve({ outcome: 'accepted', platform: 'web' });\n    const view = render(<PwaInstallAction />);\n\n    act(() => window.dispatchEvent(rejectedPrompt));\n    fireEvent.click(screen.getByRole('button', { name: 'Install MUDD' }));\n    expect(await screen.findByRole('status')).toHaveTextContent('Choose Install app or Add to Home Screen');\n\n    view.unmount();\n    render(<PwaInstallAction />);\n    fireEvent.click(screen.getByRole('button', { name: 'Install MUDD' }));\n    expect(screen.getByRole('status')).toBeInTheDocument();\n    act(() => window.dispatchEvent(new Event('appinstalled')));\n    await waitFor(() => expect(screen.queryByRole('button', { name: 'Install MUDD' })).not.toBeInTheDocument());\n    expect(screen.queryByRole('status')).not.toBeInTheDocument();\n  }"
+    },
+    {
+      "path": "apps/web/src/lobby/PwaInstallAction.test.tsx",
+      "rule": "@typescript-eslint/no-floating-promises",
+      "line": 61,
+      "column": 5,
+      "endLine": 61,
+      "endColumn": 64,
+      "anchor": "    act(() => window.dispatchEvent(new Event('appinstalled')));",
+      "context": "async () => {\n    const rejectedPrompt = new Event('beforeinstallprompt') as Event & {\n      prompt: () => Promise<void>;\n      userChoice: Promise<{ outcome: 'accepted'; platform: string }>;\n    };\n    rejectedPrompt.prompt = vi.fn().mockRejectedValue(new Error('Install prompt failed.'));\n    rejectedPrompt.userChoice = Promise.resolve({ outcome: 'accepted', platform: 'web' });\n    const view = render(<PwaInstallAction />);\n\n    act(() => window.dispatchEvent(rejectedPrompt));\n    fireEvent.click(screen.getByRole('button', { name: 'Install MUDD' }));\n    expect(await screen.findByRole('status')).toHaveTextContent('Choose Install app or Add to Home Screen');\n\n    view.unmount();\n    render(<PwaInstallAction />);\n    fireEvent.click(screen.getByRole('button', { name: 'Install MUDD' }));\n    expect(screen.getByRole('status')).toBeInTheDocument();\n    act(() => window.dispatchEvent(new Event('appinstalled')));\n    await waitFor(() => expect(screen.queryByRole('button', { name: 'Install MUDD' })).not.toBeInTheDocument());\n    expect(screen.queryByRole('status')).not.toBeInTheDocument();\n  }"
+    },
+    {
+      "path": "apps/web/src/screens/QuickCommands.tsx",
+      "rule": "sonarjs/no-duplicated-branches",
+      "line": 329,
+      "column": 26,
+      "endLine": 332,
+      "endColumn": 20,
+      "anchor": "                  } else {",
+      "context": "() => {\n                  if (item.fishingRod) {\n                    void performFishingCast(item.id);\n                  } else if (item.woodcuttingAxe) {\n                    setQuickUseItemId(item.id);\n                    setQuickCommandMode(\"use-target\");\n                  } else if (item.consumable?.effect === \"heal\") {\n                    submitEntityAction(item.fishingRod ? \"fish\" : \"heal\", item.id, item.label, \"inventory\", `use ${item.label}`);\n                  } else {\n                    setQuickUseItemId(item.id);\n                    setQuickCommandMode(\"use-target\");\n                  }\n                }"
+    },
+    {
+      "path": "packages/client-sdk/src/client.test.ts",
+      "rule": "sonarjs/no-identical-functions",
+      "line": 2113,
+      "column": 60,
+      "endLine": 2113,
+      "endColumn": 62,
+      "anchor": "    const fetcher: typeof fetch = async (input, init = {}) => {",
+      "context": "async (input, init = {}) => {\n      const body = JSON.parse(String(init.body ?? '{}')) as unknown;\n      if (String(input).endsWith('/commands')) {\n        const result = await engine.dispatch(body, session, undefined, presenceAnchorAt);\n        presenceAnchorAt = new Date(simulatedNow);\n        return Response.json(result);\n      }\n      const result = await engine.query(body, session);\n      return Response.json(result);\n    }"
+    },
+    {
+      "path": "packages/client-sdk/src/client.test.ts",
+      "rule": "sonarjs/no-identical-functions",
+      "line": 2308,
+      "column": 60,
+      "endLine": 2308,
+      "endColumn": 62,
+      "anchor": "    const fetcher: typeof fetch = async (input, init = {}) => {",
+      "context": "async (input, init = {}) => {\n      const body = JSON.parse(String(init.body ?? '{}')) as unknown;\n      if (String(input).endsWith('/commands')) {\n        const result = await engine.dispatch(body, session, undefined, presenceAnchorAt);\n        presenceAnchorAt = new Date(simulatedNow);\n        return Response.json(result);\n      }\n      const result = await engine.query(body, session);\n      return Response.json(result);\n    }"
+    },
+    {
+      "path": "packages/client-sdk/src/client.test.ts",
+      "rule": "sonarjs/no-identical-functions",
+      "line": 2508,
+      "column": 60,
+      "endLine": 2508,
+      "endColumn": 62,
+      "anchor": "    const fetcher: typeof fetch = async (input, init = {}) => {",
+      "context": "async (input, init = {}) => {\n      const path = String(input);\n      const body = JSON.parse(String(init.body ?? '{}')) as unknown;\n      const result = path.endsWith('/commands')\n        ? await engine.dispatch(body, session)\n        : await engine.query(body, session);\n      return Response.json(result);\n    }"
+    }
+  ]
+}

@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "functions": {
+    "complexity": 10,
+    "cognitive": 10,
+    "depth": 3,
+    "lines": 5,
+    "parameters": 4
+  },
+  "coverage": {
+    "@mudd/contracts": {
+      "path": "engine-contracts",
+      "lines": 96,
+      "branches": 87,
+      "functions": 90,
+      "statements": 96
+    },
+    "@mudd/client-sdk": {
+      "path": "packages/client-sdk",
+      "lines": 97,
+      "branches": 82,
+      "functions": 92,
+      "statements": 91
+    },
+    "@mudd/engine-core": {
+      "path": "packages/engine-core",
+      "lines": 94,
+      "branches": 85,
+      "functions": 89,
+      "statements": 92
+    },
+    "@mudd/core-plugins": {
+      "path": "packages/plugins",
+      "lines": 99,
+      "branches": 91,
+      "functions": 99,
+      "statements": 98
+    },
+    "@mudd/ui": {
+      "path": "packages/ui",
+      "lines": 97,
+      "branches": 78,
+      "functions": 94,
+      "statements": 88
+    },
+    "@mudd/world-demo": {
+      "path": "packages/world-demo",
+      "lines": 100,
+      "branches": 50,
+      "functions": 100,
+      "statements": 88
+    },
+    "@mudd/world-orraveth": {
+      "path": "packages/world-orraveth",
+      "lines": 100,
+      "branches": 84,
+      "functions": 100,
+      "statements": 100
+    },
+    "@mudd/server": {
+      "path": "apps/server",
+      "lines": 96,
+      "branches": 90,
+      "functions": 97,
+      "statements": 95
+    },
+    "@mudd/web": {
+      "path": "apps/web",
+      "lines": 96,
+      "branches": 83,
+      "functions": 96,
+      "statements": 91
+    }
+  }
+}
