@@ -1,0 +1,33 @@
+# Tasks
+
+## 1. Establish behavior and rendering baselines
+
+- [x] 1.1 Run `npm run test --workspace @mudd/web` and `npm run typecheck --workspace @mudd/web` before production edits; record passing coverage and any environmental or pre-existing failures in a change-local verification record, preserving the other world-client change's outstanding checks.
+- [x] 1.2 Capture deterministic browser baselines for public home, lobby, standalone Codex, world play and embedded Codex at 390px/1280px in both themes, waiting for fonts and using stable content; verify screenshots and representative computed colors/layouts are recorded for comparison.
+- [x] 1.3 Add a test-only browser fixture using existing Playwright tooling to load shared foundations plus each area's declared styles while omitting unrelated styles; verify account/lobby and standalone Codex characterization checks, document the fixture command, and observe a focused world recovery-action layout assertion fail because its rule resides in account CSS before changing production styles. If that failure cannot be reproduced, investigate the concrete selector dependency before claiming a red cycle.
+
+## 2. Establish CSS ownership and preserve the cascade
+
+- [x] 2.1 Move the recovery-action rule into world-owned styling with the minimum production edit; run the unchanged isolated recovery test and observe it pass, then compare normal full-app recovery appearance against the baseline and record the red/green evidence.
+- [x] 2.2 Extract app-global reset, focus, document background and reduced-motion styling into app-owned base CSS while preserving its current cascade position; run area-isolation checks and browser focus/reduced-motion checks and document which styles all areas require.
+- [x] 2.3 Separate world-local theme overrides from world layout without changing root tokens or existing theme persistence controllers; verify both themes, lobby-to-world-to-lobby persistence, and the intentionally distinct standalone/embedded Codex palettes through browser checks and existing theme tests.
+- [x] 2.4 Split remaining gameplay rules into ordered world style modules with an eagerly imported aggregator; preserve selector/media-query order and existing shared-UI adaptations, compare browser baselines, and inspect emitted production CSS for changed precedence. Document the import order and avoid deleting historical selectors without verified evidence.
+- [x] 2.5 Verify world panels, command inputs and Codex shared-control adaptations in the browser; if a verified isolation defect requires a shared UI hook or variant, first add its focused failing behavior test and Storybook story, implement only that API, and run UI tests/typecheck/Storybook build. Otherwise record that no shared UI change was necessary.
+
+## 3. Clarify session ownership and move application areas
+
+- [x] 3.0 Implement verified import-only suppression-budget migration in focused red/green cycles: prove relative static dependencies retain identity using Git base/head inventories; reject non-import changes, substitution, unchanged-string retargeting, copies/ambiguity and count increases. Keep numeric selection and site ledgers unchanged; run quality tests and lint and update PR-quality documentation before using the rule for moves.
+
+- [x] 3.1 With session and App coverage green, introduce a focused session contract for controller-consumed operations and make the hook satisfy it without assertions or copied transport shapes; run session, refresh-gate, projection and controller tests plus web typechecking, and document the contract's ownership.
+- [x] 3.2 Move AccountApp and account CSS into app, rename the gameplay module/test to WorldClient, and update main, world-play integration and affected imports; run entry/account/world integration tests and web typechecking, verifying existing lazy world and Codex loading boundaries remain intact.
+- [x] 3.3 Move world-only commands, controllers and screen compositions under world; consolidate session lifecycle modules under world/session, place panels/dialog focus and NPC farewell helpers with their consumers, and colocate tests; run the affected suites and verify no session-to-feature implementation cycle is introduced.
+- [x] 3.4 Update ownership documentation and relative links as modules move, plus affected configuration aliases, test references, content globs and service-worker asset patterns only where emitted paths require changes; verify content still loads, configured tests are discovered, production build succeeds and docs match the final tree. Preserve Codex loader/content adjacency and test setup/E2E stub locations.
+- [x] 3.5 Review path-keyed quality records for moved files without increasing or regenerating budgets; prune obsolete records only using repository-supported commands where applicable, inspect the resulting diff, and run the explicit-base PR checks described in `docs/pr-quality.md` against a recorded base revision.
+
+## 4. Verify integrated behavior and review scope
+
+- [x] 4.1 Run the complete web suite, repository lint and typecheck, and production build; if shared UI changed, also run its suite/typecheck and `npm run storybook:build`. Record exact commands/results and distinguish environmental blockers from code failures.
+- [x] 4.2 Run isolated styling checks and direct-load/route-transition comparisons across the baseline viewport/theme matrix; verify return after lazy Codex loading, standalone Codex after world exit, persisted theme, recovery controls, command inputs, disclosures, fullscreen panels, keyboard focus and reduced motion. Record browser evidence separately from automated unit results.
+- [x] 4.3 Inspect production asset/CSS ordering and lazy boundaries, then smoke-check PWA shell/update behavior with service workers enabled separately from the normal E2E configuration; verify the existing caching policy still matches emitted assets without introducing lazy world CSS.
+- [x] 4.4 Review changed production functions against inclusive five-line/four-parameter limits and classes against the 100-line limit, then review cohesion, naming, adapter boundaries, test behavior and actual execution order; record related cleanup, remaining WorldClient debt, any necessary behavior-protected local refactors, skipped checks and process exceptions without suppressions or baseline increases.
+- [x] 4.5 Run `openspec validate reorganize-web-source --strict`, map each style-isolation scenario to its recorded check, and confirm existing session/lifecycle/command/history guarantees were preserved; leave other changes' remaining verification tasks untouched.

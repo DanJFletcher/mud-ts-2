@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync, mkdirSync, symlinkSync } from 'node:fs';
+import { writeFileSync, mkdirSync, symlinkSync, renameSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { repository } from './tests/repository.mjs';
 import { runQuality } from './gate.mjs';
@@ -12,6 +12,19 @@ function fixture(t) {
  writeFileSync(join(r.cwd,'apps/coverage/coverage-summary.json'),JSON.stringify({total:Object.fromEntries(['lines','branches','functions','statements'].map(metric=>[metric,{pct:80}]))}));
  return r;
 }
+test('full gate preserves counts for a verified import-only rename without selecting untouched functions',async t=>{
+ const r=fixture(t);
+ const source='import { value } from "./helper.mjs";\nexport function legacy() {\n'+ '  console.log(value);\n'.repeat(6)+'}\n';
+ writeFileSync(join(r.cwd,'apps/helper.mjs'),'export const value = 1;\n');
+ writeFileSync(join(r.cwd,'apps/legacy.mjs'),source);
+ writeFileSync(join(r.cwd,'eslint-suppressions.json'),JSON.stringify({'apps/legacy.mjs':{'max-lines-per-function':{count:1}}}));
+ const base=r.commit();mkdirSync(join(r.cwd,'apps/world'));
+ renameSync(join(r.cwd,'apps/legacy.mjs'),join(r.cwd,'apps/world/legacy.mjs'));
+ writeFileSync(join(r.cwd,'apps/world/legacy.mjs'),source.replace('./helper.mjs','../helper.mjs'));
+ writeFileSync(join(r.cwd,'eslint-suppressions.json'),JSON.stringify({'apps/world/legacy.mjs':{'max-lines-per-function':{count:1}}}));
+ const report=await runQuality({cwd:r.cwd,base,head:r.commit()});
+ assert.equal(report.status,'passed',JSON.stringify(report));assert.equal(report.selected.length,0);
+});
 test('end-to-end comparison passes docs, fails new over-limit code and baseline growth, then passes compliant code',async t=>{
  const r=fixture(t);writeFileSync(join(r.cwd,'README.md'),'docs');let head=r.commit();
  let report=await runQuality({cwd:r.cwd,base:r.base,head});

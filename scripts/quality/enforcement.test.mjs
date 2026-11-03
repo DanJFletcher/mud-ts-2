@@ -20,6 +20,15 @@ test('budget additions/increases fail, decreases pass, identical renames preserv
  assert.equal(budgetChanges(before,{'new.ts':{complexity:{count:2}}},[{oldPath:'old.ts',path:'new.ts',unchanged:true}]).filter(c=>c.failure).length,0);
  assert.equal(budgetChanges(before,{'new.ts':{complexity:{count:2}}},[{oldPath:'old.ts',path:'new.ts',unchanged:false}]).filter(c=>c.failure).length,1);
 });
+test('suppression counts follow an import-only rename whose dependency keeps its identity',()=>{
+ const before={'apps/old.ts':{'max-lines-per-function':{count:2}}};
+ const after={'apps/world/new.ts':{'max-lines-per-function':{count:2}}};
+ const source='import { value } from "./helper.js";\nexport const current = () => value;\n';
+ const files=[{status:'R090',oldPath:'apps/old.ts',path:'apps/world/new.ts',unchanged:false,
+  before:source,after:source.replace('./helper.js','../helper.js')}];
+ const trees={beforePaths:new Set(['apps/old.ts','apps/helper.ts']),afterPaths:new Set(['apps/world/new.ts','apps/helper.ts'])};
+ assert.deepEqual(budgetChanges(before,after,files,trees),[]);
+});
 test('site allowances require unchanged one-to-one source occurrence and cannot hide copies',()=>{
  const base='const a = x - x;\nconst b = 1;\n';
  const site={rule:'sonarjs/no-identical-expressions',path:'f.ts',line:1,column:11,anchor:'const a = x - x;'};

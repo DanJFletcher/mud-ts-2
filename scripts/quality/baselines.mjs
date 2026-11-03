@@ -1,11 +1,15 @@
 import { mapLine } from './selection.mjs';
 import { sourceContext } from './anchors.mjs';
-export function budgetChanges(before, after, files) {
-  const old = remap(before, files);
+import { importOnlyRename } from './budget-renames.mjs';
+export function budgetChanges(before, after, files, trees = {}) {
+  const old = remap(before, { files, ...trees });
   return [...new Set([...Object.keys(old), ...Object.keys(after)])].flatMap(path => ruleChanges(path, old[path] ?? {}, after[path] ?? {}));
 }
-function remap(before, files) {
-  return Object.fromEntries(Object.entries(before).map(([path, rules]) => [files.find(file => file.oldPath === path && file.unchanged)?.path ?? path, rules]));
+function remap(before, context) {
+  return Object.fromEntries(Object.entries(before).map(([path, rules]) => [budgetDestination(path, context), rules]));
+}
+function budgetDestination(path, context) {
+  return context.files.find(file => file.oldPath === path && (file.unchanged || importOnlyRename(file, context)))?.path ?? path;
 }
 function ruleChanges(path, before, after) {
   return [...new Set([...Object.keys(before), ...Object.keys(after)])].map(rule => budgetDifference(path, rule, before[rule]?.count ?? 0, after[rule]?.count ?? 0)).filter(Boolean);

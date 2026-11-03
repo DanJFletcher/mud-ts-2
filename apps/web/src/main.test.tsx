@@ -12,7 +12,7 @@ vi.mock('react-dom/client', () => ({
   },
 }));
 
-vi.mock('./AccountApp.js', () => ({ default: () => null }));
+vi.mock('./app/AccountApp.js', () => ({ default: () => null }));
 
 describe('web application entry point', () => {
   beforeEach(() => {

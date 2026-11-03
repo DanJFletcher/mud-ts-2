@@ -1,5 +1,6 @@
 @import "tailwindcss";
-@import "./gameplay.css";
+@import "./world/styles/index.css";
+@import "./app/styles/base.css";
 
 @theme {
   --color-paper: var(--mudd-bg);
@@ -12,15 +13,4 @@
   --font-sans: "DM Sans", system-ui, sans-serif;
   --font-display: "Literata", Georgia, serif;
   --font-mono: "DM Mono", ui-monospace, monospace;
-}
-
-* { box-sizing: border-box; }
-html { min-width: 320px; background: #e8e8dc; }
-html[data-theme="dark"] { background: #1d2924; }
-body { min-width: 320px; min-height: 100dvh; margin: 0; font-family: var(--font-sans); }
-button, input { font: inherit; }
-button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid var(--mudd-warm); outline-offset: 3px; }
-
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }

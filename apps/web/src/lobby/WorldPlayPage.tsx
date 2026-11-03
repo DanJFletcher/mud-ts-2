@@ -1,7 +1,7 @@
 import { Link, useLocation } from 'wouter';
 import { useState } from 'react';
 import { Button } from '@mudd/ui';
-import { WorldClient } from '../App.js';
+import { WorldClient } from '../world/WorldClient.js';
 import { AccountShell } from './AccountShell.js';
 import { LobbyBreadcrumbs } from './LobbyBreadcrumbs.js';
 import { worldPath } from './navigation.js';
