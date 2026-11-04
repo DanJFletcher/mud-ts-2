@@ -5,65 +5,215 @@ import { join } from 'node:path';
 import { repository } from './tests/repository.mjs';
 import { comparison } from './git.mjs';
 import { inventory, selectFunctions } from './selection.mjs';
-test('explicit revisions, merge base, paths with spaces and byte-identical renames', t=>{
- const r=repository(t,{'old name.ts':'export const f = () => 1;\n'});
- renameSync(join(r.cwd,'old name.ts'),join(r.cwd,'new name.ts'));
- const head=r.commit(); const result=comparison(r.cwd,r.base,head);
- assert.equal(result.base,r.base);assert.equal(result.head,head);
- assert.equal(result.files[0].oldPath,'old name.ts');assert.equal(result.files[0].path,'new name.ts');
- assert.equal(result.files[0].unchanged,true);
- assert.throws(()=>comparison(r.cwd,'missing',head));
- r.git('checkout','-qb','maintenance',r.base);
- writeFileSync(join(r.cwd,'maintenance.ts'),'export const maintenance = 1;');const maintenance=r.commit();
- assert.equal(comparison(r.cwd,maintenance,head).base,r.base);
+test('explicit revisions report their base and head', t => {
+  const repo = repository(t, { 'fixture.ts': 'export const value = 1;\n' });
+  writeFileSync(join(repo.cwd, 'head.ts'), 'export const head = 1;\n');
+  const head = repo.commit();
+
+  const result = comparison(repo.cwd, repo.base, head);
+
+  assert.equal(result.base, repo.base);
+  assert.equal(result.head, head);
 });
-test('inventory includes executable TS/JS function forms and nested ancestors',()=>{
- const source='function* f() { yield 1; }\nconst a = async (x: number): Promise<number> => x;\nconst b = function() {};\nclass C { constructor() {} get x() { return 1; } set x(v) {} m() { return [1].map(n => n+1); } }';
- assert.equal(inventory(source).length,8);
- const chosen=selectFunctions('',source,[{oldStart:0,oldCount:0,newStart:1,newCount:4}]);
- assert.equal(chosen.length,8);
- assert.throws(()=>inventory('function {'));
+
+test('byte-identical renames preserve paths with spaces', t => {
+  const repo = repository(t, { 'old name.ts': 'export const f = () => 1;\n' });
+  renameSync(join(repo.cwd, 'old name.ts'), join(repo.cwd, 'new name.ts'));
+  const head = repo.commit();
+
+  const result = comparison(repo.cwd, repo.base, head);
+
+  assert.equal(result.files[0].oldPath, 'old name.ts');
+  assert.equal(result.files[0].path, 'new name.ts');
+  assert.equal(result.files[0].unchanged, true);
 });
-test('body/signature/format edits select containing functions but not shifted neighbors',()=>{
- const before='function outer() {\n  return [1].map(x => x + 1);\n}\nfunction neighbor() {\n  return 1;\n}\n';
- const after=before.replace('x + 1','x + 2');
- assert.deepEqual(selectFunctions(before,after,[{oldStart:2,oldCount:1,newStart:2,newCount:1}]).map(f=>f.name),['outer','<anonymous>']);
- const shifted='// heading\n'+before;
- assert.equal(selectFunctions(before,shifted,[{oldStart:0,oldCount:0,newStart:1,newCount:1}]).length,0);
- const signature=before.replace('outer()', 'outer(x: number)');
- assert.equal(selectFunctions(before,signature,[{oldStart:1,oldCount:1,newStart:1,newCount:1}])[0].name,'outer');
+
+test('missing revisions fail explicitly', t => {
+  const repo = repository(t, { 'fixture.ts': 'export const value = 1;\n' });
+
+  assert.throws(() => comparison(repo.cwd, 'missing', repo.base));
 });
-test('deletion-only maps survivors, removed nested functions affect outer, deleted siblings stay untouched',()=>{
- const before='function outer() {\n  const unused = () => 1;\n  console.log(1);\n  return 2;\n}\nfunction sibling() { return 3; }\n';
- const after=before.replace('  const unused = () => 1;\n','');
- assert.deepEqual(selectFunctions(before,after,[{oldStart:2,oldCount:1,newStart:1,newCount:0}]).map(f=>f.name),['outer']);
- const top='function gone() {\n  return 1;\n}\n'+before;
- assert.equal(selectFunctions(top,before,[{oldStart:1,oldCount:3,newStart:0,newCount:0}]).length,0);
- assert.equal(selectFunctions(before.replaceAll('\n','\r\n'),after.replaceAll('\n','\r\n'),[{oldStart:2,oldCount:1,newStart:1,newCount:0}]).length,1);
+
+test('maintenance comparisons use the merge base', t => {
+  const repo = repository(t, { 'fixture.ts': 'export const value = 1;\n' });
+  writeFileSync(join(repo.cwd, 'head.ts'), 'export const head = 1;\n');
+  const head = repo.commit();
+  repo.git('checkout', '-qb', 'maintenance', repo.base);
+  writeFileSync(join(repo.cwd, 'maintenance.ts'), 'export const maintenance = 1;\n');
+  const maintenance = repo.commit();
+
+  assert.equal(comparison(repo.cwd, maintenance, head).base, repo.base);
 });
-test('TypeScript angle assertions and TSX JSX are parsed according to the source extension',()=>{
- assert.equal(inventory('const f = <T>(value: T) => <T>value;','fixture.ts').length,1);
- assert.equal(inventory('const View = () => <div>Hello</div>;','fixture.tsx').length,1);
+
+const executableFunctionForms =
+  'function* f() { yield 1; }\nconst a = async (x: number): Promise<number> => x;\nconst b = function() {};\nclass C { constructor() {} get x() { return 1; } set x(v) {} m() { return [1].map(n => n+1); } }';
+
+test('inventory includes executable TypeScript and JavaScript function forms', () => {
+  assert.equal(inventory(executableFunctionForms).length, 8);
 });
-test('formatting, return-type edits, same-line functions, duplicate anonymous functions and moves stay conservative',()=>{
- const before='function typed(): number {\n  return 1;\n}\nconst a = () => 2; const b = () => 3;\n';
- assert.deepEqual(selectFunctions(before,before.replace(': number',': unknown'),[{oldStart:1,oldCount:1,newStart:1,newCount:1}]).map(f=>f.name),['typed']);
- assert.deepEqual(selectFunctions(before,before.replace('  return','    return'),[{oldStart:2,oldCount:1,newStart:2,newCount:1}]).map(f=>f.name),['typed']);
- assert.deepEqual(selectFunctions(before,before.replace('=> 2','=> 4'),[{oldStart:4,oldCount:1,newStart:4,newCount:1}]).map(f=>f.name),['a','b']);
- const moved='const a = () => 2; const b = () => 3;\nfunction typed(): number {\n  return 1;\n}\n';
- assert.equal(selectFunctions(before,moved,[{oldStart:1,oldCount:3,newStart:0,newCount:0},{oldStart:4,oldCount:0,newStart:2,newCount:3}]).filter(f=>f.name==='typed').length,1);
- const duplicates='const first = function() {\n return 1;\n};\nconst second = function() {\n return 1;\n};\n';
- assert.deepEqual(selectFunctions(duplicates,duplicates.replace(' return 1;\n',''),[{oldStart:2,oldCount:1,newStart:1,newCount:0}]).map(f=>f.name),['first']);
+
+test('insertions select every executable function form', () => {
+  const selected = selectFunctions('', executableFunctionForms, [
+    { oldStart: 0, oldCount: 0, newStart: 1, newCount: 4 },
+  ]);
+
+  assert.equal(selected.length, 8);
 });
-test('rename-plus-edit uses old source while copies at a destination count as additions',t=>{
- const r=repository(t,{'original.ts':'export const original = () => 1;\n'.repeat(5)});
- renameSync(join(r.cwd,'original.ts'),join(r.cwd,'renamed.ts'));
- writeFileSync(join(r.cwd,'renamed.ts'),'export const changed = () => 2;\n'+'export const original = () => 1;\n'.repeat(4));
- writeFileSync(join(r.cwd,'copy.ts'),'export const copied = () => 1;\n');const head=r.commit();
- const result=comparison(r.cwd,r.base,head);
- const renamed=result.files.find(f=>f.path==='renamed.ts');assert.equal(renamed.oldPath,'original.ts');assert.equal(renamed.unchanged,false);
- const copied=result.files.find(f=>f.path==='copy.ts');assert.equal(selectFunctions(copied.before,copied.after,copied.hunks).length,1);
+
+test('invalid source fails inventory', () => {
+  assert.throws(() => inventory('function {'));
 });
-test('array holes in valid production code do not break function inventory',()=>{
- assert.equal(inventory('export const hole = () => [1, , 3];').length,1);
+
+const selectionFixture =
+  'function outer() {\n  return [1].map(x => x + 1);\n}\nfunction neighbor() {\n  return 1;\n}\n';
+
+test('body edits select the containing function and its nested function', () => {
+  const changedBody = selectionFixture.replace('x + 1', 'x + 2');
+  const selectedNames = selectFunctions(selectionFixture, changedBody, [
+    { oldStart: 2, oldCount: 1, newStart: 2, newCount: 1 },
+  ]).map(func => func.name);
+
+  assert.deepEqual(selectedNames, ['outer', '<anonymous>']);
+});
+
+test('inserted headings do not select shifted functions', () => {
+  const shiftedSource = '// heading\n' + selectionFixture;
+  const selected = selectFunctions(selectionFixture, shiftedSource, [
+    { oldStart: 0, oldCount: 0, newStart: 1, newCount: 1 },
+  ]);
+
+  assert.equal(selected.length, 0);
+});
+
+test('signature edits select the changed function', () => {
+  const changedSignature = selectionFixture.replace('outer()', 'outer(x: number)');
+  const selected = selectFunctions(selectionFixture, changedSignature, [
+    { oldStart: 1, oldCount: 1, newStart: 1, newCount: 1 },
+  ]);
+
+  assert.equal(selected[0].name, 'outer');
+});
+
+const deletionFixture =
+  'function outer() {\n  const unused = () => 1;\n  console.log(1);\n  return 2;\n}\nfunction sibling() { return 3; }\n';
+const withoutNestedFunction = deletionFixture.replace('  const unused = () => 1;\n', '');
+
+test('nested deletions select the surviving outer function', () => {
+  const selectedNames = selectFunctions(deletionFixture, withoutNestedFunction, [
+    { oldStart: 2, oldCount: 1, newStart: 1, newCount: 0 },
+  ]).map(func => func.name);
+
+  assert.deepEqual(selectedNames, ['outer']);
+});
+
+test('deleted top-level functions do not select surviving siblings', () => {
+  const sourceWithDeletedFunction = 'function gone() {\n  return 1;\n}\n' + deletionFixture;
+  const selected = selectFunctions(sourceWithDeletedFunction, deletionFixture, [
+    { oldStart: 1, oldCount: 3, newStart: 0, newCount: 0 },
+  ]);
+
+  assert.equal(selected.length, 0);
+});
+
+test('CRLF deletions preserve function selection', () => {
+  const before = deletionFixture.replaceAll('\n', '\r\n');
+  const after = withoutNestedFunction.replaceAll('\n', '\r\n');
+  const selected = selectFunctions(before, after, [
+    { oldStart: 2, oldCount: 1, newStart: 1, newCount: 0 },
+  ]);
+
+  assert.equal(selected.length, 1);
+});
+
+test('TypeScript angle assertions use the TypeScript parser', () => {
+  const source = 'const f = <T>(value: T) => <T>value;';
+
+  assert.equal(inventory(source, 'fixture.ts').length, 1);
+});
+
+test('JSX uses the TSX parser', () => {
+  const source = 'const View = () => <div>Hello</div>;';
+
+  assert.equal(inventory(source, 'fixture.tsx').length, 1);
+});
+
+const formattingFixture = 'function typed(): number {\n  return 1;\n}\nconst a = () => 2; const b = () => 3;\n';
+
+test('return-type edits select the typed function', () => {
+  const changedReturnType = formattingFixture.replace(': number', ': unknown');
+  const selectedNames = selectFunctions(formattingFixture, changedReturnType, [
+    { oldStart: 1, oldCount: 1, newStart: 1, newCount: 1 },
+  ]).map(func => func.name);
+
+  assert.deepEqual(selectedNames, ['typed']);
+});
+
+test('formatting edits select the containing function', () => {
+  const changedIndentation = formattingFixture.replace('  return', '    return');
+  const selectedNames = selectFunctions(formattingFixture, changedIndentation, [
+    { oldStart: 2, oldCount: 1, newStart: 2, newCount: 1 },
+  ]).map(func => func.name);
+
+  assert.deepEqual(selectedNames, ['typed']);
+});
+
+test('same-line function edits retain conservative selection', () => {
+  const changedArrow = formattingFixture.replace('=> 2', '=> 4');
+  const selectedNames = selectFunctions(formattingFixture, changedArrow, [
+    { oldStart: 4, oldCount: 1, newStart: 4, newCount: 1 },
+  ]).map(func => func.name);
+
+  assert.deepEqual(selectedNames, ['a', 'b']);
+});
+
+test('move hunks map the typed function once', () => {
+  const movedSource =
+    'const a = () => 2; const b = () => 3;\nfunction typed(): number {\n  return 1;\n}\n';
+  const hunks = [
+    { oldStart: 1, oldCount: 3, newStart: 0, newCount: 0 },
+    { oldStart: 4, oldCount: 0, newStart: 2, newCount: 3 },
+  ];
+  const selectedNames = selectFunctions(formattingFixture, movedSource, hunks)
+    .filter(func => func.name === 'typed')
+    .map(func => func.name);
+
+  assert.deepEqual(selectedNames, ['typed']);
+});
+
+test('duplicate anonymous functions map to the changed occurrence', () => {
+  const source =
+    'const first = function() {\n return 1;\n};\nconst second = function() {\n return 1;\n};\n';
+  const changedSource = source.replace(' return 1;\n', '');
+  const selectedNames = selectFunctions(source, changedSource, [
+    { oldStart: 2, oldCount: 1, newStart: 1, newCount: 0 },
+  ]).map(func => func.name);
+
+  assert.deepEqual(selectedNames, ['first']);
+});
+test('rename-plus-edit retains the old source path', t => {
+  const original = 'export const original = () => 1;\n'.repeat(5);
+  const repo = repository(t, { 'original.ts': original });
+  renameSync(join(repo.cwd, 'original.ts'), join(repo.cwd, 'renamed.ts'));
+  writeFileSync(
+    join(repo.cwd, 'renamed.ts'),
+    'export const changed = () => 2;\n' + 'export const original = () => 1;\n'.repeat(4),
+  );
+  const head = repo.commit();
+  const renamed = comparison(repo.cwd, repo.base, head).files.find(file => file.path === 'renamed.ts');
+
+  assert.equal(renamed.oldPath, 'original.ts');
+  assert.equal(renamed.unchanged, false);
+});
+
+test('copies at a destination count as additions', t => {
+  const original = 'export const original = () => 1;\n'.repeat(5);
+  const repo = repository(t, { 'original.ts': original });
+  writeFileSync(join(repo.cwd, 'copy.ts'), 'export const copied = () => 1;\n');
+  const head = repo.commit();
+  const copied = comparison(repo.cwd, repo.base, head).files.find(file => file.path === 'copy.ts');
+
+  assert.equal(selectFunctions(copied.before, copied.after, copied.hunks).length, 1);
+});
+test('array holes in valid production code do not break function inventory', () => {
+  assert.equal(inventory('export const hole = () => [1, , 3];').length, 1);
 });
