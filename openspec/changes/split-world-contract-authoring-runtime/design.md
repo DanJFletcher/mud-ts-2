@@ -20,20 +20,20 @@ See `proposal.md` for motivation. `world.ts` currently holds both authored defin
 
 ## Decisions
 
-### Keep three focused modules behind the existing `world.ts` entry point
+### Keep authored content in `world.ts`; extract runtime contracts
 
-- `world-content.ts` owns authored location, object, road, NPC/dialogue, and world-pack schemas; `WorldPackDraftSchema`, its input/output types, and `validateDraftWorldGraph` remain together because they compose and validate authored content.
+- `world.ts` remains the authoring module for location, object, road, NPC/dialogue, and world-pack schemas. Keep `WorldPackDraftSchema`, its input/output types, and `validateDraftWorldGraph` together because they compose and validate authored content.
 - `world-runtime.ts` owns world queries and commands, NPC presence, and location/map/runtime projection schemas and types.
-- `world-shared.ts` owns only schemas used on both sides, including map terrain/color, readable action, and container-kind schemas. Their definitions and inferred types must not be duplicated.
-- `world.ts` becomes a compatibility re-export of these modules. `engine-contracts/src/index.ts` keeps exporting `world.ts`, with no public export rename.
+- `world-shared.ts` owns only schemas used on both sides, including map terrain/color, readable action, container-kind, and NPC combat-disposition schemas. Their definitions and inferred types must not be duplicated.
+- `world.ts` re-exports runtime and shared contracts to preserve direct imports. `engine-contracts/src/index.ts` keeps exporting `world.ts`, with no public export rename.
 
 The shared module avoids making runtime contracts depend on the full world-pack authoring schema just to reuse a few primitives. It also prevents an authoring-to-runtime dependency.
 
 ### Make implementation imports point to the owning module
 
-Update internal consumers to import from the focused module they use. In particular, `world-map-data.ts` should import location/road authoring schemas and `WorldPackDraftInput` from `world-content.ts`; client, stream, and movement projection code should import runtime contracts from `world-runtime.ts`. Type-only world-pack consumers should import from `world-content.ts`.
+Update runtime consumers such as `client.ts`, `stream.ts`, and `movement-projection.ts` to import from `world-runtime.ts`. Authored-world consumers such as `world-map-data.ts` and type-only world-pack consumers can continue to import from `world.ts`.
 
-The current import graph has no unavoidable cycle: `world-map-data.ts` imports `world.ts`, but `world.ts` does not import the map-data adapter. Direct imports are chosen for ownership clarity and to keep that direction explicit as the compatibility barrel is simplified.
+`world-runtime.ts` must not import from `world.ts`; it should depend only on shared and lower-level contracts. `world.ts` can then re-export runtime contracts without creating a cycle.
 
 ### Keep authoring input and parsed output types distinct
 
@@ -53,13 +53,13 @@ Alternatives considered:
 
 - **Schema behavior changes during extraction** → Move declarations and refinements intact; verify the existing contract suite and downstream type checks.
 - **Missing or ambiguous barrel exports** → Preserve each existing named export through `world.ts` and run package build/tests plus affected consumer checks.
-- **A hidden module cycle** → Keep `world.ts` as a leaf re-export facade; implementation modules must not import from the facade. Keep `world-map-data.ts` pointed at the authoring module.
+- **A hidden module cycle** → Keep `world-runtime.ts` independent of `world.ts`; only `world.ts` re-exports runtime contracts.
 - **Too many small modules** → Limit the new structure to content, runtime, and a small shared-schema module; do not split unrelated domains in this change.
 
 ## Migration Plan
 
-1. Extract shared schemas, then authored contracts and runtime contracts, keeping their exported names and definitions.
-2. Replace `world.ts` implementation with re-exports and update internal imports to their owning modules.
+1. Extract shared schemas, then move runtime contracts into `world-runtime.ts`, keeping their exported names and definitions.
+2. Re-export runtime contracts from `world.ts` and update runtime consumers to import from their owning module.
 3. Run the `engine-contracts` build/tests and relevant downstream type/test checks to confirm compatibility.
 
 There is no data migration or deployment change. If verification finds an incompatible change, revert the extraction and restore the original `world.ts` implementation.

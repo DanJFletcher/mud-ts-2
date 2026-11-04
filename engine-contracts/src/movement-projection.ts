@@ -6,7 +6,7 @@ import {
 } from './character.js';
 import { SupplySourceDefinitionSchema } from './daily-jobs.js';
 import { QuestJournalSchema } from './quests.js';
-import { LocationProjectionSchema, WorldMapProjectionSchema } from './world.js';
+import { LocationProjectionSchema, WorldMapProjectionSchema } from './world-runtime.js';
 
 const LocationOptionSchema = z.object({
   id: IdSchema,

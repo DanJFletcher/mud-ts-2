@@ -6,9 +6,9 @@
 
 ## What Changes
 
-- Move authored world definitions, `WorldPackDraftSchema`, its input/output types, and graph validation into an authoring-focused module.
-- Move world query/command and runtime projection schemas and types into a runtime-focused module.
-- Keep `world.ts` as a compatibility re-export so existing imports remain valid.
+- Keep authored world definitions, `WorldPackDraftSchema`, its input/output types, and graph validation together in `world.ts`.
+- Move world query/command and runtime projection schemas and types into `world-runtime.ts`.
+- Re-export runtime and shared contracts from `world.ts` so existing imports remain valid.
 - Keep shared schemas single-sourced, and make internal imports follow the authoring/runtime dependency direction.
 - Preserve existing validation behavior and verify the package's public exports and contract tests.
 
@@ -26,7 +26,7 @@ None. This change does not alter externally observable requirements; specs are i
 
 ## Impact
 
-- `engine-contracts/src/world.ts` and new focused contract modules.
-- Internal consumers such as `world-map-data.ts`, `client.ts`, `stream.ts`, and `movement-projection.ts`, only where needed to clarify imports.
+- `engine-contracts/src/world.ts`, `world-runtime.ts`, and `world-shared.ts`.
+- Internal consumers such as `client.ts`, `stream.ts`, and `movement-projection.ts`, only where needed to clarify imports.
 - Existing `engine-contracts` tests, especially world graph validation and map-data composition.
 - The `@mudd/contracts` export surface remains unchanged.

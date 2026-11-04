@@ -1,7 +1,7 @@
 /** PROPOSED scoped delivery; global ordering across streams is NOT promised. */
 import { z } from 'zod';
 import { IdSchema, NonNegativeIntSchema } from './ids.js';
-import { LocationProjectionSchema } from './world.js';
+import { LocationProjectionSchema } from './world-runtime.js';
 import { CharacterProjectionSchema } from './character.js';
 
 export const SubscriptionRequestSchema = z.object({

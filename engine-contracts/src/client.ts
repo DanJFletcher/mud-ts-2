@@ -9,7 +9,7 @@ import type {
   LocationDescribeQuery,
   ObjectReadQuery,
   ReadableObjectProjection,
-} from './world.js';
+} from './world-runtime.js';
 import type { MoveCharacterCommand } from './movement.js';
 import type {
   DropCharacterItemCommand,
