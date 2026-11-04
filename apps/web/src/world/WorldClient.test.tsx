@@ -4630,30 +4630,6 @@ describe('single-character world session client', () => {
     await screen.findByRole('heading', { name: 'Reedbank Stalls' });
   });
 
-  it('collapses the map and can still open it full screen', async () => {
-    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
-    const map = await screen.findByRole('region', { name: 'World map' });
-    fireEvent.click(screen.getByRole('button', { name: 'Collapse map' }));
-    expect(map).toHaveClass('focused-world-map--collapsed');
-    const expandMap = screen.getByRole('button', { name: 'Expand map' });
-    expect(expandMap).toHaveClass('mudd-disclosure-button');
-    expect(expandMap).toHaveAttribute('aria-expanded', 'false');
-    expect(expandMap).toHaveAttribute('aria-controls', 'world-map-content');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Open map full screen' }));
-    const dialog = await screen.findByRole('dialog', { name: 'World map' });
-    expect(dialog).not.toHaveClass('focused-world-map--collapsed');
-    expect(dialog.querySelector('.focused-world-map__svg')).not.toBeNull();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Close full-screen map' }));
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'World map' })).not.toBeInTheDocument());
-    const collapsedMap = screen.getByRole('region', { name: 'World map' });
-    expect(collapsedMap).toHaveClass('focused-world-map--collapsed');
-    fireEvent.click(screen.getByRole('button', { name: 'Expand map' }));
-    expect(screen.getByRole('region', { name: 'World map' })).not.toHaveClass('focused-world-map--collapsed');
-    expect(screen.getByRole('button', { name: 'Collapse map' })).toHaveAttribute('aria-expanded', 'true');
-  });
-
   it('opens the world map full screen with a left swipe and closes with a right swipe or Escape', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('region', { name: 'World map' });

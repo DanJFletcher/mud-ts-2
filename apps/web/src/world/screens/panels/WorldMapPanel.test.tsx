@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { WorldMapProjection } from '@mudd/contracts';
@@ -248,6 +248,32 @@ describe('map switching between floors', () => {
     const map = screen.getByRole('group', { name: 'Directional map of visited locations' });
     expect(within(map).getByRole('button', { name: 'Focus Basement on map, current location' })).toHaveAttribute('aria-current', 'location');
     expect(within(map).queryByRole('button', { name: 'Focus Bell Tower on map' })).not.toBeInTheDocument();
+  });
+
+  it('opens full screen from a collapsed map and restores the collapsed state when closed', async () => {
+    const onFullscreenChange = vi.fn();
+    const { rerender } = render(
+      <WorldMapPanel map={overworld} fullscreen={false} onFullscreenChange={onFullscreenChange} />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse map' }));
+    expect(screen.getByRole('button', { name: 'Expand map' })).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open map full screen' }));
+    expect(onFullscreenChange).toHaveBeenLastCalledWith(true);
+
+    rerender(<WorldMapPanel map={overworld} fullscreen onFullscreenChange={onFullscreenChange} />);
+    const dialog = await screen.findByRole('dialog', { name: 'World map' });
+    expect(dialog).not.toHaveClass('focused-world-map--collapsed');
+    expect(dialog.querySelector('.focused-world-map__svg')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close full-screen map' }));
+    expect(onFullscreenChange).toHaveBeenLastCalledWith(false);
+    rerender(<WorldMapPanel map={overworld} fullscreen={false} onFullscreenChange={onFullscreenChange} />);
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'World map' })).not.toBeInTheDocument());
+    expect(screen.getByRole('region', { name: 'World map' })).toHaveClass('focused-world-map--collapsed');
+    expect(screen.getByRole('button', { name: 'Expand map' })).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('uses distinct room tiles, exit symbols, and accessible names without map labels', () => {
