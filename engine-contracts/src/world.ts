@@ -21,6 +21,23 @@ import {
   LocationGroupDefinitionSchema,
   LocationGroupMembershipProjectionSchema,
 } from './location-groups.js';
+import {
+  ContainerKindSchema,
+  MapColorSchema,
+  MapTerrainSchema,
+  NpcCombatDispositionSchema,
+  ReadActionSchema,
+} from './world-shared.js';
+export {
+  ContainerKindSchema,
+  MapColorSchema,
+  MapTerrainSchema,
+  NpcCombatDispositionSchema,
+  READABLE_ACTIONS_HEADER,
+  READABLE_ACTIONS_VERSION,
+  ReadActionSchema,
+} from './world-shared.js';
+export type { ContainerKind, NpcCombatDisposition, ReadAction } from './world-shared.js';
 
 export const ExitDefinitionSchema = z.object({
   id: IdSchema,
@@ -52,13 +69,6 @@ export const LocationStateDefinitionSchema = z.object({
   requiresWaterTravel: z.boolean().optional(),
 }).strict();
 
-export const MapTerrainSchema = z.string()
-  .trim()
-  .min(1)
-  .max(48)
-  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
-export const MapColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/);
-
 export const MapPositionSchema = z.object({
   x: z.number().int().min(-10000).max(10000),
   y: z.number().int().min(-10000).max(10000),
@@ -79,14 +89,6 @@ export const MapPositionSchema = z.object({
     });
   }
 });
-
-/** Semantic resource affordances; presentation remains client-owned. */
-export const ReadActionSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('daily-board'), boardId: IdSchema }).strict(),
-]);
-export type ReadAction = z.infer<typeof ReadActionSchema>;
-export const READABLE_ACTIONS_HEADER = 'x-mudd-readable-actions';
-export const READABLE_ACTIONS_VERSION = '1';
 
 export const ReadableObjectDefinitionSchema = z.object({
   id: IdSchema,
@@ -193,8 +195,6 @@ export const CombatLootDefinitionSchema = z.object({
     itemIds.add(item.id);
   }
 });
-
-export const ContainerKindSchema = z.enum(['sack', 'chest', 'corpse', 'other']);
 
 export const ContainerDefinitionSchema = z.object({
   id: IdSchema,
@@ -458,8 +458,6 @@ export const NpcDialogueDefinitionSchema = z.object({
     }
   }
 });
-
-export const NpcCombatDispositionSchema = z.enum(['passive', 'hostile']);
 
 export const NpcDefinitionSchema = z.object({
   id: IdSchema,
@@ -1075,7 +1073,6 @@ export type TakeableObjectDefinition = z.infer<typeof TakeableObjectDefinitionSc
 export type InteractableObjectDefinition = z.infer<typeof InteractableObjectDefinitionSchema>;
 export type ItemUseInteractionDefinition = z.infer<typeof ItemUseInteractionDefinitionSchema>;
 export type NpcDefinition = z.infer<typeof NpcDefinitionSchema>;
-export type NpcCombatDisposition = z.infer<typeof NpcCombatDispositionSchema>;
 export type NpcDialogueDefinition = z.infer<typeof NpcDialogueDefinitionSchema>;
 export type NpcQuestResponseDefinition = z.infer<typeof NpcQuestResponseDefinitionSchema>;
 export type NpcRoomChatReactionDefinition = z.infer<typeof NpcRoomChatReactionDefinitionSchema>;
@@ -1088,7 +1085,6 @@ export type NpcDialogueProjection = z.infer<typeof NpcDialogueProjectionSchema>;
 export type ReadableObjectProjection = z.infer<typeof ReadableObjectProjectionSchema>;
 export type ObjectInspectionProjection = z.infer<typeof ObjectInspectionProjectionSchema>;
 export type ContainerDefinition = z.infer<typeof ContainerDefinitionSchema>;
-export type ContainerKind = z.infer<typeof ContainerKindSchema>;
 export type LocationProjection = z.infer<typeof LocationProjectionSchema>;
 export type RoomOccupantProjection = z.infer<typeof RoomOccupantProjectionSchema>;
 export type RoomPresenceProjection = z.infer<typeof RoomPresenceProjectionSchema>;

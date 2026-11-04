@@ -2,7 +2,7 @@
 
 ## 1. Extract shared world schemas
 
-- [ ] 1.1 Move schemas shared by authored and runtime contracts into `world-shared.ts`, preserve their constraints and exported types, and verify `npm run test --workspace @mudd/contracts` passes.
+- [x] 1.1 Move schemas shared by authored and runtime contracts into `world-shared.ts`, preserve their constraints and exported types, and verify `npm run test --workspace @mudd/contracts` passes.
 
 ## 2. Separate authored world content
 
