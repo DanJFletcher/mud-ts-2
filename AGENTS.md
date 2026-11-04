@@ -15,6 +15,8 @@ For new behavior and bug fixes, use small red/green/refactor cycles:
 
 For behavior-preserving refactors, establish passing coverage before editing. Test public behavior rather than private implementation details. Do not weaken assertions, delete tests, or over-mock collaborators merely to make a change pass.
 
+After an implementation is green, consider whether a small cleanup would reduce a concrete maintenance cost. Use `.agents/skills/typescript-refactor/SKILL.md` for evidence-based TypeScript review or behavior-preserving edits. Keep review mode read-only, and do not delegate routine cleanup by default. A bounded refactor may be delegated when an independent review or isolated edit adds value; the parent must provide the tested baseline, scope, and invariants, then inspect the integrated diff and rerun relevant checks.
+
 Documentation-only and formatting-only changes do not require behavior tests. If a meaningful test cannot run, report the blocker and the resulting verification gap; do not claim TDD. Existing green tests or tests written after implementation are not evidence of a red/green cycle.
 
 The final report must briefly identify the test observed failing and why, the checks that passed afterward, and any skipped checks or process exceptions. Report actual observations; do not invent execution evidence.

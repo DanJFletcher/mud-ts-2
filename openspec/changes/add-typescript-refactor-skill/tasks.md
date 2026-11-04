@@ -2,9 +2,9 @@
 
 ## 1. Shared refactoring guidance
 
-- [ ] 1.1 Author the canonical skill with review and edit modes. Validate its frontmatter and exercise a review in a disposable workspace. Verify it cites a concrete maintenance cost and leaves the workspace untouched.
-- [ ] 1.2 Add and link a source-backed TypeScript field reference covering the decisions in design.md. Exercise cases for an exhaustive union switch and a legacy record accepted by a cast. Verify the reviewer recognizes a justified switch and identifies the compatibility change introduced by new validation.
-- [ ] 1.3 Add selective delegation to AGENTS.md and the portable handoff to the skill. Walk through a clean green change and a bounded extraction. Verify the former can finish inline and the latter identifies ownership, observed evidence, invariants, and who verifies the result.
+- [x] 1.1 Author the canonical skill with review and edit modes. Validate its frontmatter and exercise a review in a disposable workspace. Verify it cites a concrete maintenance cost and leaves the workspace untouched.
+- [x] 1.2 Add and link a source-backed TypeScript field reference covering the decisions in design.md. Exercise cases for an exhaustive union switch and a legacy record accepted by a cast. Verify the reviewer recognizes a justified switch and identifies the compatibility change introduced by new validation.
+- [x] 1.3 Add selective delegation to AGENTS.md and the portable handoff to the skill. Walk through a clean green change and a bounded extraction. Verify the former can finish inline and the latter identifies ownership, observed evidence, invariants, and who verifies the result.
 
 ## 2. Host discovery and specialist roles
 
@@ -15,5 +15,5 @@
 
 ## 3. End-to-end verification
 
-- [ ] 3.1 In an isolated example, observe a public test fail for missing behavior and pass after a minimal fix. Exercise a delegated refactor of overlapping rejection checks. Verify pre-edit coverage, preserved error precedence, bounded diff, post-edit checks and parent verification. Distinguish the parent's red observation from the specialist's green runs.
-- [ ] 3.2 Record host, version or date, invocation, and observed results for skill use, named delegation and fallback task execution separately. Mark unavailable live checks unverified with reproduction steps and leave affected verification tasks open. Check that every compatibility claim is backed by the recorded evidence.
+- [x] 3.1 In an isolated example, observe a public test fail for missing behavior and pass after a minimal fix. Exercise a delegated refactor of overlapping rejection checks. Verify pre-edit coverage, preserved error precedence, bounded diff, post-edit checks and parent verification. Distinguish the parent's red observation from the specialist's green runs.
+- [x] 3.2 Record host, version or date, invocation, and observed results for skill use, named delegation and fallback task execution separately. Mark unavailable live checks unverified with reproduction steps and leave affected verification tasks open. Check that every compatibility claim is backed by the recorded evidence.
