@@ -19,7 +19,7 @@ import {
   type ActivityLogTarget
 } from "@mudd/ui";
 import { ChevronDown, Coins, Heart, Sparkles, Users, Zap } from "lucide-react";
-import type { Dispatch, ReactNode, RefObject, SetStateAction } from "react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
 import {
   useEffect,
   useState,
@@ -28,6 +28,7 @@ import {
 import { RoomChatPanel, type RoomChatMessage } from "./panels/RoomChatPanel.js";
 import { TerminalPanel } from "./panels/TerminalPanel.js";
 import { WorldMapPanel } from "./panels/WorldMapPanel.js";
+import type { TerminalHistoryNavigation } from "./use-terminal-history-navigation.js";
 import type { useDailyController } from "../features/daily/use-daily-controller.js";
 import type { useTravelController } from "../features/travel/use-travel-controller.js";
 import type { QuickMode } from "./view-types.js";
@@ -124,20 +125,10 @@ export interface PlayScreenProps {
     worldInstanceId: string;
   };
   history: {
-    terminalHistoryRef: RefObject<HTMLDivElement | null>;
-    terminalFollowsLatestRef: RefObject<boolean>;
-    setTerminalFollowingLatest: Dispatch<SetStateAction<boolean>>;
-    terminalReadingPosition: RefObject<{ id: string; offset: number ;} | undefined>;
-    setTerminalReadingAnchor: Dispatch<SetStateAction<string | undefined>>;
-    setTerminalCanScrollDown: Dispatch<SetStateAction<boolean>>;
     entries: readonly ActivityEntry[];
-    terminalFollowingLatest: boolean;
-    terminalReadingAnchor: string | undefined;
-    handleHistoryWindowChange: (latest: boolean) => void;
+    navigation: TerminalHistoryNavigation;
     terminalLookTargets: ActivityLogTarget[];
     handleTerminalLookTarget: (target: ActivityLogTarget) => void;
-    terminalCanScrollDown: boolean;
-    scrollTerminalToLatest: () => void;
   };
   gathering: {
     activeWoodcutting: NonNullable<GameSnapshot["character"]>["activeWoodcutting"];
@@ -187,7 +178,7 @@ export interface PlayScreenProps {
 }
 export function PlayScreen({ session, history, gathering, daily, slots, view }: PlayScreenProps) {
   const { loading, snapshot, connectionError, loadGame, handleLeaveWorld, leaving, optimisticTravel, pending, presenceStale, client, worldInstanceId } = session;
-  const { terminalHistoryRef, terminalFollowsLatestRef, setTerminalFollowingLatest, terminalReadingPosition, setTerminalReadingAnchor, setTerminalCanScrollDown, entries, terminalFollowingLatest, terminalReadingAnchor, handleHistoryWindowChange, terminalLookTargets, handleTerminalLookTarget, terminalCanScrollDown, scrollTerminalToLatest } = history;
+  const { entries, navigation, terminalLookTargets, handleTerminalLookTarget } = history;
   const { activeWoodcutting, continueWoodcutting, cancelWoodcuttingAction, activeFishingCast, continueFishingCast, cancelFishingCast } = gathering;
   const { displayedDailyBoard, activeDailyBoardId, dailyBoardLoading, dailyBoardError, pendingDailyJobId, fetchDailyBoard, closeDailyBoard, handleDailyJobAction } = daily;
   const { merchantPanel, combatPanel, quickCommands, dialogs } = slots;
@@ -240,40 +231,19 @@ export function PlayScreen({ session, history, gathering, daily, slots, view }: 
           <div className="focused-terminal-history-shell">
             <div
               className="focused-terminal-history"
-              ref={terminalHistoryRef}
+              ref={navigation.terminalHistoryRef}
               role="region"
               aria-label="Terminal output"
               tabIndex={0}
-              onScroll={(event) => {
-                const history = event.currentTarget;
-                const distanceFromLatest = history.scrollHeight - history.scrollTop - history.clientHeight;
-                terminalFollowsLatestRef.current = distanceFromLatest < 32;
-                setTerminalFollowingLatest(terminalFollowsLatestRef.current);
-                if (!terminalFollowsLatestRef.current) {
-                  const rows = [...history.querySelectorAll<HTMLElement>("[data-activity-entry]")];
-                  const top = history.getBoundingClientRect().top;
-                  const row = rows.find((row) => row.getBoundingClientRect().bottom > top) ?? rows[0];
-                  if (row?.dataset.activityEntry) {
-                    terminalReadingPosition.current = {
-                      id: row.dataset.activityEntry,
-                      offset: row.getBoundingClientRect().top - top
-                    };
-                    setTerminalReadingAnchor(row.dataset.activityEntry);
-                  }
-                } else {
-                  terminalReadingPosition.current = undefined;
-                  setTerminalReadingAnchor(undefined);
-                }
-                setTerminalCanScrollDown(distanceFromLatest > 32);
-              }}
+              onScroll={navigation.handleScroll}
             >
               {entries.length > 0 && (
                 <ActivityHistoryWindow
                   entries={entries}
                   label="Terminal transcript"
-                  followLatest={terminalFollowingLatest}
-                  readingAnchorId={terminalReadingAnchor}
-                  onWindowChange={handleHistoryWindowChange}
+                  followLatest={navigation.isFollowingLatest}
+                  readingAnchorId={navigation.readingAnchorId}
+                  onWindowChange={navigation.handleWindowChange}
                   currentLocationId={optimisticTravel?.preview.locationId ?? snapshot.location?.locationId}
                   lookTargets={optimisticTravel ? [] : terminalLookTargets}
                   onLookTarget={handleTerminalLookTarget}
@@ -281,11 +251,11 @@ export function PlayScreen({ session, history, gathering, daily, slots, view }: 
                 />
               )}
             </div>
-            {terminalCanScrollDown && (
+            {navigation.canScrollDown && (
               <button
                 type="button"
                 className="focused-terminal-scroll-latest"
-                onClick={scrollTerminalToLatest}
+                onClick={navigation.scrollToLatest}
                 aria-label="Scroll to latest"
               >
                 <ChevronDown size={14} aria-hidden="true" />

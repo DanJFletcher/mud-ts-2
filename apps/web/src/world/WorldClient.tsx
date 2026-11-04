@@ -57,6 +57,7 @@ import { StatsScreen } from "./screens/StatsScreen.js";
 import { VitalsScreen } from "./screens/VitalsScreen.js";
 import { WorldDialogs } from "./screens/WorldDialogs.js";
 import { WorldNavigation } from "./screens/WorldNavigation.js";
+import { useTerminalHistoryNavigation } from "./screens/use-terminal-history-navigation.js";
 import { useGameSession } from "./session/use-game-session.js";
 
 type ClassCatalogSummary = NonNullable<Awaited<ReturnType<MuddHttpClient["getWorlds"]>>[number]["classCatalog"]>;
@@ -212,14 +213,9 @@ function WorldFeatures({
   const { screen, theme, menuOpen, setMenuOpen, contentRef, navMenuRef, navMenuTriggerRef, toggleTheme } = useWorldNavigation();
   const [mobileCommandInputOpen, setMobileCommandInputOpen] = useState(false);
   const [terminalExpandRequest, setTerminalExpandRequest] = useState(0);
-  const [terminalCanScrollDown, setTerminalCanScrollDown] = useState(false);
   const [chatFullscreen, setChatFullscreen] = useState(false);
   const [mapFullscreen, setMapFullscreen] = useState(false);
-  const terminalHistoryRef = useRef<HTMLDivElement>(null);
-  const terminalFollowsLatestRef = useRef(true);
-  const [terminalFollowingLatest, setTerminalFollowingLatest] = useState(true);
-  const [terminalReadingAnchor, setTerminalReadingAnchor] = useState<string>();
-  const terminalReadingPosition = useRef<{ id: string; offset: number; } | undefined>(undefined);
+  const terminalHistoryNavigation = useTerminalHistoryNavigation({ active: screen === "play", entries });
   const lastRoomLookIdRef = useRef<string | null>(null);
   const knownQuestObjectiveCompletionsRef = useRef<Set<string>>(new Set());
   const swipeStartRef = useRef<{ x: number; y: number; } | null>(null);
@@ -428,50 +424,6 @@ function WorldFeatures({
       addEntry("narration", location.description, false, location.locationId),
     ];
   }, [addEntry]);
-
-  useLayoutEffect(() => {
-    const history = terminalHistoryRef.current;
-    if (screen !== "play" || !history) {
-      setTerminalCanScrollDown(false);
-      return;
-    }
-    if (terminalFollowsLatestRef.current) history.scrollTop = history.scrollHeight;
-    else if (terminalReadingPosition.current) {
-      const anchor = terminalReadingPosition.current;
-      const row = [...history.querySelectorAll<HTMLElement>("[data-activity-entry]")]
-        .find((row) => row.dataset.activityEntry === anchor.id);
-      if (row) history.scrollTop += row.getBoundingClientRect().top - history.getBoundingClientRect().top - anchor.offset;
-    }
-    setTerminalCanScrollDown(history.scrollHeight - history.scrollTop - history.clientHeight > 32);
-  }, [entries, screen, terminalReadingAnchor, terminalCanScrollDown]);
-
-  const handleHistoryWindowChange = useCallback((latest: boolean) => {
-    terminalFollowsLatestRef.current = latest;
-    setTerminalFollowingLatest(latest);
-    terminalReadingPosition.current = undefined;
-    setTerminalReadingAnchor(undefined);
-    setTerminalCanScrollDown(!latest);
-    const history = terminalHistoryRef.current;
-    if (history) history.scrollTop = latest ? history.scrollHeight : 0;
-    if (latest) requestAnimationFrame(() => {
-      const current = terminalHistoryRef.current;
-      if (current && terminalFollowsLatestRef.current) current.scrollTop = current.scrollHeight;
-    });
-  }, []);
-  const scrollTerminalToLatest = useCallback(() => {
-    const history = terminalHistoryRef.current;
-    if (!history) return;
-    terminalFollowsLatestRef.current = true;
-    setTerminalFollowingLatest(true);
-    terminalReadingPosition.current = undefined;
-    setTerminalReadingAnchor(undefined);
-    history.scrollTop = history.scrollHeight;
-    setTerminalCanScrollDown(false);
-    requestAnimationFrame(() => {
-      const current = terminalHistoryRef.current;
-      if (current && terminalFollowsLatestRef.current) current.scrollTop = current.scrollHeight;
-    });
-  }, []);
 
   const loadGame = useCallback(async () => {
     const result = await loadSession();
@@ -1184,7 +1136,7 @@ function WorldFeatures({
         {!isGameOver && screen === "play" && (
           <PlayScreen
             session={{ loading, snapshot, connectionError, loadGame, handleLeaveWorld, leaving, optimisticTravel, pending, presenceStale, client, worldInstanceId }}
-            history={{ terminalHistoryRef, terminalFollowsLatestRef, setTerminalFollowingLatest, terminalReadingPosition, setTerminalReadingAnchor, setTerminalCanScrollDown, entries, terminalFollowingLatest, terminalReadingAnchor, handleHistoryWindowChange, terminalLookTargets, handleTerminalLookTarget, terminalCanScrollDown, scrollTerminalToLatest }}
+            history={{ entries, navigation: terminalHistoryNavigation, terminalLookTargets, handleTerminalLookTarget }}
             gathering={{ activeWoodcutting, continueWoodcutting, cancelWoodcuttingAction, activeFishingCast, continueFishingCast, cancelFishingCast }}
             daily={{ displayedDailyBoard, activeDailyBoardId, dailyBoardLoading, dailyBoardError, pendingDailyJobId, fetchDailyBoard, closeDailyBoard, handleDailyJobAction }}
             slots={{ merchantPanel, combatPanel, quickCommands, dialogs }}

@@ -3960,6 +3960,52 @@ describe('single-character world session client', () => {
     expect(scrollTop).toBe(400);
   });
 
+  it('keeps the terminal reading anchor when switching away from and back to Play', async () => {
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+    for (let i = 0; i < 10; i++) submitWorldCommand('help');
+
+    const history = screen.getByRole('region', { name: 'Terminal output' });
+    const rows = within(history).getAllByRole('listitem');
+    expect(rows).toHaveLength(200);
+    const anchor = rows[50]!;
+    const anchorId = anchor.getAttribute('data-activity-entry');
+    let scrollTop = 250;
+    Object.defineProperties(history, {
+      scrollHeight: { configurable: true, value: 600 },
+      clientHeight: { configurable: true, value: 200 },
+      scrollTop: {
+        configurable: true,
+        get: () => scrollTop,
+        set: (value: number) => { scrollTop = Math.max(0, Math.min(value, 400)); },
+      },
+    });
+    history.getBoundingClientRect = () => ({
+      x: 0, y: 100, width: 300, height: 200, top: 100, right: 300, bottom: 300, left: 0,
+      toJSON: () => ({}),
+    });
+    rows.forEach((row, index) => {
+      const top = index < 50 ? 60 : index === 50 ? 125 : 180;
+      row.getBoundingClientRect = () => ({
+        x: 0, y: top, width: 300, height: 20, top, right: 300, bottom: top + 20, left: 0,
+        toJSON: () => ({}),
+      });
+    });
+    fireEvent.scroll(history);
+    await waitFor(() => {
+      expect(within(history).getAllByRole('listitem')[0]).toHaveAttribute('data-activity-entry', anchorId);
+    });
+
+    fireEvent.click(screen.getByRole('link', { name: 'Info' }));
+    await screen.findByRole('link', { name: 'Field notes' });
+    fireEvent.click(screen.getByRole('link', { name: 'Play' }));
+
+    const returnedHistory = await screen.findByRole('region', { name: 'Terminal output' });
+    await waitFor(() => {
+      expect(within(returnedHistory).getAllByRole('listitem')[0]).toHaveAttribute('data-activity-entry', anchorId);
+    });
+  });
+
   it('ignores a late world catalog response after the client unmounts', async () => {
     const original = apiFetch.getMockImplementation()!;
     let releaseWorlds: (() => void) | undefined;

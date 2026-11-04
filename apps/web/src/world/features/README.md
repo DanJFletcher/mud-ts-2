@@ -158,14 +158,18 @@ those same IDs during confirmation or rejection. A stale command cannot settle
 another command's group.
 
 The shared UI ActivityHistoryWindow mounts at most 200 rows, preserves retained
-entry anchors, and provides Older/Newer/Latest navigation. Terminal scrolling
-also records the actual visible row and offset. Field notes reverses a window of
-the same entries; its document-scroll anchor prevents incoming activity from
-moving older notes. History rows are non-live. The stable session announcement
-region changes only for actual appended activity, not for window navigation or
-historical replacement. Retention and accessibility details are documented in
-packages/ui/docs/design-system/activity-history.md; manual screen-reader and
-native-browser checks remain tracked separately.
+entry anchors, and provides Older/Newer/Latest navigation. The
+`screens/use-terminal-history-navigation` hook owns terminal viewport
+navigation: the element ref, follow-latest state, visible-row anchor and offset,
+scroll threshold, and scroll-to-latest control. `WorldClient` invokes it above
+conditional screen rendering so the reading position survives leaving Play.
+The hook does not own history data or announcements. Field notes reverses a
+window of the same entries; its document-scroll anchor prevents incoming
+activity from moving older notes. History rows are non-live. The stable session
+announcement region changes only for actual appended activity, not for window
+navigation or historical replacement. Retention and accessibility details are
+documented in packages/ui/docs/design-system/activity-history.md; manual
+screen-reader and native-browser checks remain tracked separately.
 
 ## Screen composition and navigation
 
