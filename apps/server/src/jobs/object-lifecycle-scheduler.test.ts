@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { WorldRuntime } from '../worlds/world-registry.js';
-import type { PostgresEventStore } from '../persistence/postgres-event-store.js';
-import { createObjectLifecycleScheduler } from './object-lifecycle-scheduler.js';
+import { createObjectLifecycleScheduler, type ObjectLifecycleSchedulerStore } from './object-lifecycle-scheduler.js';
 
 const dueObject = {
   objectId: 'old-corpse',
@@ -17,15 +16,15 @@ function runtime(engine: Record<string, unknown>): WorldRuntime {
 }
 
 function createScheduler(
-  claimDueObjectLifecycles: (...args: unknown[]) => Promise<unknown[]>,
-  releaseObjectLifecycleClaim: (...args: unknown[]) => Promise<void>,
+  claimDueObjectLifecycles: ObjectLifecycleSchedulerStore['claimDueObjectLifecycles'],
+  releaseObjectLifecycleClaim: ObjectLifecycleSchedulerStore['releaseObjectLifecycleClaim'],
   dispatchSystem: (...args: unknown[]) => Promise<unknown>,
   onError?: (error: unknown, worldInstanceId: string, objectId?: string) => void,
 ) {
   const runtimes: WorldRuntime[] = [];
   const scheduler = createObjectLifecycleScheduler({
     runtimes,
-    store: { claimDueObjectLifecycles, releaseObjectLifecycleClaim } as unknown as PostgresEventStore,
+    store: { claimDueObjectLifecycles, releaseObjectLifecycleClaim },
     onError,
   });
   // The constructor's immediate startup run sees no runtimes and completes synchronously.
@@ -149,7 +148,7 @@ describe('object lifecycle scheduler', () => {
       store: {
         claimDueObjectLifecycles,
         releaseObjectLifecycleClaim: vi.fn(async () => undefined),
-      } as unknown as PostgresEventStore,
+      },
     });
 
     try {

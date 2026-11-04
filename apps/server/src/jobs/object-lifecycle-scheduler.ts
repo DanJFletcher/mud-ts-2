@@ -1,13 +1,22 @@
 import { SYSTEM_ACTOR_ID } from '@mudd/engine-core';
 import type { WorldRuntime } from '../worlds/world-registry.js';
-import type { PostgresEventStore } from '../persistence/postgres-event-store.js';
 
 const BATCH_SIZE = 32;
 const LEASE_MS = 60_000;
 
+export interface ObjectLifecycleSchedulerStore {
+  claimDueObjectLifecycles(
+    worldInstanceId: string,
+    now: Date,
+    limit?: number,
+    leaseMs?: number,
+  ): Promise<Array<{ objectId: string; revision: number; leaseToken: string }>>;
+  releaseObjectLifecycleClaim(worldInstanceId: string, objectId: string, leaseToken: string): Promise<void>;
+}
+
 export function createObjectLifecycleScheduler(options: {
   readonly runtimes: readonly WorldRuntime[];
-  readonly store: PostgresEventStore;
+  readonly store: ObjectLifecycleSchedulerStore;
   readonly onError?: (error: unknown, worldInstanceId: string, objectId?: string) => void;
 }) {
   let running = false;

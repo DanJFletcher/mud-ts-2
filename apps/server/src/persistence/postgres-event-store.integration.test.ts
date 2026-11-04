@@ -678,7 +678,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     expect(scheduled.kind).toBe('committed');
 
     const firstPollAt = new Date(expiresAt.getTime() + 1);
-    const firstWorker = new PostgresEventStore();
+    const firstWorker = new PostgresEventStore({ singleCallAppend: false });
     const firstClaim = await firstWorker.claimDueObjectLifecycles(
       lifecycleWorldInstanceId,
       firstPollAt,
@@ -689,13 +689,27 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     expect(firstClaim[0]).toMatchObject({ objectId, revision: 1 });
 
     // A new store instance observes the persistent lease and cannot double-process the object.
-    const restartedWorker = new PostgresEventStore();
+    const restartedWorker = new PostgresEventStore({ singleCallAppend: false });
     await expect(restartedWorker.claimDueObjectLifecycles(
       lifecycleWorldInstanceId,
       firstPollAt,
       1,
       5_000,
     )).resolves.toEqual([]);
+
+    await restartedWorker.releaseObjectLifecycleClaim(
+      lifecycleWorldInstanceId,
+      objectId,
+      firstClaim[0]!.leaseToken,
+    );
+    const releasedClaim = await restartedWorker.claimDueObjectLifecycles(
+      lifecycleWorldInstanceId,
+      firstPollAt,
+      1,
+      5_000,
+    );
+    expect(releasedClaim).toHaveLength(1);
+    expect(releasedClaim[0]?.leaseToken).not.toBe(firstClaim[0]?.leaseToken);
 
     // Once the lease deadline passes, another worker can safely reclaim the same due revision.
     const afterLeaseExpiry = new Date(firstPollAt.getTime() + 5_001);
@@ -707,7 +721,47 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     );
     expect(recoveredClaim).toHaveLength(1);
     expect(recoveredClaim[0]).toMatchObject({ objectId, revision: 1 });
-    expect(recoveredClaim[0]?.leaseToken).not.toBe(firstClaim[0]?.leaseToken);
+    expect(recoveredClaim[0]?.leaseToken).not.toBe(releasedClaim[0]?.leaseToken);
+
+    const expired = await restartedWorker.append({
+      worldInstanceId: lifecycleWorldInstanceId,
+      streamId: lifecycleStreamId,
+      streamKind: 'non-character',
+      actorId: SYSTEM_ACTOR_ID,
+      commandId: `expire-${randomUUID()}`,
+      payloadHash: randomUUID(),
+      expectedVersion: 1,
+      events: [{
+        type: 'world.object_expired',
+        version: 1,
+        payload: {
+          objectId,
+          objectType: 'campfire',
+          locationId: 'mossgate-clearing',
+          expiredAt: afterLeaseExpiry.toISOString(),
+        },
+      }],
+    });
+    expect(expired.kind).toBe('committed');
+    expect(await restartedWorker.readStream(lifecycleWorldInstanceId, lifecycleStreamId)).toMatchObject([
+      { type: 'world.object_lifecycle_scheduled' },
+      { type: 'world.object_expired', payload: { objectId } },
+    ]);
+
+    const { eq } = await import('drizzle-orm');
+    const { worldObjectLifecycles } = await import('../db/schema.js');
+    const [lifecycle] = await db.select().from(worldObjectLifecycles).where(eq(
+      worldObjectLifecycles.objectId,
+      objectId,
+    ));
+    expect(lifecycle).toMatchObject({
+      worldInstanceId: lifecycleWorldInstanceId,
+      objectId,
+      state: 'expired',
+      revision: 2,
+      leaseToken: null,
+      leaseUntil: null,
+    });
   });
 
   it('persists shared corpse events under the stable UUID system actor', async () => {

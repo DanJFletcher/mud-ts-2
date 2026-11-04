@@ -1,6 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { randomUUID } from 'node:crypto';
-import { and, asc, desc, eq, gt, inArray, isNull, lte, notInArray, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import type { CommandReceipt } from '@mudd/contracts';
 import type {
   AppendOutcome,
@@ -24,6 +23,8 @@ import {
 import { db } from '../db/client.js';
 import { retainCharacterReplayPrefix, replayCharacter } from '@mudd/engine-core';
 import { measureDatabaseOperation, measureStage } from '../app/performance.js';
+import { commandEffectKeyPrefix, postgresEffectRepository } from './postgres-effect-repository.js';
+import { postgresObjectLifecycleRepository } from './postgres-object-lifecycle-repository.js';
 
 /**
  * The latest event of each stream. DISTINCT ON would read and sort every event
@@ -70,28 +71,6 @@ type CommandStreamReadCache = {
   revision?: number;
   events?: readonly StoredGameEvent[];
 };
-
-/** Each effect a command queues is keyed by this prefix plus its index. */
-function commandEffectKeyPrefix(worldInstanceId: string, actorId: string, commandId: string) {
-  return `command:${worldInstanceId}:${actorId}:${commandId}:`;
-}
-
-function toStoredEventEffect(
-  row: typeof durableEffects.$inferSelect,
-  leaseToken: string,
-): StoredEventEffect {
-  return {
-    id: row.id,
-    worldInstanceId: row.worldInstanceId,
-    sourceStreamId: row.sourceStreamId,
-    causationCommandId: row.causationCommandId,
-    type: row.effectType,
-    version: row.effectVersion,
-    payload: row.payload,
-    attempts: row.attempts,
-    leaseToken,
-  };
-}
 
 type AppendMaterializerTx = Pick<typeof db, 'execute' | 'insert' | 'select' | 'update'>;
 type AppendMaterializerContext = {
@@ -1093,75 +1072,11 @@ export class PostgresEventStore implements EventStorePort {
     worldInstanceId?: string,
     reservation?: CommandEffectReservation,
   ): Promise<StoredEventEffect | undefined> {
-    if (reservation && (!Number.isInteger(reservation.graceMs) || reservation.graceMs < 0)) {
-      throw new RangeError('Effect reservation grace must be a non-negative integer.');
-    }
-    return this.claimDueEffect(
-      leaseMs,
-      ...(worldInstanceId ? [eq(durableEffects.worldInstanceId, worldInstanceId)] : []),
-      // Skip a reserved effect while its own command may still settle it; the
-      // created_at default uses the database clock, so compare with it too.
-      ...(reservation && reservation.types.length > 0
-        ? [or(
-          notInArray(durableEffects.effectType, [...reservation.types]),
-          gt(durableEffects.attempts, 0),
-          lte(
-            durableEffects.createdAt,
-            sql`now() - (${reservation.graceMs} * interval '1 millisecond')`,
-          ),
-        )!]
-        : []),
-    );
+    return postgresEffectRepository.claimNextEffect(leaseMs, worldInstanceId, reservation);
   }
 
   async claimCommandEffect(leaseMs: number, scope: CommandEffectScope): Promise<StoredEventEffect | undefined> {
-    if (scope.types.length === 0) return undefined;
-    // The causation ID alone is client-chosen and can repeat across players;
-    // the dedupe key also names the actor. Only pending and processing rows
-    // can match, and the existing pending-effects index finds those.
-    return this.claimDueEffect(
-      leaseMs,
-      eq(durableEffects.worldInstanceId, scope.worldInstanceId),
-      eq(durableEffects.causationCommandId, scope.commandId),
-      sql`starts_with(${durableEffects.dedupeKey}, ${commandEffectKeyPrefix(
-        scope.worldInstanceId,
-        scope.actorId,
-        scope.commandId,
-      )})`,
-      inArray(durableEffects.effectType, [...scope.types]),
-    );
-  }
-
-  private async claimDueEffect(leaseMs: number, ...filters: SQL[]): Promise<StoredEventEffect | undefined> {
-    if (!Number.isInteger(leaseMs) || leaseMs < 1) throw new RangeError('Effect lease must be a positive integer.');
-    // Availability is written with the database clock (column default and
-    // retryEffect), so compare with it too: a JavaScript Date has only millisecond
-    // precision and can read an effect queued "now" as not yet due.
-    const now = sql`now()`;
-    const leaseToken = globalThis.crypto.randomUUID();
-    // Lock and lease the next due effect in one autocommit statement, so an empty
-    // poll costs one round trip rather than a three-statement transaction. SKIP
-    // LOCKED still keeps concurrent workers from claiming the same row.
-    const nextDue = db.select({ id: durableEffects.id }).from(durableEffects).where(and(
-      ...filters,
-      lte(durableEffects.availableAt, now),
-      or(
-        eq(durableEffects.status, 'pending'),
-        and(
-          eq(durableEffects.status, 'processing'),
-          or(isNull(durableEffects.lockedUntil), lte(durableEffects.lockedUntil, now)),
-        ),
-      ),
-    )).orderBy(asc(durableEffects.createdAt), asc(durableEffects.id))
-      .limit(1)
-      .for('update', { skipLocked: true });
-    const [claimed] = await db.update(durableEffects).set({
-      status: 'processing',
-      attempts: sql`${durableEffects.attempts} + 1`,
-      lockedUntil: sql`now() + (${leaseMs} * interval '1 millisecond')`,
-      leaseToken,
-    }).where(eq(durableEffects.id, sql`${nextDue}`)).returning();
-    return claimed ? toStoredEventEffect(claimed, leaseToken) : undefined;
+    return postgresEffectRepository.claimCommandEffect(leaseMs, scope);
   }
 
   async claimDueObjectLifecycles(
@@ -1169,35 +1084,8 @@ export class PostgresEventStore implements EventStorePort {
     now: Date,
     limit = 32,
     leaseMs = 60_000,
-  ): Promise<Array<{
-    objectId: string;
-    revision: number;
-    leaseToken: string;
-  }>> {
-    if (!Number.isInteger(limit) || limit < 1) throw new RangeError('Lifecycle batch size must be positive.');
-    if (!Number.isInteger(leaseMs) || leaseMs < 1) throw new RangeError('Lifecycle lease must be positive.');
-    return db.transaction(async (tx) => {
-      const rows = await tx.select({
-        objectId: worldObjectLifecycles.objectId,
-        revision: worldObjectLifecycles.revision,
-      }).from(worldObjectLifecycles).where(and(
-        eq(worldObjectLifecycles.worldInstanceId, worldInstanceId),
-        inArray(worldObjectLifecycles.state, ['scheduled', 'expiring']),
-        lte(worldObjectLifecycles.expiresAt, now),
-        or(isNull(worldObjectLifecycles.leaseUntil), lte(worldObjectLifecycles.leaseUntil, now)),
-      )).orderBy(asc(worldObjectLifecycles.expiresAt))
-        .limit(limit)
-        .for('update', { skipLocked: true });
-      const leaseUntil = new Date(now.getTime() + leaseMs);
-      return Promise.all(rows.map(async (row) => {
-        const leaseToken = randomUUID();
-        await tx.update(worldObjectLifecycles).set({ leaseToken, leaseUntil }).where(and(
-          eq(worldObjectLifecycles.worldInstanceId, worldInstanceId),
-          eq(worldObjectLifecycles.objectId, row.objectId),
-        ));
-        return { objectId: row.objectId, revision: row.revision, leaseToken };
-      }));
-    });
+  ): Promise<Array<{ objectId: string; revision: number; leaseToken: string }>> {
+    return postgresObjectLifecycleRepository.claimDueObjectLifecycles(worldInstanceId, now, limit, leaseMs);
   }
 
   async releaseObjectLifecycleClaim(
@@ -1205,29 +1093,11 @@ export class PostgresEventStore implements EventStorePort {
     objectId: string,
     leaseToken: string,
   ): Promise<void> {
-    await db.update(worldObjectLifecycles).set({
-      leaseToken: null,
-      leaseUntil: null,
-    }).where(and(
-      eq(worldObjectLifecycles.worldInstanceId, worldInstanceId),
-      eq(worldObjectLifecycles.objectId, objectId),
-      eq(worldObjectLifecycles.leaseToken, leaseToken),
-    ));
+    return postgresObjectLifecycleRepository.releaseObjectLifecycleClaim(worldInstanceId, objectId, leaseToken);
   }
 
   async completeEffect(effectId: string, leaseToken: string): Promise<boolean> {
-    const rows = await db.update(durableEffects).set({
-      status: 'completed',
-      lockedUntil: null,
-      leaseToken: null,
-      lastError: null,
-      completedAt: new Date(),
-    }).where(and(
-      eq(durableEffects.id, effectId),
-      eq(durableEffects.status, 'processing'),
-      eq(durableEffects.leaseToken, leaseToken),
-    )).returning({ id: durableEffects.id });
-    return rows.length > 0;
+    return postgresEffectRepository.completeEffect(effectId, leaseToken);
   }
 
   async retryEffect(
@@ -1236,32 +1106,10 @@ export class PostgresEventStore implements EventStorePort {
     delayMs: number,
     errorMessage: string,
   ): Promise<boolean> {
-    if (!Number.isInteger(delayMs) || delayMs < 0) throw new RangeError('Effect retry delay must be non-negative.');
-    const rows = await db.update(durableEffects).set({
-      status: 'pending',
-      availableAt: sql`now() + (${delayMs} * interval '1 millisecond')`,
-      lockedUntil: null,
-      leaseToken: null,
-      lastError: errorMessage.slice(0, 500),
-    }).where(and(
-      eq(durableEffects.id, effectId),
-      eq(durableEffects.status, 'processing'),
-      eq(durableEffects.leaseToken, leaseToken),
-    )).returning({ id: durableEffects.id });
-    return rows.length > 0;
+    return postgresEffectRepository.retryEffect(effectId, leaseToken, delayMs, errorMessage);
   }
 
   async deadLetterEffect(effectId: string, leaseToken: string, errorMessage: string): Promise<boolean> {
-    const rows = await db.update(durableEffects).set({
-      status: 'dead',
-      lockedUntil: null,
-      leaseToken: null,
-      lastError: errorMessage.slice(0, 500),
-    }).where(and(
-      eq(durableEffects.id, effectId),
-      eq(durableEffects.status, 'processing'),
-      eq(durableEffects.leaseToken, leaseToken),
-    )).returning({ id: durableEffects.id });
-    return rows.length > 0;
+    return postgresEffectRepository.deadLetterEffect(effectId, leaseToken, errorMessage);
   }
 }
