@@ -88,7 +88,7 @@ export function createClassRulesetPlugin(input: CharacterClassCatalog): EnginePl
   };
   return {
     manifest: {
-      id: 'mudd.ruleset.character-classes', version: '1.0.0', apiVersion: '1.0',
+      id: 'mudd.ruleset.character-classes', version: '1.0.0', apiVersion: '2.0',
       category: 'ruleset', provides: [classCombatPolicyCapability.id],
       eventSchemaVersions: { 'character.class_selected': 1, 'character.ability_resource_spent': 1 },
     },
@@ -116,7 +116,7 @@ export function createClassRulesetPlugin(input: CharacterClassCatalog): EnginePl
         const payload = CharacterClassSelectedEventSchema.shape.payload.parse({
           characterId: character.characterId, characterClass: snapshot, attributes: snapshot.attributes, health,
         });
-        return { streamId: character.characterId, expectedVersion: command.expectedVersion, guards,
+        return { streamId: character.characterId, streamKind: 'character', expectedVersion: command.expectedVersion, guards,
           events: [{ type: 'character.class_selected', version: 1, payload }] };
       });
     },

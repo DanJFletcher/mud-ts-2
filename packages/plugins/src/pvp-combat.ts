@@ -225,6 +225,7 @@ async function applyPvpOutcome(
     const applied = await context.store.append({
       worldInstanceId: context.worldInstanceId,
       streamId: characterId,
+      streamKind: 'character',
       actorId: SYSTEM_ACTOR_ID,
       commandId,
       payloadHash,
@@ -255,6 +256,7 @@ async function applyPvpOutcome(
   const result = await context.store.append({
     worldInstanceId: context.worldInstanceId,
     streamId,
+    streamKind: 'non-character',
     actorId: SYSTEM_ACTOR_ID,
     commandId,
     payloadHash,
@@ -505,6 +507,7 @@ export function registerPvpCombat(
     if (ability && character) {
       companions.push({
         streamId: character.characterId,
+        streamKind: 'character' as const,
         expectedVersion: character.revision,
         events: [ability.event],
       });
@@ -512,12 +515,14 @@ export function registerPvpCombat(
     if (restingTargetStandEvent && restingTarget) {
       companions.push({
         streamId: restingTarget.characterId,
+        streamKind: 'character' as const,
         expectedVersion: restingTarget.revision,
         events: [restingTargetStandEvent],
       });
     }
     return {
       streamId,
+      streamKind: 'non-character',
       expectedVersion: version,
       events: [event('pvp.action.resolved', nextState as unknown as Record<string, unknown>)],
       ...(effects ? { effects } : {}),

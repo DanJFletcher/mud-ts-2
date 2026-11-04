@@ -28,7 +28,7 @@ export const partyCombatPolicyPlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.party-combat-policy',
     version: '1.0.0',
-    apiVersion: '1.0',
+    apiVersion: '2.0',
     category: 'first-party',
     provides: [teamCombatRosterPolicyCapability.id],
     requires: [

@@ -167,7 +167,7 @@ export const objectLifecyclePlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.object-lifecycle',
     version: '1.0.0',
-    apiVersion: '1.0',
+    apiVersion: '2.0',
     category: 'core',
     provides: [objectLifecycleStateCapability.id],
     eventSchemaVersions: {
@@ -207,6 +207,7 @@ export const objectLifecyclePlugin: EnginePlugin = {
         }
         return {
           streamId,
+          streamKind: 'non-character',
           expectedVersion: command.expectedVersion,
           events: [{
             type: 'world.object_expiring',

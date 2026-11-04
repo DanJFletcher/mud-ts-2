@@ -184,7 +184,7 @@ export const npcDialoguePlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.npc-dialogue',
     version: '1.0.0',
-    apiVersion: '1.0',
+    apiVersion: '2.0',
     category: 'core',
     requiredPlugins: { 'mudd.character': '^1.0.0' },
     requires: ['mudd.character.state.v1'],
@@ -386,6 +386,7 @@ export const npcDialoguePlugin: EnginePlugin = {
       }
       return {
         streamId: character.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         events,
         ...(companions ? { companions } : {}),
@@ -415,6 +416,7 @@ export const npcDialoguePlugin: EnginePlugin = {
       CharacterNpcDialogueRestartedEventSchema.shape.payload.parse(payload);
       return {
         streamId: character.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         events: [{
           type: 'character.npc_dialogue_restarted',

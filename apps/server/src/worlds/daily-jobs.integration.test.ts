@@ -9,7 +9,7 @@ import {
 import { orravethWorld } from '@mudd/world-orraveth';
 
 const roster: EnginePlugin = {
-  manifest: { id: 'fixture.roster', version: '1.0.0', apiVersion: '1.0', category: 'first-party',
+  manifest: { id: 'fixture.roster', version: '1.0.0', apiVersion: '2.0', category: 'first-party',
     provides: [teamCombatRosterPolicyCapability.id, combatRoomPresenceCapability.id] },
   register({ provideCapability }) {
     provideCapability(teamCombatRosterPolicyCapability, {

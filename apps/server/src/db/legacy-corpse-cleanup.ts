@@ -80,6 +80,7 @@ export async function scheduleLegacyCorpseLifecycles(
       const result = await store.append({
         worldInstanceId,
         streamId: lifecycleStreamIdValue,
+        streamKind: 'non-character',
         actorId: SYSTEM_ACTOR_ID,
         commandId: stableCommandId(worldInstanceId, corpse.corpseId),
         payloadHash: JSON.stringify(payload),

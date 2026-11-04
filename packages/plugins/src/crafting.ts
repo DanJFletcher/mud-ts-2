@@ -98,7 +98,7 @@ export const craftingPlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.crafting',
     version: '1.0.0',
-    apiVersion: '1.0',
+    apiVersion: '2.0',
     category: 'first-party',
     requires: [characterStateCapability.id],
     requiredPlugins: { 'mudd.character': '^1.0.0' },
@@ -188,6 +188,7 @@ export const craftingPlugin: EnginePlugin = {
       CharacterCraftingCompletedEventSchema.shape.payload.parse(payload);
       return {
         streamId: character.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         events: [{ type: 'character.crafting_completed', version: 1, payload }],
       };

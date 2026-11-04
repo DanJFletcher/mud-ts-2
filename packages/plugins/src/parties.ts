@@ -83,7 +83,7 @@ export const partyPlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.party',
     version: '1.0.0',
-    apiVersion: '1.0',
+    apiVersion: '2.0',
     category: 'first-party',
     provides: [partyStateCapability.id],
     requires: [groupsStateCapability.id, characterStateCapability.id],
@@ -134,6 +134,7 @@ export const partyPlugin: EnginePlugin = {
       });
       return {
         streamId: GROUPS_STREAM_ID,
+        streamKind: 'non-character',
         expectedVersion: groups.revision,
         events: [event],
       };
@@ -157,6 +158,7 @@ export const partyPlugin: EnginePlugin = {
       });
       return {
         streamId: GROUPS_STREAM_ID,
+        streamKind: 'non-character',
         expectedVersion: groups.revision,
         events: [event],
       };
@@ -178,7 +180,7 @@ export const partyPlugin: EnginePlugin = {
             version: 1,
             payload: { groupId: party.groupId, playerId: context.session.playerId, leftAt: now },
           });
-      return { streamId: GROUPS_STREAM_ID, expectedVersion: groups.revision, events: [event] };
+      return { streamId: GROUPS_STREAM_ID, streamKind: 'non-character', expectedVersion: groups.revision, events: [event] };
     });
 
     registerCommand('party.close', PartyCloseCommandSchema, async (_command, context) => {
@@ -197,7 +199,7 @@ export const partyPlugin: EnginePlugin = {
           closedAt: context.now().toISOString(),
         },
       });
-      return { streamId: GROUPS_STREAM_ID, expectedVersion: groups.revision, events: [event] };
+      return { streamId: GROUPS_STREAM_ID, streamKind: 'non-character', expectedVersion: groups.revision, events: [event] };
     });
 
     registerQuery('party.list', PartyListQuerySchema, async (_query, context) => {

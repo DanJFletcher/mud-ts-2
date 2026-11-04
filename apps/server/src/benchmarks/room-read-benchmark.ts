@@ -32,7 +32,7 @@ export async function runRoomReadBenchmark(env: NodeJS.ProcessEnv = process.env)
         owners.push(owner); ids.push(id);
         await db.insert(players).values({ id: owner, displayName: 'Benchmark' });
         await store.append({
-          worldInstanceId: world, streamId: id, actorId: owner,
+          worldInstanceId: world, streamId: id, streamKind: 'character', actorId: owner,
           commandId: randomUUID(), payloadHash: randomUUID(), expectedVersion: 0,
           events: [{ type: 'character.created', version: 1, payload: {
             characterId: id, playerId: owner, name: 'Benchmark',

@@ -50,7 +50,7 @@ const testCombatPresencePlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.room-combat-presence',
     version: '1.0.0',
-    apiVersion: '1.0',
+    apiVersion: '2.0',
     category: 'core',
     provides: [combatRoomPresenceCapability.id],
   },
@@ -66,7 +66,7 @@ const testRoomAnnouncementPlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.test-room-announcements',
     version: '1.0.0',
-    apiVersion: '1.0',
+    apiVersion: '2.0',
     category: 'core',
   },
   register({ registerEffect }) {

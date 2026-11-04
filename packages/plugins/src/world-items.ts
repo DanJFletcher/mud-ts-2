@@ -426,6 +426,7 @@ async function appendWorldDrop(
   const result = await store.append({
     worldInstanceId,
     streamId,
+    streamKind: 'non-character',
     actorId: SYSTEM_ACTOR_ID,
     commandId,
     payloadHash,
@@ -458,6 +459,7 @@ async function appendWorldCorpse(
   const result = await store.append({
     worldInstanceId,
     streamId,
+    streamKind: 'non-character',
     actorId: SYSTEM_ACTOR_ID,
     commandId,
     payloadHash,
@@ -471,6 +473,7 @@ async function appendWorldCorpse(
     )],
     companions: [{
       streamId: objectLifecycleStreamId(payload.corpse.corpseId),
+      streamKind: 'non-character',
       expectedVersion: 0,
       events: [objectLifecycleScheduledEvent({
         objectId: payload.corpse.corpseId,
@@ -514,6 +517,7 @@ async function appendCharacterReceipt(
   const result = await store.append({
     worldInstanceId,
     streamId: payload.characterId,
+    streamKind: 'character',
     actorId: SYSTEM_ACTOR_ID,
     commandId,
     payloadHash,
@@ -554,6 +558,7 @@ async function appendCorpseGoldCredit(
   const result = await store.append({
     worldInstanceId,
     streamId: payload.characterId,
+    streamKind: 'character',
     actorId: SYSTEM_ACTOR_ID,
     commandId,
     payloadHash,
@@ -567,7 +572,7 @@ export const worldItemsPlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.world-items',
     version: '1.0.0',
-    apiVersion: '1.0',
+    apiVersion: '2.0',
     category: 'core',
     provides: [worldItemsStateCapability.id],
     eventSchemaVersions: {

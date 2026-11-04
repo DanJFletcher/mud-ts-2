@@ -39,7 +39,7 @@ async function harness(options: { catalog?: typeof orravethClassCatalog; armor?:
     authenticated, grantedPermissions: [],
   });
   const roster: EnginePlugin = {
-    manifest: { id: 'fixture.roster', version: '1.0.0', apiVersion: '1.0', category: 'ruleset',
+    manifest: { id: 'fixture.roster', version: '1.0.0', apiVersion: '2.0', category: 'ruleset',
       provides: [teamCombatRosterPolicyCapability.id, combatRoomPresenceCapability.id] },
     register({ provideCapability }) {
       provideCapability(teamCombatRosterPolicyCapability, {

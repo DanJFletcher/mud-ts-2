@@ -153,6 +153,7 @@ async function expireCampfire(
     const result = await context.store.append({
       worldInstanceId: context.worldInstanceId,
       streamId: lifecycleStreamIdValue,
+      streamKind: 'non-character',
       actorId: SYSTEM_ACTOR_ID,
       commandId: `campfire-expire-missing:${context.effectId}`,
       payloadHash: `${payload.objectId}:${payload.expiresAt}:missing`,
@@ -166,6 +167,7 @@ async function expireCampfire(
   const result = await context.store.append({
     worldInstanceId: context.worldInstanceId,
     streamId: TEMPORARY_CAMPFIRES_STREAM_ID,
+    streamKind: 'non-character',
     actorId: SYSTEM_ACTOR_ID,
     commandId: `campfire-expire:${context.effectId}`,
     payloadHash: `${payload.objectId}:${payload.expiresAt}`,
@@ -181,6 +183,7 @@ async function expireCampfire(
     }],
     companions: [{
       streamId: lifecycleStreamIdValue,
+      streamKind: 'non-character',
       expectedVersion: lifecycle.revision,
       events: [lifecycleExpired],
     }],
@@ -196,7 +199,7 @@ export const temporaryCampfiresPlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.temporary-campfires',
     version: '1.0.0',
-    apiVersion: '1.0',
+    apiVersion: '2.0',
     category: 'first-party',
     requires: ['mudd.object-lifecycle.state.v1'],
     provides: [temporaryCampfiresCapability.id],
@@ -286,6 +289,7 @@ export const temporaryCampfiresPlugin: EnginePlugin = {
       });
       return {
         streamId: TEMPORARY_CAMPFIRES_STREAM_ID,
+        streamKind: 'non-character',
         expectedVersion: history.at(-1)?.aggregateVersion ?? 0,
         guards: [{ streamId: character.characterId, expectedVersion: character.revision }],
         events: [{
@@ -300,6 +304,7 @@ export const temporaryCampfiresPlugin: EnginePlugin = {
         }],
         companions: [{
           streamId: objectLifecycleStreamId(campfireId),
+          streamKind: 'non-character',
           expectedVersion: 0,
           events: [lifecycle],
         }],
@@ -342,6 +347,7 @@ export const temporaryCampfiresPlugin: EnginePlugin = {
       const extinguishedAt = context.now().toISOString();
       return {
         streamId: TEMPORARY_CAMPFIRES_STREAM_ID,
+        streamKind: 'non-character',
         expectedVersion: campfireHistory.at(-1)?.aggregateVersion ?? 0,
         guards: [{ streamId: character.characterId, expectedVersion: command.expectedVersion }],
         events: [{
@@ -355,6 +361,7 @@ export const temporaryCampfiresPlugin: EnginePlugin = {
         }],
         companions: [{
           streamId: lifecycleStream,
+          streamKind: 'non-character',
           expectedVersion: lifecycle.revision,
           events: [objectLifecycleCancelledEvent({
             objectId: campfire.campfireId,

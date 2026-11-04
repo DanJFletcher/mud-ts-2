@@ -52,7 +52,7 @@ function chooseSupplies(character: CharacterProjection, typeId: string, quantity
 
 export const dailyJobsPlugin: EnginePlugin = {
   manifest: {
-    id: 'mudd.daily-jobs', version: '1.0.0', apiVersion: '1.0', category: 'first-party',
+    id: 'mudd.daily-jobs', version: '1.0.0', apiVersion: '2.0', category: 'first-party',
     requires: [characterStateCapability.id, worldItemsStateCapability.id],
     requiredPlugins: { 'mudd.character': '^1.0.0', 'mudd.world-items': '^1.0.0' },
   },
@@ -133,9 +133,9 @@ export const dailyJobsPlugin: EnginePlugin = {
         item.worldItemId === id && item.holderCharacterId === character.characterId))) {
         throw new RuleViolationError('Those supplies are not yours to deliver.');
       }
-      return { streamId: character.characterId, expectedVersion: command.expectedVersion,
+      return { streamId: character.characterId, streamKind: 'character', expectedVersion: command.expectedVersion,
         ...(shared ? { companions: [{
-          streamId: worldItemsStreamId(context.worldInstanceId), expectedVersion: shared.revision,
+          streamId: worldItemsStreamId(context.worldInstanceId), streamKind: 'non-character', expectedVersion: shared.revision,
           events: [{ type: 'world.items_consumed', version: 1,
             payload: { characterId: character.characterId, worldItemIds: sharedIds } }],
         }] } : {}),
@@ -156,7 +156,7 @@ export const dailyJobsPlugin: EnginePlugin = {
         characterId: character.characterId, sourceId: source.id, cycle,
         item: { ...source.supply, id: `supply:${context.makeId()}` },
       });
-      return { streamId: character.characterId, expectedVersion: command.expectedVersion,
+      return { streamId: character.characterId, streamKind: 'character', expectedVersion: command.expectedVersion,
         events: [{ type: 'character.supply_gathered', version: 1, payload }] };
     });
   },

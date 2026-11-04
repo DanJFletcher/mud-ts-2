@@ -41,6 +41,7 @@ async function expireCorpse(
     const result = await context.store.append({
       worldInstanceId: context.worldInstanceId,
       streamId: lifecycleStreamIdValue,
+      streamKind: 'non-character',
       actorId: SYSTEM_ACTOR_ID,
       commandId: `object-expired-missing:${context.effectId}`,
       payloadHash: `${payload.objectId}:${payload.expiresAt}:missing`,
@@ -76,10 +77,12 @@ async function expireCorpse(
   });
   const companions: Array<{
     streamId: string;
+    streamKind: 'character' | 'non-character';
     expectedVersion: number;
     events: Array<{ type: string; version: number; payload: Record<string, unknown> }>;
   }> = [{
     streamId: lifecycleStreamIdValue,
+    streamKind: 'non-character',
     expectedVersion: lifecycle.revision,
     events: [objectLifecycleExpiredEvent({
       objectId: corpse.corpseId,
@@ -93,6 +96,7 @@ async function expireCorpse(
     const ownerHistory = await context.store.readStream(context.worldInstanceId, corpse.ownerCharacterId);
     companions.push({
       streamId: corpse.ownerCharacterId,
+      streamKind: 'character',
       expectedVersion: ownerHistory.at(-1)?.aggregateVersion ?? 0,
       events: corpseItems.map(({ worldItemId, item }) => ({
         type: 'character.shared_item_received',
@@ -123,6 +127,7 @@ async function expireCorpse(
   const result = await context.store.append({
     worldInstanceId: context.worldInstanceId,
     streamId: worldStreamId,
+    streamKind: 'non-character',
     actorId: SYSTEM_ACTOR_ID,
     commandId: `corpse-expire:${context.effectId}`,
     payloadHash: JSON.stringify(corpseExpiredPayload),
@@ -145,7 +150,7 @@ export const corpseLifecyclePlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.corpse-lifecycle',
     version: '1.0.0',
-    apiVersion: '1.0',
+    apiVersion: '2.0',
     category: 'core',
     eventSchemaVersions: {
       'world.object_expiring': 1,

@@ -66,7 +66,7 @@ try {
       const session = { sessionId: randomUUID(), playerId: owner, actorId: owner,
         worldInstanceId: DEMO_WORLD_INSTANCE_ID, grantedPermissions: [], authenticated: true };
       const created = await store.append({
-        worldInstanceId: DEMO_WORLD_INSTANCE_ID, streamId: id, actorId: owner,
+        worldInstanceId: DEMO_WORLD_INSTANCE_ID, streamId: id, streamKind: 'character', actorId: owner,
         commandId: randomUUID(), payloadHash: randomUUID(), expectedVersion: 0,
         events: [{ type: 'character.created', version: 2, payload: {
           characterId: id, playerId: owner, name: 'Benchmark',
@@ -75,7 +75,7 @@ try {
         } }],
       });
       if (created.kind !== 'committed') throw new Error('Could not create benchmark fixture.');
-      await store.append({ worldInstanceId: DEMO_WORLD_INSTANCE_ID, streamId: id, actorId: owner,
+      await store.append({ worldInstanceId: DEMO_WORLD_INSTANCE_ID, streamId: id, streamKind: 'character', actorId: owner,
         commandId: randomUUID(), payloadHash: randomUUID(), expectedVersion: 1,
         events: Array.from({ length: length - 1 }, (_, i) => ({
           type: 'character.renamed', version: 1, payload: { characterId: id, name: `Fixture ${i}` },

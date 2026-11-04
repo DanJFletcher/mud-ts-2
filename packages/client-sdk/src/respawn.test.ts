@@ -48,7 +48,7 @@ const testRoomAnnouncementPlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.test-respawn-room-announcements',
     version: '1.0.0',
-    apiVersion: '1.0',
+    apiVersion: '2.0',
     category: 'core',
   },
   register({ registerEffect }) {

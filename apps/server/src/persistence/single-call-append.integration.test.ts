@@ -18,6 +18,7 @@ integrationDescribe('single-call event append (real PostgreSQL)', () => {
   const sharedAppend = (streamId: string, expectedVersion: number, commandId = `cmd-${randomUUID()}`): AppendRequest => ({
     worldInstanceId,
     streamId,
+    streamKind: 'non-character',
     actorId: playerId,
     commandId,
     payloadHash: `hash-${commandId}`,
@@ -62,6 +63,7 @@ integrationDescribe('single-call event append (real PostgreSQL)', () => {
     const created = await fast.append({
       worldInstanceId,
       streamId: characterId,
+      streamKind: 'character',
       actorId: playerId,
       commandId: `create-${randomUUID()}`,
       payloadHash: randomUUID(),
@@ -77,6 +79,7 @@ integrationDescribe('single-call event append (real PostgreSQL)', () => {
     const taken = await requestMeasurements.run(metrics, () => fast.append({
       worldInstanceId,
       streamId: characterId,
+      streamKind: 'character',
       actorId: playerId,
       commandId: `take-${randomUUID()}`,
       payloadHash: randomUUID(),
@@ -163,7 +166,7 @@ integrationDescribe('single-call event append (real PostgreSQL)', () => {
     });
     const request: AppendRequest = {
       ...sharedAppend(streamId, 0, commandId),
-      companions: [{ streamId: companionId, expectedVersion: 0,
+      companions: [{ streamId: companionId, streamKind: 'non-character', expectedVersion: 0,
         events: [{ type: 'audit.single_call_companion', version: 1, payload: { ok: true } }] }],
       effects: [{ type: 'audit.single_call', version: 1, payload: { deliver: 'once' } }],
     };

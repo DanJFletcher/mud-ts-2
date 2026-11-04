@@ -173,7 +173,7 @@ export const autonomousNpcsPlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.autonomous-npcs',
     version: '1.0.0',
-    apiVersion: '1.0',
+    apiVersion: '2.0',
     category: 'core',
     provides: [autonomousNpcStateCapability.id],
     eventSchemaVersions: {
@@ -350,6 +350,7 @@ export const autonomousNpcsPlugin: EnginePlugin = {
           WorldNpcMovementWaitedEventSchema.shape.payload.parse(payload);
           return {
             streamId: autonomousNpcStreamId(npc.id),
+            streamKind: 'non-character',
             expectedVersion: position.revision,
             events: [{ type: 'world.npc.movement_waited', version: 1, payload }],
           };
@@ -367,6 +368,7 @@ export const autonomousNpcsPlugin: EnginePlugin = {
         WorldNpcMovedEventSchema.shape.payload.parse(movedPayload);
         return {
           streamId: autonomousNpcStreamId(npc.id),
+          streamKind: 'non-character',
           expectedVersion: position.revision,
           events: [{ type: 'world.npc.moved', version: 1, payload: movedPayload }],
         };

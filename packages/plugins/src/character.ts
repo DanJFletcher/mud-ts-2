@@ -120,7 +120,7 @@ function corpseDecayDescription(
 async function rescheduleEmptyCorpse(
   context: EngineCommandContext,
   corpse: ProjectedWorldCorpse,
-): Promise<{ streamId: string; expectedVersion: number; events: { type: string; version: number; payload: Record<string, unknown> }[] } | undefined> {
+): Promise<{ streamId: string; streamKind: 'non-character'; expectedVersion: number; events: { type: string; version: number; payload: Record<string, unknown> }[] } | undefined> {
   if (!corpse.expiresAt) return undefined;
   const currentExpiry = Date.parse(corpse.expiresAt);
   const emptyExpiry = context.now().getTime() + context.world.corpseLifecycle.emptyCorpseSeconds * 1000;
@@ -132,6 +132,7 @@ async function rescheduleEmptyCorpse(
   if (!lifecycle || lifecycle.state !== 'scheduled') return undefined;
   return {
     streamId,
+    streamKind: 'non-character',
     expectedVersion: lifecycle.revision,
     events: [objectLifecycleRescheduledEvent({
       objectId: corpse.corpseId,
@@ -431,6 +432,7 @@ async function spendTeamFleeStamina(
   const result = await context.store.append({
     worldInstanceId: context.worldInstanceId,
     streamId: payload.characterId,
+    streamKind: 'character',
     actorId: SYSTEM_ACTOR_ID,
     commandId,
     payloadHash,
@@ -456,7 +458,7 @@ export const characterPlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.character',
     version: '1.0.0',
-    apiVersion: '1.0',
+    apiVersion: '2.0',
     category: 'core',
     provides: ['mudd.character.state.v1'],
     requiredPlugins: { 'mudd.world-items': '^1.0.0' },
@@ -534,6 +536,7 @@ export const characterPlugin: EnginePlugin = {
         if (combatActive) {
           return {
             streamId: character.characterId,
+            streamKind: 'character',
             expectedVersion: command.expectedVersion,
             events: [vitalRecoveryPausedEvent(character, context.now())],
           };
@@ -569,6 +572,7 @@ export const characterPlugin: EnginePlugin = {
         });
         return {
           streamId: character.characterId,
+          streamKind: 'character',
           expectedVersion: command.expectedVersion,
           events: [{ type: 'character.vital_recovery_settled', version: 1, payload }],
         };
@@ -588,6 +592,7 @@ export const characterPlugin: EnginePlugin = {
         if (await isCharacterInActiveCombat(context, character)) {
           return {
             streamId: character.characterId,
+            streamKind: 'character',
             expectedVersion: command.expectedVersion,
             events: [vitalRecoveryPausedEvent(character, context.now())],
           };
@@ -618,6 +623,7 @@ export const characterPlugin: EnginePlugin = {
         });
         return {
           streamId: character.characterId,
+          streamKind: 'character',
           expectedVersion: command.expectedVersion,
           events: [{ type: 'character.vital_recovery_settled', version: 1, payload }],
         };
@@ -651,6 +657,7 @@ export const characterPlugin: EnginePlugin = {
       });
       return {
         streamId: character.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         events: [
           settled,
@@ -676,6 +683,7 @@ export const characterPlugin: EnginePlugin = {
       });
       return {
         streamId: character.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         events: [
           settled,
@@ -716,6 +724,7 @@ export const characterPlugin: EnginePlugin = {
       (snapshot ? CharacterCreatedEventV3Schema : CharacterCreatedEventV2Schema).shape.payload.parse(payload);
       return {
         streamId: characterId,
+        streamKind: 'character',
         expectedVersion: 0,
         events: [{ type: 'character.created', version: snapshot ? 3 : 2, payload }],
       };
@@ -768,6 +777,7 @@ export const characterPlugin: EnginePlugin = {
         WorldItemClaimedEventSchema.shape.payload.parse(eventPayload);
         return {
           streamId: worldItemsStreamId(context.worldInstanceId),
+          streamKind: 'non-character',
           expectedVersion: sharedState.revision,
           events: [{ type: 'world.item_claimed', version: 1, payload: eventPayload }],
           ...(lifecycleWrite ? { companions: [lifecycleWrite] } : {}),
@@ -829,6 +839,7 @@ export const characterPlugin: EnginePlugin = {
           : undefined;
         return {
           streamId: worldItemsStreamId(context.worldInstanceId),
+          streamKind: 'non-character',
           expectedVersion: sharedState.revision,
           events: [{ type: 'world.corpse_gold_claimed', version: 1, payload: eventPayload }],
           ...(lifecycleWrite ? { companions: [lifecycleWrite] } : {}),
@@ -882,6 +893,7 @@ export const characterPlugin: EnginePlugin = {
       CharacterItemTakenEventSchema.shape.payload.parse(payload);
       return {
         streamId: command.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         events: [{ type: 'character.item_taken', version: 1, payload }],
       };
@@ -915,6 +927,7 @@ export const characterPlugin: EnginePlugin = {
         CharacterSharedItemRelinquishedEventSchema.shape.payload.parse(payload);
         return {
           streamId: command.characterId,
+          streamKind: 'character',
           expectedVersion: command.expectedVersion,
           events: [{ type: 'character.shared_item_relinquished', version: 1, payload }],
           effects: [worldItemDropEffect({
@@ -932,6 +945,7 @@ export const characterPlugin: EnginePlugin = {
       });
       return {
         streamId: command.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         events: [{
           type: 'character.item_dropped',
@@ -1016,6 +1030,7 @@ export const characterPlugin: EnginePlugin = {
       CharacterItemStoredEventSchema.shape.payload.parse(payload);
       return {
         streamId: command.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         events: [{ type: 'character.item_stored', version: 1, payload }],
       };
@@ -1039,6 +1054,7 @@ export const characterPlugin: EnginePlugin = {
       CharacterEquipmentChangedEventSchema.shape.payload.parse(payload);
       return {
         streamId: character.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         events: [{ type: 'character.equipment_changed', version: 1, payload }],
       };
@@ -1058,6 +1074,7 @@ export const characterPlugin: EnginePlugin = {
       CharacterEquipmentChangedEventSchema.shape.payload.parse(payload);
       return {
         streamId: character.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         events: [{ type: 'character.equipment_changed', version: 1, payload }],
       };
@@ -1116,6 +1133,7 @@ export const characterPlugin: EnginePlugin = {
       CharacterItemUsedEventSchema.shape.payload.parse(payload);
       return {
         streamId: command.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         events: [{ type: 'character.item_used', version: 1, payload }],
       };
@@ -1139,6 +1157,7 @@ export const characterPlugin: EnginePlugin = {
       CharacterObjectReadEventSchema.shape.payload.parse(payload);
       return {
         streamId: command.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         events: [{ type: 'character.object_read', version: 1, payload }],
       };
@@ -1152,6 +1171,7 @@ export const characterPlugin: EnginePlugin = {
       CharacterRenamedEventSchema.shape.payload.parse({ characterId: character.characterId, name });
       return {
         streamId: command.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         events: [{ type: 'character.renamed', version: 1, payload: { characterId: command.characterId, name } }],
       };
@@ -1163,6 +1183,7 @@ export const characterPlugin: EnginePlugin = {
       CharacterArchivedEventSchema.shape.payload.parse({ characterId: character.characterId });
       return {
         streamId: command.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         events: [{ type: 'character.archived', version: 1, payload: { characterId: command.characterId } }],
       };
@@ -1174,6 +1195,7 @@ export const characterPlugin: EnginePlugin = {
       CharacterRestoredEventSchema.shape.payload.parse({ characterId: character.characterId });
       return {
         streamId: command.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         events: [{ type: 'character.restored', version: 1, payload: { characterId: command.characterId } }],
       };

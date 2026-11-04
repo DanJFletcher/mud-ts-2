@@ -9,6 +9,7 @@ import { z } from 'zod';
 import type {
   AuthorizationPort,
   CommandDefinition,
+  CommandPlan,
   DispatchResult,
   EngineCommandContext,
   EventEffectContext,
@@ -20,13 +21,14 @@ import type {
   QueryDefinition,
   QueryContext,
   StoredEventEffect,
+  StreamKind,
 } from './types.js';
 import type { RngPort } from '@mudd/contracts';
 import type { WorldPackDraft } from '@mudd/contracts';
 import type { CharacterProjection } from '@mudd/contracts';
 import { isRuleViolationError } from './domain-error.js';
 
-const apiVersion = '1.0';
+const apiVersion = '2.0';
 const EFFECT_LEASE_MS = 60_000;
 const MAX_EFFECT_ATTEMPTS = 10;
 // Commands queue at most one completing effect today; anything beyond this
@@ -36,6 +38,21 @@ const MAX_SETTLED_COMMAND_EFFECTS = 4;
 // request that queued it. Settlement starts right after commit, so this only
 // delays the worker's fallback when a request fails or skips settlement.
 const COMMAND_EFFECT_SETTLE_GRACE_MS = 5_000;
+
+function isStreamKind(value: unknown): value is StreamKind {
+  return value === 'character' || value === 'non-character';
+}
+
+function assertPlanStreamKinds(plan: CommandPlan): void {
+  if (!isStreamKind(plan.streamKind)) {
+    throw new TypeError('Command plan requires streamKind "character" or "non-character".');
+  }
+  for (const [index, companion] of (plan.companions ?? []).entries()) {
+    if (!isStreamKind(companion.streamKind)) {
+      throw new TypeError(`Companion stream write ${index} requires a valid streamKind.`);
+    }
+  }
+}
 const DOMAIN_EVENT_EFFECT = 'engine.domain_event_dispatch';
 const DOMAIN_EVENT_EFFECT_SCHEMA = z.object({
   eventType: z.string().min(1),
@@ -462,6 +479,7 @@ export class EngineHost {
         rng: this.rng,
       };
       const plan = await definition.handle(command, context);
+      assertPlanStreamKinds(plan);
       const eventEffects = plan.events.flatMap((event) =>
         this.eventHandlers.has(`${event.type}@${event.version}`)
           ? [{
@@ -479,6 +497,7 @@ export class EngineHost {
       const outcome = await this.store.append({
         worldInstanceId,
         streamId: plan.streamId,
+        streamKind: plan.streamKind,
         actorId: session.actorId,
         commandId,
         payloadHash,
@@ -570,6 +589,7 @@ export class EngineHost {
         rng: this.rng,
       };
       const plan = await definition.handle(command, context);
+      assertPlanStreamKinds(plan);
       const eventEffects = plan.events.flatMap((event) =>
         this.eventHandlers.has(`${event.type}@${event.version}`)
           ? [{
@@ -587,6 +607,7 @@ export class EngineHost {
       const outcome = await this.store.append({
         worldInstanceId,
         streamId: plan.streamId,
+        streamKind: plan.streamKind,
         actorId,
         commandId,
         payloadHash,

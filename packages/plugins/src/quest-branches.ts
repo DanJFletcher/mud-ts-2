@@ -120,6 +120,7 @@ export function planQuestChoice(
     events,
     companions: [{
       streamId: QUEST_WORLD_OUTCOMES_STREAM_ID,
+      streamKind: 'non-character',
       expectedVersion: worldOutcomes!.revision,
       events: [{ type: 'world.quest_outcome_decided', version: 1, payload: decided }],
     }],
@@ -130,7 +131,7 @@ export const questBranchesPlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.quest-branches',
     version: '1.0.0',
-    apiVersion: '1.0',
+    apiVersion: '2.0',
     category: 'core',
     requiredPlugins: { 'mudd.character': '^1.0.0' },
     requires: ['mudd.character.state.v1'],
@@ -168,6 +169,7 @@ export const questBranchesPlugin: EnginePlugin = {
       const plan = planQuestChoice(character, quest, choice.id, shared, command.payload.fromBranchId);
       return {
         streamId: character.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         events: plan.events,
         ...(plan.companions ? { companions: plan.companions } : {}),

@@ -144,7 +144,7 @@ export const movementPlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.movement',
     version: '1.0.0',
-    apiVersion: '1.0',
+    apiVersion: '2.0',
     category: 'core',
     requiredPlugins: { 'mudd.character': '^1.0.0' },
     requires: ['mudd.character.state.v1'],
@@ -166,6 +166,7 @@ export const movementPlugin: EnginePlugin = {
       );
       return {
         streamId: command.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         events: plan.events,
         effects: plan.effects,

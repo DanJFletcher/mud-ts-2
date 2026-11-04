@@ -39,7 +39,7 @@ const announcementSink: EnginePlugin = {
   manifest: {
     id: 'mudd.test.room-announcement-sink',
     version: '1.0.0',
-    apiVersion: '1.0',
+    apiVersion: '2.0',
     category: 'core',
   },
   register({ registerEffect }) {
@@ -387,6 +387,7 @@ describe('temporary campfires', () => {
     const moved = await store.append({
       worldInstanceId,
       streamId: misplacedCharacter.characterId,
+      streamKind: 'character',
       actorId: SYSTEM_ACTOR_ID,
       commandId: 'move-campfire-character-outside-world',
       payloadHash: 'move-campfire-character-outside-world',
@@ -429,6 +430,7 @@ describe('temporary campfires', () => {
     const cancelled = await store.append({
       worldInstanceId,
       streamId: objectLifecycleStreamId(campfireId),
+      streamKind: 'non-character',
       actorId: SYSTEM_ACTOR_ID,
       commandId: 'cancel-before-campfire-extinguish',
       payloadHash: 'cancel-before-campfire-extinguish',
@@ -542,6 +544,7 @@ describe('temporary campfires', () => {
     const moved = await store.append({
       worldInstanceId,
       streamId: awayCharacter.characterId,
+      streamKind: 'character',
       actorId: SYSTEM_ACTOR_ID,
       commandId: 'move-campfire-away-character',
       payloadHash: 'move-campfire-away-character',
@@ -718,6 +721,7 @@ describe('temporary campfires', () => {
     const rescheduled = await store.append({
       worldInstanceId,
       streamId: lifecycleStream,
+      streamKind: 'non-character',
       actorId: SYSTEM_ACTOR_ID,
       commandId: 'extend-campfire-expiry',
       payloadHash: `${campfireId}:${extendedExpiry}`,
@@ -743,6 +747,7 @@ describe('temporary campfires', () => {
     const cancelled = await store.append({
       worldInstanceId,
       streamId: lifecycleStream,
+      streamKind: 'non-character',
       actorId: SYSTEM_ACTOR_ID,
       commandId: 'cancel-campfire-expiry',
       payloadHash: `${campfireId}:cancel`,

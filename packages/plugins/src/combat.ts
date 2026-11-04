@@ -176,6 +176,7 @@ async function startHostileNpcEncounter(
   const result = await context.store.append({
     worldInstanceId: context.worldInstanceId,
     streamId: character.characterId,
+    streamKind: 'character',
     actorId: SYSTEM_ACTOR_ID,
     commandId,
     payloadHash,
@@ -191,7 +192,7 @@ export const combatPlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.combat',
     version: '1.0.0',
-    apiVersion: '1.0',
+    apiVersion: '2.0',
     category: 'first-party',
     requires: [characterStateCapability.id],
     requiredPlugins: { 'mudd.character': '^1.0.0', 'mudd.interactions': '^1.0.0' },
@@ -278,6 +279,7 @@ export const combatPlugin: EnginePlugin = {
       CharacterInnRestCompletedEventV2Schema.shape.payload.parse(payload);
       return {
         streamId: character.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         events: [{ type: 'character.inn_rest_completed', version: 2, payload }],
         guards,
@@ -332,6 +334,7 @@ export const combatPlugin: EnginePlugin = {
         CharacterCombatItemUsedEventSchema.shape.payload.parse(payload);
         return {
           streamId: character.characterId,
+          streamKind: 'character',
           expectedVersion: command.expectedVersion,
           events: [{ type: 'character.combat_item_used', version: 1, payload }],
         };
@@ -551,6 +554,7 @@ export const combatPlugin: EnginePlugin = {
       }
       return {
         streamId: character.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         events,
         ...(effects.length ? { effects } : {}),

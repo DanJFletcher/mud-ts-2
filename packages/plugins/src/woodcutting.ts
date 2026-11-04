@@ -102,7 +102,7 @@ export const woodcuttingPlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.woodcutting',
     version: '1.0.0',
-    apiVersion: '1.0',
+    apiVersion: '2.0',
     category: 'first-party',
     requires: [characterStateCapability.id],
     requiredPlugins: { 'mudd.character': '^1.0.0' },
@@ -155,6 +155,7 @@ export const woodcuttingPlugin: EnginePlugin = {
       WoodcuttingActionStartedEventSchema.shape.payload.parse(payload);
       return {
         streamId: character.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         events: [
           ...interruptActiveTimedActions(character),
@@ -193,6 +194,7 @@ export const woodcuttingPlugin: EnginePlugin = {
         WoodcuttingActionAdvancedEventSchema.shape.payload.parse(payload);
         return {
           streamId: character.characterId,
+          streamKind: 'character' as const,
           expectedVersion: command.expectedVersion,
           events: [{ type: 'character.woodcutting_action_advanced', version: 1, payload }],
         };
@@ -276,6 +278,7 @@ export const woodcuttingPlugin: EnginePlugin = {
         WorldTreeHarvestedEventSchema.shape.payload.parse(treePayload);
         companions = [{
           streamId: WOODCUTTING_TREES_STREAM_ID,
+          streamKind: 'non-character' as const,
           expectedVersion: treeStreamVersion(treeEvents),
           events: [{ type: 'world.tree_harvested', version: 1, payload: treePayload }],
         }];
@@ -299,6 +302,7 @@ export const woodcuttingPlugin: EnginePlugin = {
       WoodcuttingActionAdvancedEventSchema.shape.payload.parse(payload);
       return {
         streamId: character.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         ...(companions ? { companions } : {}),
         events: [{ type: 'character.woodcutting_action_advanced', version: 1, payload }],
@@ -325,6 +329,7 @@ export const woodcuttingPlugin: EnginePlugin = {
       WoodcuttingActionAdvancedEventSchema.shape.payload.parse(payload);
       return {
         streamId: character.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         events: [{ type: 'character.woodcutting_action_advanced', version: 1, payload }],
       };

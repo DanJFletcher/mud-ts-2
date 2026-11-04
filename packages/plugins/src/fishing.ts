@@ -66,7 +66,7 @@ export const fishingPlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.fishing',
     version: '1.0.0',
-    apiVersion: '1.0',
+    apiVersion: '2.0',
     category: 'first-party',
     requires: [characterStateCapability.id],
     requiredPlugins: { 'mudd.character': '^1.0.0' },
@@ -110,6 +110,7 @@ export const fishingPlugin: EnginePlugin = {
       FishingCastStartedEventSchema.shape.payload.parse(payload);
       return {
         streamId: character.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         events: [
           ...interruptActiveTimedActions(character),
@@ -134,7 +135,7 @@ export const fishingPlugin: EnginePlugin = {
           tickRolls: [],
         };
         FishingCastAdvancedEventSchema.shape.payload.parse(payload);
-        return { streamId: character.characterId, expectedVersion: command.expectedVersion,
+        return { streamId: character.characterId, streamKind: 'character', expectedVersion: command.expectedVersion,
           events: [{ type: 'character.fishing_cast_advanced', version: 1, payload }] };
       }
       if (
@@ -152,7 +153,7 @@ export const fishingPlugin: EnginePlugin = {
           tickRolls: [],
         };
         FishingCastAdvancedEventSchema.shape.payload.parse(payload);
-        return { streamId: character.characterId, expectedVersion: command.expectedVersion,
+        return { streamId: character.characterId, streamKind: 'character', expectedVersion: command.expectedVersion,
           events: [{ type: 'character.fishing_cast_advanced', version: 1, payload }] };
       }
       assertCharacterAlive(character);
@@ -189,6 +190,7 @@ export const fishingPlugin: EnginePlugin = {
       FishingCastAdvancedEventSchema.shape.payload.parse(payload);
       return {
         streamId: character.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         events: [{ type: 'character.fishing_cast_advanced', version: 1, payload }],
       };
@@ -211,6 +213,7 @@ export const fishingPlugin: EnginePlugin = {
       FishingCastAdvancedEventSchema.shape.payload.parse(payload);
       return {
         streamId: character.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         events: [{ type: 'character.fishing_cast_advanced', version: 1, payload }],
       };

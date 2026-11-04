@@ -16,7 +16,7 @@ export const roadTravelPlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.road-travel',
     version: '1.0.0',
-    apiVersion: '1.0',
+    apiVersion: '2.0',
     category: 'first-party',
     requiredPlugins: {
       'mudd.character': '^1.0.0',
@@ -106,6 +106,7 @@ export const roadTravelPlugin: EnginePlugin = {
 
       return {
         streamId: command.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         events,
         effects: movement.effects,

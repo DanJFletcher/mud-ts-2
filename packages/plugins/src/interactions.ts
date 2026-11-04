@@ -116,6 +116,7 @@ export async function updateInteractionRequestStatus(
     const result = await store.append({
       worldInstanceId,
       streamId,
+      streamKind: 'non-character',
       actorId: SYSTEM_ACTOR_ID,
       commandId,
       payloadHash,
@@ -142,7 +143,7 @@ export const interactionPlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.interactions',
     version: '1.0.0',
-    apiVersion: '1.0',
+    apiVersion: '2.0',
     category: 'core',
     provides: [interactionPolicyRegistry.id],
     eventSchemaVersions: {
@@ -215,6 +216,7 @@ export const interactionPlugin: EnginePlugin = {
       });
       return {
         streamId,
+        streamKind: 'non-character',
         expectedVersion: latestVersion(events),
         events: [requestEvent('interaction.request.created', request)],
       };
@@ -235,6 +237,7 @@ export const interactionPlugin: EnginePlugin = {
         const expired = { ...request, status: 'expired' as const };
         return {
           streamId,
+          streamKind: 'non-character',
           expectedVersion: latestVersion(events),
           events: [requestEvent('interaction.request.updated', expired)],
         };
@@ -258,6 +261,7 @@ export const interactionPlugin: EnginePlugin = {
       }
       return {
         streamId,
+        streamKind: 'non-character',
         expectedVersion: latestVersion(events),
         events: responseEvents,
         guards,

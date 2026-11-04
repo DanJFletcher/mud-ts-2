@@ -8,7 +8,7 @@ import {
   type EnginePlugin,
 } from './index.js';
 import { RuleViolationError } from './domain-error.js';
-import type { StoredEventEffect } from './types.js';
+import type { CommandPlan, StoredEventEffect } from './types.js';
 import {
   autonomousNpcsPlugin,
   autonomousNpcStreamId,
@@ -52,7 +52,7 @@ const testCombatPresencePlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.room-combat-presence',
     version: '1.0.0',
-    apiVersion: '1.0',
+    apiVersion: '2.0',
     category: 'core',
     provides: [combatRoomPresenceCapability.id],
   },
@@ -156,7 +156,7 @@ describe('MUDD engine host', () => {
       manifest: {
         id,
         version: '1.0.0',
-        apiVersion: '1.0',
+        apiVersion: '2.0',
         category: 'core',
       },
       register() {},
@@ -201,6 +201,7 @@ describe('MUDD engine host', () => {
     const ownsCharacter = vi.fn(async () => false);
     const commandHandler = vi.fn(async () => ({
       streamId: 'authorized-character',
+      streamKind: 'character' as const,
       expectedVersion: 0,
       events: [],
     }));
@@ -209,7 +210,7 @@ describe('MUDD engine host', () => {
       manifest: {
         id: 'test.authorization',
         version: '1.0.0',
-        apiVersion: '1.0',
+        apiVersion: '2.0',
         category: 'core',
       },
       register(context) {
@@ -270,6 +271,7 @@ describe('MUDD engine host', () => {
     const presenceAnchorAt = new Date('2026-10-23T12:00:00.000Z');
     const handler = vi.fn(async (_command, context) => ({
       streamId: 'world-system-stream',
+      streamKind: 'non-character' as const,
       expectedVersion: 0,
       events: [{
         type: 'test.system-event',
@@ -279,6 +281,7 @@ describe('MUDD engine host', () => {
     }));
     const handlerV2 = vi.fn(async (_command, context) => ({
       streamId: 'world-system-stream-v2',
+      streamKind: 'non-character' as const,
       expectedVersion: 0,
       events: [{
         type: 'test.system-event-v2',
@@ -290,7 +293,7 @@ describe('MUDD engine host', () => {
       manifest: {
         id: 'test.system-command',
         version: '1.0.0',
-        apiVersion: '1.0',
+        apiVersion: '2.0',
         category: 'core',
       },
       register({ registerSystemCommand }) {
@@ -360,7 +363,7 @@ describe('MUDD engine host', () => {
       manifest: {
         id: 'test.query-failures',
         version: '1.0.0',
-        apiVersion: '1.0',
+        apiVersion: '2.0',
         category: 'core',
       },
       register({ registerQuery }) {
@@ -451,7 +454,7 @@ describe('MUDD engine host', () => {
       manifest: {
         id: 'mudd.lifecycle-test',
         version: '1.0.0',
-        apiVersion: '1.0',
+        apiVersion: '2.0',
         category: 'core',
         provides: ['mudd.test.capability.v1'],
       },
@@ -466,6 +469,7 @@ describe('MUDD engine host', () => {
           payload: z.object({ text: z.string() }),
         }), async (command) => ({
           streamId: 'plugin-test-character',
+          streamKind: 'character',
           expectedVersion: 0,
           events: [{
             type: 'test.echoed',
@@ -504,11 +508,11 @@ describe('MUDD engine host', () => {
       register: EnginePlugin['register'],
       manifest: Partial<EnginePlugin['manifest']> = {},
     ): EnginePlugin => ({
-      manifest: { id, version: '1.0.0', apiVersion: '1.0', category: 'core', ...manifest },
+      manifest: { id, version: '1.0.0', apiVersion: '2.0', category: 'core', ...manifest },
       register,
     });
 
-    const handler = async () => ({ streamId: 'test', expectedVersion: 0, events: [] });
+    const handler = async () => ({ streamId: 'test', streamKind: 'non-character' as const, expectedVersion: 0, events: [] });
     const commandSchema = z.object({ type: z.string() });
     const duplicateCommand = plugin('test.duplicate-command', ({ registerCommand }) => {
       registerCommand('duplicate', commandSchema, handler);
@@ -555,7 +559,7 @@ describe('MUDD engine host', () => {
       manifest: {
         id: 'test.invalid-roll',
         version: '1.0.0',
-        apiVersion: '1.0',
+        apiVersion: '2.0',
         category: 'core',
       },
       register({ registerCommand }) {
@@ -566,7 +570,7 @@ describe('MUDD engine host', () => {
           worldInstanceId: z.string(),
         }), async (_command, context) => {
           context.rng.roll(0);
-          return { streamId: 'test-character', expectedVersion: 0, events: [] };
+          return { streamId: 'test-character', streamKind: 'character' as const, expectedVersion: 0, events: [] };
         });
       },
     };
@@ -604,7 +608,7 @@ describe('MUDD engine host', () => {
       manifest: {
         id: 'mudd.effect-test',
         version: '1.0.0',
-        apiVersion: '1.0',
+        apiVersion: '2.0',
         category: 'core',
       },
       register(context) {
@@ -615,6 +619,7 @@ describe('MUDD engine host', () => {
           worldInstanceId: z.string(),
         }), async () => ({
           streamId: 'effect-test-stream',
+          streamKind: 'non-character',
           expectedVersion: 0,
           events: [{ type: 'test.effect-commanded', version: 1, payload: {} }],
           effects: [{ type: 'test.delivery', version: 1, payload: { value: 'persisted' } }],
@@ -668,7 +673,7 @@ describe('MUDD engine host', () => {
       manifest: {
         id: 'test.malformed-effect',
         version: '1.0.0',
-        apiVersion: '1.0',
+        apiVersion: '2.0',
         category: 'core',
       },
       register({ registerEffect }) {
@@ -718,7 +723,7 @@ describe('MUDD engine host', () => {
       manifest: {
         id: 'test.exhausted-effect',
         version: '1.0.0',
-        apiVersion: '1.0',
+        apiVersion: '2.0',
         category: 'core',
       },
       register({ registerEffect }) {
@@ -762,7 +767,7 @@ describe('MUDD engine host', () => {
       manifest: {
         id: 'test.command-settlement',
         version: '1.0.0',
-        apiVersion: '1.0',
+        apiVersion: '2.0',
         category: 'core',
       },
       register({ registerCommand, registerEffect }) {
@@ -773,6 +778,7 @@ describe('MUDD engine host', () => {
           worldInstanceId: z.string(),
         }), async (command) => ({
           streamId: `settlement-stream:${command.commandId}`,
+          streamKind: 'non-character',
           expectedVersion: 0,
           events: [{ type: 'test.settlement-commanded', version: 1, payload: {} }],
           effects: [
@@ -892,7 +898,7 @@ describe('MUDD engine host', () => {
       manifest: {
         id: 'test.system-command-errors',
         version: '1.0.0',
-        apiVersion: '1.0',
+        apiVersion: '2.0',
         category: 'core',
       },
       register({ registerSystemCommand }) {
@@ -959,7 +965,7 @@ describe('MUDD engine host', () => {
       manifest: {
         id: 'mudd.event-subscriber-test',
         version: '1.0.0',
-        apiVersion: '1.0',
+        apiVersion: '2.0',
         category: 'core',
       },
       register(context) {
@@ -970,6 +976,7 @@ describe('MUDD engine host', () => {
           worldInstanceId: z.string(),
         }), async () => ({
           streamId: 'published-events',
+          streamKind: 'non-character',
           expectedVersion: 0,
           events: [{ type: 'test.published', version: 1, payload: { value: 'committed' } }],
         }));
@@ -1011,7 +1018,7 @@ describe('MUDD engine host', () => {
       manifest: {
         id: 'test.invalid-event-subscriber',
         version: '1.0.0',
-        apiVersion: '1.0',
+        apiVersion: '2.0',
         category: 'core',
       },
       register(context) {
@@ -1022,6 +1029,7 @@ describe('MUDD engine host', () => {
           worldInstanceId: z.string(),
         }), async () => ({
           streamId: 'invalid-published-events',
+          streamKind: 'non-character',
           expectedVersion: 0,
           events: [{ type: 'test.invalid-published', version: 1, payload: { value: 123 } }],
         }));
@@ -1248,7 +1256,7 @@ describe('MUDD engine host', () => {
       manifest: {
         id: 'mudd.party-quest-test-trigger',
         version: '1.0.0',
-        apiVersion: '1.0',
+        apiVersion: '2.0',
         category: 'core',
       },
       register(context) {
@@ -1261,6 +1269,7 @@ describe('MUDD engine host', () => {
           payload: z.object({ toLocationId: z.string() }),
         }), async (command) => ({
           streamId: 'test-party-movement',
+          streamKind: 'character',
           expectedVersion: 0,
           events: [{
             type: 'character.moved',
@@ -2877,6 +2886,7 @@ describe('MUDD engine host', () => {
     await store.append({
       worldInstanceId: DEMO_WORLD_INSTANCE_ID,
       streamId: worldItems,
+      streamKind: 'non-character',
       actorId: SYSTEM_ACTOR_ID,
       commandId: 'settle-seed-lantern',
       payloadHash: 'settle-seed-lantern',
@@ -3047,7 +3057,7 @@ describe('MUDD engine host', () => {
       manifest: {
         id: 'mudd.needs-missing',
         version: '1.0.0',
-        apiVersion: '1.0',
+        apiVersion: '2.0',
         category: 'core',
         requiredPlugins: { 'mudd.not-installed': '^1.0.0' },
       },
@@ -3055,6 +3065,166 @@ describe('MUDD engine host', () => {
     };
     expect(() => new EngineHost([plugin], new InMemoryEventStore(), authorization, demoWorld))
       .toThrow(/missing plugin/i);
+  });
+
+  it('rejects plugins built against the previous host API', () => {
+    const plugin: EnginePlugin = {
+      manifest: {
+        id: 'mudd.old-api',
+        version: '1.0.0',
+        apiVersion: '1.0',
+        category: 'core',
+      },
+      register() {},
+    };
+    expect(() => new EngineHost([plugin], new InMemoryEventStore(), authorization, demoWorld))
+      .toThrow('Plugin mudd.old-api requires API 1.0; host is 2.0.');
+  });
+
+  it.each([
+    {
+      label: 'primary stream',
+      plan: { streamId: 'test-stream', expectedVersion: 0, events: [] },
+    },
+    {
+      label: 'companion stream',
+      plan: {
+        streamId: 'test-stream',
+        streamKind: 'non-character',
+        expectedVersion: 0,
+        events: [],
+        companions: [{ streamId: 'test-companion', expectedVersion: 0, events: [] }],
+      },
+    },
+  ])('rejects plans missing metadata for the $label before append', async ({ plan }) => {
+    const store = new InMemoryEventStore();
+    const append = vi.spyOn(store, 'append');
+    const commandSchema = z.object({
+      type: z.literal('test.invalid-plan'),
+      version: z.literal(1),
+      commandId: z.string(),
+      worldInstanceId: z.string(),
+    });
+    const systemCommandSchema = z.object({
+      type: z.literal('test.invalid-system-plan'),
+      version: z.literal(1),
+      commandId: z.string(),
+      worldInstanceId: z.string(),
+    });
+    const plugin: EnginePlugin = {
+      manifest: {
+        id: 'mudd.invalid-plan-test',
+        version: '1.0.0',
+        apiVersion: '2.0',
+        category: 'core',
+      },
+      register({ registerCommand, registerSystemCommand }) {
+        registerCommand('test.invalid-plan', commandSchema, async () => plan as unknown as CommandPlan);
+        registerSystemCommand('test.invalid-system-plan', systemCommandSchema, async () => plan as unknown as CommandPlan);
+      },
+    };
+    const engine = new EngineHost([plugin], store, authorization, demoWorld);
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await engine.start();
+    try {
+      const playerResult = await engine.dispatch({
+        type: 'test.invalid-plan',
+        version: 1,
+        commandId: 'invalid-player-plan',
+        worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      }, session);
+      const systemResult = await engine.dispatchSystem({
+        type: 'test.invalid-system-plan',
+        version: 1,
+        commandId: 'invalid-system-plan',
+        worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      }, 'trusted-actor');
+      expect(playerResult.receipt).toMatchObject({ ok: false, code: 'INTERNAL_ERROR' });
+      expect(systemResult.receipt).toMatchObject({ ok: false, code: 'INTERNAL_ERROR' });
+      expect(append).not.toHaveBeenCalled();
+    } finally {
+      await engine.stop();
+      errorLog.mockRestore();
+    }
+  });
+
+  it('forwards stream kinds for player and system primary and companion writes', async () => {
+    const store = new InMemoryEventStore();
+    const append = vi.spyOn(store, 'append');
+    const playerSchema = z.object({
+      type: z.literal('test.stream-kind-player'),
+      version: z.literal(1),
+      commandId: z.string(),
+      worldInstanceId: z.string(),
+    });
+    const systemSchema = z.object({
+      type: z.literal('test.stream-kind-system'),
+      version: z.literal(1),
+      commandId: z.string(),
+      worldInstanceId: z.string(),
+    });
+    const plugin: EnginePlugin = {
+      manifest: {
+        id: 'mudd.stream-kind-propagation-test',
+        version: '1.0.0',
+        apiVersion: '2.0',
+        category: 'core',
+      },
+      register({ registerCommand, registerSystemCommand }) {
+        registerCommand('test.stream-kind-player', playerSchema, async () => ({
+          streamId: 'player-primary',
+          streamKind: 'non-character',
+          expectedVersion: 0,
+          events: [{ type: 'test.player_primary', version: 1, payload: {} }],
+          companions: [{
+            streamId: 'player-companion',
+            streamKind: 'character',
+            expectedVersion: 0,
+            events: [{ type: 'test.player_companion', version: 1, payload: {} }],
+          }],
+        }));
+        registerSystemCommand('test.stream-kind-system', systemSchema, async () => ({
+          streamId: 'system-primary',
+          streamKind: 'character',
+          expectedVersion: 0,
+          events: [{ type: 'test.system_primary', version: 1, payload: {} }],
+          companions: [{
+            streamId: 'system-companion',
+            streamKind: 'non-character',
+            expectedVersion: 0,
+            events: [{ type: 'test.system_companion', version: 1, payload: {} }],
+          }],
+        }));
+      },
+    };
+    const engine = new EngineHost([plugin], store, authorization, demoWorld);
+    await engine.start();
+    try {
+      await engine.dispatch({
+        type: 'test.stream-kind-player',
+        version: 1,
+        commandId: 'stream-kind-player',
+        worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      }, session);
+      await engine.dispatchSystem({
+        type: 'test.stream-kind-system',
+        version: 1,
+        commandId: 'stream-kind-system',
+        worldInstanceId: DEMO_WORLD_INSTANCE_ID,
+      }, 'trusted-actor');
+      expect(append).toHaveBeenNthCalledWith(1, expect.objectContaining({
+        streamId: 'player-primary',
+        streamKind: 'non-character',
+        companions: [expect.objectContaining({ streamId: 'player-companion', streamKind: 'character' })],
+      }));
+      expect(append).toHaveBeenNthCalledWith(2, expect.objectContaining({
+        streamId: 'system-primary',
+        streamKind: 'character',
+        companions: [expect.objectContaining({ streamId: 'system-companion', streamKind: 'non-character' })],
+      }));
+    } finally {
+      await engine.stop();
+    }
   });
 
   it.each([
@@ -3067,14 +3237,14 @@ describe('MUDD engine host', () => {
     { version: '1.5.0', range: '~1.5.0', label: 'unsupported range syntax is rejected' },
   ])('$label', ({ version, range }) => {
     const dependency: EnginePlugin = {
-      manifest: { id: 'mudd.range-dependency', version, apiVersion: '1.0', category: 'core' },
+      manifest: { id: 'mudd.range-dependency', version, apiVersion: '2.0', category: 'core' },
       register() {},
     };
     const dependent: EnginePlugin = {
       manifest: {
         id: 'mudd.range-dependent',
         version: '1.0.0',
-        apiVersion: '1.0',
+        apiVersion: '2.0',
         category: 'core',
         requiredPlugins: { 'mudd.range-dependency': range },
       },
@@ -3088,14 +3258,14 @@ describe('MUDD engine host', () => {
 
   it('accepts compatible exact, caret, wildcard, and zero-major dependency versions', () => {
     const makeDependency = (version: string): EnginePlugin => ({
-      manifest: { id: 'mudd.range-dependency', version, apiVersion: '1.0', category: 'core' },
+      manifest: { id: 'mudd.range-dependency', version, apiVersion: '2.0', category: 'core' },
       register() {},
     });
     const makeDependent = (range: string): EnginePlugin => ({
       manifest: {
         id: 'mudd.range-dependent',
         version: '1.0.0',
-        apiVersion: '1.0',
+        apiVersion: '2.0',
         category: 'core',
         requiredPlugins: { 'mudd.range-dependency': range },
       },
@@ -3113,7 +3283,7 @@ describe('MUDD engine host', () => {
       manifest: {
         id: 'mudd.cycle-first',
         version: '1.0.0',
-        apiVersion: '1.0',
+        apiVersion: '2.0',
         category: 'core',
         requiredPlugins: { 'mudd.cycle-second': '^1.0.0' },
       },
@@ -3123,7 +3293,7 @@ describe('MUDD engine host', () => {
       manifest: {
         id: 'mudd.cycle-second',
         version: '1.0.0',
-        apiVersion: '1.0',
+        apiVersion: '2.0',
         category: 'core',
         requiredPlugins: { 'mudd.cycle-first': '^1.0.0' },
       },

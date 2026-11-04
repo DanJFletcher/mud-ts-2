@@ -24,7 +24,7 @@ export const worldEventEffectsPlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.demo-event-effects',
     version: '1.0.0',
-    apiVersion: '1.0',
+    apiVersion: '2.0',
     category: 'first-party',
   },
   register({ registerEffect, registerEventHandler }) {

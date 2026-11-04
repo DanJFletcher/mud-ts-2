@@ -41,7 +41,7 @@ import { MuddHttpClient } from '@mudd/client-sdk';
 import { CharacterStatsQuerySchema } from '@mudd/contracts';
 
 const soloRosterPlugin: EnginePlugin = {
-  manifest: { id: 'fixture.orraveth-solo-roster', version: '1.0.0', apiVersion: '1.0', category: 'first-party',
+  manifest: { id: 'fixture.orraveth-solo-roster', version: '1.0.0', apiVersion: '2.0', category: 'first-party',
     provides: [teamCombatRosterPolicyCapability.id, combatRoomPresenceCapability.id] },
   register({ provideCapability }) {
     provideCapability(teamCombatRosterPolicyCapability, {

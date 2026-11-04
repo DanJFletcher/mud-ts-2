@@ -10,6 +10,7 @@ import type {
   EventStorePort,
   StoredEventEffect,
   StoredGameEvent,
+  StreamKind,
 } from '@mudd/engine-core';
 import {
   characters,
@@ -92,21 +93,173 @@ function toStoredEventEffect(
   };
 }
 
-/** Character aggregates use UUID stream IDs; shared streams are text IDs. */
-const CHARACTER_STREAM_ID = /^[0-9a-f-]{36}$/i;
+type AppendMaterializerTx = Pick<typeof db, 'execute' | 'insert' | 'select' | 'update'>;
+type AppendMaterializerContext = {
+  readonly tx: AppendMaterializerTx;
+  readonly worldInstanceId: string;
+  readonly payload: Record<string, unknown>;
+  readonly revision: number;
+  readonly committedAt: Date;
+};
+type AppendMaterializer = (context: AppendMaterializerContext) => Promise<void>;
 
-/** Events that also write side tables; their appends keep the transaction path. */
-const SIDE_TABLE_EVENT_TYPES = new Set([
-  'character.created',
-  'character.renamed',
-  'character.archived',
-  'character.restored',
-  'world.object_lifecycle_scheduled',
-  'world.object_lifecycle_rescheduled',
-  'world.object_lifecycle_cancelled',
-  'world.object_expiring',
-  'world.object_expired',
+/** Side-table writes are registered here and always run in the append transaction. */
+const POSTGRES_APPEND_MATERIALIZERS: ReadonlyMap<string, AppendMaterializer> = new Map([
+  ['character.created', async ({ tx, worldInstanceId, payload }) => {
+    await tx.insert(characters).values({
+      id: String(payload.characterId),
+      playerId: String(payload.playerId),
+      worldInstanceId,
+      name: String(payload.name),
+    }).onConflictDoNothing();
+  }],
+  ['character.renamed', async ({ tx, worldInstanceId, payload }) => {
+    await tx.update(characters)
+      .set({ name: String(payload.name) })
+      .where(and(
+        eq(characters.id, String(payload.characterId)),
+        eq(characters.worldInstanceId, worldInstanceId),
+      ));
+  }],
+  ['character.archived', async ({ tx, worldInstanceId, payload, committedAt }) => {
+    const characterId = String(payload.characterId);
+    await tx.execute(sql`SELECT id FROM characters WHERE id = ${characterId} FOR UPDATE`);
+    const [activeSession] = await tx.select({ id: worldSessions.id }).from(worldSessions)
+      .where(eq(worldSessions.characterId, characterId)).limit(1);
+    if (activeSession) throw new Error('Leave the world before archiving this character.');
+    await tx.update(characters)
+      .set({ archivedAt: committedAt })
+      .where(and(
+        eq(characters.id, characterId),
+        eq(characters.worldInstanceId, worldInstanceId),
+      ));
+  }],
+  ['character.restored', async ({ tx, worldInstanceId, payload }) => {
+    await tx.update(characters)
+      .set({ archivedAt: null })
+      .where(and(
+        eq(characters.id, String(payload.characterId)),
+        eq(characters.worldInstanceId, worldInstanceId),
+      ));
+  }],
+  ['world.object_lifecycle_scheduled', async ({ tx, worldInstanceId, payload, revision }) => {
+    const values = {
+      worldInstanceId,
+      objectId: String(payload.objectId),
+      objectType: String(payload.objectType),
+      locationId: String(payload.locationId),
+      createdAt: new Date(String(payload.createdAt)),
+      expiresAt: new Date(String(payload.expiresAt)),
+      state: 'scheduled' as const,
+      revision,
+      attempts: 0,
+      leaseToken: null,
+      leaseUntil: null,
+    };
+    await tx.insert(worldObjectLifecycles).values(values).onConflictDoUpdate({
+      target: [worldObjectLifecycles.worldInstanceId, worldObjectLifecycles.objectId],
+      set: {
+        objectType: values.objectType,
+        locationId: values.locationId,
+        createdAt: values.createdAt,
+        expiresAt: values.expiresAt,
+        state: 'scheduled',
+        revision,
+        attempts: 0,
+        leaseToken: null,
+        leaseUntil: null,
+      },
+    });
+  }],
+  ['world.object_lifecycle_rescheduled', async ({ tx, worldInstanceId, payload, revision }) => {
+    await tx.update(worldObjectLifecycles).set({
+      objectType: String(payload.objectType),
+      locationId: String(payload.locationId),
+      expiresAt: new Date(String(payload.expiresAt)),
+      state: 'scheduled',
+      revision,
+      attempts: 0,
+      leaseToken: null,
+      leaseUntil: null,
+    }).where(and(
+      eq(worldObjectLifecycles.worldInstanceId, worldInstanceId),
+      eq(worldObjectLifecycles.objectId, String(payload.objectId)),
+    ));
+  }],
+  ['world.object_lifecycle_cancelled', async ({ tx, worldInstanceId, payload, revision }) => {
+    await tx.update(worldObjectLifecycles).set({
+      state: 'cancelled',
+      revision,
+      leaseToken: null,
+      leaseUntil: null,
+    }).where(and(
+      eq(worldObjectLifecycles.worldInstanceId, worldInstanceId),
+      eq(worldObjectLifecycles.objectId, String(payload.objectId)),
+    ));
+  }],
+  ['world.object_expiring', async ({ tx, worldInstanceId, payload, revision }) => {
+    await tx.update(worldObjectLifecycles).set({
+      state: 'expiring',
+      revision,
+      attempts: sql`${worldObjectLifecycles.attempts} + 1`,
+      leaseToken: null,
+      leaseUntil: null,
+    }).where(and(
+      eq(worldObjectLifecycles.worldInstanceId, worldInstanceId),
+      eq(worldObjectLifecycles.objectId, String(payload.objectId)),
+    ));
+  }],
+  ['world.object_expired', async ({ tx, worldInstanceId, payload, revision }) => {
+    await tx.update(worldObjectLifecycles).set({
+      locationId: String(payload.locationId),
+      state: 'expired',
+      revision,
+      leaseToken: null,
+      leaseUntil: null,
+    }).where(and(
+      eq(worldObjectLifecycles.worldInstanceId, worldInstanceId),
+      eq(worldObjectLifecycles.objectId, String(payload.objectId)),
+    ));
+  }],
 ]);
+
+export type PostgresAppendRouteReason =
+  | 'single-call-disabled'
+  | 'duplicate-write-stream'
+  | 'empty-stream-write'
+  | 'transaction-materializer-required'
+  | 'character-stream-cache-unavailable'
+  | 'single-call-eligible';
+
+export type PostgresAppendRouteDecision = {
+  readonly route: 'single-call' | 'transaction';
+  readonly reason: PostgresAppendRouteReason;
+};
+
+/** Pure routing policy; readiness is supplied by the caller, not read here. */
+export function decideAppendRoute(
+  request: AppendRequest,
+  options: { readonly singleCallEnabled: boolean; readonly characterStreamsReady: boolean },
+): PostgresAppendRouteDecision {
+  if (!options.singleCallEnabled) return { route: 'transaction', reason: 'single-call-disabled' };
+  const writes = [
+    { streamId: request.streamId, streamKind: request.streamKind, events: request.events },
+    ...(request.companions ?? []),
+  ];
+  if (new Set(writes.map((write) => write.streamId)).size !== writes.length) {
+    return { route: 'transaction', reason: 'duplicate-write-stream' };
+  }
+  if (writes.some((write) => write.events.length === 0)) {
+    return { route: 'transaction', reason: 'empty-stream-write' };
+  }
+  if (writes.some((write) => write.events.some((event) => POSTGRES_APPEND_MATERIALIZERS.has(event.type)))) {
+    return { route: 'transaction', reason: 'transaction-materializer-required' };
+  }
+  if (writes.some((write) => write.streamKind === 'character') && !options.characterStreamsReady) {
+    return { route: 'transaction', reason: 'character-stream-cache-unavailable' };
+  }
+  return { route: 'single-call', reason: 'single-call-eligible' };
+}
 
 type SingleCallAppendRow = {
   outcome: 'prior' | 'guard_conflict' | 'version_conflict' | 'committed';
@@ -161,16 +314,13 @@ export class PostgresEventStore implements EventStorePort {
     tx: Pick<typeof db, 'select' | 'insert'>,
     worldInstanceId: string,
     streamId: string,
+    streamKind: StreamKind,
     knownAppend?: { expectedVersion: number; events: readonly StoredGameEvent[] },
-    knownCharacterStream = false,
   ) {
-    // Only character aggregates participate. Shared streams are text IDs.
-    if (!CHARACTER_STREAM_ID.test(streamId)) return;
-    if (!knownCharacterStream) {
-      const [character] = await tx.select({ id: characters.id }).from(characters)
-        .where(and(eq(characters.id, streamId), eq(characters.worldInstanceId, worldInstanceId))).limit(1);
-      if (!character) return;
-    }
+    if (streamKind !== 'character') return;
+    const [character] = await tx.select({ id: characters.id }).from(characters)
+      .where(and(eq(characters.id, streamId), eq(characters.worldInstanceId, worldInstanceId))).limit(1);
+    if (!character) return;
     const cached = this.streamCache.get(this.streamKey(worldInstanceId, streamId));
     const cacheMatchesAppend = knownAppend && cached?.revision === knownAppend.expectedVersion;
     const tail = cacheMatchesAppend
@@ -214,7 +364,7 @@ export class PostgresEventStore implements EventStorePort {
         const [projection] = await tx.select().from(roomCharacterStates)
           .where(eq(roomCharacterStates.characterId, row.id)).limit(1);
         if (projection?.revision === (head?.revision ?? 0) && projection?.schemaVersion === 1) return;
-        await this.refreshRoomState(tx, row.world, row.id);
+        await this.refreshRoomState(tx, row.world, row.id, 'character');
       });
     }
   }
@@ -531,28 +681,42 @@ export class PostgresEventStore implements EventStorePort {
   }
 
   async append(request: AppendRequest): Promise<AppendOutcome> {
-    const outcome = await this.appendInOneCall(request) ?? await this.appendInTransaction(request);
+    const decision = decideAppendRoute(request, {
+      singleCallEnabled: this.singleCallAppend,
+      characterStreamsReady: this.characterStreamsReady(request),
+    });
+    const oneCall = decision.route === 'single-call' ? await this.appendInOneCall(request) : undefined;
+    const outcome = oneCall ?? await this.appendInTransaction(request);
     this.updateCachesAfterAppend(request, outcome);
     return outcome;
   }
 
-  /**
-   * Commit in one round trip through `mudd_append_command_v1`, or return
-   * undefined when the append needs the transaction path: side-table events, or
-   * a character stream whose room read model cannot be computed from the cache.
-   */
-  private async appendInOneCall(request: AppendRequest): Promise<AppendOutcome | undefined> {
-    if (!this.singleCallAppend) return undefined;
+  private characterStreamsReady(request: AppendRequest): boolean {
     const writes = [
-      { streamId: request.streamId, expectedVersion: request.expectedVersion, events: request.events },
+      { streamId: request.streamId, streamKind: request.streamKind, expectedVersion: request.expectedVersion },
       ...(request.companions ?? []),
     ];
-    // Malformed requests keep the transaction path, which reports them as before.
-    if (new Set(writes.map((write) => write.streamId)).size !== writes.length) return undefined;
-    if (writes.some((write) => write.events.length === 0)) return undefined;
-    if (writes.some((write) => write.events.some((event) => SIDE_TABLE_EVENT_TYPES.has(event.type)))) {
-      return undefined;
-    }
+    return writes.every((write) => {
+      if (write.streamKind !== 'character') return true;
+      return this.streamCache.get(this.streamKey(request.worldInstanceId, write.streamId))?.revision ===
+        write.expectedVersion;
+    });
+  }
+
+  /**
+   * Commit in one round trip through `mudd_append_command_v1`, or return
+   * undefined if a character room projection became unavailable after routing.
+   */
+  private async appendInOneCall(request: AppendRequest): Promise<AppendOutcome | undefined> {
+    const writes = [
+      {
+        streamId: request.streamId,
+        streamKind: request.streamKind,
+        expectedVersion: request.expectedVersion,
+        events: request.events,
+      },
+      ...(request.companions ?? []),
+    ];
 
     const committedAt = new Date().toISOString();
     const stored = writes.map((write) => ({
@@ -573,7 +737,7 @@ export class PostgresEventStore implements EventStorePort {
 
     const roomStates = [];
     for (const write of stored) {
-      if (!CHARACTER_STREAM_ID.test(write.streamId)) continue;
+      if (write.streamKind !== 'character') continue;
       const cached = this.streamCache.get(this.streamKey(request.worldInstanceId, write.streamId));
       if (cached?.revision !== write.expectedVersion) return undefined;
       const history = [...cached.events, ...write.events];
@@ -691,7 +855,11 @@ export class PostgresEventStore implements EventStorePort {
       }
 
       const companions = request.companions ?? [];
-      const writeIds = [request.streamId, ...companions.map((write) => write.streamId)];
+      const writeDescriptors = [
+        { streamId: request.streamId, streamKind: request.streamKind },
+        ...companions.map((write) => ({ streamId: write.streamId, streamKind: write.streamKind })),
+      ];
+      const writeIds = writeDescriptors.map((write) => write.streamId);
       if (new Set(writeIds).size !== writeIds.length) throw new Error('Duplicate atomic write stream.');
       const checks = [...companions, ...(request.guards ?? [])];
       // A deterministic lock order avoids deadlocks across encounter/character writers.
@@ -827,43 +995,7 @@ export class PostgresEventStore implements EventStorePort {
         }))));
       }
 
-      for (const event of appended) {
-        if (event.type === 'character.created') {
-          await tx.insert(characters).values({
-            id: String(event.payload.characterId),
-            playerId: String(event.payload.playerId),
-            worldInstanceId: event.worldInstanceId,
-            name: String(event.payload.name),
-          }).onConflictDoNothing();
-        } else if (event.type === 'character.renamed') {
-          await tx.update(characters)
-            .set({ name: String(event.payload.name) })
-            .where(and(
-              eq(characters.id, String(event.payload.characterId)),
-              eq(characters.worldInstanceId, event.worldInstanceId),
-            ));
-        } else if (event.type === 'character.archived') {
-          await tx.execute(sql`SELECT id FROM characters WHERE id = ${String(event.payload.characterId)} FOR UPDATE`);
-          const [activeSession] = await tx.select({ id: worldSessions.id }).from(worldSessions)
-            .where(eq(worldSessions.characterId, String(event.payload.characterId))).limit(1);
-          if (activeSession) throw new Error('Leave the world before archiving this character.');
-          await tx.update(characters)
-            .set({ archivedAt: new Date(event.occurredAt) })
-            .where(and(
-              eq(characters.id, String(event.payload.characterId)),
-              eq(characters.worldInstanceId, event.worldInstanceId),
-            ));
-        } else if (event.type === 'character.restored') {
-          await tx.update(characters)
-            .set({ archivedAt: null })
-            .where(and(
-              eq(characters.id, String(event.payload.characterId)),
-              eq(characters.worldInstanceId, event.worldInstanceId),
-            ));
-        }
-      }
-
-      const lifecycleWrites = [
+      const materializedWrites = [
         {
           events: request.events,
           revision: currentRevision,
@@ -873,96 +1005,29 @@ export class PostgresEventStore implements EventStorePort {
           revision: write.expectedVersion,
         })),
       ];
-      for (const write of lifecycleWrites) {
+      for (const write of materializedWrites) {
         for (const [index, event] of write.events.entries()) {
-          const revision = write.revision + index + 1;
-          const payload = event.payload;
-          if (event.type === 'world.object_lifecycle_scheduled') {
-            await tx.insert(worldObjectLifecycles).values({
-              worldInstanceId: request.worldInstanceId,
-              objectId: String(payload.objectId),
-              objectType: String(payload.objectType),
-              locationId: String(payload.locationId),
-              createdAt: new Date(String(payload.createdAt)),
-              expiresAt: new Date(String(payload.expiresAt)),
-              state: 'scheduled',
-              revision,
-              attempts: 0,
-              leaseToken: null,
-              leaseUntil: null,
-            }).onConflictDoUpdate({
-              target: [worldObjectLifecycles.worldInstanceId, worldObjectLifecycles.objectId],
-              set: {
-                objectType: String(payload.objectType),
-                locationId: String(payload.locationId),
-                createdAt: new Date(String(payload.createdAt)),
-                expiresAt: new Date(String(payload.expiresAt)),
-                state: 'scheduled',
-                revision,
-                attempts: 0,
-                leaseToken: null,
-                leaseUntil: null,
-              },
-            });
-          } else if (event.type === 'world.object_lifecycle_rescheduled') {
-            await tx.update(worldObjectLifecycles).set({
-              objectType: String(payload.objectType),
-              locationId: String(payload.locationId),
-              expiresAt: new Date(String(payload.expiresAt)),
-              state: 'scheduled',
-              revision,
-              attempts: 0,
-              leaseToken: null,
-              leaseUntil: null,
-            }).where(and(
-              eq(worldObjectLifecycles.worldInstanceId, request.worldInstanceId),
-              eq(worldObjectLifecycles.objectId, String(payload.objectId)),
-            ));
-          } else if (event.type === 'world.object_lifecycle_cancelled') {
-            await tx.update(worldObjectLifecycles).set({
-              state: 'cancelled',
-              revision,
-              leaseToken: null,
-              leaseUntil: null,
-            }).where(and(
-              eq(worldObjectLifecycles.worldInstanceId, request.worldInstanceId),
-              eq(worldObjectLifecycles.objectId, String(payload.objectId)),
-            ));
-          } else if (event.type === 'world.object_expiring') {
-            await tx.update(worldObjectLifecycles).set({
-              state: 'expiring',
-              revision,
-              attempts: sql`${worldObjectLifecycles.attempts} + 1`,
-              leaseToken: null,
-              leaseUntil: null,
-            }).where(and(
-              eq(worldObjectLifecycles.worldInstanceId, request.worldInstanceId),
-              eq(worldObjectLifecycles.objectId, String(payload.objectId)),
-            ));
-          } else if (event.type === 'world.object_expired') {
-            await tx.update(worldObjectLifecycles).set({
-              locationId: String(payload.locationId),
-              state: 'expired',
-              revision,
-              leaseToken: null,
-              leaseUntil: null,
-            }).where(and(
-              eq(worldObjectLifecycles.worldInstanceId, request.worldInstanceId),
-              eq(worldObjectLifecycles.objectId, String(payload.objectId)),
-            ));
-          }
+          const materializer = POSTGRES_APPEND_MATERIALIZERS.get(event.type);
+          if (!materializer) continue;
+          await materializer({
+            tx,
+            worldInstanceId: request.worldInstanceId,
+            payload: event.payload,
+            revision: write.revision + index + 1,
+            committedAt,
+          });
         }
       }
 
       await appendStage('room_state_projection', async () => {
-        for (const streamId of writeIds) {
-          if (streamId === request.streamId) {
-            await this.refreshRoomState(tx, request.worldInstanceId, streamId, {
+        for (const write of writeDescriptors) {
+          if (write.streamId === request.streamId) {
+            await this.refreshRoomState(tx, request.worldInstanceId, write.streamId, write.streamKind, {
               expectedVersion: currentRevision,
               events: appended,
-            }, this.scopedCommandReadCache(request.worldInstanceId, streamId) !== undefined);
+            });
           } else {
-            await this.refreshRoomState(tx, request.worldInstanceId, streamId);
+            await this.refreshRoomState(tx, request.worldInstanceId, write.streamId, write.streamKind);
           }
         }
       });

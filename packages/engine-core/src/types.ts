@@ -46,9 +46,13 @@ export interface StoredGameEvent extends ProposedDomainEvent {
   readonly tick: number;
 }
 
+/** Storage role used by adapters when deciding which stream projections to maintain. */
+export type StreamKind = 'character' | 'non-character';
+
 export interface AppendRequest {
   readonly worldInstanceId: string;
   readonly streamId: string;
+  readonly streamKind: StreamKind;
   readonly actorId: string;
   readonly commandId: string;
   readonly payloadHash: string;
@@ -65,6 +69,7 @@ export interface StreamGuard {
   readonly expectedVersion: number;
 }
 export interface StreamWrite extends StreamGuard {
+  readonly streamKind: StreamKind;
   readonly events: readonly ProposedDomainEvent[];
 }
 
@@ -146,6 +151,7 @@ export interface EngineCommandContext {
 
 export interface CommandPlan {
   readonly streamId: string;
+  readonly streamKind: StreamKind;
   readonly expectedVersion: number;
   readonly events: readonly ProposedDomainEvent[];
   readonly effects?: readonly ProposedEventEffect[];

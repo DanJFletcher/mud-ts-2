@@ -279,7 +279,7 @@ export function createLocationGroupsPlugin(
     manifest: {
       id: 'mudd.location-groups',
       version: '1.0.0',
-      apiVersion: '1.0',
+      apiVersion: '2.0',
       category: 'core',
       provides: [locationGroupCatalogCapability.id],
     },

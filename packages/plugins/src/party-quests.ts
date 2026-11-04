@@ -167,6 +167,7 @@ async function appendSystemEvents(
   const result = await context.store.append({
     worldInstanceId: context.worldInstanceId,
     streamId,
+    streamKind: 'non-character',
     actorId: SYSTEM_ACTOR_ID,
     commandId,
     payloadHash: commandId,
@@ -180,7 +181,7 @@ export const partyQuestPlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.party-quests',
     version: '1.0.0',
-    apiVersion: '1.0',
+    apiVersion: '2.0',
     category: 'first-party',
     requiredPlugins: { 'mudd.party': '^1.0.0' },
     eventSchemaVersions: {
@@ -219,7 +220,12 @@ export const partyQuestPlugin: EnginePlugin = {
           startedAt: context.now().toISOString(),
         },
       });
-      return { streamId, expectedVersion: history.at(-1)?.aggregateVersion ?? 0, events: [event] };
+      return {
+        streamId,
+        streamKind: 'non-character',
+        expectedVersion: history.at(-1)?.aggregateVersion ?? 0,
+        events: [event],
+      };
     });
 
     registerQuery('party.quests', PartyQuestJournalQuerySchema, async (_query, context) => {

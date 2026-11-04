@@ -325,6 +325,7 @@ async function applyOutcomes(
     await context.store.append({
       worldInstanceId: context.worldInstanceId,
       streamId: player.characterId,
+      streamKind: 'character',
       expectedVersion: history.length,
       commandId: `team-combat-outcome:${payload.encounterId}:${player.characterId}`,
       actorId: context.actorId ?? SYSTEM_ACTOR_ID,
@@ -345,7 +346,7 @@ export const teamCombatPlugin: EnginePlugin = {
   manifest: {
     id: "mudd.team-combat",
     version: "1.0.0",
-    apiVersion: "1.0",
+    apiVersion: "2.0",
     category: "core",
     provides: [teamRoadEncounterCapability.id],
     requires: [
@@ -483,6 +484,7 @@ export const teamCombatPlugin: EnginePlugin = {
             }
             companions.push({
               streamId: projection.characterId,
+              streamKind: 'character',
               expectedVersion: projection.revision,
               events: [recovery],
             });
@@ -563,6 +565,7 @@ export const teamCombatPlugin: EnginePlugin = {
         });
         return {
           streamId: STREAM_ID,
+          streamKind: 'non-character',
           expectedVersion: state.revision,
           events: [
             {
@@ -739,6 +742,7 @@ export const teamCombatPlugin: EnginePlugin = {
         });
         return {
           streamId: STREAM_ID,
+          streamKind: 'non-character',
           expectedVersion: state.revision,
           events: [
             {
@@ -753,6 +757,7 @@ export const teamCombatPlugin: EnginePlugin = {
           companions: [
             {
               streamId: character.characterId,
+              streamKind: 'character' as const,
               expectedVersion: loadedCharacter.revision,
               events: [recoveryEvent],
             },
@@ -1189,6 +1194,7 @@ export const teamCombatPlugin: EnginePlugin = {
         const companions = [
           {
             streamId: character.characterId,
+            streamKind: 'character' as const,
             expectedVersion: character.revision,
             events: [
               recoveryEvent,
@@ -1206,6 +1212,7 @@ export const teamCombatPlugin: EnginePlugin = {
         ) {
           companions.push({
             streamId: restingTargetCharacter.characterId,
+            streamKind: 'character' as const,
             expectedVersion: restingTargetCharacter.revision,
             events: [
               {
@@ -1224,6 +1231,7 @@ export const teamCombatPlugin: EnginePlugin = {
         }
         return {
           streamId: STREAM_ID,
+          streamKind: 'non-character',
           expectedVersion: state.revision,
           events,
           effects,

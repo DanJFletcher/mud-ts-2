@@ -15,7 +15,7 @@ export const merchantPlugin: EnginePlugin = {
   manifest: {
     id: 'mudd.merchant',
     version: '1.0.0',
-    apiVersion: '1.0',
+    apiVersion: '2.0',
     category: 'first-party',
     requires: [characterStateCapability.id],
     requiredPlugins: { 'mudd.character': '^1.0.0' },
@@ -36,6 +36,7 @@ export const merchantPlugin: EnginePlugin = {
       CharacterWalletInitializedEventSchema.shape.payload.parse(payload);
       return {
         streamId: character.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         events: [{ type: 'character.wallet_initialized', version: 1, payload }],
       };
@@ -103,6 +104,7 @@ export const merchantPlugin: EnginePlugin = {
       MerchantItemPurchasedEventSchema.shape.payload.parse(payload);
       return {
         streamId: character.characterId,
+        streamKind: 'character',
         expectedVersion: command.expectedVersion,
         events: [{ type: 'character.merchant_item_purchased', version: 1, payload }],
       };
