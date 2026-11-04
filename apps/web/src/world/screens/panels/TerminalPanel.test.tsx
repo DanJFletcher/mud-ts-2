@@ -40,6 +40,22 @@ describe('TerminalPanel touch navigation', () => {
     expect(container.querySelector('.focused-terminal')).toBeInTheDocument();
   });
 
+  it('closes full screen with Escape and restores focus to the launcher', async () => {
+    render(
+      <TerminalPanel title="Bellwold Market Square" busy={false} mobileViewport={false}>
+        <p>Room output</p>
+      </TerminalPanel>,
+    );
+    const openButton = screen.getByRole('button', { name: 'Open terminal full screen' });
+    fireEvent.click(openButton);
+    expect(await screen.findByRole('dialog', { name: 'Terminal' })).toBeVisible();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Terminal' })).not.toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Open terminal full screen' })).toHaveFocus();
+  });
+
   it('does not treat horizontal swipes or swipes on controls as terminal navigation', () => {
     render(
       <TerminalPanel title="Bellwold Market Square" busy={false} mobileViewport={false}>

@@ -21,3 +21,9 @@
 
 - [x] 4.1 Run `npm run test --workspace @mudd/web`; verify all web tests pass, including the focused suites and retained WorldClient composition tests.
 - [x] 4.2 Run web typecheck and lint; ensure changed test files are clean and record existing failures outside this change.
+
+## 5. Continue screen-boundary migration
+
+- [x] 5.1 Move terminal swipe and Escape-close behavior to the focused TerminalPanel suite; retain the separate WorldClient layout integration test.
+- [x] 5.2 Update the ownership inventory so moved panel assertions and retained composition coverage are explicit.
+- [x] 5.3 Run the TerminalPanel suite, full web tests, web typecheck, and lint on changed files.

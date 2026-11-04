@@ -4250,27 +4250,6 @@ describe('single-character world session client', () => {
     expect(screen.getByRole('textbox', { name: 'Enter a command' })).toBeInTheDocument();
   });
 
-  it('opens the terminal full screen with a downward header swipe and closes with an upward swipe or Escape', async () => {
-    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
-    const roomHeading = await screen.findByRole('heading', { name: 'Mossgate Clearing' });
-    fireTouchSwipe(roomHeading, { x: 150, y: 40 }, { x: 152, y: 150 });
-
-    const dialog = await screen.findByRole('dialog', { name: 'Terminal' });
-    expect(dialog).toHaveClass('focused-terminal--fullscreen');
-    expect(screen.getByRole('button', { name: 'Close full-screen terminal' })).toBeVisible();
-    fireEvent.touchCancel(dialog);
-
-    const fullscreenHeading = dialog.querySelector('.focused-terminal-location');
-    expect(fullscreenHeading).not.toBeNull();
-    fireTouchSwipe(fullscreenHeading!, { x: 150, y: 160 }, { x: 152, y: 45 });
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Terminal' })).not.toBeInTheDocument());
-
-    fireEvent.click(screen.getByRole('button', { name: 'Open terminal full screen' }));
-    await screen.findByRole('dialog', { name: 'Terminal' });
-    fireEvent.keyDown(document, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Terminal' })).not.toBeInTheDocument());
-  });
-
   it('records first-feedback timing for a traced travel action', async () => {
     window.history.replaceState(null, '', '/?muddTrace=1');
     const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);

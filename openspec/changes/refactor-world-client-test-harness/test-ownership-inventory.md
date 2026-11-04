@@ -34,7 +34,12 @@ Move only assertions that can be exercised through a focused public feature or s
 - The typed scenario harness is validated independently, including a real `WorldClient` render and isolated endpoint override, deferred-response, and failure cases.
 - Keyboard filtering and navigation menu/theme behavior now have focused feature/screen tests; duplicate full-client cases were removed.
 - Fishing and woodcutting single-flight cases are covered at the shared scheduler boundary, so their duplicated full-client polling tests were removed. Other gathering UI and event-recovery composition tests remain.
-- The remaining 237 `WorldClient` cases still use the legacy shared API fake. They were retained because they exercise session/UI/SDK wiring; replacing that fake is deliberately incremental and requires each scenario to have an explicit narrower owner or remain as composition coverage.
+- The remaining 236 `WorldClient` cases still use the legacy shared API fake. They were retained because they exercise session/UI/SDK wiring; replacing that fake is deliberately incremental and requires each scenario to have an explicit narrower owner or remain as composition coverage.
+
+## Terminal panel migration
+
+- Terminal swipe open/close and Escape dismissal are owned by the focused `TerminalPanel` suite, including focus restoration to the launcher.
+- The `WorldClient` responsive-layout case remains because it verifies the mobile terminal sits above bottom navigation.
 
 ## Validation
 
