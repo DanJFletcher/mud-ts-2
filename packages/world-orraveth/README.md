@@ -65,3 +65,7 @@ Run `npm run test --workspace @mudd/world-orraveth` and
 `npm run typecheck --workspace @mudd/world-orraveth` from the repository root.
 The [temporary baseline](./src/__fixtures__/README.md) protects the extraction;
 never regenerate it from refactored output to silence a failure.
+
+## Overland design
+
+For new routes and settlements, follow the [terrain and travel guidance](../../docs/world-content/orraveth/world-bible.md#overland-design-for-new-orraveth-routes), including the supplied maps and provisional Mosswake example.

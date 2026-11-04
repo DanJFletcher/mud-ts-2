@@ -144,7 +144,9 @@ The Orraveth world docs are also out of date: [world-bible.md](world-bible.md) s
 
 ## 3. Design decisions
 
-### 3.1 Travel scale (decided, Q5)
+### 3.1 Travel scale (historical decision, Q5)
+
+The eight-step rule and planning estimates in this document describe the earlier layout. For new designs, use the [current 48-move authoring guidance](world-bible.md#overland-design-for-new-orraveth-routes). Proposed-road counts and future-work totals below are historical estimates pending redesign; delivered counts remain implementation history.
 
 **One travel day is about 8 road steps** (decided 2026-10-31), counted from the Bellwold room where a route leaves town to the destination's arrival room. This keeps the Codex's *ratios* (½ : 1 : 1½ : 2 days) while keeping room counts manageable:
 
@@ -570,7 +572,7 @@ Each is a place where the Codex is silent or contradicts itself, or a design cal
 2. **Which way does the Lower Rill flow, and where does it go?** The Codex doesn't say, and the name "Lower" hints at an upper course. Its link to Mosswake's channels and the Rillward Freeholds is unresolved ([lower-rill.md][lower-rill]). This spec names reaches after landmarks, not as upstream or downstream, and stops the river at `lower-rill-west-of-rillford`. *Revised in Phase 3:* the eastern local adjacency reaches Mosswake's channel and open water as a gameplay proposal awaiting Codex review; neither flow direction nor the wider river connection is established.
 3. **What feeds the watermill?** The mill is north of town (1,1); the river is south (y −7). Rell Soven mentions the mill's channel running low ([rell-soven.md][rell]). Don't settle this in an expansion: it touches the Mill That Never Sleeps.
 4. **Where does the unfinished south road go?** The Codex says its end gives "no basis for assuming a destination". One possibility is that it's early work on the Crown's proposed road, but that would turn a proposal into construction and needs Codex approval. *Recommendation:* leave it unfinished.
-5. **Travel scale. Decided 2026-10-31:** one travel day is about 8 road steps (§3.1).
+5. **Travel scale. Historical decision, superseded for new designs. Decided 2026-10-31:** one travel day is about 8 road steps (§3.1).
 6. **Do trade links mean roads?** The Codex says no. Every road here is a proposal; a direct Harrowfen–Rillford track (Harrowfen trades through Rillford) is left out.
 7. **Ferry fares and passage rights. Decided 2026-10-31: the crossing waits for engine work.** The Codex sets no tolls, schedules or fares, and the engine has no paid-passage capability. A free ford would undercut Rillford's ferry trade, so the ferry stage reaches only the north quay. The south bank is reached by the mile road.
 8. **Names for inns and role NPCs.** The Codex mentions Rillford's inns and Vell's Crossing's merchants but names none. Who approves new names? *Phase 2 uses a descriptive placeholder, "Quayside Inn", and unnamed role NPCs until this is settled.*
