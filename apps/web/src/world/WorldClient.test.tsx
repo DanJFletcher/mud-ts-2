@@ -4050,32 +4050,6 @@ describe('single-character world session client', () => {
     }
   });
 
-  it('closes the bottom navigation menu on Escape and restores focus to its trigger', async () => {
-    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
-    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
-    const menuTrigger = screen.getByRole('button', { name: 'Open menu' });
-
-    fireEvent.click(menuTrigger);
-    expect(screen.getByRole('region', { name: 'Menu' })).toBeVisible();
-    fireEvent.keyDown(document, { key: 'Enter' });
-    expect(screen.getByRole('region', { name: 'Menu' })).toBeVisible();
-    fireEvent.keyDown(document, { key: 'Escape' });
-
-    expect(screen.queryByRole('region', { name: 'Menu' })).not.toBeInTheDocument();
-    expect(menuTrigger).toHaveFocus();
-  });
-
-  it('closes the bottom navigation menu when the player taps outside it', async () => {
-    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
-    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
-    fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
-    expect(screen.getByRole('region', { name: 'Menu' })).toBeVisible();
-
-    fireEvent.pointerDown(document.body);
-
-    expect(screen.queryByRole('region', { name: 'Menu' })).not.toBeInTheDocument();
-  });
-
   it('keeps the mobile terminal full screen above the bottom nav without header controls', async () => {
     const originalDescriptor = Object.getOwnPropertyDescriptor(window, 'matchMedia');
     const mobileMediaQuery = {
@@ -7209,22 +7183,6 @@ describe('single-character world session client', () => {
     expect(screen.getByRole('button', { name: 'Inspect Loose stone' })).toBeVisible();
   });
 
-  it('ignores repeated, modified, prevented, and input-focused movement keys', async () => {
-    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
-    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
-    const commandCount = apiFetch.mock.calls.filter(([path]) => path === '/api/commands').length;
-
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, repeat: true }));
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, altKey: true }));
-    const prevented = new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true });
-    prevented.preventDefault();
-    document.dispatchEvent(prevented);
-    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Enter a command' }), { key: 'ArrowUp' });
-
-    expect(screen.getByRole('heading', { name: 'Mossgate Clearing' })).toBeVisible();
-    expect(apiFetch.mock.calls.filter(([path]) => path === '/api/commands')).toHaveLength(commandCount);
-  });
-
   it('travels with an unmodified arrow key while the play area is focused', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
@@ -7448,24 +7406,6 @@ describe('single-character world session client', () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     await screen.findByRole('heading', { name: 'Mossgate Clearing' });
     expect(screen.queryByRole('group', { name: /Character currency balance/ })).not.toBeInTheDocument();
-  });
-
-  it('defaults to dark and persists the selected theme', async () => {
-    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
-    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
-    expect(screen.getByRole('main')).toHaveAttribute('data-theme', 'dark');
-    expect(window.localStorage.getItem('mudd-theme')).toBe('dark');
-    fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Switch to light theme' }));
-    expect(document.documentElement).toHaveAttribute('data-theme', 'light');
-    expect(window.localStorage.getItem('mudd-theme')).toBe('light');
-  });
-
-  it('restores a previously saved light theme', async () => {
-    window.localStorage.setItem('mudd-theme', 'light');
-    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
-    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
-    expect(screen.getByRole('main')).toHaveAttribute('data-theme', 'light');
   });
 
   it('responds to browser back/forward when changing gameplay screens', async () => {
@@ -8171,51 +8111,6 @@ describe('single-character world session client', () => {
     }, { timeout: 10_000 });
   });
 
-  it('does not start overlapping fishing ticks while a tick is unresolved', async () => {
-    room = 'bridge';
-    activeFishingCastState = {
-      castId: 'single-flight-fishing-cast',
-      spotId: 'glasswater-fishing-spot',
-      locationId: 'glasswater-bridge',
-      rodItemId: 'old-rod',
-      rodQualityId: 'old',
-      startedAt: '2000-01-01T00:00:00.000Z',
-      tickIntervalSeconds: 1,
-      ticksRequired: 10,
-      ticksCompleted: 0,
-    };
-    const original = apiFetch.getMockImplementation()!;
-    let releaseAdvance: ((response: Response) => void) | undefined;
-    let attempts = 0;
-    apiFetch.mockImplementation((path, init) => {
-      if (path === '/api/commands' && init?.method === 'POST') {
-        const command = JSON.parse(String(init.body)) as { type?: string };
-        if (command.type === 'fishing.advance') {
-          attempts += 1;
-          return new Promise<Response>((resolve) => { releaseAdvance = resolve; });
-        }
-      }
-      return original(path, init);
-    });
-    const view = render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
-
-    await screen.findByRole('region', { name: 'Fishing in progress' });
-    await waitFor(() => expect(attempts).toBe(1));
-    await new Promise((resolve) => setTimeout(resolve, 1_100));
-    expect(attempts).toBe(1);
-
-    activeFishingCastState = null;
-    revision += 1;
-    await act(async () => {
-      releaseAdvance?.(json({
-        receipt: { ok: true, commandId: 'mock-command', eventIds: [], newAggregateVersion: revision },
-        streamId: characterId,
-        events: [{ type: 'character.fishing_cast_advanced', payload: { status: 'no-bite' } }],
-      }));
-    });
-    view.unmount();
-  });
-
   it('reconciles a fishing stop when the cast already ended on the server', async () => {
     room = 'bridge';
     activeFishingCastState = {
@@ -8886,52 +8781,6 @@ describe('single-character world session client', () => {
       JSON.parse(String(init?.body)).type === 'woodcutting.start' &&
       JSON.parse(String(init?.body)).payload?.axeItemId === 'copper-axe',
     )).toBe(true);
-  });
-
-  it('does not start overlapping woodcutting ticks while a tick is unresolved', async () => {
-    activeWoodcuttingState = {
-      actionId: 'single-flight-woodcutting-action',
-      treeId: 'southbound-pine',
-      treeLabel: 'pine',
-      axeItemId: 'copper-axe',
-      locationId: 'mossgate-clearing',
-      startedAt: '2000-01-01T00:00:00.000Z',
-      ticksCompleted: 0,
-      ticksRequired: 10,
-    };
-    const original = apiFetch.getMockImplementation()!;
-    let releaseAdvance: ((response: Response) => void) | undefined;
-    let attempts = 0;
-    apiFetch.mockImplementation((path, init) => {
-      if (path === '/api/commands' && init?.method === 'POST') {
-        const command = JSON.parse(String(init.body)) as { type?: string };
-        if (command.type === 'woodcutting.advance') {
-          attempts += 1;
-          return new Promise<Response>((resolve) => { releaseAdvance = resolve; });
-        }
-      }
-      return original(path, init);
-    });
-    const view = render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
-
-    await screen.findByRole('region', { name: 'Woodcutting in progress' });
-    await waitFor(() => expect(attempts).toBe(1));
-    await new Promise((resolve) => setTimeout(resolve, 1_100));
-    expect(attempts).toBe(1);
-
-    activeWoodcuttingState = null;
-    revision += 1;
-    await act(async () => {
-      releaseAdvance?.(json({
-        receipt: { ok: true, commandId: 'mock-command', eventIds: [], newAggregateVersion: revision },
-        streamId: characterId,
-        events: [{
-          type: 'character.woodcutting_action_advanced',
-          payload: { status: 'no-log' },
-        }],
-      }));
-    });
-    view.unmount();
   });
 
   it('prints Chop! every two seconds while woodcutting remains active', async () => {

@@ -49,4 +49,30 @@ describe("modal-safe movement shortcuts", () => {
     fireEvent.keyDown(document, { key: "ArrowUp" });
     expect(move).not.toHaveBeenCalled();
   });
+
+  it("ignores repeated, modified, prevented, and input-focused movement keys", () => {
+    const move = vi.fn(async () => {});
+    render(<input aria-label="Command" />);
+    renderHook(() => useMovementShortcuts({
+      enabled: true, modalOpen: false, snapshot, move, chooseExit: vi.fn(),
+    }));
+
+    document.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "ArrowUp", bubbles: true, repeat: true,
+    }));
+    document.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "ArrowUp", bubbles: true, altKey: true,
+    }));
+    const prevented = new KeyboardEvent("keydown", {
+      key: "ArrowUp", bubbles: true, cancelable: true,
+    });
+    prevented.preventDefault();
+    document.dispatchEvent(prevented);
+
+    const command = screen.getByRole("textbox", { name: "Command" });
+    command.focus();
+    fireEvent.keyDown(command, { key: "ArrowUp" });
+
+    expect(move).not.toHaveBeenCalled();
+  });
 });
