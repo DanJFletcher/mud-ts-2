@@ -436,7 +436,8 @@ export function PlayScreen({ session, history, gathering, daily, slots, view }: 
           />
         )}
         <WorldMapPanel
-          map={optimisticTravel && snapshot.map
+          map={optimisticTravel && snapshot.map &&
+            snapshot.map.locations.some((location) => location.id === optimisticTravel.preview.locationId)
             ? { ...snapshot.map, currentLocationId: optimisticTravel.preview.locationId }
             : snapshot.map}
           fullscreen={mapFullscreen}

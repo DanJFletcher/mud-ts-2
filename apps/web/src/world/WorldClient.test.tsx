@@ -4279,6 +4279,133 @@ describe('single-character world session client', () => {
     }
   });
 
+  it('keeps the minimap on the last visited room until an unvisited destination is projected', async () => {
+    room = 'bridge';
+    visitedLocationIds = ['mossgate-clearing', 'glasswater-bridge'];
+    const original = apiFetch.getMockImplementation()!;
+    let finishMove!: () => void;
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST' && init.body) {
+        const command = JSON.parse(String(init.body)) as {
+          type?: string;
+          commandId?: string;
+          payload?: { exitId?: string };
+        };
+        if (command.type === 'character.move' && command.payload?.exitId === 'bridge-to-reedbank') {
+          return new Promise<Response>((resolve) => {
+            finishMove = () => {
+              room = 'market';
+              visitedLocationIds.push('reedbank-stalls');
+              revision += 1;
+              resolve(json({
+                receipt: {
+                  ok: true,
+                  commandId: command.commandId ?? 'mock-command',
+                  eventIds: [],
+                  newAggregateVersion: revision,
+                },
+                streamId: characterId,
+              }));
+            };
+          });
+        }
+      }
+
+      const response = await original(path, init);
+      if (path !== '/api/game' || room !== 'bridge') return response;
+      const game = await response.json() as {
+        location: { exits: unknown[] };
+      } & Record<string, unknown>;
+      return json({
+        ...game,
+        location: {
+          ...game.location,
+          exits: [...game.location.exits, {
+            id: 'bridge-to-reedbank',
+            label: 'East to Reedbank Stalls',
+            direction: 'east',
+            available: true,
+            destinationPreview: {
+              locationId: 'reedbank-stalls',
+              title: 'Reedbank Stalls',
+              shortName: 'Reedbank Stalls',
+              qualifiedName: 'Reedbank Stalls',
+              description: 'Canvas awnings line the riverbank.',
+            },
+          }],
+        },
+      });
+    });
+
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    await screen.findByRole('region', { name: 'World map' });
+    const minimap = screen.getByRole('button', {
+      name: 'Open map full screen; drag to move the minimap',
+    }).querySelector('.focused-world-map__minimap-svg');
+    expect(minimap).not.toBeNull();
+    const startingViewBox = minimap!.getAttribute('viewBox');
+    expect(startingViewBox).toBeTruthy();
+
+    quickGo('east');
+    await waitFor(() => expect(finishMove).toBeTypeOf('function'));
+    expect(minimap).toHaveAttribute('viewBox', startingViewBox);
+
+    await act(async () => { finishMove(); });
+    await screen.findByRole('heading', { name: 'Reedbank Stalls' });
+    await waitFor(() => expect(minimap).not.toHaveAttribute('viewBox', startingViewBox));
+  });
+
+  it('keeps optimistic minimap focus for a destination already in the map projection', async () => {
+    room = 'bridge';
+    visitedLocationIds = ['mossgate-clearing', 'glasswater-bridge'];
+    const original = apiFetch.getMockImplementation()!;
+    let finishMove!: () => void;
+    apiFetch.mockImplementation(async (path, init) => {
+      if (path === '/api/commands' && init?.method === 'POST' && init.body) {
+        const command = JSON.parse(String(init.body)) as {
+          type?: string;
+          commandId?: string;
+        };
+        if (command.type === 'character.move') {
+          return new Promise<Response>((resolve) => {
+            finishMove = () => {
+              room = 'clearing';
+              revision += 1;
+              resolve(json({
+                receipt: {
+                  ok: true,
+                  commandId: command.commandId ?? 'mock-command',
+                  eventIds: [],
+                  newAggregateVersion: revision,
+                },
+                streamId: characterId,
+              }));
+            };
+          });
+        }
+      }
+      return original(path, init);
+    });
+
+    render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
+    await screen.findByRole('heading', { name: 'Glasswater Bridge' });
+    await screen.findByRole('region', { name: 'World map' });
+    const minimap = screen.getByRole('button', {
+      name: 'Open map full screen; drag to move the minimap',
+    }).querySelector('.focused-world-map__minimap-svg');
+    expect(minimap).not.toBeNull();
+    const startingViewBox = minimap!.getAttribute('viewBox');
+    expect(startingViewBox).toBeTruthy();
+
+    quickGo('south');
+    await waitFor(() => expect(finishMove).toBeTypeOf('function'));
+    expect(minimap).not.toHaveAttribute('viewBox', startingViewBox);
+
+    await act(async () => { finishMove(); });
+    await screen.findByRole('heading', { name: 'Mossgate Clearing' });
+  });
+
   it('tracks the current room and rooms already visited on the map', async () => {
     render(<WorldClient onLeaveWorld={vi.fn().mockResolvedValue(undefined)} />);
     const map = await screen.findByRole('region', { name: 'World map' });
