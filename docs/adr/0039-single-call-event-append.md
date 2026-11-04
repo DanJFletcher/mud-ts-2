@@ -22,11 +22,10 @@ The receipt lookup has to run as a separate statement after the command advisory
 - The function is `VOLATILE` and checks that it runs under `READ COMMITTED`. Each statement in it therefore takes a fresh snapshot, and the receipt lookup sees any duplicate that committed while the call waited.
 - The store calls the function in autocommit, so one statement is one transaction and one round trip.
 - Both paths derive advisory-lock keys from the same strings, so they serialize against each other.
-- The application still generates event IDs and timestamps, and computes room read models from its cached history. The function writes a room row only for a stream that is a character in that world.
-- Only some appends are eligible. These keep the existing transaction:
-  - appends with side-table events (character create, rename, archive or restore; object lifecycle);
-  - appends with a character stream whose cache doesn't match its expected version;
-  - malformed batches.
+- Every primary and companion write declares `streamKind`. The application computes character room rows only for `character` streams, regardless of the ID's shape; `non-character` streams never become character projections merely because an ID resembles a UUID.
+- The application still generates event IDs and timestamps, and computes eligible room read models from its cached history. The function writes the supplied room rows atomically.
+- PostgreSQL transaction-only writes are registered with their materializers, so route eligibility and side-table updates cannot drift apart. Character-directory and object-lifecycle materializers stay in the transaction path.
+- A pure route decision selects the function or transaction path with a stable reason. Character writes whose cached revision does not match, duplicate or empty write batches, transaction-only materializers, and disabled fast-path settings use the transaction path.
 - `MUDD_SINGLE_CALL_APPEND=1` enables the fast path. Tests can choose a path with the store's `singleCallAppend` option.
 
 ## Alternatives considered
@@ -41,7 +40,7 @@ The receipt lookup has to run as a separate statement after the command advisory
 
 - **Positive:** eligible commands save 8–9 round trips each, about 220–240 ms at production latency.
 - **Negative:** append logic now exists in two places, and the paths must be kept in step.
-- **Compatibility/migration:** migration 0011 only adds a function. Code that doesn't use it is unaffected.
+- **Compatibility/migration:** the required `streamKind` field bumps the exact engine host API to 2.0; bundled and external plugins must update their manifests and plans. The SQL function and event format do not change, and no database migration is required for this policy refactor.
 - **Security/abuse/trust:** the function runs with `SECURITY INVOKER` and a fixed `search_path`. It performs the same checks as the transaction path.
 - **Performance/operational:** commit acknowledgment time doesn't change. Development has observed write commits of up to 265 ms. The `event_store.append.single_call` stage shows which path served a request.
 - **Rollback/reversibility:** unset `MUDD_SINGLE_CALL_APPEND`. The function can stay in place.
@@ -53,14 +52,16 @@ The receipt lookup has to run as a separate statement after the command advisory
   - the request payload (lock set, check order, event versions, effect dedupe keys);
   - outcome mapping;
   - the room read model computed from cache;
-  - fallbacks.
+  - explicit character/non-character classification, including non-UUID character IDs and UUID-shaped shared IDs;
+  - each stable route reason and transaction-only materializer fallback.
 - PostgreSQL tests (`single-call-append.integration.test.ts`) cover:
   - one statement per eligible append, with a current room read model;
   - concurrent duplicates producing one event set and identical receipts;
   - the same command racing across both paths;
   - competing writers;
   - stale guards and command-ID reuse;
-  - rollback when an effect insert fails.
+  - rollback when an effect insert fails;
+  - event, receipt, effect, and room-state parity across eligible append paths.
 
 ## Follow-up / revisit trigger
 

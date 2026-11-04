@@ -85,6 +85,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     const createRequest: AppendRequest = {
       worldInstanceId,
       streamId: characterId,
+      streamKind: 'character',
       actorId: playerId,
       commandId: `create-${randomUUID()}`,
       payloadHash: randomUUID(),
@@ -106,6 +107,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     const takeItemRequest: AppendRequest = {
       worldInstanceId,
       streamId: characterId,
+      streamKind: 'character',
       actorId: playerId,
       commandId: `take-${randomUUID()}`,
       payloadHash: randomUUID(),
@@ -140,6 +142,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     const sameCommandOtherActor: AppendRequest = {
       worldInstanceId,
       streamId: `other-${randomUUID()}`,
+      streamKind: 'non-character',
       actorId: secondActorId,
       commandId: takeItemRequest.commandId,
       payloadHash: randomUUID(),
@@ -154,10 +157,11 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
   it('writes appended events and their command receipt in one database round trip', async () => {
     const streamId = randomUUID();
     const { PostgresEventStore } = await import('./postgres-event-store.js');
-    const appendStore = new PostgresEventStore();
+    const appendStore = new PostgresEventStore({ singleCallAppend: false });
     const created = await appendStore.append({
       worldInstanceId: appendBatchWorldInstanceId,
       streamId,
+      streamKind: 'character',
       actorId: playerId,
       commandId: `append-batch-create-${randomUUID()}`,
       payloadHash: randomUUID(),
@@ -177,6 +181,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     const request: AppendRequest = {
       worldInstanceId: appendBatchWorldInstanceId,
       streamId,
+      streamKind: 'character',
       actorId: playerId,
       commandId: `append-batch-${randomUUID()}`,
       payloadHash: randomUUID(),
@@ -245,7 +250,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     const { replayCharacter, replayCharacterUncached } = await import('@mudd/engine-core');
     const reader = new PostgresEventStore(), writer = new PostgresEventStore();
     const id = randomUUID();
-    const base = { worldInstanceId, streamId: id, actorId: playerId,
+    const base = { worldInstanceId, streamId: id, streamKind: 'character' as const, actorId: playerId,
       commandId: randomUUID(), payloadHash: randomUUID(), expectedVersion: 0,
       events: [{ type: 'character.created', version: 1, payload: {
         characterId: id, playerId, name: 'Large history', startingLocationId: 'mossgate-clearing',
@@ -273,6 +278,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     for (let i = 0; i < 129; i++) {
       const streamId = `eviction-${i}`;
       await writer.append({ ...base, streamId, commandId: randomUUID(),
+        streamKind: 'non-character',
         events: [{ type: 'audit.eviction', version: 1, payload: {} }],
       });
       await reader.readStream(worldInstanceId, streamId);
@@ -287,6 +293,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     const makeRequest = (commandId: string): AppendRequest => ({
       worldInstanceId,
       streamId,
+      streamKind: 'non-character',
       actorId: playerId,
       commandId,
       payloadHash: randomUUID(),
@@ -305,6 +312,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     const firstRequest: AppendRequest = {
       worldInstanceId,
       streamId,
+      streamKind: 'non-character',
       actorId: playerId,
       commandId: `cache-first-${randomUUID()}`,
       payloadHash: randomUUID(),
@@ -335,6 +343,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     const requests: AppendRequest[] = streamIds.map((streamId, index) => ({
       worldInstanceId,
       streamId,
+      streamKind: 'non-character',
       actorId: playerId,
       commandId: `batch-read-${randomUUID()}`,
       payloadHash: randomUUID(),
@@ -374,6 +383,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
       expect((await store.append({
         worldInstanceId,
         streamId: longStream,
+        streamKind: 'non-character',
         actorId: playerId,
         commandId: `head-read-${randomUUID()}`,
         payloadHash: randomUUID(),
@@ -384,6 +394,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     expect((await store.append({
       worldInstanceId,
       streamId: shortStream,
+      streamKind: 'non-character',
       actorId: playerId,
       commandId: `head-read-${randomUUID()}`,
       payloadHash: randomUUID(),
@@ -455,9 +466,9 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     const secondTurn = `turn-${randomUUID()}`;
     const request = (streamId: string): AppendRequest => ({
       worldInstanceId, actorId: playerId, commandId: `ability-${randomUUID()}`, payloadHash: randomUUID(),
-      streamId, expectedVersion: 0,
+      streamId, streamKind: 'non-character', expectedVersion: 0,
       events: [{ type: 'audit.turn', version: 1, payload: { damage: 4 } }],
-      companions: [{ streamId: resourceStream, expectedVersion: 0,
+      companions: [{ streamId: resourceStream, streamKind: 'non-character', expectedVersion: 0,
         events: [{ type: 'audit.resource', version: 1, payload: { remaining: 80 } }] }],
     });
     const a = request(firstTurn);
@@ -479,6 +490,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     expect((await store.append({
       worldInstanceId,
       streamId: observedStream,
+      streamKind: 'non-character',
       actorId: playerId,
       commandId: `guard-seed-${randomUUID()}`,
       payloadHash: randomUUID(),
@@ -489,6 +501,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     const request: AppendRequest = {
       worldInstanceId,
       streamId: primaryStream,
+      streamKind: 'non-character',
       actorId: playerId,
       commandId: `guarded-append-${randomUUID()}`,
       payloadHash: randomUUID(),
@@ -497,6 +510,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
       guards: [{ streamId: observedStream, expectedVersion: 1 }],
       companions: companionStreams.map((streamId, index) => ({
         streamId,
+        streamKind: 'non-character',
         expectedVersion: 0,
         events: [{ type: 'audit.guarded_companion', version: 1, payload: { index } }],
       })),
@@ -543,12 +557,13 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     const appendRequest: AppendRequest = {
       worldInstanceId,
       streamId,
+      streamKind: 'non-character',
       actorId: playerId,
       commandId,
       payloadHash,
       expectedVersion: 0,
       events: [{ type: 'audit.effect_source', version: 1, payload: { committed: true } }],
-      companions: [{ streamId: `companion-${streamId}`, expectedVersion: 0,
+      companions: [{ streamId: `companion-${streamId}`, streamKind: 'non-character', expectedVersion: 0,
         events: [{ type: 'audit.resource_debit', version: 1, payload: { remaining: 80 } }] }],
       effects: [{ type: 'audit.test', version: 1, payload: { message: 'deliver once' } }],
     };
@@ -593,6 +608,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     const appendRequest: AppendRequest = {
       worldInstanceId,
       streamId: `settled-stream-${randomUUID()}`,
+      streamKind: 'non-character',
       actorId: playerId,
       commandId,
       payloadHash: randomUUID(),
@@ -642,6 +658,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     const scheduled = await store.append({
       worldInstanceId: lifecycleWorldInstanceId,
       streamId: lifecycleStreamId,
+      streamKind: 'non-character',
       actorId: SYSTEM_ACTOR_ID,
       commandId: `schedule-${randomUUID()}`,
       payloadHash: randomUUID(),
@@ -700,6 +717,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     const request: AppendRequest = {
       worldInstanceId,
       streamId: 'world-items',
+      streamKind: 'non-character',
       actorId: SYSTEM_ACTOR_ID,
       commandId,
       payloadHash: randomUUID(),
@@ -833,6 +851,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
       const result = await store.append({
         worldInstanceId: presenceWorldInstanceId,
         streamId: character.id,
+        streamKind: 'character',
         actorId: character.playerId,
         commandId: `presence-create-${randomUUID()}`,
         payloadHash: randomUUID(),
@@ -925,7 +944,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     const { replayCharacter } = await import('@mudd/engine-core');
     const id = randomUUID();
     await store.append({
-      worldInstanceId, streamId: id, actorId: playerId,
+      worldInstanceId, streamId: id, streamKind: 'character', actorId: playerId,
       commandId: randomUUID(), payloadHash: randomUUID(), expectedVersion: 0,
       events: [{ type: 'character.created', version: 1, payload: {
         characterId: id, playerId, name: 'Read model', startingLocationId: 'read-room',
@@ -962,6 +981,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     await chatStore.append({
       worldInstanceId: chatWorldInstanceId,
       streamId: chatCharacterId,
+      streamKind: 'character',
       actorId: playerId,
       commandId: `chat-create-${randomUUID()}`,
       payloadHash: randomUUID(),
@@ -1018,6 +1038,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     const movement = await chatStore.append({
       worldInstanceId: chatWorldInstanceId,
       streamId: chatCharacterId,
+      streamKind: 'character',
       actorId: playerId,
       commandId: `chat-move-${randomUUID()}`,
       payloadHash: randomUUID(),
@@ -1119,6 +1140,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
     const created = await scopedStore.append({
       worldInstanceId: cacheWorldInstanceId,
       streamId: cacheCharacterId,
+      streamKind: 'character',
       actorId: playerId,
       commandId: `cache-create-${randomUUID()}`,
       payloadHash: randomUUID(),
@@ -1146,6 +1168,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
         const concurrentWrite = await new PostgresEventStore().append({
           worldInstanceId: cacheWorldInstanceId,
           streamId: cacheCharacterId,
+          streamKind: 'character',
           actorId: playerId,
           commandId: `cache-concurrent-${randomUUID()}`,
           payloadHash: randomUUID(),
@@ -1161,6 +1184,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
         const staleWrite = await scopedStore.append({
           worldInstanceId: cacheWorldInstanceId,
           streamId: cacheCharacterId,
+          streamKind: 'character',
           actorId: playerId,
           commandId: `cache-stale-${randomUUID()}`,
           payloadHash: randomUUID(),
@@ -1178,6 +1202,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
         const appended = await scopedStore.append({
           worldInstanceId: cacheWorldInstanceId,
           streamId: cacheCharacterId,
+          streamKind: 'character',
           actorId: playerId,
           commandId: `cache-rename-${randomUUID()}`,
           payloadHash: randomUUID(),
@@ -1205,6 +1230,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
         const concurrentWrite = await new PostgresEventStore().append({
           worldInstanceId: cacheWorldInstanceId,
           streamId: cacheCharacterId,
+          streamKind: 'character',
           actorId: playerId,
           commandId: `cache-ahead-${randomUUID()}`,
           payloadHash: randomUUID(),
@@ -1224,6 +1250,7 @@ integrationDescribe('PostgresEventStore (real PostgreSQL)', () => {
         const accepted = await scopedStore.append({
           worldInstanceId: cacheWorldInstanceId,
           streamId: cacheCharacterId,
+          streamKind: 'character',
           actorId: playerId,
           commandId: `cache-ahead-accept-${randomUUID()}`,
           payloadHash: randomUUID(),

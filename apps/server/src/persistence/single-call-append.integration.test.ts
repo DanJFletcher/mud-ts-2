@@ -43,11 +43,13 @@ integrationDescribe('single-call event append (real PostgreSQL)', () => {
   afterAll(async () => {
     if (!db || !pool) return;
     const { eq } = await import('drizzle-orm');
-    const { characters, commandReceipts, durableEffects, gameEvents, players } = await import('../db/schema.js');
+    const { characters, commandReceipts, durableEffects, gameEvents, players, roomCharacterStates } =
+      await import('../db/schema.js');
     try {
       await db.delete(durableEffects).where(eq(durableEffects.worldInstanceId, worldInstanceId));
       await db.delete(commandReceipts).where(eq(commandReceipts.worldInstanceId, worldInstanceId));
       await db.delete(gameEvents).where(eq(gameEvents.worldInstanceId, worldInstanceId));
+      await db.delete(roomCharacterStates).where(eq(roomCharacterStates.worldInstanceId, worldInstanceId));
       await db.delete(characters).where(eq(characters.playerId, playerId));
       await db.delete(players).where(eq(players.id, playerId));
     } finally {
@@ -181,5 +183,105 @@ integrationDescribe('single-call event append (real PostgreSQL)', () => {
     expect(await fast.readStream(worldInstanceId, companionId)).toHaveLength(1);
     const effects = await db.select().from(durableEffects).where(eq(durableEffects.causationCommandId, commandId));
     expect(effects).toHaveLength(1);
+  });
+
+  it('keeps character events, effects, receipts and room state equivalent across append paths', async () => {
+    const { inArray } = await import('drizzle-orm');
+    const { durableEffects, roomCharacterStates } = await import('../db/schema.js');
+    const { replayCharacter } = await import('@mudd/engine-core');
+    const cases = [
+      { store: fast, characterId: randomUUID(), path: 'fast' },
+      { store: transactional, characterId: randomUUID(), path: 'transaction' },
+    ] as const;
+    const results = [];
+
+    for (const { store, characterId, path } of cases) {
+      const companionId = `parity-companion-${path}-${randomUUID()}`;
+      const create = await store.append({
+        worldInstanceId,
+        streamId: characterId,
+        streamKind: 'character',
+        actorId: playerId,
+        commandId: `parity-create-${path}-${randomUUID()}`,
+        payloadHash: randomUUID(),
+        expectedVersion: 0,
+        events: [{ type: 'character.created', version: 1, payload: {
+          characterId,
+          playerId,
+          name: 'Parity Character',
+          startingLocationId: 'mossgate-clearing',
+        } }],
+      });
+      expect(create.kind).toBe('committed');
+      await store.readStream(worldInstanceId, characterId);
+
+      const commandId = `parity-take-${path}-${randomUUID()}`;
+      const append = await store.append({
+        worldInstanceId,
+        streamId: characterId,
+        streamKind: 'character',
+        actorId: playerId,
+        commandId,
+        payloadHash: randomUUID(),
+        expectedVersion: 1,
+        events: [{ type: 'character.item_taken', version: 1, payload: {
+          characterId,
+          locationId: 'mossgate-clearing',
+          item: { id: 'parity-item', label: 'Parity item', description: 'An append parity fixture.' },
+        } }],
+        companions: [{
+          streamId: companionId,
+          streamKind: 'non-character',
+          expectedVersion: 0,
+          events: [{ type: 'audit.append-parity-companion', version: 1, payload: { itemId: 'parity-item' } }],
+        }],
+        effects: [{ type: 'audit.append-parity', version: 1, payload: { itemId: 'parity-item' } }],
+      });
+      expect(append.kind).toBe('committed');
+      results.push({
+        characterId,
+        companionId,
+        commandId,
+        append,
+        history: await store.readStream(worldInstanceId, characterId),
+        companionHistory: await store.readStream(worldInstanceId, companionId),
+      });
+    }
+
+    const [fastResult, transactionResult] = results;
+    expect(fastResult!.append).toMatchObject({
+      kind: 'committed',
+      events: [{ type: 'character.item_taken', aggregateVersion: 2 }],
+      receipt: { ok: true, newAggregateVersion: 2 },
+    });
+    expect(transactionResult!.append).toMatchObject({
+      kind: 'committed',
+      events: [{ type: 'character.item_taken', aggregateVersion: 2 }],
+      receipt: { ok: true, newAggregateVersion: 2 },
+    });
+    expect(fastResult!.history.map(({ type, aggregateVersion }) => [type, aggregateVersion]))
+      .toEqual(transactionResult!.history.map(({ type, aggregateVersion }) => [type, aggregateVersion]));
+    expect(fastResult!.companionHistory.map(({ type, aggregateVersion }) => [type, aggregateVersion]))
+      .toEqual(transactionResult!.companionHistory.map(({ type, aggregateVersion }) => [type, aggregateVersion]));
+    expect(replayCharacter(fastResult!.history)?.inventory)
+      .toEqual(replayCharacter(transactionResult!.history)?.inventory);
+
+    const roomRows = await db.select().from(roomCharacterStates)
+      .where(inArray(roomCharacterStates.characterId, results.map(({ characterId }) => characterId)));
+    expect(roomRows).toHaveLength(2);
+    expect(roomRows.map(({ revision, locationId }) => [revision, locationId]))
+      .toEqual([[2, 'mossgate-clearing'], [2, 'mossgate-clearing']]);
+
+    const effectRows = await db.select().from(durableEffects)
+      .where(inArray(durableEffects.causationCommandId, results.map(({ commandId }) => commandId)));
+    expect(effectRows).toHaveLength(2);
+    expect(effectRows.map(({ effectType, payload }) => [effectType, payload]))
+      .toEqual([
+        ['audit.append-parity', { itemId: 'parity-item' }],
+        ['audit.append-parity', { itemId: 'parity-item' }],
+      ]);
+    expect(results.map(({ companionId, companionHistory }) =>
+      [companionId, companionHistory[0]?.type, companionHistory[0]?.aggregateVersion]))
+      .toEqual(results.map(({ companionId }) => [companionId, 'audit.append-parity-companion', 1]));
   });
 });

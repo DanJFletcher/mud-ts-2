@@ -124,7 +124,7 @@ function basicAppendRequest(overrides: Partial<AppendRequest> = {}): AppendReque
   return {
     worldInstanceId: 'world-1',
     streamId: 'shared-character-stream',
-    streamKind: 'character',
+    streamKind: 'non-character',
     actorId: 'player-1',
     commandId: 'atomic-command',
     payloadHash: 'atomic-payload',
@@ -314,6 +314,7 @@ describe('PostgresEventStore unit behavior', () => {
     const request: AppendRequest = {
       worldInstanceId: 'world-1',
       streamId: characterId,
+      streamKind: 'character',
       actorId: 'player-1',
       commandId: 'move-command',
       payloadHash: 'move-payload',
@@ -439,6 +440,7 @@ describe('PostgresEventStore unit behavior', () => {
       commandId: 'companion-write',
       companions: [{
         streamId: companionStreamId,
+        streamKind: 'non-character',
         expectedVersion: 1,
         events: [{ type: 'world.team.changed', version: 1, payload: { teamId: 'team-1' } }],
       }],
@@ -479,6 +481,7 @@ describe('PostgresEventStore unit behavior', () => {
       commandId: 'stale-companion-write',
       companions: [{
         streamId: companionStreamId,
+        streamKind: 'non-character',
         expectedVersion: 1,
         events: [{ type: 'world.team.changed', version: 1, payload: { teamId: 'team-1' } }],
       }],
@@ -508,6 +511,7 @@ describe('PostgresEventStore unit behavior', () => {
     const outcome = await new PostgresEventStore().append({
       worldInstanceId: 'world-1',
       streamId: 'world-object-lifecycle:corpse-1',
+      streamKind: 'non-character',
       actorId: 'system',
       commandId: 'lifecycle-transitions',
       payloadHash: 'lifecycle-payload',
@@ -611,6 +615,7 @@ describe('PostgresEventStore unit behavior', () => {
     const outcome = await new PostgresEventStore().append({
       worldInstanceId: 'world-1',
       streamId: 'character-1',
+      streamKind: 'character',
       actorId: 'player-1',
       commandId: 'character-lifecycle',
       payloadHash: 'character-lifecycle-payload',
@@ -656,7 +661,7 @@ describe('PostgresEventStore unit behavior', () => {
       { archivedAt: expect.any(Date) },
       { archivedAt: null },
     ]);
-    expect(tx.select).toHaveBeenCalledTimes(3);
+    expect(tx.select).toHaveBeenCalledTimes(4);
   });
 
   it('rejects character archival while an active world session exists', async () => {
@@ -665,6 +670,7 @@ describe('PostgresEventStore unit behavior', () => {
 
     await expect(new PostgresEventStore().append(basicAppendRequest({
       streamId: 'character-1',
+      streamKind: 'character',
       commandId: 'archive-active-character',
       events: [{
         type: 'character.archived',
@@ -1050,6 +1056,7 @@ describe('PostgresEventStore unit behavior', () => {
     const outcome = await store.append({
       worldInstanceId: 'world-1',
       streamId: 'character-1',
+      streamKind: 'non-character',
       actorId: 'player-1',
       commandId,
       payloadHash: 'same-payload',
@@ -1094,6 +1101,7 @@ describe('PostgresEventStore unit behavior', () => {
     const outcome = await store.append({
       worldInstanceId: 'world-1',
       streamId: 'character-1',
+      streamKind: 'non-character',
       actorId: 'player-1',
       commandId,
       payloadHash: 'different-payload',
@@ -1134,6 +1142,7 @@ describe('PostgresEventStore unit behavior', () => {
     const outcome = await store.append({
       worldInstanceId: 'world-1',
       streamId: 'character-1',
+      streamKind: 'non-character',
       actorId: 'player-1',
       commandId: 'stale-command',
       payloadHash: 'payload',
@@ -1156,6 +1165,7 @@ describe('PostgresEventStore unit behavior', () => {
     await expect(new PostgresEventStore().append(basicAppendRequest({
       companions: [{
         streamId: 'shared-character-stream',
+        streamKind: 'non-character',
         expectedVersion: 0,
         events: [{ type: 'world.team.changed', version: 1, payload: {} }],
       }],
@@ -1176,7 +1186,7 @@ describe('PostgresEventStore unit behavior', () => {
     const companion = createAppendTransaction();
     mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(companion.tx));
     await expect(new PostgresEventStore().append(basicAppendRequest({
-      companions: [{ streamId: 'world-team', expectedVersion: 0, events: [] }],
+      companions: [{ streamId: 'world-team', streamKind: 'non-character', expectedVersion: 0, events: [] }],
     }))).rejects.toThrow('An atomic companion write must contain events.');
     expect(companion.tx.insert).not.toHaveBeenCalled();
   });
@@ -1247,6 +1257,7 @@ describe('PostgresEventStore unit behavior', () => {
     const request: AppendRequest = {
       worldInstanceId: 'world-1',
       streamId: 'shared-character-stream',
+      streamKind: 'non-character',
       actorId: 'player-1',
       commandId: 'atomic-command',
       payloadHash: 'atomic-payload',
@@ -1254,6 +1265,7 @@ describe('PostgresEventStore unit behavior', () => {
       guards: [{ streamId: 'guard-stream', expectedVersion: 3 }],
       companions: [{
         streamId: 'companion-stream',
+        streamKind: 'non-character',
         expectedVersion: 2,
         events: [{ type: 'world.team.changed', version: 1, payload: { teamId: 'team-1' } }],
       }],
@@ -1633,6 +1645,18 @@ describe('PostgresEventStore single-call append', () => {
     expect(mockDb.execute).not.toHaveBeenCalled();
   });
 
+  it('rejects missing stream-kind metadata before either append path runs', async () => {
+    const store = new PostgresEventStore({ singleCallAppend: true });
+    await expect(store.append({ ...sharedRequest, streamKind: undefined as never }))
+      .rejects.toThrow('Append request requires streamKind');
+    await expect(store.append({
+      ...sharedRequest,
+      companions: [{ ...sharedRequest.companions![0]!, streamKind: undefined as never }],
+    })).rejects.toThrow('Companion stream write 0 requires a valid streamKind.');
+    expect(mockDb.execute).not.toHaveBeenCalled();
+    expect(mockDb.transaction).not.toHaveBeenCalled();
+  });
+
   it.each([
     {
       name: 'the disabled flag',
@@ -1690,6 +1714,30 @@ describe('PostgresEventStore single-call append', () => {
     },
   ])('selects a stable route reason for $name', ({ request, options, route, reason }) => {
     expect(decideAppendRoute(request, options)).toEqual({ route, reason });
+  });
+
+  it('keeps every registered materializer on the transaction path', () => {
+    const materializers: Array<{ type: string; streamKind: 'character' | 'non-character' }> = [
+      { type: 'character.created', streamKind: 'character' },
+      { type: 'character.renamed', streamKind: 'character' },
+      { type: 'character.archived', streamKind: 'character' },
+      { type: 'character.restored', streamKind: 'character' },
+      { type: 'world.object_lifecycle_scheduled', streamKind: 'non-character' },
+      { type: 'world.object_lifecycle_rescheduled', streamKind: 'non-character' },
+      { type: 'world.object_lifecycle_cancelled', streamKind: 'non-character' },
+      { type: 'world.object_expiring', streamKind: 'non-character' },
+      { type: 'world.object_expired', streamKind: 'non-character' },
+    ];
+    for (const { type, streamKind } of materializers) {
+      expect(decideAppendRoute({
+        ...sharedRequest,
+        streamKind,
+        events: [{ type, version: 1, payload: {} }],
+      }, { singleCallEnabled: true, characterStreamsReady: true })).toEqual({
+        route: 'transaction',
+        reason: 'transaction-materializer-required',
+      });
+    }
   });
 
   it('commits in one call with the transaction path rows, lock set and effect keys', async () => {
@@ -1752,7 +1800,7 @@ describe('PostgresEventStore single-call append', () => {
   });
 
   it('sends the character room state computed from the cached history', async () => {
-    const characterId = '123e4567-e89b-42d3-a456-426614174000';
+    const characterId = 'character-id-without-uuid-shape';
     const store = new PostgresEventStore({ singleCallAppend: true });
     const created = toStoredGameEvent({
       type: 'character.created', contractVersion: 1,
@@ -1779,6 +1827,18 @@ describe('PostgresEventStore single-call append', () => {
     }]);
     expect((store as unknown as { streamCache: Map<string, { revision: number }> })
       .streamCache.get(`world-1\u0000${characterId}`)?.revision).toBe(2);
+  });
+
+  it('does not infer character streams from UUID-shaped non-character IDs', async () => {
+    const store = new PostgresEventStore({ singleCallAppend: true });
+    respondWith({ outcome: 'committed', current_revision: 4 });
+
+    await store.append({
+      ...sharedRequest,
+      streamId: '123e4567-e89b-42d3-a456-426614174000',
+    });
+
+    expect(executed().request.roomStates).toEqual([]);
   });
 
   it('falls back for side-table events, uncached character streams and malformed batches', async () => {

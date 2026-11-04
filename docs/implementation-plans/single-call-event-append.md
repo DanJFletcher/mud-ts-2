@@ -1,6 +1,6 @@
 # MUDD feature implementation plan — Single-call event append
 
-**Status:** Implemented behind `MUDD_SINGLE_CALL_APPEND` ([ADR 0039](../adr/0039-single-call-event-append.md)). Optional step 5 (a lazy receipt lookup in the engine) is not done. Source: [round-trip latency audit](../performance/round-trip-latency-audit.md), recommendation 6.
+**Status:** Implemented behind `MUDD_SINGLE_CALL_APPEND` ([ADR 0039](../adr/0039-single-call-event-append.md)); routing now uses explicit stream kinds and PostgreSQL materializers. Optional step 5 (a lazy receipt lookup in the engine) is not done. Source: [round-trip latency audit](../performance/round-trip-latency-audit.md), recommendation 6.
 
 **Goal / user-observable behavior:** Every eligible command commits in one database round trip instead of 9–10. At the measured production latency of about 27 ms per round trip, this removes roughly 220–240 ms from each move and from every other command. Gameplay, receipts and events are unchanged.
 
@@ -19,30 +19,28 @@
 - Per-stage append timings (`event_store.append.*`) already exist and give a direct before-and-after measure.
 - `postgres-event-store.integration.test.ts` covers idempotency, concurrent duplicates, companions, guards and effects against real PostgreSQL. CI provisions PostgreSQL 16.
 
-**Owning plugin/capability:** The PostgreSQL adapter behind `EventStorePort.append`. No plugin changes are needed. The optional receipt change in step 5 touches `engine-core`.
+**Owning plugin/capability:** The PostgreSQL adapter behind `EventStorePort.append`, plus the engine command-plan contract and bundled plugins that classify primary and companion writes. The optional receipt change in step 5 touches `engine-core`.
 
 **Assumptions and deferred scope:**
 - **Isolation level.** The function runs under `READ COMMITTED`, the server default. In a `VOLATILE` PL/pgSQL function, each statement takes a fresh snapshot, which preserves lock-then-read ordering. This must be proven with concurrent PostgreSQL tests before the fast path is enabled.
-- **Fast-path eligibility.** An append qualifies only if both of these hold:
-  - its room-state rows can be computed in the application from a cache that matches the expected version;
-  - it contains no side-table events (`character.created`, `character.renamed`, `character.archived`, `character.restored` or `world.object_lifecycle_*`).
+- **Fast-path eligibility.** An append qualifies only if its batch shape is supported, every character stream has a matching cached revision for room-state computation, and no event requires a PostgreSQL transaction materializer. Character identity comes from explicit `streamKind`, not the ID format.
 
   Every other append keeps the current transaction. Moving those side writes into the function is deferred.
 - **Unchanged.** `fsync`, `synchronous_commit` and the `game_events` NOTIFY trigger stay as they are. Commit acknowledgment time remains; development has observed write commits of up to 265 ms.
 
 ## Contract changes
 
-- Commands, queries and events: none.
-- `EventStorePort`: none.
-- New SQL function `mudd_append_command_v1`, added by an additive migration.
+- Commands, queries and events: unchanged.
+- `CommandPlan`, `StreamWrite`, and `AppendRequest`: require `streamKind`; the exact engine host API version is 2.0.
+- New SQL function `mudd_append_command_v1`, added by an additive migration in the original single-call work; this routing refactor does not change the function.
   - **Inputs** (as `jsonb` parameters): command identity, stream IDs with expected versions, event rows, the receipt, effects and precomputed room-state rows.
   - **Output** (one row): the outcome (`committed`, `duplicate` or `conflict`) and the stream ID, plus the prior receipt and events for duplicates and the observed revisions for conflicts.
 
 ## Boundary map
 
-- Core/ports touched: none, except `EngineHost.dispatch` and `dispatchSystem` if step 5 is taken.
-- Plugin(s) touched: none.
-- Persistence/migration touched: a new manual SQL migration that creates the function. It changes no Drizzle-managed table, but the migration journal must stay consistent ([drizzle-snapshot-discipline.md](../../.agents/memory/drizzle-snapshot-discipline.md)).
+- Core/ports touched: engine command-plan types and dispatch validation; optional receipt step 5 remains deferred.
+- Plugin(s) touched: bundled plugins now classify every primary and companion write; external plugins must migrate to API 2.0.
+- Persistence/migration touched: the existing SQL function is unchanged; no database migration is needed for explicit routing.
 - Client SDK / PWA / TTY impact: none.
 - Operational / networking impact: one statement per eligible append. An environment flag selects the path.
 

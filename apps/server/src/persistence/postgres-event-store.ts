@@ -103,6 +103,21 @@ type AppendMaterializerContext = {
 };
 type AppendMaterializer = (context: AppendMaterializerContext) => Promise<void>;
 
+function isStreamKind(value: unknown): value is StreamKind {
+  return value === 'character' || value === 'non-character';
+}
+
+function assertAppendStreamKinds(request: AppendRequest): void {
+  if (!isStreamKind(request.streamKind)) {
+    throw new TypeError('Append request requires streamKind "character" or "non-character".');
+  }
+  for (const [index, write] of (request.companions ?? []).entries()) {
+    if (!isStreamKind(write.streamKind)) {
+      throw new TypeError(`Companion stream write ${index} requires a valid streamKind.`);
+    }
+  }
+}
+
 /** Side-table writes are registered here and always run in the append transaction. */
 const POSTGRES_APPEND_MATERIALIZERS: ReadonlyMap<string, AppendMaterializer> = new Map([
   ['character.created', async ({ tx, worldInstanceId, payload }) => {
@@ -316,11 +331,14 @@ export class PostgresEventStore implements EventStorePort {
     streamId: string,
     streamKind: StreamKind,
     knownAppend?: { expectedVersion: number; events: readonly StoredGameEvent[] },
+    knownCharacterStream = false,
   ) {
     if (streamKind !== 'character') return;
-    const [character] = await tx.select({ id: characters.id }).from(characters)
-      .where(and(eq(characters.id, streamId), eq(characters.worldInstanceId, worldInstanceId))).limit(1);
-    if (!character) return;
+    if (!knownCharacterStream) {
+      const [character] = await tx.select({ id: characters.id }).from(characters)
+        .where(and(eq(characters.id, streamId), eq(characters.worldInstanceId, worldInstanceId))).limit(1);
+      if (!character) return;
+    }
     const cached = this.streamCache.get(this.streamKey(worldInstanceId, streamId));
     const cacheMatchesAppend = knownAppend && cached?.revision === knownAppend.expectedVersion;
     const tail = cacheMatchesAppend
@@ -681,6 +699,7 @@ export class PostgresEventStore implements EventStorePort {
   }
 
   async append(request: AppendRequest): Promise<AppendOutcome> {
+    assertAppendStreamKinds(request);
     const decision = decideAppendRoute(request, {
       singleCallEnabled: this.singleCallAppend,
       characterStreamsReady: this.characterStreamsReady(request),
@@ -1025,7 +1044,7 @@ export class PostgresEventStore implements EventStorePort {
             await this.refreshRoomState(tx, request.worldInstanceId, write.streamId, write.streamKind, {
               expectedVersion: currentRevision,
               events: appended,
-            });
+            }, this.scopedCommandReadCache(request.worldInstanceId, write.streamId) !== undefined);
           } else {
             await this.refreshRoomState(tx, request.worldInstanceId, write.streamId, write.streamKind);
           }

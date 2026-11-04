@@ -24,6 +24,7 @@
 - [Postgres command idempotency](postgres-command-idempotency.md) — Keep receipt lookup after the advisory-lock statement; a combined query can retain a pre-lock snapshot.
 - [Ephemeral PostgreSQL tests](ephemeral-postgres-tests.md) — In the Nix dev container, point temporary PostgreSQL sockets at a writable temp directory.
 - [Performance benchmarking](performance-benchmarking.md) — Use matched development traces for iterative performance work; avoid repeated production publishes.
+- [Append-path test isolation](postgres-append-test-isolation.md) — Pin fast or transactional append behavior explicitly in PostgreSQL tests instead of inheriting the process flag.
 - [Leather crafting progression](leather-crafting.md) — Leather recipes use tanned deer hides; tanning and wearable outputs are deferred.
 - [Drizzle migration snapshots](drizzle-snapshot-discipline.md) — Keep schema snapshots aligned with manual SQL migrations or later generated migrations may recreate existing tables.
 - [Playwright E2E prerequisites](playwright-e2e-prerequisites.md) — Production browser tests need isolated PostgreSQL and Chromium libraries; distinguish setup failures from app failures.
