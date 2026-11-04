@@ -48,18 +48,27 @@ const rewardedEvent = (itemIds) => ({
   },
 });
 
-test('quest scope and reward rules match objective ownership', () => {
+test('accepts a character quest with its default objective and reward', () => {
   assert.equal(QuestDefinitionSchema.safeParse(quest()).success, true);
-  assert.equal(QuestDefinitionSchema.safeParse(quest({
-    scope: 'party',
-  })).success, false);
+});
+
+test('rejects a party quest with a character-owned reward', () => {
+  assert.equal(QuestDefinitionSchema.safeParse(quest({ scope: 'party' })).success, false);
+});
+
+test('rejects duplicate item IDs in a quest reward', () => {
   assert.equal(QuestDefinitionSchema.safeParse(quest({
     reward: { currencyId: 'gold', amount: 5, itemIds: ['same', 'same'] },
   })).success, false);
+});
 
+test('rejects duplicate objective IDs', () => {
   assert.equal(QuestDefinitionSchema.safeParse(quest({
     objectives: [readObjective(), readObjective()],
   })).success, false);
+});
+
+test('rejects a character quest with a defeat-NPC objective', () => {
   assert.equal(QuestDefinitionSchema.safeParse(quest({
     objectives: [{
       id: 'defeat-bandit',
@@ -69,6 +78,9 @@ test('quest scope and reward rules match objective ownership', () => {
       requiredCount: 2,
     }],
   })).success, false);
+});
+
+test('accepts a party defeat quest without a character-owned reward', () => {
   assert.equal(QuestDefinitionSchema.safeParse(quest({
     scope: 'party',
     reward: undefined,
@@ -80,6 +92,9 @@ test('quest scope and reward rules match objective ownership', () => {
       requiredCount: 2,
     }],
   })).success, true);
+});
+
+test('rejects item-possession objectives for party quests', () => {
   assert.equal(QuestDefinitionSchema.safeParse(quest({
     scope: 'party',
     reward: undefined,
@@ -90,6 +105,9 @@ test('quest scope and reward rules match objective ownership', () => {
       itemId: 'map',
     }],
   })).success, false);
+});
+
+test('accepts an item-possession objective for a character quest', () => {
   assert.equal(QuestDefinitionSchema.safeParse(quest({
     reward: undefined,
     objectives: [{
@@ -101,9 +119,15 @@ test('quest scope and reward rules match objective ownership', () => {
   })).success, true);
 });
 
-test('quest reward events require unique returned item IDs', () => {
+test('accepts quest reward events with unique returned item IDs', () => {
   assert.equal(CharacterQuestRewardedEventSchema.safeParse(rewardedEvent(['map', 'letter'])).success, true);
+});
+
+test('rejects repeated item IDs in a quest reward event', () => {
   assert.equal(CharacterQuestRewardedEventSchema.safeParse(rewardedEvent(['map', 'map'])).success, false);
+});
+
+test('allows a quest reward event with no returned items', () => {
   assert.equal(CharacterQuestRewardedEventSchema.safeParse(rewardedEvent(undefined)).success, true);
 });
 
@@ -129,87 +153,164 @@ const issues = (value) => {
   return result.success ? [] : result.error.issues.map((issue) => issue.message);
 };
 
-test('branching quests validate a reachable, acyclic graph that always ends in an outcome', () => {
+test('accepts a branching quest whose choices reach terminal outcomes', () => {
   assert.deepEqual(issues(branchingQuest({ branches: twoWay() })), []);
-  // Linear quests are unaffected by the new optional fields.
+});
+
+test('leaves linear quests unaffected by optional branching fields', () => {
   assert.equal(QuestDefinitionSchema.parse(quest()).branching, undefined);
-
-  assert.match(issues(branchingQuest({ startBranchId: 'nowhere', branches: twoWay() })).join('\n'), /start branch must exist/);
-  assert.match(issues(branchingQuest({ branches: [
-    branch('start', { objectiveIds: ['read-marker'], choices: [choice('keep', 'missing')] }),
-    branch('keep-path', { outcomeId: 'kept' }),
-    branch('move-path', { outcomeId: 'moved' }),
-  ] })).join('\n'), /leads to missing branch missing[\s\S]*unreachable/);
-  assert.match(issues(branchingQuest({ branches: [
-    branch('start', { objectiveIds: ['read-marker'], choices: [choice('keep', 'keep-path'), choice('move', 'move-path')] }),
-    branch('keep-path', { choices: [choice('back', 'start')] }),
-    branch('move-path', { outcomeId: 'moved' }),
-  ] })).join('\n'), /cycle/);
-  assert.match(issues(branchingQuest({ branches: [
-    branch('start', { objectiveIds: ['read-marker'], choices: [choice('keep', 'keep-path'), choice('move', 'move-path')] }),
-    branch('keep-path'),
-    branch('move-path', { outcomeId: 'moved' }),
-  ] })).join('\n'), /keep-path is a dead end[\s\S]*Outcome kept is not reachable/);
-  assert.match(issues(branchingQuest({ branches: [
-    branch('start', { objectiveIds: ['read-marker'], choices: [choice('keep', 'keep-path'), choice('move', 'move-path')] }),
-    branch('keep-path', { outcomeId: 'kept', choices: [choice('again', 'move-path')] }),
-    branch('move-path', { outcomeId: 'moved' }),
-  ] })).join('\n'), /Terminal branch keep-path cannot offer choices/);
-  assert.match(issues(branchingQuest({ branches: [
-    branch('start', { choices: [choice('keep', 'keep-path'), choice('keep', 'move-path')] }),
-    branch('keep-path', { outcomeId: 'kept' }),
-    branch('move-path', { outcomeId: 'moved', objectiveIds: ['read-marker', 'missing-objective'] }),
-  ] })).join('\n'), /unique across the quest[\s\S]*missing objective missing-objective/);
-  assert.match(issues(branchingQuest({ branches: [
-    branch('start', { choices: [choice('keep', 'keep-path'), choice('move', 'move-path')] }),
-    branch('keep-path', { outcomeId: 'kept' }),
-    branch('move-path', { outcomeId: 'moved' }),
-  ] })).join('\n'), /read-marker is not assigned to a branch/);
-  assert.match(issues(branchingQuest({ branches: twoWay() }, { scope: 'party' })).join('\n'), /require character quest scope/);
 });
 
-test('choice prerequisites accept only server-verifiable conditions', () => {
-  const withRequirement = (requirement) => branchingQuest({ branches: [
-    branch('start', { objectiveIds: ['read-marker'], choices: [choice('keep', 'keep-path', { requires: [requirement] }), choice('move', 'move-path')] }),
-    branch('keep-path', { outcomeId: 'kept' }),
-    branch('move-path', { outcomeId: 'moved' }),
-  ] });
-  for (const requirement of [
-    { type: 'visited-location', locationId: 'tower' },
-    { type: 'possess-item', itemId: 'map' },
-    { type: 'quest-completed', questId: 'other' },
-    { type: 'world-outcome', key: 'policy', value: 'open' },
-  ]) {
-    assert.deepEqual(issues(withRequirement(requirement)), [], requirement.type);
-  }
-  assert.notDeepEqual(issues(withRequirement({ type: 'client-flag', flagId: 'trusted' })), []);
-  assert.notDeepEqual(issues(withRequirement({ type: 'progress-flag', progressFlagId: 'asked' })), []);
-});
+const invalidBranchingGraphs = [
+  {
+    name: 'a missing start branch',
+    build: () => branchingQuest({ startBranchId: 'nowhere', branches: twoWay() }),
+    message: /start branch must exist/,
+  },
+  {
+    name: 'a missing target and unreachable branches',
+    build: () => branchingQuest({ branches: [
+      branch('start', { objectiveIds: ['read-marker'], choices: [choice('keep', 'missing')] }),
+      branch('keep-path', { outcomeId: 'kept' }),
+      branch('move-path', { outcomeId: 'moved' }),
+    ] }),
+    message: /leads to missing branch missing[\s\S]*unreachable/,
+  },
+  {
+    name: 'a cycle',
+    build: () => branchingQuest({ branches: [
+      branch('start', { objectiveIds: ['read-marker'], choices: [choice('keep', 'keep-path'), choice('move', 'move-path')] }),
+      branch('keep-path', { choices: [choice('back', 'start')] }),
+      branch('move-path', { outcomeId: 'moved' }),
+    ] }),
+    message: /cycle/,
+  },
+  {
+    name: 'a dead end and unreachable outcome',
+    build: () => branchingQuest({ branches: [
+      branch('start', { objectiveIds: ['read-marker'], choices: [choice('keep', 'keep-path'), choice('move', 'move-path')] }),
+      branch('keep-path'),
+      branch('move-path', { outcomeId: 'moved' }),
+    ] }),
+    message: /keep-path is a dead end[\s\S]*Outcome kept is not reachable/,
+  },
+  {
+    name: 'choices on a terminal branch',
+    build: () => branchingQuest({ branches: [
+      branch('start', { objectiveIds: ['read-marker'], choices: [choice('keep', 'keep-path'), choice('move', 'move-path')] }),
+      branch('keep-path', { outcomeId: 'kept', choices: [choice('again', 'move-path')] }),
+      branch('move-path', { outcomeId: 'moved' }),
+    ] }),
+    message: /Terminal branch keep-path cannot offer choices/,
+  },
+  {
+    name: 'duplicate choice IDs and a missing objective reference',
+    build: () => branchingQuest({ branches: [
+      branch('start', { choices: [choice('keep', 'keep-path'), choice('keep', 'move-path')] }),
+      branch('keep-path', { outcomeId: 'kept' }),
+      branch('move-path', { outcomeId: 'moved', objectiveIds: ['read-marker', 'missing-objective'] }),
+    ] }),
+    message: /unique across the quest[\s\S]*missing objective missing-objective/,
+  },
+  {
+    name: 'an objective not assigned to a branch',
+    build: () => branchingQuest({ branches: [
+      branch('start', { choices: [choice('keep', 'keep-path'), choice('move', 'move-path')] }),
+      branch('keep-path', { outcomeId: 'kept' }),
+      branch('move-path', { outcomeId: 'moved' }),
+    ] }),
+    message: /read-marker is not assigned to a branch/,
+  },
+  {
+    name: 'a party-scoped branching quest',
+    build: () => branchingQuest({ branches: twoWay() }, { scope: 'party' }),
+    message: /require character quest scope/,
+  },
+];
 
-test('previous version manifests keep recorded IDs and transitions meaningful', () => {
-  const manifest = (overrides = {}) => ({
-    version: '0',
-    objectiveIds: ['read-marker'],
-    branchIds: ['start', 'keep-path'],
-    choices: [{ id: 'keep', fromBranchId: 'start', toBranchId: 'keep-path' }],
-    outcomeIds: ['kept'],
-    ...overrides,
+for (const scenario of invalidBranchingGraphs) {
+  test(`rejects a branching quest with ${scenario.name}`, () => {
+    assert.match(issues(scenario.build()).join('\n'), scenario.message);
   });
-  assert.deepEqual(issues(branchingQuest({ branches: twoWay() }, { previousVersions: [manifest()] })), []);
+}
+
+const questWithRequirement = (requirement) => branchingQuest({ branches: [
+  branch('start', { objectiveIds: ['read-marker'], choices: [choice('keep', 'keep-path', { requires: [requirement] }), choice('move', 'move-path')] }),
+  branch('keep-path', { outcomeId: 'kept' }),
+  branch('move-path', { outcomeId: 'moved' }),
+] });
+
+for (const requirement of [
+  { type: 'visited-location', locationId: 'tower' },
+  { type: 'possess-item', itemId: 'map' },
+  { type: 'quest-completed', questId: 'other' },
+  { type: 'world-outcome', key: 'policy', value: 'open' },
+]) {
+  test(`allows ${requirement.type} choice prerequisites`, () => {
+    assert.deepEqual(issues(questWithRequirement(requirement)), []);
+  });
+}
+
+for (const requirement of [
+  { type: 'client-flag', flagId: 'trusted' },
+  { type: 'progress-flag', progressFlagId: 'asked' },
+]) {
+  test(`rejects ${requirement.type} choice prerequisites`, () => {
+    assert.notDeepEqual(issues(questWithRequirement(requirement)), []);
+  });
+}
+
+const previousManifest = (overrides = {}) => ({
+  version: '0',
+  objectiveIds: ['read-marker'],
+  branchIds: ['start', 'keep-path'],
+  choices: [{ id: 'keep', fromBranchId: 'start', toBranchId: 'keep-path' }],
+  outcomeIds: ['kept'],
+  ...overrides,
+});
+
+test('accepts a previous manifest that preserves recorded IDs and transitions', () => {
+  assert.deepEqual(issues(branchingQuest({ branches: twoWay() }, {
+    previousVersions: [previousManifest()],
+  })), []);
+});
+
+test('rejects a previous choice that now leads to a different branch', () => {
   assert.match(issues(branchingQuest({ branches: twoWay() }, {
-    previousVersions: [manifest({ choices: [{ id: 'keep', fromBranchId: 'start', toBranchId: 'move-path' }] })],
+    previousVersions: [previousManifest({
+      choices: [{ id: 'keep', fromBranchId: 'start', toBranchId: 'move-path' }],
+    })],
   })).join('\n'), /choice keep was removed or now leads somewhere else/);
+});
+
+test('rejects removing a branch referenced by a previous manifest', () => {
   assert.match(issues(branchingQuest({ branches: twoWay() }, {
-    previousVersions: [manifest({ branchIds: ['start', 'retired'] })],
+    previousVersions: [previousManifest({ branchIds: ['start', 'retired'] })],
   })).join('\n'), /branch retired was removed/);
+});
+
+test('requires a previous manifest version to be distinct', () => {
   assert.match(issues(branchingQuest({ branches: twoWay() }, {
-    previousVersions: [manifest({ version: '1' })],
+    previousVersions: [previousManifest({ version: '1' })],
   })).join('\n'), /must be distinct/);
-  // A linear version cannot be reinterpreted as a branching one.
+});
+
+test('rejects changing a previously linear quest into a branching quest', () => {
   assert.match(issues(branchingQuest({ branches: twoWay() }, {
-    previousVersions: [manifest({ branchIds: [], choices: [], outcomeIds: [] })],
+    previousVersions: [previousManifest({ branchIds: [], choices: [], outcomeIds: [] })],
   })).join('\n'), /cannot change whether the quest branches/);
-  assert.deepEqual(issues(quest({ version: '2', previousVersions: [{ version: '1', objectiveIds: ['read-marker'] }] })), []);
-  assert.match(issues(quest({ version: '2', previousVersions: [{ version: '1', objectiveIds: ['retired-objective'] }] })).join('\n'),
-    /objective retired-objective was removed/);
+});
+
+test('accepts a previous linear-quest manifest with its objective retained', () => {
+  assert.deepEqual(issues(quest({
+    version: '2',
+    previousVersions: [{ version: '1', objectiveIds: ['read-marker'] }],
+  })), []);
+});
+
+test('rejects removing an objective recorded by a previous linear-quest manifest', () => {
+  assert.match(issues(quest({
+    version: '2',
+    previousVersions: [{ version: '1', objectiveIds: ['retired-objective'] }],
+  })).join('\n'), /objective retired-objective was removed/);
 });

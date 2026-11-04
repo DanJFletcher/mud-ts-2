@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { AppendRequest } from '@mudd/engine-core';
+import { commandReceipts, durableEffects, gameEvents, worldSessions } from '../db/schema.js';
 
 const { mockDb } = vi.hoisted(() => ({
   mockDb: {
@@ -55,34 +56,39 @@ function mockSelectLimit(rows: unknown[]) {
 function createAppendTransaction(options: {
   heads?: Array<{ streamId: string; revision: number }>;
   persistedCounts?: Array<{ eventCount: number; receiptCount: number }>;
-  failOnInsertIndex?: number;
-  activeSession?: boolean;
+  failAtInsertStage?: 'events' | 'receipt' | 'effects';
+  activeWorldSession?: boolean;
 } = {}) {
   const persistedValues: unknown[] = [];
   const ctes: unknown[] = [];
   const upserts: Array<{ values: unknown; conflict: unknown }> = [];
   const updates: Array<{ table: unknown; values: unknown; condition: unknown }> = [];
-  let insertIndex = 0;
-  let selectIndex = 0;
   const tx = {
     execute: vi.fn(async () => undefined),
-    select: vi.fn(() => {
-      const index = selectIndex++;
-      return {
-        from: () => ({
+    select: vi.fn(() => ({
+        from: (table: unknown) => ({
           where: () => ({
-            limit: async () => options.activeSession && index === 2 ? [{ id: 'session-1' }] : [],
+            limit: async () => table === worldSessions && options.activeWorldSession
+              ? [{ id: 'session-1' }]
+              : [],
             groupBy: async () => options.heads ?? [],
           }),
         }),
-      };
-    }),
-    insert: vi.fn(() => {
-      const index = insertIndex++;
+    })),
+    insert: vi.fn((table: unknown) => {
+      const stage = table === gameEvents
+        ? 'events'
+        : table === commandReceipts
+          ? 'receipt'
+          : table === durableEffects
+            ? 'effects'
+            : undefined;
       return {
         values: (values: unknown) => {
           persistedValues.push(values);
-          if (index === options.failOnInsertIndex) throw new Error('durable effect insert failed');
+          if (options.failAtInsertStage && stage === options.failAtInsertStage) {
+            throw new Error(`${stage} insert failed`);
+          }
           return {
             returning: () => ({ values }),
             onConflictDoUpdate: (conflict: unknown) => {
@@ -665,7 +671,7 @@ describe('PostgresEventStore unit behavior', () => {
   });
 
   it('rejects character archival while an active world session exists', async () => {
-    const { tx } = createAppendTransaction({ activeSession: true });
+    const { tx } = createAppendTransaction({ activeWorldSession: true });
     mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(tx));
 
     await expect(new PostgresEventStore().append(basicAppendRequest({
@@ -1356,7 +1362,7 @@ describe('PostgresEventStore unit behavior', () => {
   });
 
   it('rejects after an effect write fails so the enclosing append transaction can roll back', async () => {
-    const { tx, persistedValues } = createAppendTransaction({ failOnInsertIndex: 2 });
+    const { tx, persistedValues } = createAppendTransaction({ failAtInsertStage: 'effects' });
     let transactionResolved = false;
     mockDb.transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => {
       const result = await run(tx);
@@ -1370,7 +1376,7 @@ describe('PostgresEventStore unit behavior', () => {
         version: 1,
         payload: { characterId: 'shared-character-stream', toLocationId: 'room-b' },
       }],
-    }))).rejects.toThrow('durable effect insert failed');
+    }))).rejects.toThrow('effects insert failed');
 
     expect(transactionResolved).toBe(false);
     expect(persistedValues).toHaveLength(3);

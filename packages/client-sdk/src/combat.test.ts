@@ -139,6 +139,71 @@ async function moveAlongDemoRoad(
   return result!;
 }
 
+async function readCharacterState(store: InMemoryEventStore, characterId: string) {
+  const state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId));
+  if (!state) throw new Error(`Character stream ${characterId} has no replayable state.`);
+  return state;
+}
+
+async function moveAndReadCharacterState(
+  client: MuddHttpClient,
+  store: InMemoryEventStore,
+  characterId: string,
+  route: DemoRoadRoute,
+  state: Awaited<ReturnType<typeof readCharacterState>>,
+  commandId: string,
+) {
+  const result = await moveAlongDemoRoad(client, characterId, route, state.revision, commandId);
+  if (!result?.receipt.ok) throw new Error(`Could not move the test character using ${route}.`);
+  return readCharacterState(store, characterId);
+}
+
+async function prepareHealingDraught(
+  client: MuddHttpClient,
+  store: InMemoryEventStore,
+  characterName: string,
+  commandPrefix: string,
+) {
+  const created = await client.createCharacter(characterName, `${commandPrefix}-create`);
+  if (!created.streamId) throw new Error('Healing-draught setup did not create a character stream.');
+  const characterId = created.streamId;
+  let state = await readCharacterState(store, characterId);
+  state = await moveAndReadCharacterState(
+    client, store, characterId, 'clearing-to-bridge', state, `${commandPrefix}-to-bridge`,
+  );
+  state = await moveAndReadCharacterState(
+    client, store, characterId, 'bridge-to-reedbank', state, `${commandPrefix}-to-stalls`,
+  );
+
+  const purchase = await client.purchaseMerchantListing(
+    characterId,
+    'sella-reedbank-merchant',
+    'reedbank-healing-draught',
+    state.revision,
+    `${commandPrefix}-buy`,
+  );
+  if (!purchase.receipt.ok) throw new Error('Healing-draught setup could not purchase the item.');
+  state = await readCharacterState(store, characterId);
+  const potion = state.inventory.find((item) => item.consumable?.effect === 'heal');
+  if (!potion) throw new Error('Purchased healing draught is missing from the character inventory.');
+  return { characterId, state, potion };
+}
+
+async function returnToClearingWithHealingDraught(
+  client: MuddHttpClient,
+  store: InMemoryEventStore,
+  characterId: string,
+  state: Awaited<ReturnType<typeof readCharacterState>>,
+  commandPrefix: string,
+) {
+  state = await moveAndReadCharacterState(
+    client, store, characterId, 'reedbank-to-bridge', state, `${commandPrefix}-back-bridge`,
+  );
+  return moveAndReadCharacterState(
+    client, store, characterId, 'bridge-to-clearing', state, `${commandPrefix}-back-clearing`,
+  );
+}
+
 function makeClient(
   world = demoWorld,
   now: () => Date = () => new Date(),
@@ -525,29 +590,14 @@ describe('turn-based PvE combat', () => {
       })),
     };
     const { client, store } = makeClient(strongSentinelWorld);
-    const created = await client.createCharacter('Willow', 'combat-potion-create');
-    const characterId = created.streamId!;
-    let state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-
-    await moveAlongDemoRoad(client, characterId, 'clearing-to-bridge', state.revision, 'combat-potion-to-bridge');
-    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-    await moveAlongDemoRoad(client, characterId, 'bridge-to-reedbank', state.revision, 'combat-potion-to-stalls');
-    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-    await client.purchaseMerchantListing(
-      characterId,
-      'sella-reedbank-merchant',
-      'reedbank-healing-draught',
-      state.revision,
-      'combat-potion-buy',
+    const { characterId, state: purchasedState, potion } = await prepareHealingDraught(
+      client, store, 'Willow', 'combat-potion',
     );
-    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-    const potion = state.inventory.find((item) => item.consumable?.effect === 'heal')!;
     expect(potion.consumable?.amount).toBe(3);
 
-    await moveAlongDemoRoad(client, characterId, 'reedbank-to-bridge', state.revision, 'combat-potion-back-bridge');
-    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-    await moveAlongDemoRoad(client, characterId, 'bridge-to-clearing', state.revision, 'combat-potion-back-clearing');
-    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    let state = await returnToClearingWithHealingDraught(
+      client, store, characterId, purchasedState, 'combat-potion',
+    );
     await client.performCombatAction(
       characterId,
       'attack',
@@ -595,27 +645,12 @@ describe('turn-based PvE combat', () => {
 
   it('uses a healing draught between encounters and preserves health in the character stream', async () => {
     const { client, store } = makeClient();
-    const created = await client.createCharacter('Fern', 'combat-potion-outside-create');
-    const characterId = created.streamId!;
-    let state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-    await moveAlongDemoRoad(client, characterId, 'clearing-to-bridge', state.revision, 'combat-potion-outside-to-bridge');
-    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-    await moveAlongDemoRoad(client, characterId, 'bridge-to-reedbank', state.revision, 'combat-potion-outside-to-stalls');
-    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-    await client.purchaseMerchantListing(
-      characterId,
-      'sella-reedbank-merchant',
-      'reedbank-healing-draught',
-      state.revision,
-      'combat-potion-outside-buy',
+    const { characterId, state: purchasedState, potion } = await prepareHealingDraught(
+      client, store, 'Fern', 'combat-potion-outside',
     );
-    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-    const potion = state.inventory.find((item) => item.consumable?.effect === 'heal')!;
-
-    await moveAlongDemoRoad(client, characterId, 'reedbank-to-bridge', state.revision, 'combat-potion-outside-back-bridge');
-    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-    await moveAlongDemoRoad(client, characterId, 'bridge-to-clearing', state.revision, 'combat-potion-outside-back-clearing');
-    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    let state = await returnToClearingWithHealingDraught(
+      client, store, characterId, purchasedState, 'combat-potion-outside',
+    );
     await client.performCombatAction(
       characterId,
       'attack',
@@ -656,22 +691,10 @@ describe('turn-based PvE combat', () => {
 
   it('rejects a healing item at full health without consuming it or advancing combat', async () => {
     const { client, store } = makeClient();
-    const created = await client.createCharacter('Elm', 'combat-potion-full-create');
-    const characterId = created.streamId!;
-    let state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-    await moveAlongDemoRoad(client, characterId, 'clearing-to-bridge', state.revision, 'combat-potion-full-to-bridge');
-    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-    await moveAlongDemoRoad(client, characterId, 'bridge-to-reedbank', state.revision, 'combat-potion-full-to-stalls');
-    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-    await client.purchaseMerchantListing(
-      characterId,
-      'sella-reedbank-merchant',
-      'reedbank-healing-draught',
-      state.revision,
-      'combat-potion-full-buy',
+    const { characterId, state: purchasedState, potion } = await prepareHealingDraught(
+      client, store, 'Elm', 'combat-potion-full',
     );
-    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-    const potion = state.inventory.find((item) => item.consumable?.effect === 'heal')!;
+    let state = purchasedState;
     const fullHealthStreamLength = (await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).length;
     await expect(client.performCombatAction(
       characterId,
@@ -683,10 +706,9 @@ describe('turn-based PvE combat', () => {
     expect(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId)).toHaveLength(fullHealthStreamLength);
     expect(replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))?.inventory)
       .toEqual(state.inventory);
-    await moveAlongDemoRoad(client, characterId, 'reedbank-to-bridge', state.revision, 'combat-potion-full-back-bridge');
-    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
-    await moveAlongDemoRoad(client, characterId, 'bridge-to-clearing', state.revision, 'combat-potion-full-back-clearing');
-    state = replayCharacter(await store.readStream(DEMO_WORLD_INSTANCE_ID, characterId))!;
+    state = await returnToClearingWithHealingDraught(
+      client, store, characterId, state, 'combat-potion-full',
+    );
     await client.performCombatAction(
       characterId,
       'attack',

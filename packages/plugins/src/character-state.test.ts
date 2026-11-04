@@ -1,6 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
-import { CharacterProjectionSchema, type CharacterProjection } from '@mudd/contracts';
-import type { StoredGameEvent } from '@mudd/engine-core';
+import { CharacterProjectionSchema, type CapabilityToken, type CharacterProjection } from '@mudd/contracts';
+import {
+  InMemoryEventStore,
+  type CommandPlan,
+  type EngineCommandContext,
+  type EventEffectContext,
+  type PluginContext,
+  type QueryContext,
+  type StoredGameEvent,
+} from '@mudd/engine-core';
 import { demoWorld } from '@mudd/world-demo';
 import {
   assertCharacterAlive,
@@ -14,7 +22,11 @@ import {
   vitalRecoveryPausedEvent,
   type CharacterStateCapability,
 } from './character.js';
-import { worldItemsStateCapability } from './world-items.js';
+import {
+  worldItemsStateCapability,
+  type WorldItemsState,
+  type WorldItemsStateCapability,
+} from './world-items.js';
 import { interactionStreamId } from './interactions.js';
 import {
   objectLifecycleScheduledEvent,
@@ -49,6 +61,11 @@ function character(overrides: Record<string, unknown> = {}) {
   });
 }
 
+function isCharacterStateCapability(value: unknown): value is CharacterStateCapability {
+  return typeof value === 'object' && value !== null
+    && 'load' in value && typeof value.load === 'function';
+}
+
 function event(type: string, payload: Record<string, unknown>): StoredGameEvent {
   return {
     eventId: type,
@@ -63,43 +80,59 @@ function event(type: string, payload: Record<string, unknown>): StoredGameEvent 
     actorId: 'system',
     occurredAt: now.toISOString(),
     tick: 1,
-  } as unknown as StoredGameEvent;
+  };
 }
+
+type CapturedCommandHandler = (
+  command: unknown,
+  context: EngineCommandContext,
+) => Promise<CommandPlan>;
+
+type CharacterTestContext = EngineCommandContext & {
+  readonly characterProjection?: CharacterProjection;
+};
 
 function captureCommands(
   player: ReturnType<typeof character>,
-  sharedState: any = { revision: 0, items: [], corpses: [], currencyDrops: [] },
+  sharedState: WorldItemsState = { revision: 0, items: [], corpses: [], currencyDrops: [] },
 ) {
-  const commands = new Map<string, (command: any, context: any) => Promise<unknown>>();
-  const systemCommands = new Map<string, (command: any, context: any) => Promise<unknown>>();
-  const queries = new Map<string, (query: any, context: any) => Promise<unknown>>();
-  const effects = new Map<string, (payload: any, context: any) => Promise<void>>();
+  const commands = new Map<string, CapturedCommandHandler>();
+  const systemCommands = new Map<string, CapturedCommandHandler>();
+  const queries = new Map<string, (query: unknown, context: QueryContext) => Promise<unknown>>();
+  const effects = new Map<string, (payload: unknown, context: EventEffectContext) => Promise<void>>();
+  const capabilities = new Map<string, unknown>([[
+    worldItemsStateCapability.id,
+    { load: vi.fn(async () => sharedState) } satisfies WorldItemsStateCapability,
+  ]]);
   let state: CharacterStateCapability | undefined;
-  characterPlugin.register({
-    registerCommand: (name: string, _schema: unknown, handler: unknown) => {
-      commands.set(name, handler as (command: any, context: any) => Promise<unknown>);
+  const pluginContext: PluginContext = {
+    registerCommand<T>(name, schema, handler) {
+      commands.set(name, (command, context) => handler(schema.parse(command), context));
     },
-    registerSystemCommand: (name: string, _schema: unknown, handler: unknown, version = 1) => {
+    registerSystemCommand<T>(name, schema, handler, version = 1) {
       systemCommands.set(version === 1 ? name : `${name}@${version}`,
-        handler as (command: any, context: any) => Promise<unknown>);
+        (command, context) => handler(schema.parse(command), context));
     },
-    registerQuery: (name: string, _schema: unknown, handler: unknown) => {
-      queries.set(name, handler as (query: any, context: any) => Promise<unknown>);
+    registerQuery<T, R>(name, schema, handler) {
+      queries.set(name, (query, context) => handler(schema.parse(query), context));
     },
-    registerEffect: (name: string, _version: number, _schema: unknown, handler: unknown) => {
-      effects.set(name, handler as (payload: any, context: any) => Promise<void>);
+    registerEffect<T>(name, _version, schema, handler) {
+      effects.set(name, (payload, context) => handler(schema.parse(payload), context));
     },
-    provideCapability: (_token: unknown, implementation: unknown) => {
-      state = implementation as CharacterStateCapability;
+    registerEventHandler() {},
+    provideCapability<T>(token: CapabilityToken<T>, implementation: T) {
+      capabilities.set(token.id, implementation);
+      if (isCharacterStateCapability(implementation)) state = implementation;
     },
-    requireCapability: (token: { id: string }) => {
-      if (token.id === worldItemsStateCapability.id) {
-        return { load: vi.fn(async () => sharedState) };
-      }
-      throw new Error(`Unexpected capability ${token.id}`);
+    requireCapability<T>(token: CapabilityToken<T>): T {
+      const implementation = capabilities.get(token.id);
+      if (implementation === undefined) throw new Error(`Unexpected capability ${token.id}`);
+      // The real host resolves generic capabilities by token ID in the same way.
+      return implementation as T;
     },
     optionalCapability: () => undefined,
-  } as never);
+  };
+  characterPlugin.register(pluginContext);
   if (!state) throw new Error('Character state capability was not provided.');
   return { commands, systemCommands, queries, effects, state, player };
 }
@@ -125,25 +158,35 @@ function storedCharacterEvent(
     actorId: 'player-one',
     occurredAt: now.toISOString(),
     tick: aggregateVersion,
-  } as unknown as StoredGameEvent;
+  };
 }
 
 function commandContext(player: ReturnType<typeof character>, options: {
   teamEvents?: readonly StoredGameEvent[];
   pvpEvents?: readonly StoredGameEvent[];
-} = {}) {
+} = {}): CharacterTestContext {
+  const store = new InMemoryEventStore();
+  vi.spyOn(store, 'readStream').mockImplementation(async (_world, streamId) =>
+    streamId === 'world-team-combat' ? options.teamEvents ?? []
+      : streamId === interactionStreamId(worldId) ? options.pvpEvents ?? [] : []);
   return {
     worldInstanceId: worldId,
     world: structuredClone(demoWorld),
-    session: { playerId: 'player-one' },
+    session: {
+      sessionId: 'session-one',
+      playerId: 'player-one',
+      actorId: 'player-one',
+      worldInstanceId: worldId,
+      grantedPermissions: [],
+      authenticated: true,
+    },
+    commandId: 'character-state-test-command',
+    expectedVersion: player.revision,
+    store,
+    rng: { roll: () => 1 },
     characterProjection: player,
     now: () => now,
     makeId: () => 'generated-id',
-    store: {
-      readStream: vi.fn(async (_world: string, streamId: string) =>
-        streamId === 'world-team-combat' ? options.teamEvents ?? []
-          : streamId === interactionStreamId(worldId) ? options.pvpEvents ?? [] : []),
-    },
   };
 }
 

@@ -2,28 +2,28 @@
 
 ## 1. Preserve baseline and regression intent
 
-- [ ] 1.1 Run the seven affected suites before editing (WorldClient, SDK combat, quest contracts, PostgreSQL event-store unit tests, jobs metrics integration, character-state, and engine); record exact commands, prerequisites, results, and any blockers without claiming an unavailable baseline.
-- [ ] 1.2 Record an assertion-to-destination checklist for the selected scenarios in each group; verify it accounts for unique health/consumption, validation, atomicity, lifecycle, and composition guarantees. Reconcile the web group with the existing ownership inventory and current feature boundaries.
+- [x] 1.1 Run the seven affected suites before editing (WorldClient, SDK combat, quest contracts, PostgreSQL event-store unit tests, jobs metrics integration, character-state, and engine); record exact commands, prerequisites, results, and any blockers without claiming an unavailable baseline.
+- [x] 1.2 Record an assertion-to-destination checklist for the selected scenarios in each group; verify it accounts for unique health/consumption, validation, atomicity, lifecycle, and composition guarantees. Reconcile the web group with the existing ownership inventory and current feature boundaries.
 
 ## 2. Adopt isolated web class scenarios
 
-- [ ] 2.1 Replace positional `classApiFixture` booleans with named typed scenario options and migrate the class-selection/ability group to fresh instances using existing web test support; verify fixture isolation and affected cases, using a focused red/green cycle for any new fixture behavior.
-- [ ] 2.2 Move only feature-owned class assertions to appropriate focused suites, retain cross-feature composition checks, and remove obsolete fixture state after its final consumer migrates; update the existing ownership inventory and verify all mapped assertions with focused suites and the full web suite.
+- [x] 2.1 Replace positional `classApiFixture` booleans with named typed scenario options and migrate the class-selection/ability group to fresh instances using existing web test support; verify fixture isolation and affected cases, using a focused red/green cycle for any new fixture behavior.
+- [x] 2.2 Move only feature-owned class assertions to appropriate focused suites, retain cross-feature composition checks, and remove obsolete fixture state after its final consumer migrates; update the existing ownership inventory and verify all mapped assertions with focused suites and the full web suite.
 
 ## 3. Clarify SDK combat preparation
 
-- [ ] 3.1 Extract repeated healing-draught preparation into focused SDK-local helpers using public client operations and correct revisions; verify existing potion cases pass before and after, with combat triggers and outcome assertions remaining visible.
-- [ ] 3.2 Preserve a representative travel/purchase/combat journey and each scenario's distinct failure, health, and consumption guarantees; verify the assertion checklist against the full SDK suite and document retained journey ownership alongside the affected tests where clarification is needed.
+- [x] 3.1 Extract repeated healing-draught preparation into focused SDK-local helpers using public client operations and correct revisions; verify existing potion cases pass before and after, with combat triggers and outcome assertions remaining visible.
+- [x] 3.2 Preserve a representative travel/purchase/combat journey and each scenario's distinct failure, health, and consumption guarantees; verify the assertion checklist against the full SDK suite and document retained journey ownership alongside the affected tests where clarification is needed.
 
 ## 4. Separate quest validation scenarios
 
-- [ ] 4.1 Split independent quest and quest-graph validation assertions into named cases or descriptive table rows with fresh valid defaults; verify each original invalid input and expected failure remains represented and the runner reports distinct rule names.
-- [ ] 4.2 Run the full contracts suite and compare the assertion checklist; verify sequential lifecycle coverage remains intact and remove only setup made obsolete by the split.
+- [x] 4.1 Split independent quest and quest-graph validation assertions into named cases or descriptive table rows with fresh valid defaults; verify each original invalid input and expected failure remains represented and the runner reports distinct rule names.
+- [x] 4.2 Run the full contracts suite and compare the assertion checklist; verify sequential lifecycle coverage remains intact and remove only setup made obsolete by the split.
 
 ## 5. Decouple PostgreSQL fake controls from call order
 
-- [ ] 5.1 Replace select/insert index routing in `createAppendTransaction` with operation- or table-aware responses and named failure stages; verify active-session and durable-write failure scenarios before and after, using red/green tests for any new reusable fake behavior.
-- [ ] 5.2 Preserve SQL, persisted-value, and transaction guarantees while removing obsolete counters; verify the event-store unit suite and relevant real PostgreSQL atomicity integration tests, recording database blockers separately from fake results.
+- [x] 5.1 Replace select/insert index routing in `createAppendTransaction` with operation- or table-aware responses and named failure stages; verify active-session and durable-write failure scenarios before and after, using red/green tests for any new reusable fake behavior.
+- [x] 5.2 Preserve SQL, persisted-value, and transaction guarantees while removing obsolete counters; verify the event-store unit suite and relevant real PostgreSQL atomicity integration tests, recording database blockers separately from fake results.
 
 ## 6. Type character plugin setup
 
