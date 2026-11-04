@@ -1,4 +1,4 @@
-import { isImmutableReplayHistory, immutableReplayParent } from './replay.js';
+import { immutableHistoryParent, isImmutableHistory } from './immutable-history.js';
 
 /**
  * Disposable projection checkpoints. Mutable histories always replay from zero.
@@ -11,12 +11,12 @@ export function createIncrementalProjection<E extends object, S>(
 ) {
   const completed = new WeakMap<readonly E[], S>();
   const load = (events: readonly E[]): S => {
-    const immutable = isImmutableReplayHistory(events);
+    const immutable = isImmutableHistory(events);
     const known = immutable ? completed.get(events) : undefined;
     if (known) return known;
     let state = initial(), start = 0;
     if (immutable) {
-      const parent = immutableReplayParent(events) as readonly E[] | undefined;
+      const parent = immutableHistoryParent(events);
       const previous = parent && completed.get(parent);
       if (previous) {
         state = structuredClone(previous); start = parent.length;

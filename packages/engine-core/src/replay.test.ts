@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { StoredGameEvent } from './types.js';
-import { replayCharacter } from './replay.js';
+import { replayCharacter, replayCharacterUncached } from './replay.js';
 import { resolveStaminaRecovery, resolveVitalRecovery } from '@mudd/contracts';
 
 function event(
@@ -432,10 +432,29 @@ describe('character event replay validation', () => {
   });
 
   it('rejects unknown event types instead of silently skipping them', () => {
-    expect(() => replayCharacter([
+    const contiguousUnknown = [
       created,
       event('character.renamed.v2', 2, { characterId: 'character-test', name: 'Rill' }),
-    ])).toThrow(/unsupported event type/i);
+    ];
+    expect(() => replayCharacter(contiguousUnknown)).toThrow(/unsupported event type/i);
+    expect(() => replayCharacterUncached(contiguousUnknown)).toThrow(/unsupported event type/i);
+  });
+
+  it('checks revision and pre-creation failures before dispatch parsing', () => {
+    const revisionGapBeforeUnknown = [
+      created,
+      event('character.renamed.v2', 3, { characterId: 'character-test', name: 'Rill' }),
+    ];
+    const malformedRespawnBeforeCreation = [
+      event('character.respawned', 1, {}),
+    ];
+
+    for (const replay of [replayCharacter, replayCharacterUncached]) {
+      expect(() => replay(revisionGapBeforeUnknown))
+        .toThrow('Non-contiguous aggregate revision at 3.');
+      expect(() => replay(malformedRespawnBeforeCreation))
+        .toThrow('Respawn event encountered before character creation.');
+    }
   });
 
   it('rejects every non-creation event when the stream has no character yet', () => {

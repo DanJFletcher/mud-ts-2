@@ -1,5 +1,10 @@
 import type { StoredGameEvent } from './types.js';
 import {
+  immutableHistoryParent,
+  isImmutableHistory,
+  retainImmutableHistoryPrefix,
+} from './immutable-history.js';
+import {
   DailyJobChangedEventSchema,
   SupplyGatheredEventSchema,
   CharacterItemTakenEventSchema,
@@ -67,19 +72,12 @@ type ReplayCheckpoint = {
 // lifetime to the adapter's bounded history cache, not the number of characters.
 const checkpoints = new WeakMap<readonly StoredGameEvent[], ReplayCheckpoint>();
 const prefixes = new WeakMap<readonly StoredGameEvent[], ReplayCheckpoint>();
-const immutableHistories = new WeakSet<readonly StoredGameEvent[]>();
-const historyParents = new WeakMap<readonly StoredGameEvent[], WeakRef<readonly StoredGameEvent[]>>();
 export function immutableReplayParent(events: readonly unknown[]): readonly StoredGameEvent[] | undefined {
-  return historyParents.get(events as readonly StoredGameEvent[])?.deref();
+  return immutableHistoryParent(events as readonly StoredGameEvent[]);
 }
 /** Only adapter-registered histories may participate in incremental projections. */
 export function isImmutableReplayHistory(events: readonly unknown[]): boolean {
-  return immutableHistories.has(events as readonly StoredGameEvent[]);
-}
-function freezeHistoryValue(value: unknown): void {
-  if (!value || typeof value !== 'object' || Object.isFrozen(value)) return;
-  for (const nested of Object.values(value)) freezeHistoryValue(nested);
-  Object.freeze(value);
+  return isImmutableHistory(events as readonly StoredGameEvent[]);
 }
 
 /** Adapter-only: a fresh history consists of this exact committed prefix + tail. */
@@ -87,14 +85,10 @@ export function retainCharacterReplayPrefix(
   next: readonly StoredGameEvent[],
   previous?: readonly StoredGameEvent[],
 ) {
-  if (immutableHistories.has(next)) return;
-  const hasPrefix = previous && immutableHistories.has(previous) && next.length > previous.length &&
-    next[previous.length - 1] === previous.at(-1);
-  if (hasPrefix) historyParents.set(next, new WeakRef(previous));
-  for (let i = hasPrefix ? previous.length : 0; i < next.length; i++) freezeHistoryValue(next[i]);
-  Object.freeze(next);
-  immutableHistories.add(next);
-  const checkpoint = hasPrefix ? checkpoints.get(previous) : undefined;
+  inheritCharacterCheckpoint(next, retainImmutableHistoryPrefix(next, previous));
+}
+function inheritCharacterCheckpoint(next: readonly StoredGameEvent[], parent?: readonly StoredGameEvent[]): void {
+  const checkpoint = parent ? checkpoints.get(parent) : undefined;
   if (checkpoint) prefixes.set(next, checkpoint);
 }
 
@@ -104,12 +98,14 @@ export function replayCharacterUncached(events: readonly StoredGameEvent[]) {
 }
 
 export function replayCharacter(events: readonly StoredGameEvent[]) {
-  // Unregistered author/test histories remain pure and can be edited between
-  // calls. Only adapters explicitly promising an immutable prefix opt in.
-  if (!immutableHistories.has(events)) return reconstructCharacter(events);
+  return isImmutableHistory(events) ? replayImmutableHistory(events) : reconstructCharacter(events);
+}
+
+function replayImmutableHistory(events: readonly StoredGameEvent[]) {
   const known = checkpoints.get(events);
-  if (known) return structuredClone(known.state);
-  return reconstructCharacter(events, prefixes.get(events), true);
+  return known
+    ? structuredClone(known.state)
+    : reconstructCharacter(events, prefixes.get(events), true);
 }
 
 function reconstructCharacter(events: readonly StoredGameEvent[], prefix?: ReplayCheckpoint, cache = false) {

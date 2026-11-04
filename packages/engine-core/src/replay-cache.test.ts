@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { replayCharacter, replayCharacterUncached, retainCharacterReplayPrefix } from './replay.js';
+import {
+  replayCharacter,
+  replayCharacterUncached,
+  retainCharacterReplayPrefix,
+} from './replay.js';
 import type { StoredGameEvent } from './types.js';
 
 const event = (revision: number, name: string): StoredGameEvent => ({
@@ -10,6 +14,18 @@ const event = (revision: number, name: string): StoredGameEvent => ({
   payload: revision === 1
     ? { characterId: 'character', playerId: 'player', name, startingLocationId: 'room' }
     : { characterId: 'character', name },
+});
+
+const eventWith = (
+  revision: number,
+  type: string,
+  payload: Record<string, unknown>,
+  version = 1,
+): StoredGameEvent => ({
+  ...event(revision, `Name ${revision}`),
+  type,
+  version,
+  payload,
 });
 
 describe('character replay checkpoints', () => {
@@ -43,5 +59,150 @@ describe('character replay checkpoints', () => {
     expect(replayCharacter(mutable)?.name).toBe('Edited');
     retainCharacterReplayPrefix(mutable);
     expect(() => { mutable[0]!.payload.name = 'Illegal'; }).toThrow();
+  });
+
+  it('isolates independent respawn tails from a cached team-defeat prefix', () => {
+    const prefix = [
+      event(1, 'Rowan'),
+      eventWith(2, 'character.team_combat_outcome_applied', {
+        characterId: 'character',
+        encounterId: 'team-defeat',
+        result: 'defeat',
+        health: { current: 0, maximum: 6 },
+        consumedItemIds: [],
+      }),
+    ];
+    retainCharacterReplayPrefix(prefix);
+    const defeat = replayCharacter(prefix);
+    expect(defeat).toMatchObject({
+      locationId: 'room',
+      health: { current: 0, maximum: 6 },
+    });
+
+    const respawnTail = (locationId: string) => eventWith(3, 'character.respawned', {
+      characterId: 'character',
+      cause: 'team-pve',
+      encounterId: 'team-defeat',
+      deathLocationId: 'room',
+      respawnLocationId: locationId,
+      health: { current: 6, maximum: 6 },
+    });
+    const northbound = [...prefix, respawnTail('north-gate')];
+    const southbound = [...prefix, respawnTail('south-gate')];
+    retainCharacterReplayPrefix(northbound, prefix);
+    retainCharacterReplayPrefix(southbound, prefix);
+
+    const northProjection = replayCharacter(northbound);
+    const southProjection = replayCharacter(southbound);
+    expect(northProjection).toMatchObject({
+      locationId: 'north-gate',
+      health: { current: 6, maximum: 6 },
+    });
+    expect(southProjection).toMatchObject({
+      locationId: 'south-gate',
+      health: { current: 6, maximum: 6 },
+    });
+    expect(replayCharacter(prefix)).toMatchObject({
+      locationId: 'room',
+      health: { current: 0, maximum: 6 },
+    });
+    expect(northProjection).toEqual(replayCharacterUncached(northbound));
+    expect(southProjection).toEqual(replayCharacterUncached(southbound));
+  });
+
+  it('retains a spent ability action ID when replaying an appended checkpoint tail', () => {
+    const created = eventWith(1, 'character.created', {
+      characterId: 'character',
+      playerId: 'player',
+      name: 'Rowan',
+      startingLocationId: 'room',
+      attributes: { strength: 10, intelligence: 10, constitution: 10, dexterity: 10 },
+      characterClass: {
+        id: 'scout',
+        revision: 1,
+        catalogId: 'catalog',
+        catalogRevision: 1,
+        label: 'Scout',
+        description: 'A replay fixture.',
+        primaryAttribute: 'dexterity',
+        attributes: { strength: 10, intelligence: 10, constitution: 10, dexterity: 10 },
+        coreAction: {
+          id: 'quick-strike',
+          revision: 1,
+          label: 'Quick strike',
+          description: 'A test action.',
+          cost: { resource: 'stamina', amount: 2 },
+          baseDamage: 1,
+          scalingAttribute: 'dexterity',
+          weaponBonus: false,
+        },
+      },
+      health: { current: 6, maximum: 6 },
+      resources: {
+        stamina: { current: 10, maximum: 10 },
+        mana: { current: 10, maximum: 10 },
+      },
+    }, 3);
+    const firstSpend = eventWith(2, 'character.ability_resource_spent', {
+      characterId: 'character',
+      encounterId: 'encounter-one',
+      actionId: 'action-one',
+      abilityId: 'quick-strike',
+      abilityRevision: 1,
+      cost: { resource: 'stamina', amount: 2 },
+      remaining: 8,
+    });
+    const prefix = [created, firstSpend];
+    retainCharacterReplayPrefix(prefix);
+    expect(replayCharacter(prefix)?.resources.stamina.current).toBe(8);
+
+    const duplicateSpend = eventWith(3, 'character.ability_resource_spent', {
+      ...firstSpend.payload,
+      encounterId: 'encounter-two',
+      remaining: 6,
+    });
+    const duplicateHistory = [...prefix, duplicateSpend];
+    retainCharacterReplayPrefix(duplicateHistory, prefix);
+    const expected = 'Invalid ability resource spending.';
+
+    expect(() => replayCharacter(duplicateHistory)).toThrow(expected);
+    expect(() => replayCharacterUncached(duplicateHistory)).toThrow(expected);
+  });
+
+  it('replays a team victory prefix and appended advancement with cold parity', () => {
+    const prefix = [
+      event(1, 'Rowan'),
+      eventWith(2, 'character.team_combat_outcome_applied', {
+        characterId: 'character',
+        encounterId: 'team-victory',
+        result: 'victory',
+        health: { current: 4, maximum: 6 },
+        consumedItemIds: [],
+      }),
+    ];
+    retainCharacterReplayPrefix(prefix);
+    expect(replayCharacter(prefix)?.advancement).toBeUndefined();
+
+    const history = [
+      ...prefix,
+      eventWith(3, 'character.advancement_awarded', {
+        characterId: 'character',
+        encounterId: 'team-victory',
+        experienceAwarded: 10,
+        totalExperience: 10,
+        level: 2,
+        maximumHealth: 8,
+        source: 'team-pve',
+      }, 2),
+    ];
+    retainCharacterReplayPrefix(history, prefix);
+
+    const projected = replayCharacter(history);
+    expect(projected?.advancement).toEqual({
+      experience: 10,
+      level: 2,
+      lastRewardedEncounterId: 'team-victory',
+    });
+    expect(projected).toEqual(replayCharacterUncached(history));
   });
 });
