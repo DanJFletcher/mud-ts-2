@@ -168,6 +168,7 @@ const state = vi.hoisted(() => ({
   processPendingEffectsError: null as Error | null,
   processPendingEffectsGate: null as Promise<void> | null,
   processPendingEffectsStarted: 0,
+  processPendingEffectsStartedSignal: null as (() => void) | null,
   guestIdentityError: null as Error | null,
   deleteSessionError: null as Error | null,
   realtimeNotificationCallbacks: null as null | {
@@ -322,6 +323,8 @@ vi.mock('@mudd/engine-core', async () => ({
     }
     async processPendingEffects() {
       state.processPendingEffectsStarted += 1;
+      state.processPendingEffectsStartedSignal?.();
+      state.processPendingEffectsStartedSignal = null;
       if (state.processPendingEffectsGate) await state.processPendingEffectsGate;
       if (state.processPendingEffectsError) {
         const error = state.processPendingEffectsError;
@@ -1040,6 +1043,7 @@ export function useServerHarness() {
     state.processPendingEffectsError = null;
     state.processPendingEffectsGate = null;
     state.processPendingEffectsStarted = 0;
+    state.processPendingEffectsStartedSignal = null;
     state.guestIdentityError = null;
     state.deleteSessionError = null;
     announcementState.attempts = 0;

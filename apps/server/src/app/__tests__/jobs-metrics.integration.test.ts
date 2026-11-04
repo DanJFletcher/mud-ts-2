@@ -1,6 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
 import { useServerHarness, state, instanceId } from './server-harness.js';
 
+function waitForProcessPendingEffectsStart(timeoutMs = 2_000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error('Timed out waiting for durable-effect processing to start.'));
+    }, timeoutMs);
+    state.processPendingEffectsStartedSignal = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+  });
+}
+
 describe('jobs-metrics through the server', () => {
   const harness = useServerHarness();
   const { enterWorld } = harness;
@@ -53,17 +65,23 @@ describe('jobs-metrics through the server', () => {
       releaseBatch = resolve;
     });
     const startedBefore = state.processPendingEffectsStarted;
+    const batchStarted = waitForProcessPendingEffectsStart();
     const first = request();
-    for (let attempt = 0;attempt < 20 && state.processPendingEffectsStarted === startedBefore;attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
-    expect(state.processPendingEffectsStarted).toBeGreaterThan(startedBefore);
+    void first.catch(() => undefined);
+    try {
+      await batchStarted;
+      expect(state.processPendingEffectsStarted).toBeGreaterThan(startedBefore);
 
-    const secondResponse = await request();
-    expect(secondResponse.status).toBe(200);
-    releaseBatch();
+      const secondResponse = await request();
+      expect(secondResponse.status).toBe(200);
+      expect(state.processPendingEffectsStarted).toBe(startedBefore + 1);
+    } finally {
+      releaseBatch();
+      await first.then(() => undefined, () => undefined);
+      state.processPendingEffectsGate = null;
+      state.processPendingEffectsStartedSignal = null;
+    }
     expect((await first).status).toBe(200);
-    state.processPendingEffectsGate = null;
   });
 
   it('reports autonomous scheduler errors', async () => {

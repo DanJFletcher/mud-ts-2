@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import {
   EngineHost,
@@ -47,26 +47,36 @@ const authorization = {
   canAccessInstance: async () => true,
   ownsCharacter: async () => true,
 };
-let activeTestRoomCharacters: ActiveRoomCharacter[] = [];
-const testCombatPresencePlugin: EnginePlugin = {
-  manifest: {
-    id: 'mudd.room-combat-presence',
-    version: '1.0.0',
-    apiVersion: '2.0',
-    category: 'core',
-    provides: [combatRoomPresenceCapability.id],
-  },
-  register({ provideCapability }) {
-    provideCapability(combatRoomPresenceCapability, {
-      listActiveCharacters: async () => activeTestRoomCharacters,
-      getPresenceAnchors: async (_worldInstanceId, characterIds) =>
-        new Map(characterIds.map((characterId) => [
-          characterId,
-          new Date('2026-10-17T12:00:00.000Z'),
-        ])),
-    });
-  },
-};
+let engineToStopAfterTest: EngineHost | undefined;
+afterEach(async () => {
+  const engine = engineToStopAfterTest;
+  engineToStopAfterTest = undefined;
+  await engine?.stop();
+});
+
+function createTestCombatPresencePlugin(
+  getActiveCharacters: () => ActiveRoomCharacter[] = () => [],
+): EnginePlugin {
+  return {
+    manifest: {
+      id: 'mudd.room-combat-presence',
+      version: '1.0.0',
+      apiVersion: '2.0',
+      category: 'core',
+      provides: [combatRoomPresenceCapability.id],
+    },
+    register({ provideCapability }) {
+      provideCapability(combatRoomPresenceCapability, {
+        listActiveCharacters: async () => getActiveCharacters(),
+        getPresenceAnchors: async (_worldInstanceId, characterIds) =>
+          new Map(characterIds.map((characterId) => [
+            characterId,
+            new Date('2026-10-17T12:00:00.000Z'),
+          ])),
+      });
+    },
+  };
+}
 
 function makeEngine(world = demoWorld) {
   let id = 0;
@@ -82,7 +92,7 @@ function makeEngine(world = demoWorld) {
       partyQuestPlugin,
       interactionPlugin,
       combatPlugin,
-      testCombatPresencePlugin,
+      createTestCombatPresencePlugin(),
       partyCombatPolicyPlugin,
       teamCombatPlugin,
       movementPlugin,
@@ -1293,6 +1303,7 @@ describe('MUDD engine host', () => {
       () => `party-quest-test-${++testId}`,
       () => new Date('2026-10-19T12:00:00.000Z'),
     );
+    engineToStopAfterTest = engine;
     await engine.start();
     const player = { ...session, playerId: 'quest-party-member', actorId: 'quest-party-member' };
     const character = await engine.dispatch({
@@ -1380,11 +1391,10 @@ describe('MUDD engine host', () => {
       (event.payload as { questId?: string }).questId === 'party-visit-test',
     )).toBe(false);
 
-    await engine.stop();
   });
 
   it('puts online party members in one encounter with independent turns', async () => {
-    activeTestRoomCharacters = [];
+    let activeRoomCharacters: ActiveRoomCharacter[] = [];
     let id = 0;
     const store = new InMemoryEventStore();
     const engine = new EngineHost(
@@ -1397,7 +1407,7 @@ describe('MUDD engine host', () => {
         partyQuestPlugin,
         interactionPlugin,
         combatPlugin,
-        testCombatPresencePlugin,
+        createTestCombatPresencePlugin(() => activeRoomCharacters),
         partyCombatPolicyPlugin,
         teamCombatPlugin,
       ],
@@ -1473,7 +1483,7 @@ describe('MUDD engine host', () => {
       payload: { questId: 'mossgate-cooperative-drill' },
     }, firstPlayer);
     if (!partyQuestStart.receipt.ok) throw new Error(partyQuestStart.receipt.message);
-    activeTestRoomCharacters = [
+    activeRoomCharacters = [
       { playerId: firstPlayer.playerId, characterId: firstCharacterId, displayName: firstCharacter.name },
       { playerId: secondPlayer.playerId, characterId: secondCharacterId, displayName: secondCharacter.name },
     ];
@@ -1642,7 +1652,6 @@ describe('MUDD engine host', () => {
       },
     });
     await engine.stop();
-    activeTestRoomCharacters = [];
   });
 
   it('rejects malformed and unknown commands', async () => {

@@ -1,14 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CharacterProjectionSchema, type CapabilityToken, type CharacterProjection } from '@mudd/contracts';
 import {
-  InMemoryEventStore,
   type CommandPlan,
+  type CommandHandler,
   type EngineCommandContext,
+  type EventEffectHandler,
   type EventEffectContext,
   type PluginContext,
+  type QueryHandler,
   type QueryContext,
   type StoredGameEvent,
 } from '@mudd/engine-core';
+import type { ZodType } from 'zod';
 import { demoWorld } from '@mudd/world-demo';
 import {
   assertCharacterAlive,
@@ -85,39 +88,52 @@ function event(type: string, payload: Record<string, unknown>): StoredGameEvent 
 
 type CapturedCommandHandler = (
   command: unknown,
-  context: EngineCommandContext,
+  context: unknown,
 ) => Promise<CommandPlan>;
 
-type CharacterTestContext = EngineCommandContext & {
-  readonly characterProjection?: CharacterProjection;
-};
+type CapturedQueryHandler = (query: unknown, context: unknown) => Promise<unknown>;
+type CapturedEffectHandler = (payload: unknown, context: unknown) => Promise<void>;
 
 function captureCommands(
   player: ReturnType<typeof character>,
-  sharedState: WorldItemsState = { revision: 0, items: [], corpses: [], currencyDrops: [] },
+  sharedState: unknown = { revision: 0, items: [], corpses: [], currencyDrops: [] },
 ) {
   const commands = new Map<string, CapturedCommandHandler>();
   const systemCommands = new Map<string, CapturedCommandHandler>();
-  const queries = new Map<string, (query: unknown, context: QueryContext) => Promise<unknown>>();
-  const effects = new Map<string, (payload: unknown, context: EventEffectContext) => Promise<void>>();
+  const queries = new Map<string, CapturedQueryHandler>();
+  const effects = new Map<string, CapturedEffectHandler>();
   const capabilities = new Map<string, unknown>([[
     worldItemsStateCapability.id,
-    { load: vi.fn(async () => sharedState) } satisfies WorldItemsStateCapability,
+    {
+      load: vi.fn(async () => sharedState as WorldItemsState),
+    } satisfies WorldItemsStateCapability,
   ]]);
   let state: CharacterStateCapability | undefined;
   const pluginContext: PluginContext = {
-    registerCommand<T>(name, schema, handler) {
-      commands.set(name, (command, context) => handler(schema.parse(command), context));
+    registerCommand<T>(name: string, _schema: ZodType<T>, handler: CommandHandler<T>) {
+      // These tests call handlers directly to exercise deliberately malformed inputs.
+      commands.set(name, (command, context) =>
+        handler(command as T, context as EngineCommandContext));
     },
-    registerSystemCommand<T>(name, schema, handler, version = 1) {
+    registerSystemCommand<T>(
+      name: string,
+      _schema: ZodType<T>,
+      handler: CommandHandler<T>,
+      version = 1,
+    ) {
       systemCommands.set(version === 1 ? name : `${name}@${version}`,
-        (command, context) => handler(schema.parse(command), context));
+        (command, context) => handler(command as T, context as EngineCommandContext));
     },
-    registerQuery<T, R>(name, schema, handler) {
-      queries.set(name, (query, context) => handler(schema.parse(query), context));
+    registerQuery<T, R>(name: string, _schema: ZodType<T>, handler: QueryHandler<T, R>) {
+      queries.set(name, (query, context) => handler(query as T, context as QueryContext));
     },
-    registerEffect<T>(name, _version, schema, handler) {
-      effects.set(name, (payload, context) => handler(schema.parse(payload), context));
+    registerEffect<T>(
+      name: string,
+      _version: number,
+      _schema: ZodType<T>,
+      handler: EventEffectHandler<T>,
+    ) {
+      effects.set(name, (payload, context) => handler(payload as T, context as EventEffectContext));
     },
     registerEventHandler() {},
     provideCapability<T>(token: CapabilityToken<T>, implementation: T) {
@@ -164,29 +180,19 @@ function storedCharacterEvent(
 function commandContext(player: ReturnType<typeof character>, options: {
   teamEvents?: readonly StoredGameEvent[];
   pvpEvents?: readonly StoredGameEvent[];
-} = {}): CharacterTestContext {
-  const store = new InMemoryEventStore();
-  vi.spyOn(store, 'readStream').mockImplementation(async (_world, streamId) =>
-    streamId === 'world-team-combat' ? options.teamEvents ?? []
-      : streamId === interactionStreamId(worldId) ? options.pvpEvents ?? [] : []);
+} = {}) {
   return {
     worldInstanceId: worldId,
     world: structuredClone(demoWorld),
-    session: {
-      sessionId: 'session-one',
-      playerId: 'player-one',
-      actorId: 'player-one',
-      worldInstanceId: worldId,
-      grantedPermissions: [],
-      authenticated: true,
-    },
-    commandId: 'character-state-test-command',
-    expectedVersion: player.revision,
-    store,
-    rng: { roll: () => 1 },
+    session: { playerId: 'player-one' },
     characterProjection: player,
     now: () => now,
     makeId: () => 'generated-id',
+    store: {
+      readStream: vi.fn(async (_world: string, streamId: string) =>
+        streamId === 'world-team-combat' ? options.teamEvents ?? []
+          : streamId === interactionStreamId(worldId) ? options.pvpEvents ?? [] : []),
+    },
   };
 }
 

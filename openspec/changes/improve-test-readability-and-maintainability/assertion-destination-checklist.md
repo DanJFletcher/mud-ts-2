@@ -48,8 +48,11 @@ Destination remains `packages/plugins/src/character-state.test.ts`; type its reg
 - Preserve command, query, system-command, and effect assertions at the plugin boundary.
 - Keep valid lifecycle/event scenarios typed against public contracts; keep deliberately malformed validation inputs explicit and locally cast only when necessary.
 - Preserve recovery, archive/restore, inventory/equipment, and object/interaction lifecycle assertions.
+- Verification after typing: all 36 character-state tests passed, the full plugins suite passed all 347 tests, and the plugins workspace typecheck passed. Registration uses public handler/context types; the small generic adapter keeps intentional raw-input tests from being preempted by schema parsing, and event builders now return `StoredGameEvent` without double casts. No production interface was added for testing.
 
 ## Jobs metrics synchronization
+
+The durable-effect overlap case now waits on an explicit start signal (bounded to two seconds) rather than polling; its release gate is always opened in `finally`, and the test asserts only one batch started while the second request was in flight. The focused integration suite passed all 6 tests.
 
 Destination remains `apps/server/src/app/__tests__/jobs-metrics.integration.test.ts`.
 
@@ -60,5 +63,15 @@ Destination remains `apps/server/src/app/__tests__/jobs-metrics.integration.test
 
 Destination remains `packages/engine-core/src/engine.test.ts`; keep the existing team-combat composition scenario intact while making presence state instance-local or unconditionally reset.
 
+- Presence now comes from an engine-local plugin closure instead of module-global mutable state; all 54 engine tests and the engine-core typecheck passed.
+
+## Final validation and review
+
+- The full `npm run test:coverage` pipeline passed after migrating a temporary, isolated PostgreSQL database; line coverage by workspace: contracts 96.27%, demo world 100%, Orraveth world 100%, engine core 94.68%, plugins 99.65%, client SDK 97.84%, UI 97.91%, server 96.83%, web 96.89%.
+- Repository `npm run typecheck` passed across all nine workspaces. `npm run quality:test` passed all 63 tests.
+- Repository lint required a 4 GB Node heap; it completed with 170 errors and 388 warnings across the repository. Targeted lint on the changed test files had 0 errors and 64 warnings, all `no-explicit-any` warnings in test fixtures.
+- The explicit-base PR quality gate was skipped: its documented prerequisite is a committed, clean working tree, while this change remains uncommitted. `git diff --check` passed.
+- Baseline suites were green. During iteration, an initial schema-parsing handler adapter caused 22 character-state test failures and 34 type errors; the final raw-input adapter preserves malformed-input tests, and the final character-state suite and typecheck pass. No production source, migrations, or quality-budget files changed; the final diff keeps the original scenario assertions and makes the overlap-count assertion explicit.
+- Review found no changed classes or non-exempt support modules; new synchronization and presence helpers stay in test files, so class-size and migration-budget policy remain unchanged.
 - Preserve online-member discovery, independent turn order, party departure without deleting the active encounter participant, shared quest completion, both members' experience, and the resulting corpse/world-item state.
 - Ensure presence cleanup runs after early errors as well as successful completion.

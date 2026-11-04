@@ -27,15 +27,15 @@
 
 ## 6. Type character plugin setup
 
-- [ ] 6.1 Type captured registration handlers and valid event builders using public contracts; verify character-state scenarios before and after and typecheck without permissive bypass casts at these boundaries. Keep deliberately malformed validation inputs explicit.
-- [ ] 6.2 Run the full plugins suite and review the mapped lifecycle assertions; verify no production interface was added solely for testing and remove obsolete harness types or helpers.
+- [x] 6.1 Type captured registration handlers and valid event builders using public contracts; verify character-state scenarios before and after and typecheck without permissive bypass casts at these boundaries. Keep deliberately malformed validation inputs explicit.
+- [x] 6.2 Run the full plugins suite and review the mapped lifecycle assertions; verify no production interface was added solely for testing and remove obsolete harness types or helpers.
 
 ## 7. Make scheduling and cleanup explicit
 
-- [ ] 7.1 Replace jobs metrics start polling with an explicit started signal and retain a release gate with guaranteed cleanup; verify the original concurrency/metrics guarantees and failure-safe release using the focused integration suite with bounded timeouts.
-- [ ] 7.2 Make engine test presence instance-local through an existing seam or reset it unconditionally in teardown; verify the engine suite before and after and review that failed assertions cannot skip cleanup.
+- [x] 7.1 Replace jobs metrics start polling with an explicit started signal and retain a release gate with guaranteed cleanup; verify the original concurrency/metrics guarantees and failure-safe release using the focused integration suite with bounded timeouts.
+- [x] 7.2 Make engine test presence instance-local through an existing seam or reset it unconditionally in teardown; verify the engine suite before and after and review that failed assertions cannot skip cleanup.
 
 ## 8. Verify integration and review quality
 
-- [ ] 8.1 Run all affected workspace suites, repository `npm run lint` and `npm run typecheck`; collect coverage and run the explicit-base PR quality checks described in `docs/pr-quality.md` when their clean-head prerequisites are satisfied, recording any skipped checks and reasons.
-- [ ] 8.2 Review assertion equivalence, scenario readability at call sites, cohesion, class sizes, numeric compliance of non-exempt support modules, and unchanged migration budgets; verify the final report distinguishes actual red/green observations from green refactor baselines and subjective review, and identifies remaining local debt.
+- [x] 8.1 Run all affected workspace suites, repository `npm run lint` and `npm run typecheck`; collect coverage and run the explicit-base PR quality checks described in `docs/pr-quality.md` when their clean-head prerequisites are satisfied, recording any skipped checks and reasons.
+- [x] 8.2 Review assertion equivalence, scenario readability at call sites, cohesion, class sizes, numeric compliance of non-exempt support modules, and unchanged migration budgets; verify the final report distinguishes actual red/green observations from green refactor baselines and subjective review, and identifies remaining local debt.
