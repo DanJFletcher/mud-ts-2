@@ -34,4 +34,11 @@ Move only assertions that can be exercised through a focused public feature or s
 - The typed scenario harness is validated independently, including a real `WorldClient` render and isolated endpoint override, deferred-response, and failure cases.
 - Keyboard filtering and navigation menu/theme behavior now have focused feature/screen tests; duplicate full-client cases were removed.
 - Fishing and woodcutting single-flight cases are covered at the shared scheduler boundary, so their duplicated full-client polling tests were removed. Other gathering UI and event-recovery composition tests remain.
-- The remaining 239 `WorldClient` cases still use the legacy shared API fake. They were retained because they exercise session/UI/SDK wiring; replacing that fake is deliberately incremental and requires each scenario to have an explicit narrower owner or remain as composition coverage.
+- The remaining 237 `WorldClient` cases still use the legacy shared API fake. They were retained because they exercise session/UI/SDK wiring; replacing that fake is deliberately incremental and requires each scenario to have an explicit narrower owner or remain as composition coverage.
+
+## Validation
+
+- `npm run test --workspace @mudd/web -- --maxWorkers=2`: 31 files passed, 543 tests passed.
+- `npm run typecheck --workspace @mudd/web`: passed.
+- ESLint on the changed test files: passed.
+- `npm run lint` completes but fails on 170 errors and 405 warnings in unchanged files elsewhere in the repository; the full scan reports no findings in the changed test files.

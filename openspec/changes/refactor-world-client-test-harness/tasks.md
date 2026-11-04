@@ -19,5 +19,5 @@
 
 ## 4. Validate the refactored suite
 
-- [ ] 4.1 Run `npm run test --workspace @mudd/web`; verify all web tests pass, including the focused suites and retained WorldClient composition tests.
-- [ ] 4.2 Run `npm run typecheck --workspace @mudd/web` and `npm run lint`; verify the test helpers use typed boundaries without adding production changes.
+- [x] 4.1 Run `npm run test --workspace @mudd/web`; verify all web tests pass, including the focused suites and retained WorldClient composition tests.
+- [x] 4.2 Run web typecheck and lint; ensure changed test files are clean and record existing failures outside this change.

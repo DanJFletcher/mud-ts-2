@@ -87,7 +87,6 @@ function parseRequestBody(body: BodyInit | null | undefined): unknown {
   try { return JSON.parse(body) as unknown; } catch { return body; }
 }
 
-// eslint-disable-next-line max-lines-per-function -- This boundary normalizes URL, headers, and body once for endpoint handlers.
 function buildRequest(input: RequestInfo | URL, init: RequestInit | undefined): WorldClientHarnessRequest {
   const url = requestUrl(input);
   return { path: url.pathname, method: (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase(), query: new URLSearchParams(url.searchParams), body: parseRequestBody(init?.body), headers: new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined)) };
